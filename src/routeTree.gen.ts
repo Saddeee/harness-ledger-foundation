@@ -14,10 +14,14 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedDemoRouteImport } from './routes/_authenticated/demo'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
+import { Route as AuthenticatedJobsRouteImport } from './routes/_authenticated/jobs'
 import { Route as AuthenticatedLedgerRouteImport } from './routes/_authenticated/ledger'
+import { Route as AuthenticatedOverviewRouteImport } from './routes/_authenticated/overview'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedScoreboardRouteImport } from './routes/_authenticated/scoreboard'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedVersionsRouteImport } from './routes/_authenticated/versions'
+import { Route as ApiPublicHooksQueueWorkerRouteImport } from './routes/api/public/hooks/queue-worker'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -43,9 +47,19 @@ const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
   path: '/inbox',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedJobsRoute = AuthenticatedJobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedLedgerRoute = AuthenticatedLedgerRouteImport.update({
   id: '/ledger',
   path: '/ledger',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOverviewRoute = AuthenticatedOverviewRouteImport.update({
+  id: '/overview',
+  path: '/overview',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
@@ -58,31 +72,50 @@ const AuthenticatedScoreboardRoute = AuthenticatedScoreboardRouteImport.update({
   path: '/scoreboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedVersionsRoute = AuthenticatedVersionsRouteImport.update({
   id: '/versions',
   path: '/versions',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiPublicHooksQueueWorkerRoute =
+  ApiPublicHooksQueueWorkerRouteImport.update({
+    id: '/api/public/hooks/queue-worker',
+    path: '/api/public/hooks/queue-worker',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/demo': typeof AuthenticatedDemoRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/jobs': typeof AuthenticatedJobsRoute
   '/ledger': typeof AuthenticatedLedgerRoute
+  '/overview': typeof AuthenticatedOverviewRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/scoreboard': typeof AuthenticatedScoreboardRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/versions': typeof AuthenticatedVersionsRoute
+  '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/demo': typeof AuthenticatedDemoRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/jobs': typeof AuthenticatedJobsRoute
   '/ledger': typeof AuthenticatedLedgerRoute
+  '/overview': typeof AuthenticatedOverviewRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/scoreboard': typeof AuthenticatedScoreboardRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/versions': typeof AuthenticatedVersionsRoute
+  '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -91,10 +124,14 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/demo': typeof AuthenticatedDemoRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
+  '/_authenticated/jobs': typeof AuthenticatedJobsRoute
   '/_authenticated/ledger': typeof AuthenticatedLedgerRoute
+  '/_authenticated/overview': typeof AuthenticatedOverviewRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/_authenticated/scoreboard': typeof AuthenticatedScoreboardRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/versions': typeof AuthenticatedVersionsRoute
+  '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -103,20 +140,28 @@ export interface FileRouteTypes {
     | '/login'
     | '/demo'
     | '/inbox'
+    | '/jobs'
     | '/ledger'
+    | '/overview'
     | '/projects'
     | '/scoreboard'
+    | '/settings'
     | '/versions'
+    | '/api/public/hooks/queue-worker'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/demo'
     | '/inbox'
+    | '/jobs'
     | '/ledger'
+    | '/overview'
     | '/projects'
     | '/scoreboard'
+    | '/settings'
     | '/versions'
+    | '/api/public/hooks/queue-worker'
   id:
     | '__root__'
     | '/'
@@ -124,16 +169,21 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/demo'
     | '/_authenticated/inbox'
+    | '/_authenticated/jobs'
     | '/_authenticated/ledger'
+    | '/_authenticated/overview'
     | '/_authenticated/projects'
     | '/_authenticated/scoreboard'
+    | '/_authenticated/settings'
     | '/_authenticated/versions'
+    | '/api/public/hooks/queue-worker'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiPublicHooksQueueWorkerRoute: typeof ApiPublicHooksQueueWorkerRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -173,11 +223,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInboxRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/jobs': {
+      id: '/_authenticated/jobs'
+      path: '/jobs'
+      fullPath: '/jobs'
+      preLoaderRoute: typeof AuthenticatedJobsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/ledger': {
       id: '/_authenticated/ledger'
       path: '/ledger'
       fullPath: '/ledger'
       preLoaderRoute: typeof AuthenticatedLedgerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/overview': {
+      id: '/_authenticated/overview'
+      path: '/overview'
+      fullPath: '/overview'
+      preLoaderRoute: typeof AuthenticatedOverviewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/projects': {
@@ -194,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedScoreboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/versions': {
       id: '/_authenticated/versions'
       path: '/versions'
@@ -201,24 +272,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedVersionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/hooks/queue-worker': {
+      id: '/api/public/hooks/queue-worker'
+      path: '/api/public/hooks/queue-worker'
+      fullPath: '/api/public/hooks/queue-worker'
+      preLoaderRoute: typeof ApiPublicHooksQueueWorkerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDemoRoute: typeof AuthenticatedDemoRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
+  AuthenticatedJobsRoute: typeof AuthenticatedJobsRoute
   AuthenticatedLedgerRoute: typeof AuthenticatedLedgerRoute
+  AuthenticatedOverviewRoute: typeof AuthenticatedOverviewRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
   AuthenticatedScoreboardRoute: typeof AuthenticatedScoreboardRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedVersionsRoute: typeof AuthenticatedVersionsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDemoRoute: AuthenticatedDemoRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
+  AuthenticatedJobsRoute: AuthenticatedJobsRoute,
   AuthenticatedLedgerRoute: AuthenticatedLedgerRoute,
+  AuthenticatedOverviewRoute: AuthenticatedOverviewRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
   AuthenticatedScoreboardRoute: AuthenticatedScoreboardRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedVersionsRoute: AuthenticatedVersionsRoute,
 }
 
@@ -229,6 +313,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiPublicHooksQueueWorkerRoute: ApiPublicHooksQueueWorkerRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
