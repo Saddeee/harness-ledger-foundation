@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "ui": "npm --prefix harness run ui",
+    "harness:install": "npm --prefix harness install"
   },
   "overrides": {
     "rolldown": "1.2.1"
