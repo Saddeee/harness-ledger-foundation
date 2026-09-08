@@ -24,7 +24,8 @@
     "exactOptionalPropertyTypes": true,
     "noUncheckedSideEffectImports": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@lovable.dev/sdk": ["./node_modules/@lovable.dev/sdk/dist/index.d.ts"]
     }
   }
 }

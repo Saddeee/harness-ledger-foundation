@@ -22,3 +22,12 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Connecting Lovable (OAuth)
+
+The app hosts its OAuth client metadata at `/lovable-client.json`; that URL is
+the `client_id` and the redirect URI is `/oauth/callback` on the same origin.
+Both are derived from `APP_ORIGIN`. After publishing, add a secret named
+`APP_ORIGIN` in Project Settings → Secrets set to the published origin
+(e.g. `https://harness-ledger.lovable.app`, no trailing slash). Until it is set,
+the origin of the incoming request is used, which works in the preview.
