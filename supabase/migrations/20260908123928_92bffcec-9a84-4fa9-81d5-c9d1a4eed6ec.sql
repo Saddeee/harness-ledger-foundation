@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS lovable_connections_owner_unique ON public.lovable_connections (owner_user_id);

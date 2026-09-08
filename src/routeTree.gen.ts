@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LovableClientDotjsonRouteImport } from './routes/lovable-client[.]json'
 import { Route as AuthenticatedDemoRouteImport } from './routes/_authenticated/demo'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedJobsRouteImport } from './routes/_authenticated/jobs'
@@ -21,7 +22,13 @@ import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedScoreboardRouteImport } from './routes/_authenticated/scoreboard'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedVersionsRouteImport } from './routes/_authenticated/versions'
+import { Route as OauthCallbackRouteImport } from './routes/oauth/callback'
 import { Route as ApiPublicHooksQueueWorkerRouteImport } from './routes/api/public/hooks/queue-worker'
+import { Route as ApiPublicLovableConnectionRouteImport } from './routes/api/public/lovable/connection'
+import { Route as ApiPublicLovableOauthCallbackRouteImport } from './routes/api/public/lovable/oauth-callback'
+import { Route as ApiPublicLovableOauthRefreshRouteImport } from './routes/api/public/lovable/oauth-refresh'
+import { Route as ApiPublicLovableOauthStartRouteImport } from './routes/api/public/lovable/oauth-start'
+import { Route as ApiPublicLovableSyncProjectsRouteImport } from './routes/api/public/lovable/sync-projects'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -35,6 +42,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LovableClientDotjsonRoute = LovableClientDotjsonRouteImport.update({
+  id: '/lovable-client.json',
+  path: '/lovable-client.json',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedDemoRoute = AuthenticatedDemoRouteImport.update({
@@ -82,16 +94,52 @@ const AuthenticatedVersionsRoute = AuthenticatedVersionsRouteImport.update({
   path: '/versions',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const OauthCallbackRoute = OauthCallbackRouteImport.update({
+  id: '/oauth/callback',
+  path: '/oauth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicHooksQueueWorkerRoute =
   ApiPublicHooksQueueWorkerRouteImport.update({
     id: '/api/public/hooks/queue-worker',
     path: '/api/public/hooks/queue-worker',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicLovableConnectionRoute =
+  ApiPublicLovableConnectionRouteImport.update({
+    id: '/api/public/lovable/connection',
+    path: '/api/public/lovable/connection',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicLovableOauthCallbackRoute =
+  ApiPublicLovableOauthCallbackRouteImport.update({
+    id: '/api/public/lovable/oauth-callback',
+    path: '/api/public/lovable/oauth-callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicLovableOauthRefreshRoute =
+  ApiPublicLovableOauthRefreshRouteImport.update({
+    id: '/api/public/lovable/oauth-refresh',
+    path: '/api/public/lovable/oauth-refresh',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicLovableOauthStartRoute =
+  ApiPublicLovableOauthStartRouteImport.update({
+    id: '/api/public/lovable/oauth-start',
+    path: '/api/public/lovable/oauth-start',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicLovableSyncProjectsRoute =
+  ApiPublicLovableSyncProjectsRouteImport.update({
+    id: '/api/public/lovable/sync-projects',
+    path: '/api/public/lovable/sync-projects',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/demo': typeof AuthenticatedDemoRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/jobs': typeof AuthenticatedJobsRoute
@@ -101,11 +149,18 @@ export interface FileRoutesByFullPath {
   '/scoreboard': typeof AuthenticatedScoreboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/versions': typeof AuthenticatedVersionsRoute
+  '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
+  '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
+  '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
+  '/api/public/lovable/oauth-refresh': typeof ApiPublicLovableOauthRefreshRoute
+  '/api/public/lovable/oauth-start': typeof ApiPublicLovableOauthStartRoute
+  '/api/public/lovable/sync-projects': typeof ApiPublicLovableSyncProjectsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/demo': typeof AuthenticatedDemoRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/jobs': typeof AuthenticatedJobsRoute
@@ -115,13 +170,20 @@ export interface FileRoutesByTo {
   '/scoreboard': typeof AuthenticatedScoreboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/versions': typeof AuthenticatedVersionsRoute
+  '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
+  '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
+  '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
+  '/api/public/lovable/oauth-refresh': typeof ApiPublicLovableOauthRefreshRoute
+  '/api/public/lovable/oauth-start': typeof ApiPublicLovableOauthStartRoute
+  '/api/public/lovable/sync-projects': typeof ApiPublicLovableSyncProjectsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/login': typeof LoginRoute
+  '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/_authenticated/demo': typeof AuthenticatedDemoRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
   '/_authenticated/jobs': typeof AuthenticatedJobsRoute
@@ -131,13 +193,20 @@ export interface FileRoutesById {
   '/_authenticated/scoreboard': typeof AuthenticatedScoreboardRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/versions': typeof AuthenticatedVersionsRoute
+  '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
+  '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
+  '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
+  '/api/public/lovable/oauth-refresh': typeof ApiPublicLovableOauthRefreshRoute
+  '/api/public/lovable/oauth-start': typeof ApiPublicLovableOauthStartRoute
+  '/api/public/lovable/sync-projects': typeof ApiPublicLovableSyncProjectsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login'
+    | '/lovable-client.json'
     | '/demo'
     | '/inbox'
     | '/jobs'
@@ -147,11 +216,18 @@ export interface FileRouteTypes {
     | '/scoreboard'
     | '/settings'
     | '/versions'
+    | '/oauth/callback'
     | '/api/public/hooks/queue-worker'
+    | '/api/public/lovable/connection'
+    | '/api/public/lovable/oauth-callback'
+    | '/api/public/lovable/oauth-refresh'
+    | '/api/public/lovable/oauth-start'
+    | '/api/public/lovable/sync-projects'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
+    | '/lovable-client.json'
     | '/demo'
     | '/inbox'
     | '/jobs'
@@ -161,12 +237,19 @@ export interface FileRouteTypes {
     | '/scoreboard'
     | '/settings'
     | '/versions'
+    | '/oauth/callback'
     | '/api/public/hooks/queue-worker'
+    | '/api/public/lovable/connection'
+    | '/api/public/lovable/oauth-callback'
+    | '/api/public/lovable/oauth-refresh'
+    | '/api/public/lovable/oauth-start'
+    | '/api/public/lovable/sync-projects'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/login'
+    | '/lovable-client.json'
     | '/_authenticated/demo'
     | '/_authenticated/inbox'
     | '/_authenticated/jobs'
@@ -176,14 +259,27 @@ export interface FileRouteTypes {
     | '/_authenticated/scoreboard'
     | '/_authenticated/settings'
     | '/_authenticated/versions'
+    | '/oauth/callback'
     | '/api/public/hooks/queue-worker'
+    | '/api/public/lovable/connection'
+    | '/api/public/lovable/oauth-callback'
+    | '/api/public/lovable/oauth-refresh'
+    | '/api/public/lovable/oauth-start'
+    | '/api/public/lovable/sync-projects'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
+  LovableClientDotjsonRoute: typeof LovableClientDotjsonRoute
+  OauthCallbackRoute: typeof OauthCallbackRoute
   ApiPublicHooksQueueWorkerRoute: typeof ApiPublicHooksQueueWorkerRoute
+  ApiPublicLovableConnectionRoute: typeof ApiPublicLovableConnectionRoute
+  ApiPublicLovableOauthCallbackRoute: typeof ApiPublicLovableOauthCallbackRoute
+  ApiPublicLovableOauthRefreshRoute: typeof ApiPublicLovableOauthRefreshRoute
+  ApiPublicLovableOauthStartRoute: typeof ApiPublicLovableOauthStartRoute
+  ApiPublicLovableSyncProjectsRoute: typeof ApiPublicLovableSyncProjectsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -207,6 +303,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/lovable-client.json': {
+      id: '/lovable-client.json'
+      path: '/lovable-client.json'
+      fullPath: '/lovable-client.json'
+      preLoaderRoute: typeof LovableClientDotjsonRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/demo': {
@@ -272,11 +375,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedVersionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/oauth/callback': {
+      id: '/oauth/callback'
+      path: '/oauth/callback'
+      fullPath: '/oauth/callback'
+      preLoaderRoute: typeof OauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/queue-worker': {
       id: '/api/public/hooks/queue-worker'
       path: '/api/public/hooks/queue-worker'
       fullPath: '/api/public/hooks/queue-worker'
       preLoaderRoute: typeof ApiPublicHooksQueueWorkerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/lovable/connection': {
+      id: '/api/public/lovable/connection'
+      path: '/api/public/lovable/connection'
+      fullPath: '/api/public/lovable/connection'
+      preLoaderRoute: typeof ApiPublicLovableConnectionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/lovable/oauth-callback': {
+      id: '/api/public/lovable/oauth-callback'
+      path: '/api/public/lovable/oauth-callback'
+      fullPath: '/api/public/lovable/oauth-callback'
+      preLoaderRoute: typeof ApiPublicLovableOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/lovable/oauth-refresh': {
+      id: '/api/public/lovable/oauth-refresh'
+      path: '/api/public/lovable/oauth-refresh'
+      fullPath: '/api/public/lovable/oauth-refresh'
+      preLoaderRoute: typeof ApiPublicLovableOauthRefreshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/lovable/oauth-start': {
+      id: '/api/public/lovable/oauth-start'
+      path: '/api/public/lovable/oauth-start'
+      fullPath: '/api/public/lovable/oauth-start'
+      preLoaderRoute: typeof ApiPublicLovableOauthStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/lovable/sync-projects': {
+      id: '/api/public/lovable/sync-projects'
+      path: '/api/public/lovable/sync-projects'
+      fullPath: '/api/public/lovable/sync-projects'
+      preLoaderRoute: typeof ApiPublicLovableSyncProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -313,7 +458,14 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   LoginRoute: LoginRoute,
+  LovableClientDotjsonRoute: LovableClientDotjsonRoute,
+  OauthCallbackRoute: OauthCallbackRoute,
   ApiPublicHooksQueueWorkerRoute: ApiPublicHooksQueueWorkerRoute,
+  ApiPublicLovableConnectionRoute: ApiPublicLovableConnectionRoute,
+  ApiPublicLovableOauthCallbackRoute: ApiPublicLovableOauthCallbackRoute,
+  ApiPublicLovableOauthRefreshRoute: ApiPublicLovableOauthRefreshRoute,
+  ApiPublicLovableOauthStartRoute: ApiPublicLovableOauthStartRoute,
+  ApiPublicLovableSyncProjectsRoute: ApiPublicLovableSyncProjectsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
