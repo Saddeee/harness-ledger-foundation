@@ -351,6 +351,71 @@ export function reviewCorrectionCandidate(input: {
   return db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(input.id);
 }
 
+// A Claude-proposed reclassification (distinct from a human's "reclassify"
+// review action): records the previous classification in agent_actions
+// (structured_output holds {previous_classification, proposed_classification,
+// reasoning}), changes the stored classification, and resets reviewed=0 so
+// the change lands in front of the human again rather than looking final.
+export function proposeReclassification(input: {
+  id: number;
+  new_classification: Classification;
+  reasoning: string;
+  meta?: ClassificationMeta;
+}) {
+  const existing = db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(input.id) as
+    | { classification: string }
+    | undefined;
+  if (!existing) throw new Error(`correction_candidate ${input.id} not found`);
+
+  db.prepare(
+    `INSERT INTO agent_actions (actor, action, target_table, target_id, provider, model, role, structured_output, human_reviewed)
+     VALUES ('claude', 'propose_reclassification', 'correction_candidates', ?, ?, ?, ?, ?, 0)`,
+  ).run(
+    input.id,
+    input.meta?.provider ?? null,
+    input.meta?.model ?? null,
+    input.meta?.role ?? null,
+    JSON.stringify({
+      previous_classification: existing.classification,
+      proposed_classification: input.new_classification,
+      reasoning: input.reasoning,
+    }),
+  );
+
+  db.prepare(
+    `UPDATE correction_candidates SET classification = ?, reviewed = 0, reviewed_at = NULL, updated_at = datetime('now') WHERE id = ?`,
+  ).run(input.new_classification, input.id);
+
+  insertEvent("correction_candidate.reclassification_proposed", null, {
+    id: input.id,
+    previous_classification: existing.classification,
+    new_classification: input.new_classification,
+  });
+
+  return db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(input.id);
+}
+
+export function editCorrectionSummary(id: number, summary: string, reviewer: string) {
+  const existing = db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(id);
+  if (!existing) throw new Error(`correction_candidate ${id} not found`);
+  db.prepare(
+    `UPDATE correction_candidates SET summary = ?, updated_at = datetime('now') WHERE id = ?`,
+  ).run(summary, id);
+  insertEvent("correction_candidate.summary_edited", null, { id, reviewer });
+  return db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(id);
+}
+
+export function getClassificationHistory(correctionCandidateId: number) {
+  return db
+    .prepare(
+      `SELECT * FROM agent_actions
+       WHERE target_table = 'correction_candidates' AND target_id = ?
+         AND action IN ('classify_correction', 'propose_reclassification')
+       ORDER BY created_at ASC, id ASC`,
+    )
+    .all(correctionCandidateId);
+}
+
 export function createLearning(input: {
   correction_candidate_id: number;
   observed_problem: string;
@@ -496,7 +561,9 @@ export function getRule(id: number) {
 export function listCorrectionCandidates() {
   const rows = db
     .prepare(
-      `SELECT cc.*, te.id as episode_id, te.title as episode_title, te.project_id as project_id
+      `SELECT cc.*, te.id as episode_id, te.title as episode_title, te.summary as episode_summary,
+              te.started_at as episode_started_at, te.ended_at as episode_ended_at,
+              te.project_id as project_id
        FROM correction_candidates cc
        JOIN task_episodes te ON te.id = cc.task_episode_id
        ORDER BY cc.created_at DESC`,

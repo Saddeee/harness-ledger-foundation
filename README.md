@@ -23,6 +23,15 @@ npm i
 npm run dev
 ```
 
+## Local Harness runtime
+
+The Corrections (`/inbox`) and Rules (`/ledger`) pages can read/write a local
+SQLite store instead of (or alongside) the hosted Supabase data, when run
+locally with `HARNESS_RUNTIME=local`. See `harness/README.md` for the full
+setup (`npm run harness:build` once, then `HARNESS_RUNTIME=local HARNESS_DB_PATH=harness/data/harness.db npm run dev`).
+Without that env var, those pages show a normal hosted-preview empty state
+instead of crashing — nothing here is required for the hosted app to run.
+
 ## Connecting Lovable (OAuth)
 
 The app hosts its OAuth client metadata at `/lovable-client.json`; that URL is

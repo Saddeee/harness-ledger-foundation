@@ -11,7 +11,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "ui": "npm --prefix harness run ui",
-    "harness:install": "npm --prefix harness install"
+    "harness:install": "npm --prefix harness install",
+    "harness:build": "npm --prefix harness run build",
+    "typecheck": "tsc --noEmit"
   },
   "overrides": {
     "rolldown": "1.2.1"

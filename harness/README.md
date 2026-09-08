@@ -56,7 +56,7 @@ as the working directory and both `lovable` and `harness` tools become
 available; `lovable` will prompt an OAuth login in your browser the first time,
 same as any other Claude Code project using it.
 
-## Tools exposed by `harness`
+## Tools exposed by `harness` (MCP server)
 
 | Tool | Does |
 |---|---|
@@ -66,8 +66,36 @@ same as any other Claude Code project using it.
 | `upsert_project` | Stores/updates cached, redacted metadata for an approved project. |
 | `append_event` | Appends an audit-log row. |
 | `list_events` | Lists recent audit-log rows, newest first. |
+| `create_project_snapshot`, `upsert_history_item`, `create_task_episode`, `update_task_episode`, `create_correction_candidate`, `review_correction_candidate`, `create_learning`, `create_rule`, `update_rule`, `get_rule`, `list_project_rules` | The correction-to-rule pipeline (checkpoint B). See `src/store.ts` for the full contract. |
 
-This is deliberately the smallest possible slice -- Checkpoint A proves the
-plumbing, not the product. Correction mining, learnings, rules, Skills,
-verification, experiments and the local web UI are later checkpoints (see
+## The product UI vs. the diagnostic UI
+
+As of checkpoint B.1, the **product UI is the existing TanStack Start app**
+(`../src/routes/_authenticated/inbox.tsx` = Corrections, `.../ledger.tsx` =
+Rules), not a separate page. It talks to this package through a thin
+server-only bridge:
+
+```
+TanStack route component (client)
+  --fetch--> src/routes/api/public/harness/{corrections,rules}.ts (server route)
+    --dynamic import, only if HARNESS_RUNTIME=local--> harness/dist/adapter.js
+      --> harness/src/store.ts --> SQLite
+```
+
+`harness/src/adapter.ts` is the one file that bridge is allowed to import --
+validated inputs, no arbitrary SQL, no generic mutation endpoint. Run
+`npm run build` here (or `npm run harness:build` from the repo root) after
+any change to `src/`, since the bridge imports compiled `dist/`, not `src/`
+directly, so that loading it never depends on the TanStack app's own
+Vite/TS toolchain being able to transform a sibling package at runtime.
+
+`harness/src/web/server.ts` (`npm run ui`) is a **diagnostic view only** --
+a raw, dependency-free way to poke at the SQLite data directly. It predates
+the TanStack integration and is not the product interface; don't add new
+functionality to it. It's scheduled for removal once the TanStack UI has
+full parity with it.
+
+This is deliberately the smallest possible slice -- correction mining
+(reading real Lovable history to generate candidates automatically),
+Skills, verification, and experiments are later checkpoints (see
 `../SPEC.md`).

@@ -1,6 +1,12 @@
-// Plain, server-rendered local UI. No framework/bundler -- reads and writes
-// the same SQLite database directly (not through the MCP server), per
-// SPEC.md Part C3. Single user, local only.
+// DIAGNOSTIC UI ONLY -- not the product interface. As of checkpoint B.1, the
+// real Corrections and Rules views live in the existing TanStack Start app
+// (src/routes/_authenticated/{inbox,ledger}.tsx), styled with its own
+// components so hosted and local runtimes share one visual product. This
+// page exists only as a raw, dependency-free way to poke at the SQLite data
+// directly while that TanStack integration is still gaining feature parity.
+// Do not add new product functionality here -- extend the TanStack routes
+// and harness/src/adapter.ts instead. Scheduled for removal once the
+// TanStack UI covers everything this page can do.
 import { createServer } from "node:http";
 import * as store from "../store.js";
 
@@ -27,7 +33,9 @@ h1{font-size:1.4rem} h2{font-size:1.1rem;margin-top:2rem}
 form.inline{display:inline-block;margin:.2rem .3rem 0 0}
 textarea{width:100%;min-height:4rem;font-family:inherit}
 select,button,input[type=text]{font-family:inherit;padding:.2rem .4rem}
+.diagnostic-banner{background:#fff3cd;border:1px solid #f0d68a;border-radius:8px;padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem}
 </style></head><body>
+<div class="diagnostic-banner">Diagnostic view only — not the product UI. The real Corrections and Rules pages are in the app itself (Inbox / Ledger).</div>
 <nav><a href="/corrections">Corrections</a><a href="/rules">Rules</a></nav>
 <h1>${esc(title)}</h1>
 ${body}
