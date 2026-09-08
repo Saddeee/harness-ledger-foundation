@@ -11,6 +11,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/jobs")({
   head: () => ({
@@ -69,10 +72,38 @@ function JobsPage() {
     };
   }, [qc]);
 
+  const [running, setRunning] = useState(false);
+
+  async function processQueueNow() {
+    setRunning(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch("/api/public/hooks/queue-worker", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const body = (await res.json()) as { claimed: number };
+      toast.success(`Processed ${body.claimed} job(s)`);
+      qc.invalidateQueries({ queryKey: ["job_queue"] });
+      qc.invalidateQueries({ queryKey: ["events"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to process queue");
+    } finally {
+      setRunning(false);
+    }
+  }
+
   return (
     <div className="space-y-8">
       <div className="space-y-3">
-        <h1 className="text-2xl font-semibold">Jobs</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">Jobs</h1>
+          <Button onClick={processQueueNow} disabled={running}>
+            {running ? "Processing…" : "Process queue now"}
+          </Button>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
