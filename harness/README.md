@@ -17,13 +17,15 @@ connection via Claude Code, instead of waiting on a hosted auth path.
 
 This package (`harness/`, standalone MCP server + SQLite store + diagnostic
 UI) works fine on Node 18.19+. **The root app it plugs into (`../`) does
-not** -- its Vite/rolldown toolchain requires Node `>=20.19.0` (see
-`../.nvmrc` / `../README.md`). If you're running the whole repo, use the
+not** -- it requires Node `>=22.12.0` (see `../.nvmrc` / `../README.md`).
+Node 20 gets partway there (it satisfies the bundler's floor) but crashes
+on any Supabase-authenticated route with a native-`WebSocket`-not-found
+error; only 22+ works fully. If you're running the whole repo, use the
 root's Node version for everything, including here, for simplicity.
 
 **Native module gotcha:** `better-sqlite3` is a compiled native addon, tied
 to the exact Node ABI it was installed under. If you switch Node major
-versions (e.g. moving from Node 18 to the 20 the root app requires),
+versions (e.g. moving from Node 18 to the 22 the root app requires),
 `npm install` again in `harness/` (not just the root) before running
 anything here -- otherwise every query segfaults (`SIGSEGV`) instead of
 raising a normal JS error. `npm run harness:build` alone does not fix this;

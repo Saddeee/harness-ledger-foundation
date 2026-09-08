@@ -16,13 +16,25 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
-**Node version: this app requires Node `>=20.19.0`** (this repo's Vite/rolldown
-toolchain declares that floor in its own `engines` field; see `.nvmrc` for the
-exact version this was last verified against). Below that, `npm run dev` /
-`npm run build` fail immediately with a `node:util` `styleText` `SyntaxError`
-from `rolldown`, before any project code runs — that error means "wrong Node
-version," not a bug in this app. If you use nvm: `nvm install && nvm use`
-picks up `.nvmrc` automatically.
+**Node version: this app requires Node `>=22.12.0`** (see `.nvmrc` for the
+exact version this was last verified against). Two independent things break
+below that floor, both before any project code runs:
+- Below Node 20.19: `npm run dev` / `npm run build` fail immediately with a
+  `node:util` `styleText` `SyntaxError` from `rolldown` (this repo's bundler).
+- On Node 20.x specifically (which satisfies the above but not this): any
+  server code that touches Supabase (e.g. `requireCronOrUser`'s JWT check)
+  crashes with `Error: Node.js detected but native WebSocket not found` from
+  `@supabase/realtime-js`, because Node's native `WebSocket` global doesn't
+  exist until Node 22. This one won't show up until you actually sign in and
+  hit an authenticated route — a plain `npm run dev` + homepage load looks
+  fine on Node 20, which is why it's easy to miss.
+
+Both errors mean "wrong Node version," not a bug in this app. If you use
+nvm: `nvm install && nvm use` picks up `.nvmrc` automatically. **After
+switching Node major versions, also reinstall in `harness/`** — its
+`better-sqlite3` native binding is tied to the exact Node ABI it was built
+under and segfaults instead of raising a normal error if you skip this
+(see `harness/README.md`).
 
 ```sh
 git clone <this-repository-url>
