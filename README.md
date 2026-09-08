@@ -16,9 +16,18 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
+**Node version: this app requires Node `>=20.19.0`** (this repo's Vite/rolldown
+toolchain declares that floor in its own `engines` field; see `.nvmrc` for the
+exact version this was last verified against). Below that, `npm run dev` /
+`npm run build` fail immediately with a `node:util` `styleText` `SyntaxError`
+from `rolldown`, before any project code runs — that error means "wrong Node
+version," not a bug in this app. If you use nvm: `nvm install && nvm use`
+picks up `.nvmrc` automatically.
+
 ```sh
 git clone <this-repository-url>
 cd <repository-name>
+nvm use          # or: nvm install && nvm use, if you don't have this version yet
 npm i
 npm run dev
 ```
