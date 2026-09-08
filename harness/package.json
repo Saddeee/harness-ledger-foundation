@@ -6,9 +6,11 @@
   "description": "Local Harness Ledger service: SQLite store + Harness MCP server. Not part of the hosted Lovable app.",
   "scripts": {
     "dev": "tsx src/mcp-server.ts",
+    "ui": "tsx src/web/server.ts",
     "seed": "tsx src/seed.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
