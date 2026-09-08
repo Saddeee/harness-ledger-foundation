@@ -1,0 +1,24 @@
+{
+  "name": "harness-mcp",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Local Harness Ledger service: SQLite store + Harness MCP server. Not part of the hosted Lovable app.",
+  "scripts": {
+    "dev": "tsx src/mcp-server.ts",
+    "seed": "tsx src/seed.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "better-sqlite3": "^11.10.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^18.19.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

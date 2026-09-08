@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "lovable": {
+      "type": "http",
+      "url": "https://mcp.lovable.dev/?src=docs"
+    },
+    "harness": {
+      "command": "npx",
+      "args": ["tsx", "harness/src/mcp-server.ts"],
+      "env": {
+        "HARNESS_DB_PATH": "harness/data/harness.db"
+      }
+    }
+  }
+}

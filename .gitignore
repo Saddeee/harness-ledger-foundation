@@ -20,6 +20,19 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Env files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Local Harness runtime (SQLite db, experiment scratch, logs with project data)
+harness/data/
+harness/*.db
+harness/*.db-*
+harness/tmp/
+*.sqlite
+*.sqlite-*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
