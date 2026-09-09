@@ -12,14 +12,14 @@ const store = await import("../src/store.js");
 
 const PROJECT = "test-project-id";
 
-test("schema migration: applies both migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 2);
+test("schema migration: applies all migrations exactly once, expected tables exist", () => {
+  assert.equal(schemaVersion(), 3);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2],
+    [1, 2, 3],
   );
   const tableNames = new Set(
     (db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map(

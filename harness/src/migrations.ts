@@ -199,4 +199,119 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_rule_revisions_rule ON rule_revisions(rule_id);
     `,
   },
+  {
+    version: 3,
+    name: "checkpoint_c_verification_and_experiments",
+    sql: `
+      -- A reusable check definition. Deliberately no arbitrary-shell-command
+      -- verifier type exists -- 'structural' inspects file/diff text for
+      -- known patterns (in code, not a general command runner), 'diff_pattern'
+      -- matches a diff against a declared pattern, 'ai_rubric' asks an LLM a
+      -- fixed set of questions, 'human_only' has no automated check at all.
+      CREATE TABLE IF NOT EXISTS verification_definitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope TEXT NOT NULL CHECK (scope IN ('project','workspace')),
+        project_id TEXT REFERENCES allowed_projects(lovable_project_id),
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        verifier_type TEXT NOT NULL CHECK (verifier_type IN ('structural','diff_pattern','ai_rubric','human_only')),
+        configuration TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('lovable_mcp','git_history','build_log','spec','manual','llm_derived')),
+        ownership TEXT NOT NULL CHECK (ownership IN ('user','harness')),
+        confidence REAL CHECK (confidence >= 0 AND confidence <= 1),
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CHECK ((scope = 'project' AND project_id IS NOT NULL) OR (scope = 'workspace' AND project_id IS NULL))
+      );
+
+      CREATE TABLE IF NOT EXISTS rule_verification_links (
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        verification_definition_id INTEGER NOT NULL REFERENCES verification_definitions(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (rule_id, verification_definition_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS verification_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        failure_signature TEXT NOT NULL,
+        failure_condition TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      -- One row per verifier attached to a plan, carrying that verifier's own
+      -- run result -- a plan can combine e.g. one structural + one ai_rubric
+      -- item, each independently passed/failed/unclear/not_run.
+      CREATE TABLE IF NOT EXISTS verification_plan_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        verification_plan_id INTEGER NOT NULL REFERENCES verification_plans(id),
+        verification_definition_id INTEGER NOT NULL REFERENCES verification_definitions(id),
+        status TEXT NOT NULL DEFAULT 'not_run' CHECK (status IN ('passed','failed','unclear','not_run')),
+        evidence TEXT,
+        evidence_type TEXT CHECK (evidence_type IS NULL OR evidence_type IN (
+          'structural_scan','diff_pattern_match','ai_rubric_response','human_note'
+        )),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_verification_plan_items_plan ON verification_plan_items(verification_plan_id);
+
+      -- A proposed (never auto-executed) experiment. status stays 'proposed'
+      -- until a human explicitly moves it -- no tool in this checkpoint can
+      -- execute one.
+      CREATE TABLE IF NOT EXISTS experiment_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        source_project_id TEXT NOT NULL REFERENCES allowed_projects(lovable_project_id),
+        task_episode_id INTEGER REFERENCES task_episodes(id),
+        experiment_type TEXT NOT NULL CHECK (experiment_type IN ('treatment_only','paired_control_treatment','ablation')),
+        starting_state_quality TEXT NOT NULL CHECK (starting_state_quality IN ('controlled_equivalent','approximate','historical_only','blocked')),
+        control_configuration TEXT NOT NULL,
+        treatment_configuration TEXT NOT NULL,
+        exact_prompt TEXT NOT NULL,
+        protected_checks TEXT NOT NULL,
+        estimated_credits REAL NOT NULL,
+        max_permitted_credits REAL NOT NULL,
+        resource_strategy TEXT NOT NULL,
+        cleanup_requirements TEXT NOT NULL,
+        risks TEXT NOT NULL,
+        success_conditions TEXT NOT NULL,
+        inconclusive_conditions TEXT NOT NULL,
+        stop_conditions TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','approved','rejected')),
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS experiment_plan_verification_links (
+        experiment_plan_id INTEGER NOT NULL REFERENCES experiment_plans(id),
+        verification_definition_id INTEGER NOT NULL REFERENCES verification_definitions(id),
+        PRIMARY KEY (experiment_plan_id, verification_definition_id)
+      );
+
+      -- safe_to_delete defaults false and NOTHING in this checkpoint's tools
+      -- may set it true implicitly (e.g. merely because a row was inserted
+      -- this session) -- see update_experiment_resource_status in adapter.ts.
+      CREATE TABLE IF NOT EXISTS experiment_resources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        experiment_plan_id INTEGER NOT NULL REFERENCES experiment_plans(id),
+        lovable_resource_id TEXT,
+        resource_type TEXT NOT NULL CHECK (resource_type IN ('remix_project','variant','skill','other')),
+        experiment_arm TEXT NOT NULL CHECK (experiment_arm IN ('control','treatment','ablation')),
+        source_project_id TEXT NOT NULL REFERENCES allowed_projects(lovable_project_id),
+        safe_to_modify INTEGER NOT NULL DEFAULT 0 CHECK (safe_to_modify IN (0,1)),
+        safe_to_delete INTEGER NOT NULL DEFAULT 0 CHECK (safe_to_delete IN (0,1)),
+        creation_status TEXT NOT NULL DEFAULT 'planned' CHECK (creation_status IN ('planned','creating','created','failed')),
+        cleanup_status TEXT NOT NULL DEFAULT 'not_required' CHECK (cleanup_status IN ('not_required','pending','cleaned','failed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        cleaned_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_experiment_resources_plan ON experiment_resources(experiment_plan_id);
+    `,
+  },
 ];

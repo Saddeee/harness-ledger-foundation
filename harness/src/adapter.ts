@@ -47,6 +47,19 @@ export function reviewCorrection(input: unknown) {
   return store.reviewCorrectionCandidate(parsed);
 }
 
+const humanDecisionInput = z.object({
+  id: z.number().int(),
+  final_classification: classification,
+  reusable: z.boolean(),
+  proposed_scope: proposedScope,
+  reviewer: z.string().default("operator (local UI)"),
+});
+
+export function recordHumanCorrectionDecision(input: unknown) {
+  const parsed = humanDecisionInput.parse(input);
+  return store.recordHumanCorrectionDecision(parsed);
+}
+
 const summaryEditInput = z.object({
   id: z.number().int(),
   summary: z.string().min(1).max(2000),
@@ -67,13 +80,19 @@ export function editCorrectionSummary(input: unknown) {
 // second fetch).
 export function listRules() {
   return store.listProjectRules().map((r) => {
-    const full = store.getRule((r as { id: number }).id) as {
+    const ruleId = (r as { id: number }).id;
+    const full = store.getRule(ruleId) as {
       correction_candidate: { id: number } | null;
     } & Record<string, unknown>;
     const evidence = full.correction_candidate
       ? (store.getCorrectionCandidate(full.correction_candidate.id)?.evidence ?? [])
       : [];
-    return { ...full, correction_evidence: evidence };
+    return {
+      ...full,
+      correction_evidence: evidence,
+      verification_plan: store.getVerificationPlanForRule(ruleId),
+      experiment_plans: store.listExperimentPlansForRule(ruleId),
+    };
   });
 }
 

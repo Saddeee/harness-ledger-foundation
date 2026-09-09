@@ -405,12 +405,59 @@ export function editCorrectionSummary(id: number, summary: string, reviewer: str
   return db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(id);
 }
 
+// The human's final call on a correction: distinct from Claude's own
+// classify_correction / propose_reclassification agent_actions rows (both
+// actor='claude'), this is actor='human' and is what actually sets
+// reviewed=1 -- a rule cannot become 'approved' on a correction that hasn't
+// gone through this. Never overwrites the earlier Claude-authored rows;
+// classification history is append-only.
+export function recordHumanCorrectionDecision(input: {
+  id: number;
+  final_classification: Classification;
+  reusable: boolean;
+  proposed_scope: "project" | "workspace" | "one_time";
+  reviewer: string;
+}) {
+  const existing = db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(input.id) as
+    | { classification: string }
+    | undefined;
+  if (!existing) throw new Error(`correction_candidate ${input.id} not found`);
+
+  db.prepare(
+    `INSERT INTO agent_actions (actor, action, target_table, target_id, structured_output, human_reviewed)
+     VALUES ('human', 'human_review_decision', 'correction_candidates', ?, ?, 1)`,
+  ).run(
+    input.id,
+    JSON.stringify({
+      final_classification: input.final_classification,
+      reusable: input.reusable,
+      proposed_scope: input.proposed_scope,
+      matched_proposed_classification: input.final_classification === existing.classification,
+    }),
+  );
+
+  db.prepare(
+    `UPDATE correction_candidates SET
+       classification = ?, reusable = ?, proposed_scope = ?,
+       reviewed = 1, reviewed_at = datetime('now'), updated_at = datetime('now')
+     WHERE id = ?`,
+  ).run(input.final_classification, input.reusable ? 1 : 0, input.proposed_scope, input.id);
+
+  insertEvent("correction_candidate.human_decision_recorded", null, {
+    id: input.id,
+    final_classification: input.final_classification,
+    reviewer: input.reviewer,
+  });
+
+  return db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(input.id);
+}
+
 export function getClassificationHistory(correctionCandidateId: number) {
   return db
     .prepare(
       `SELECT * FROM agent_actions
        WHERE target_table = 'correction_candidates' AND target_id = ?
-         AND action IN ('classify_correction', 'propose_reclassification')
+         AND action IN ('classify_correction', 'propose_reclassification', 'human_review_decision')
        ORDER BY created_at ASC, id ASC`,
     )
     .all(correctionCandidateId);
@@ -610,4 +657,283 @@ export function listProjectRules(projectId?: string) {
        ORDER BY r.created_at DESC`,
     )
     .all(projectId);
+}
+
+// ---- Checkpoint C: verification and experiment planning ----
+// Nothing here executes an experiment or a verifier -- these are pure
+// bookkeeping functions for defining what WOULD be checked and WOULD be run.
+
+const VERIFIER_TYPES = ["structural", "diff_pattern", "ai_rubric", "human_only"] as const;
+export type VerifierType = (typeof VERIFIER_TYPES)[number];
+const VERIFIER_STATUSES = ["passed", "failed", "unclear", "not_run"] as const;
+export type VerifierStatus = (typeof VERIFIER_STATUSES)[number];
+
+export function createVerificationDefinition(input: {
+  scope: "project" | "workspace";
+  project_id?: string;
+  name: string;
+  description: string;
+  verifier_type: VerifierType;
+  configuration: string;
+  source: Provenance;
+  ownership: "user" | "harness";
+  confidence?: number;
+  enabled?: boolean;
+}) {
+  if (input.scope === "project") {
+    if (!input.project_id) throw new Error("scope 'project' requires project_id");
+    assertAllowedProject(input.project_id);
+  } else if (input.project_id) {
+    throw new Error("scope 'workspace' must not set project_id");
+  }
+  const row = db
+    .prepare(
+      `INSERT INTO verification_definitions
+         (scope, project_id, name, description, verifier_type, configuration, source, ownership, confidence, enabled)
+       VALUES (@scope, @project_id, @name, @description, @verifier_type, @configuration, @source, @ownership, @confidence, @enabled)
+       RETURNING *`,
+    )
+    .get({
+      scope: input.scope,
+      project_id: input.project_id ?? null,
+      name: input.name,
+      description: input.description,
+      verifier_type: input.verifier_type,
+      configuration: input.configuration,
+      source: input.source,
+      ownership: input.ownership,
+      confidence: input.confidence ?? null,
+      enabled: input.enabled === false ? 0 : 1,
+    }) as { id: number };
+  insertEvent("verification_definition.created", null, { id: row.id, verifier_type: input.verifier_type });
+  return row;
+}
+
+export function updateVerificationDefinition(input: {
+  id: number;
+  name?: string;
+  description?: string;
+  configuration?: string;
+  confidence?: number;
+  enabled?: boolean;
+}) {
+  const existing = db.prepare(`SELECT * FROM verification_definitions WHERE id = ?`).get(input.id);
+  if (!existing) throw new Error(`verification_definition ${input.id} not found`);
+  db.prepare(
+    `UPDATE verification_definitions SET
+       name = COALESCE(@name, name),
+       description = COALESCE(@description, description),
+       configuration = COALESCE(@configuration, configuration),
+       confidence = COALESCE(@confidence, confidence),
+       enabled = COALESCE(@enabled, enabled),
+       version = version + 1,
+       updated_at = datetime('now')
+     WHERE id = @id`,
+  ).run({
+    id: input.id,
+    name: input.name ?? null,
+    description: input.description ?? null,
+    configuration: input.configuration ?? null,
+    confidence: input.confidence ?? null,
+    enabled: input.enabled === undefined ? null : input.enabled ? 1 : 0,
+  });
+  insertEvent("verification_definition.updated", null, { id: input.id });
+  return db.prepare(`SELECT * FROM verification_definitions WHERE id = ?`).get(input.id);
+}
+
+export function linkVerificationToRule(ruleId: number, verificationDefinitionId: number) {
+  db.prepare(
+    `INSERT OR IGNORE INTO rule_verification_links (rule_id, verification_definition_id) VALUES (?, ?)`,
+  ).run(ruleId, verificationDefinitionId);
+  insertEvent("rule_verification_link.created", null, { rule_id: ruleId, verification_definition_id: verificationDefinitionId });
+  return { rule_id: ruleId, verification_definition_id: verificationDefinitionId };
+}
+
+export function createVerificationPlan(input: {
+  rule_id: number;
+  failure_signature: string;
+  failure_condition: string;
+  created_by: string;
+  verification_definition_ids: number[];
+}) {
+  const plan = db
+    .prepare(
+      `INSERT INTO verification_plans (rule_id, failure_signature, failure_condition, created_by)
+       VALUES (?, ?, ?, ?) RETURNING *`,
+    )
+    .get(input.rule_id, input.failure_signature, input.failure_condition, input.created_by) as { id: number };
+
+  const itemStmt = db.prepare(
+    `INSERT INTO verification_plan_items (verification_plan_id, verification_definition_id) VALUES (?, ?)`,
+  );
+  for (const vid of input.verification_definition_ids) {
+    itemStmt.run(plan.id, vid);
+    linkVerificationToRule(input.rule_id, vid);
+  }
+  insertEvent("verification_plan.created", null, { id: plan.id, rule_id: input.rule_id });
+  return plan;
+}
+
+export function getVerificationPlan(id: number) {
+  const plan = db.prepare(`SELECT * FROM verification_plans WHERE id = ?`).get(id);
+  if (!plan) return null;
+  const items = db
+    .prepare(
+      `SELECT vpi.*, vd.name as definition_name, vd.verifier_type, vd.description as definition_description
+       FROM verification_plan_items vpi
+       JOIN verification_definitions vd ON vd.id = vpi.verification_definition_id
+       WHERE vpi.verification_plan_id = ?
+       ORDER BY vpi.id`,
+    )
+    .all(id);
+  return { plan, items };
+}
+
+export function getVerificationPlanForRule(ruleId: number) {
+  const plan = db
+    .prepare(`SELECT * FROM verification_plans WHERE rule_id = ? ORDER BY id DESC LIMIT 1`)
+    .get(ruleId) as { id: number } | undefined;
+  if (!plan) return null;
+  return getVerificationPlan(plan.id);
+}
+
+export function createExperimentPlan(input: {
+  rule_id: number;
+  source_project_id: string;
+  task_episode_id?: number;
+  experiment_type: "treatment_only" | "paired_control_treatment" | "ablation";
+  starting_state_quality: "controlled_equivalent" | "approximate" | "historical_only" | "blocked";
+  control_configuration: string;
+  treatment_configuration: string;
+  exact_prompt: string;
+  protected_checks: string;
+  estimated_credits: number;
+  max_permitted_credits: number;
+  resource_strategy: string;
+  cleanup_requirements: string;
+  risks: string;
+  success_conditions: string;
+  inconclusive_conditions: string;
+  stop_conditions: string;
+  created_by: string;
+  verification_definition_ids: number[];
+}) {
+  assertAllowedProject(input.source_project_id);
+  const plan = db
+    .prepare(
+      `INSERT INTO experiment_plans
+         (rule_id, source_project_id, task_episode_id, experiment_type, starting_state_quality,
+          control_configuration, treatment_configuration, exact_prompt, protected_checks,
+          estimated_credits, max_permitted_credits, resource_strategy, cleanup_requirements,
+          risks, success_conditions, inconclusive_conditions, stop_conditions, created_by)
+       VALUES (@rule_id, @source_project_id, @task_episode_id, @experiment_type, @starting_state_quality,
+               @control_configuration, @treatment_configuration, @exact_prompt, @protected_checks,
+               @estimated_credits, @max_permitted_credits, @resource_strategy, @cleanup_requirements,
+               @risks, @success_conditions, @inconclusive_conditions, @stop_conditions, @created_by)
+       RETURNING *`,
+    )
+    .get({ ...input, task_episode_id: input.task_episode_id ?? null }) as { id: number };
+
+  const linkStmt = db.prepare(
+    `INSERT OR IGNORE INTO experiment_plan_verification_links (experiment_plan_id, verification_definition_id) VALUES (?, ?)`,
+  );
+  for (const vid of input.verification_definition_ids) linkStmt.run(plan.id, vid);
+
+  insertEvent("experiment_plan.created", null, { id: plan.id, rule_id: input.rule_id, status: "proposed" });
+  return plan;
+}
+
+export function getExperimentPlan(id: number) {
+  const plan = db.prepare(`SELECT * FROM experiment_plans WHERE id = ?`).get(id);
+  if (!plan) return null;
+  const verifications = db
+    .prepare(
+      `SELECT vd.* FROM verification_definitions vd
+       JOIN experiment_plan_verification_links l ON l.verification_definition_id = vd.id
+       WHERE l.experiment_plan_id = ?`,
+    )
+    .all(id);
+  const resources = db
+    .prepare(`SELECT * FROM experiment_resources WHERE experiment_plan_id = ? ORDER BY id`)
+    .all(id);
+  return { plan, verifications, resources };
+}
+
+// Never accepts safe_to_delete -- a freshly registered resource is never
+// pre-authorized for deletion, no matter what created it or when.
+export function registerExperimentResource(input: {
+  experiment_plan_id: number;
+  resource_type: "remix_project" | "variant" | "skill" | "other";
+  experiment_arm: "control" | "treatment" | "ablation";
+  source_project_id: string;
+  safe_to_modify?: boolean;
+  lovable_resource_id?: string;
+}) {
+  assertAllowedProject(input.source_project_id);
+  const row = db
+    .prepare(
+      `INSERT INTO experiment_resources
+         (experiment_plan_id, lovable_resource_id, resource_type, experiment_arm, source_project_id, safe_to_modify)
+       VALUES (@experiment_plan_id, @lovable_resource_id, @resource_type, @experiment_arm, @source_project_id, @safe_to_modify)
+       RETURNING *`,
+    )
+    .get({
+      experiment_plan_id: input.experiment_plan_id,
+      lovable_resource_id: input.lovable_resource_id ?? null,
+      resource_type: input.resource_type,
+      experiment_arm: input.experiment_arm,
+      source_project_id: input.source_project_id,
+      safe_to_modify: input.safe_to_modify ? 1 : 0,
+    }) as { id: number };
+  insertEvent("experiment_resource.registered", null, { id: row.id, resource_type: input.resource_type });
+  return row;
+}
+
+// The ONLY place safe_to_delete can become true, and only when the caller
+// passes it explicitly -- there is no default or inferred path to true.
+export function updateExperimentResourceStatus(input: {
+  id: number;
+  lovable_resource_id?: string;
+  creation_status?: "planned" | "creating" | "created" | "failed";
+  cleanup_status?: "not_required" | "pending" | "cleaned" | "failed";
+  safe_to_delete?: boolean;
+  cleaned_at?: string;
+}) {
+  const existing = db.prepare(`SELECT * FROM experiment_resources WHERE id = ?`).get(input.id);
+  if (!existing) throw new Error(`experiment_resource ${input.id} not found`);
+  db.prepare(
+    `UPDATE experiment_resources SET
+       lovable_resource_id = COALESCE(@lovable_resource_id, lovable_resource_id),
+       creation_status = COALESCE(@creation_status, creation_status),
+       cleanup_status = COALESCE(@cleanup_status, cleanup_status),
+       safe_to_delete = CASE WHEN @safe_to_delete IS NULL THEN safe_to_delete ELSE @safe_to_delete END,
+       cleaned_at = COALESCE(@cleaned_at, cleaned_at)
+     WHERE id = @id`,
+  ).run({
+    id: input.id,
+    lovable_resource_id: input.lovable_resource_id ?? null,
+    creation_status: input.creation_status ?? null,
+    cleanup_status: input.cleanup_status ?? null,
+    safe_to_delete: input.safe_to_delete === undefined ? null : input.safe_to_delete ? 1 : 0,
+    cleaned_at: input.cleaned_at ?? null,
+  });
+  insertEvent("experiment_resource.status_updated", null, { ...input });
+  return db.prepare(`SELECT * FROM experiment_resources WHERE id = ?`).get(input.id);
+}
+
+export function listCleanupRequiredResources() {
+  return db
+    .prepare(
+      `SELECT * FROM experiment_resources
+       WHERE creation_status = 'created' AND cleanup_status IN ('pending', 'not_required')
+       ORDER BY created_at`,
+    )
+    .all();
+}
+
+export function listExperimentPlansForRule(ruleId: number) {
+  const plans = db
+    .prepare(`SELECT * FROM experiment_plans WHERE rule_id = ? ORDER BY created_at DESC`)
+    .all(ruleId) as { id: number }[];
+  return plans.map((p) => getExperimentPlan(p.id));
 }

@@ -245,5 +245,142 @@ tool(
   (input) => store.listProjectRules(input.project_id),
 );
 
+// ---- Checkpoint C: verification and experiment planning ----
+// None of these tools execute a verifier or an experiment -- they only
+// define and record plans. There is deliberately no arbitrary-SQL or
+// generic-remote-operation tool anywhere in this file.
+
+const verifierType = z.enum(["structural", "diff_pattern", "ai_rubric", "human_only"]);
+const scope = z.enum(["project", "workspace"]);
+const provenanceEnum = z.enum(["lovable_mcp", "git_history", "build_log", "spec", "manual", "llm_derived"]);
+
+tool(
+  "create_verification_definition",
+  "Define a reusable check (structural, diff_pattern, ai_rubric, or human_only). Does not run it.",
+  {
+    scope,
+    project_id: z.string().optional(),
+    name: z.string(),
+    description: z.string(),
+    verifier_type: verifierType,
+    configuration: z.string(),
+    source: provenanceEnum,
+    ownership: z.enum(["user", "harness"]),
+    confidence: z.number().min(0).max(1).optional(),
+    enabled: z.boolean().optional(),
+  },
+  (input) => store.createVerificationDefinition(input),
+);
+
+tool(
+  "update_verification_definition",
+  "Edit a verification definition's text/configuration or enable/disable it. Bumps its version.",
+  {
+    id: z.number().int(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    configuration: z.string().optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    enabled: z.boolean().optional(),
+  },
+  (input) => store.updateVerificationDefinition(input),
+);
+
+tool(
+  "link_verification_to_rule",
+  "Attach an existing verification definition to a rule.",
+  { rule_id: z.number().int(), verification_definition_id: z.number().int() },
+  (input) => store.linkVerificationToRule(input.rule_id, input.verification_definition_id),
+);
+
+tool(
+  "create_verification_plan",
+  "Create a verification plan for a rule: a failure signature/condition plus one or more verification definitions, each starting as not_run.",
+  {
+    rule_id: z.number().int(),
+    failure_signature: z.string(),
+    failure_condition: z.string(),
+    created_by: z.string(),
+    verification_definition_ids: z.array(z.number().int()).min(1),
+  },
+  (input) => store.createVerificationPlan(input),
+);
+
+tool(
+  "get_verification_plan",
+  "Get a verification plan with its items (each item's verifier type and current passed/failed/unclear/not_run status).",
+  { id: z.number().int() },
+  (input) => store.getVerificationPlan(input.id),
+);
+
+tool(
+  "create_experiment_plan",
+  "Record a proposed experiment plan (status always starts 'proposed'). Does not create any Lovable resource or send any prompt.",
+  {
+    rule_id: z.number().int(),
+    source_project_id: z.string(),
+    task_episode_id: z.number().int().optional(),
+    experiment_type: z.enum(["treatment_only", "paired_control_treatment", "ablation"]),
+    starting_state_quality: z.enum(["controlled_equivalent", "approximate", "historical_only", "blocked"]),
+    control_configuration: z.string(),
+    treatment_configuration: z.string(),
+    exact_prompt: z.string(),
+    protected_checks: z.string(),
+    estimated_credits: z.number(),
+    max_permitted_credits: z.number(),
+    resource_strategy: z.string(),
+    cleanup_requirements: z.string(),
+    risks: z.string(),
+    success_conditions: z.string(),
+    inconclusive_conditions: z.string(),
+    stop_conditions: z.string(),
+    created_by: z.string(),
+    verification_definition_ids: z.array(z.number().int()),
+  },
+  (input) => store.createExperimentPlan(input),
+);
+
+tool(
+  "get_experiment_plan",
+  "Get an experiment plan with its linked verification definitions and any registered resources.",
+  { id: z.number().int() },
+  (input) => store.getExperimentPlan(input.id),
+);
+
+tool(
+  "register_experiment_resource",
+  "Register a resource an experiment plan intends to use (e.g. a remix). safe_to_delete always starts false regardless of input -- set it later, explicitly, via update_experiment_resource_status.",
+  {
+    experiment_plan_id: z.number().int(),
+    resource_type: z.enum(["remix_project", "variant", "skill", "other"]),
+    experiment_arm: z.enum(["control", "treatment", "ablation"]),
+    source_project_id: z.string(),
+    safe_to_modify: z.boolean().optional(),
+    lovable_resource_id: z.string().optional(),
+  },
+  (input) => store.registerExperimentResource(input),
+);
+
+tool(
+  "update_experiment_resource_status",
+  "Update a resource's lifecycle status. safe_to_delete only ever changes when explicitly passed here -- it is never inferred.",
+  {
+    id: z.number().int(),
+    lovable_resource_id: z.string().optional(),
+    creation_status: z.enum(["planned", "creating", "created", "failed"]).optional(),
+    cleanup_status: z.enum(["not_required", "pending", "cleaned", "failed"]).optional(),
+    safe_to_delete: z.boolean().optional(),
+    cleaned_at: z.string().optional(),
+  },
+  (input) => store.updateExperimentResourceStatus(input),
+);
+
+tool(
+  "list_cleanup_required_resources",
+  "List experiment resources that were created and still need cleanup.",
+  {},
+  () => store.listCleanupRequiredResources(),
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);

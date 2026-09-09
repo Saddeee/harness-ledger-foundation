@@ -58,6 +58,39 @@ type Revision = {
   actor: string;
   created_at: string;
 };
+type VerificationPlanItem = {
+  id: number;
+  verification_definition_id: number;
+  status: "passed" | "failed" | "unclear" | "not_run";
+  evidence: string | null;
+  evidence_type: string | null;
+  definition_name: string;
+  verifier_type: string;
+  definition_description: string;
+};
+type VerificationPlan = {
+  plan: { id: number; failure_signature: string; failure_condition: string };
+  items: VerificationPlanItem[];
+};
+type ExperimentPlan = {
+  plan: {
+    id: number;
+    experiment_type: string;
+    starting_state_quality: string;
+    source_project_id: string;
+    exact_prompt: string;
+    estimated_credits: number;
+    max_permitted_credits: number;
+    resource_strategy: string;
+    cleanup_requirements: string;
+    risks: string;
+    success_conditions: string;
+    status: string;
+  };
+  verifications: { id: number; name: string }[];
+  resources: { id: number; cleanup_status: string; creation_status: string }[];
+};
+
 type Rule = {
   rule: {
     id: number;
@@ -74,6 +107,17 @@ type Rule = {
   learning: { id: number; observed_problem: string; desired_behavior: string } | null;
   correction_candidate: { id: number; summary: string } | null;
   correction_evidence: Evidence[];
+  verification_plan: VerificationPlan | null;
+  experiment_plans: ExperimentPlan[];
+};
+
+const VERIFIER_LIMITATIONS: Record<string, string> = {
+  structural:
+    "Pattern-matching over the diff/response text, not a full static analyzer -- can miss mechanisms phrased unusually, and does not itself decide pass/fail.",
+  diff_pattern: "Matches a declared pattern against a diff -- only as good as the pattern.",
+  ai_rubric:
+    "LLM judgment against fixed questions, not a deterministic check -- can be wrong, and has no measured accuracy yet (no judge_audit history exists for it).",
+  human_only: "No automated check at all -- requires a person to look and decide.",
 };
 
 async function authHeaders(): Promise<HeadersInit> {
@@ -245,6 +289,105 @@ function RuleCard({ r, onChanged }: { r: Rule; onChanged: () => void }) {
               <Badge key={p} variant="outline">
                 {p}
               </Badge>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {r.verification_plan && (
+        <details className="text-sm">
+          <summary className="cursor-pointer font-medium">
+            Verification plan ({r.verification_plan.items.length} check
+            {r.verification_plan.items.length === 1 ? "" : "s"})
+          </summary>
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Failure signature: </span>
+              {r.verification_plan.plan.failure_signature}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Failure condition: </span>
+              {r.verification_plan.plan.failure_condition}
+            </p>
+            {r.verification_plan.items.map((item) => (
+              <div key={item.id} className="rounded-md border bg-muted/30 p-3 text-xs">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="outline">{item.verifier_type}</Badge>
+                  <Badge variant={item.status === "not_run" ? "outline" : "secondary"}>
+                    {item.status}
+                  </Badge>
+                </div>
+                <p className="mt-1">{item.definition_name}</p>
+                <p className="mt-1 text-muted-foreground">{item.definition_description}</p>
+                <p className="mt-1 text-muted-foreground">
+                  <span className="font-medium text-foreground">Limitation: </span>
+                  {VERIFIER_LIMITATIONS[item.verifier_type] ?? "none noted"}
+                </p>
+                {item.evidence && (
+                  <p className="mt-1">
+                    <span className="font-medium">
+                      Evidence ({item.evidence_type ?? "unspecified"}):{" "}
+                    </span>
+                    {item.evidence}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {r.experiment_plans.length > 0 && (
+        <details className="text-sm">
+          <summary className="cursor-pointer font-medium">
+            Proposed experiment ({r.experiment_plans.length})
+          </summary>
+          <div className="mt-2 space-y-2">
+            {r.experiment_plans.map((exp) => (
+              <div
+                key={exp.plan.id}
+                className="rounded-md border bg-muted/30 p-3 text-xs space-y-1"
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="outline">{exp.plan.experiment_type}</Badge>
+                  <Badge variant="outline">starting state: {exp.plan.starting_state_quality}</Badge>
+                  <Badge variant={exp.plan.status === "proposed" ? "outline" : "secondary"}>
+                    {exp.plan.status}
+                  </Badge>
+                </div>
+                <p>
+                  <span className="font-medium">Source project: </span>
+                  {exp.plan.source_project_id}
+                </p>
+                <p>
+                  <span className="font-medium">Prompt: </span>
+                  {exp.plan.exact_prompt}
+                </p>
+                <p>
+                  <span className="font-medium">Estimated credits: </span>
+                  {exp.plan.estimated_credits} (max permitted {exp.plan.max_permitted_credits})
+                </p>
+                <p>
+                  <span className="font-medium">Resource strategy: </span>
+                  {exp.plan.resource_strategy}
+                </p>
+                <p>
+                  <span className="font-medium">Cleanup: </span>
+                  {exp.resources.length === 0
+                    ? "no resources registered yet -- nothing created, nothing to clean up"
+                    : `${exp.resources.filter((r2) => r2.cleanup_status !== "cleaned").length} of ${exp.resources.length} resource(s) still need cleanup`}
+                </p>
+                <p>
+                  <span className="font-medium">Success conditions: </span>
+                  {exp.plan.success_conditions}
+                </p>
+                <p className="font-medium text-foreground">
+                  Go/no-go:{" "}
+                  {exp.plan.status === "proposed"
+                    ? "NO-GO -- proposed only, not approved, nothing has been executed"
+                    : exp.plan.status}
+                </p>
+              </div>
             ))}
           </div>
         </details>

@@ -50,6 +50,10 @@ async function handlePost({ request }: { request: Request }) {
       const updated = adapter.editCorrectionSummary(body);
       return Response.json({ available: true, correction: updated });
     }
+    if (body["kind"] === "human_decision") {
+      const updated = adapter.recordHumanCorrectionDecision(body);
+      return Response.json({ available: true, correction: updated });
+    }
     // default: a review action (confirm / reclassify / mark_one_time / mark_reusable / change_scope / exclude)
     const updated = adapter.reviewCorrection(body);
     return Response.json({ available: true, correction: updated });
