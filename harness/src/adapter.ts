@@ -21,10 +21,16 @@ const ruleState = z.enum([
 // (evidence + classification history per row), matching this app's existing
 // convention of one page, no per-item drill-down route (see jobs.tsx).
 export function listCorrections() {
-  return store.listCorrectionCandidates().map((r) => ({
-    ...r,
-    classification_history: store.getClassificationHistory((r as unknown as { id: number }).id),
-  }));
+  return store.listCorrectionCandidates().map((r) => {
+    const id = (r as unknown as { id: number }).id;
+    return {
+      ...r,
+      classification_history: store.getClassificationHistory(id),
+      learning: store.getLearningForCorrection(id),
+      rule: store.getRuleForCorrection(id),
+      audit_events: store.listEventsForRecord(["correction_candidate."], id),
+    };
+  });
 }
 
 export function getCorrection(id: number) {
@@ -87,11 +93,14 @@ export function listRules() {
     const evidence = full.correction_candidate
       ? (store.getCorrectionCandidate(full.correction_candidate.id)?.evidence ?? [])
       : [];
+    const correctionId = full.correction_candidate?.id;
     return {
       ...full,
       correction_evidence: evidence,
+      classification_history: correctionId ? store.getClassificationHistory(correctionId) : [],
       verification_plan: store.getVerificationPlanForRule(ruleId),
       experiment_plans: store.listExperimentPlansForRule(ruleId),
+      audit_events: store.listEventsForRecord(["rule."], ruleId),
     };
   });
 }

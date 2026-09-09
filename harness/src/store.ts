@@ -610,9 +610,10 @@ export function listCorrectionCandidates() {
     .prepare(
       `SELECT cc.*, te.id as episode_id, te.title as episode_title, te.summary as episode_summary,
               te.started_at as episode_started_at, te.ended_at as episode_ended_at,
-              te.project_id as project_id
+              te.project_id as project_id, p.name as project_name
        FROM correction_candidates cc
        JOIN task_episodes te ON te.id = cc.task_episode_id
+       LEFT JOIN projects p ON p.lovable_project_id = te.project_id
        ORDER BY cc.created_at DESC`,
     )
     .all() as Record<string, unknown>[];
@@ -929,6 +930,28 @@ export function listCleanupRequiredResources() {
        ORDER BY created_at`,
     )
     .all();
+}
+
+// Read helpers for the guided UI (checkpoint C.1): pure reads, no new semantics.
+export function getLearningForCorrection(correctionCandidateId: number) {
+  return db
+    .prepare(`SELECT * FROM learnings WHERE correction_candidate_id = ? ORDER BY id ASC LIMIT 1`)
+    .get(correctionCandidateId) ?? null;
+}
+
+export function getRuleForCorrection(correctionCandidateId: number) {
+  return db
+    .prepare(`SELECT * FROM rules WHERE correction_candidate_id = ? ORDER BY id ASC LIMIT 1`)
+    .get(correctionCandidateId) ?? null;
+}
+
+// Events whose kind starts with one of the prefixes and whose payload
+// references this id -- an approximation good enough for an audit panel.
+export function listEventsForRecord(kindPrefixes: string[], id: number) {
+  const rows = db
+    .prepare(`SELECT * FROM events WHERE payload LIKE ? ORDER BY id DESC LIMIT 100`)
+    .all(`%"id":${id}%`) as { kind: string }[];
+  return rows.filter((r) => kindPrefixes.some((p) => r.kind.startsWith(p)));
 }
 
 export function listExperimentPlansForRule(ruleId: number) {
