@@ -29,7 +29,7 @@ async function harnessHeaders(): Promise<HeadersInit> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-type NextAction = { text: string; label: string; improvementId: number };
+type NextAction = { text: string; label: string; improvementId: number; to: "/inbox" | "/ledger" };
 
 type ImprovementSummary = {
   id: number;
@@ -65,6 +65,7 @@ function NextActionCard() {
               : `${pending.length} improvements are waiting for your decision.`,
           label: "Review",
           improvementId: firstPending.id,
+          to: "/inbox",
         };
       }
       const waitingForProof = all.filter(
@@ -81,6 +82,8 @@ function NextActionCard() {
               : `${waitingForProof.length} improvements are waiting for proof — running it isn't available yet.`,
           label: "View",
           improvementId: firstWaiting.id,
+          // decided items live under Improvements, not Inbox
+          to: "/ledger",
         };
       }
       return null;
@@ -97,7 +100,7 @@ function NextActionCard() {
         <p className="text-sm">{data.text}</p>
         <Button
           size="sm"
-          onClick={() => navigate({ to: "/inbox", search: { improvement: data.improvementId } })}
+          onClick={() => navigate({ to: data.to, search: { improvement: data.improvementId } })}
         >
           {data.label}
         </Button>
