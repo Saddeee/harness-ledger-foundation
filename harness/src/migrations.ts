@@ -314,4 +314,58 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_experiment_resources_plan ON experiment_resources(experiment_plan_id);
     `,
   },
+  {
+    version: 4,
+    name: "checkpoint_d_knowledge_versioning",
+    sql: `
+      -- Workspace a project belongs to (needed to address workspace Knowledge).
+      ALTER TABLE projects ADD COLUMN workspace_id TEXT;
+
+      -- A verbatim copy of Lovable Knowledge as read at a point in time. Every
+      -- preview and every pending write is composed from one of these, so the
+      -- executor can detect that Lovable changed underneath us (sha256 check)
+      -- before it writes anything.
+      CREATE TABLE IF NOT EXISTS knowledge_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target TEXT NOT NULL CHECK (target IN ('project','workspace')),
+        project_id TEXT REFERENCES allowed_projects(lovable_project_id),
+        workspace_id TEXT,
+        content TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+        fetched_by TEXT NOT NULL,
+        CHECK ((target = 'project' AND project_id IS NOT NULL) OR (target = 'workspace' AND workspace_id IS NOT NULL))
+      );
+      CREATE INDEX IF NOT EXISTS idx_knowledge_snapshots_target ON knowledge_snapshots(target, project_id, workspace_id);
+
+      -- Append-only history of every Knowledge write Harness intends or made.
+      -- A row starts 'pending' (approved in the UI, not yet executed); the
+      -- executor moves it to 'written' only after a read-back hash matches,
+      -- 'stale' if Lovable's live content no longer matches the snapshot the
+      -- write was composed from, or 'failed'. A restore is a NEW row that
+      -- points at the version it restores -- history is never rewritten.
+      CREATE TABLE IF NOT EXISTS knowledge_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER REFERENCES rules(id),
+        target TEXT NOT NULL CHECK (target IN ('project','workspace')),
+        project_id TEXT REFERENCES allowed_projects(lovable_project_id),
+        workspace_id TEXT,
+        previous_content TEXT NOT NULL,
+        new_content TEXT NOT NULL,
+        previous_sha256 TEXT NOT NULL,
+        new_sha256 TEXT NOT NULL,
+        rule_ids_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','written','stale','failed')),
+        actor TEXT NOT NULL,
+        reason TEXT,
+        restored_from_version_id INTEGER REFERENCES knowledge_versions(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        written_at TEXT,
+        verified_at TEXT,
+        error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_knowledge_versions_rule ON knowledge_versions(rule_id);
+      CREATE INDEX IF NOT EXISTS idx_knowledge_versions_status ON knowledge_versions(status);
+    `,
+  },
 ];

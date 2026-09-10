@@ -210,18 +210,119 @@ export type DecisionLike = {
   decided_at: string | null;
 };
 
+// ---- Destinations and the Lovable write lifecycle ----
+
+export const DESTINATION_LABELS: Record<string, string> = {
+  project: "This project's Knowledge",
+  workspace: "Workspace Knowledge (all my projects)",
+  skill: "As a Skill",
+};
+
+export const KNOWLEDGE_CHAR_LIMIT = 10000;
+
+export type LovableWriteStatus = "none" | "pending" | "written" | "stale" | "failed";
+
+export type LovableStatusLike = {
+  write_status: LovableWriteStatus;
+  written_at: string | null;
+  stale_reason?: string | null;
+};
+
+// One line describing where the instruction stands in Lovable. Never claims
+// it was added unless a verified write exists.
+export function lovableStatusLine(input: LovableStatusLike | null | undefined): string {
+  switch (input?.write_status) {
+    case "written":
+      return `Added to Lovable, ${formatDay(input.written_at)}`;
+    case "stale":
+      return `Needs attention: ${input.stale_reason ?? "Knowledge changed in Lovable — review the text again"}`;
+    case "failed":
+      return "Needs attention: adding failed — see More detail";
+    default:
+      return "Waiting for Harness to add it";
+  }
+}
+
 export function decisionSentence(input: {
   decision: DecisionLike;
   destination: string | null;
-  inLovable: boolean;
+  lovable?: LovableStatusLike | null;
 }): string {
   const when = input.decision.decided_at ? `, on ${formatDay(input.decision.decided_at)}` : "";
   if (input.decision.status === "accepted") {
     const choice = label(DESTINATION_PHRASES, input.destination) || "accept this";
-    return input.inLovable
-      ? `You chose: ${choice}${when}. Added to Lovable.`
-      : `You chose: ${choice}${when}. Not added to Lovable yet.`;
+    return `You chose: ${choice}${when}. ${lovableStatusLine(input.lovable)}.`;
   }
   if (input.decision.status === "skipped") return `You skipped this improvement${when}.`;
   return "Waiting for your decision.";
+}
+
+// ---- Improvements page grouping (also the card chip). Pure so it is testable. ----
+
+export const IMPROVEMENT_GROUPS = [
+  "Waiting to be added",
+  "Proof in progress",
+  "Proof done",
+  "In Lovable",
+  "Needs attention",
+  "Decide later",
+  "Skipped",
+] as const;
+export type ImprovementGroup = (typeof IMPROVEMENT_GROUPS)[number];
+
+export const PENDING_CHIP = "Needs your decision";
+
+export function improvementGroup(input: {
+  status: "pending" | "accepted" | "skipped";
+  deferred: boolean;
+  writeStatus: LovableWriteStatus | null | undefined;
+  proofOutcome: string | null | undefined;
+}): ImprovementGroup | null {
+  if (input.status === "skipped") return "Skipped";
+  if (input.status === "pending") return input.deferred ? "Decide later" : null;
+  if (input.writeStatus === "stale" || input.writeStatus === "failed") return "Needs attention";
+  if (input.writeStatus === "written") return "In Lovable";
+  if (input.proofOutcome === "running") return "Proof in progress";
+  if (
+    input.proofOutcome === "passed" ||
+    input.proofOutcome === "failed" ||
+    input.proofOutcome === "unclear"
+  )
+    return "Proof done";
+  return "Waiting to be added";
+}
+
+// ---- Proof copy ----
+
+export const PROVE_INTRO =
+  "Harness runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.";
+
+export function proveCostLine(maxCredits: number | null | undefined): string {
+  return `Uses up to ${maxCredits ?? 6} Lovable credits.`;
+}
+
+// ---- Onboarding: the only place the product explains itself ----
+
+export const HOW_IT_WORKS_STEPS = [
+  "Harness reads your Lovable chats and spots where you corrected Lovable.",
+  "It proposes one instruction per correction. You add it to Lovable, prove it first, or skip.",
+  "Nothing changes in Lovable until you say so. Proofs use Lovable credits; reviewing never does.",
+] as const;
+
+// Wording-history attribution: a stored reason is shown only when it was
+// typed in this UI; anything else is attributed to Harness without its
+// internal reason text.
+export function wordingChangeLine(entry: {
+  changed_at: string;
+  reason: string | null;
+  actor?: string | null;
+}): string {
+  const day = formatDay(entry.changed_at);
+  if (entry.actor === "operator (local UI)") {
+    return `You changed the wording on ${day}${entry.reason ? ` — ${entry.reason}` : ""}.`;
+  }
+  if (entry.actor == null || entry.actor.startsWith("operator")) {
+    return `You changed the wording on ${day}.`;
+  }
+  return `Updated by Harness on ${day}.`;
 }

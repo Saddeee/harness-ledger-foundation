@@ -113,6 +113,45 @@ the TanStack integration and is not the product interface; don't add new
 functionality to it. It's scheduled for removal once the TanStack UI has
 full parity with it.
 
+## Adding a rule to Lovable (two-beat)
+
+The app never writes to Lovable. Adding an instruction to Knowledge is a
+two-beat handshake between the UI and Claude Code holding both MCP servers:
+
+**Beat 0 — snapshot (before the user can even see a preview).** Claude Code
+reads the live Knowledge and records it verbatim:
+
+1. `get_project_knowledge(project_id)` (or `get_workspace_knowledge(workspace_id)`) over Lovable MCP.
+2. `record_knowledge_snapshot(target, project_id | workspace_id, content, fetched_by)` over Harness MCP.
+
+Until a snapshot exists for a target, the Inbox shows "Harness hasn't read
+your current Knowledge yet" and an accepted choice stays `write_status:
+"none"`.
+
+**Beat 1 — the user approves in the UI.** "Add it to Lovable now" composes
+the exact final text from the latest snapshot (everything outside
+`<!-- harness:start -->`…`<!-- harness:end -->` preserved byte-for-byte, the
+managed block regenerated, 9,000-char cap) and stores a `knowledge_versions`
+row with `status: "pending"`, both hashes, and the rule ids. Nothing has
+touched Lovable yet.
+
+**Beat 2 — Claude Code executes, exactly this, per pending write:**
+
+1. `list_pending_knowledge_writes()` → each row carries `target`, the id,
+   `previous_sha256` (what the write was composed against) and `new_content`.
+2. Read the LIVE content: `get_project_knowledge` / `get_workspace_knowledge`.
+3. If `sha256(live) != previous_sha256` → `mark_knowledge_write_stale(version_id, reason)` and stop for this row. Never write over content you did not preview.
+4. Else `set_project_knowledge(project_id, new_content)` / `set_workspace_knowledge(workspace_id, new_content)`.
+5. Read back with `get_*_knowledge` again.
+6. `record_knowledge_readback(version_id, read_back_content)` — Harness marks the
+   version `written` (and the rule `active`, stage "In Lovable") only if the
+   read-back is byte-identical; otherwise `failed`.
+7. Any other error → `mark_knowledge_write_failed(version_id, error)`.
+
+A restore ("Restore previous version" in the UI) is just another pending
+row whose `new_content` is the earlier version's `previous_content`; it goes
+through the same beat 2. History is append-only.
+
 This is deliberately the smallest possible slice -- correction mining
 (reading real Lovable history to generate candidates automatically),
 Skills, verification, and experiments are later checkpoints (see

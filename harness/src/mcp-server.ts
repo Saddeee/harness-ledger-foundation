@@ -382,5 +382,60 @@ tool(
   () => store.listCleanupRequiredResources(),
 );
 
+// ---- Checkpoint D: Knowledge snapshots and versions ----
+// Bookkeeping around Lovable Knowledge writes that Claude Code performs over
+// the Lovable MCP server. None of these tools touch Lovable; they record what
+// was read, what the UI approved, and what was read back after writing.
+
+const knowledgeTarget = z.enum(["project", "workspace"]);
+
+tool(
+  "record_knowledge_snapshot",
+  "Store the verbatim Knowledge content just read from Lovable (get_project_knowledge / get_workspace_knowledge) so previews and pending writes can be composed from it.",
+  {
+    target: knowledgeTarget,
+    project_id: z.string().optional(),
+    workspace_id: z.string().optional(),
+    content: z.string(),
+    fetched_by: z.string(),
+  },
+  (input) => store.recordKnowledgeSnapshot(input),
+);
+
+tool(
+  "list_pending_knowledge_writes",
+  "Knowledge writes the user approved in the UI that have not been executed yet, with the sha256 the live content must still match before writing.",
+  {},
+  () => store.listPendingKnowledgeWrites(),
+);
+
+tool(
+  "mark_knowledge_write_stale",
+  "Record that live Lovable Knowledge no longer matched the snapshot a pending write was composed from; the write must NOT be performed.",
+  { version_id: z.number().int(), reason: z.string() },
+  (input) => store.markKnowledgeWriteStale(input.version_id, input.reason),
+);
+
+tool(
+  "record_knowledge_readback",
+  "After writing, pass the content read back from Lovable. A byte-identical read-back marks the version written and the rule active; anything else marks it failed.",
+  { version_id: z.number().int(), read_back_content: z.string() },
+  (input) => store.recordKnowledgeReadback(input.version_id, input.read_back_content),
+);
+
+tool(
+  "mark_knowledge_write_failed",
+  "Record that a pending write could not be performed.",
+  { version_id: z.number().int(), error: z.string() },
+  (input) => store.markKnowledgeWriteFailed(input.version_id, input.error),
+);
+
+tool(
+  "list_knowledge_versions",
+  "Full Knowledge write history (optionally for one rule), newest first.",
+  { rule_id: z.number().int().optional() },
+  (input) => store.listKnowledgeVersions(input.rule_id),
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);

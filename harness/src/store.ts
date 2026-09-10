@@ -1,6 +1,7 @@
 // Pure data-layer functions, independent of the MCP transport, so tests can
 // call them directly. mcp-server.ts is a thin wrapper around this module.
 import { db, dbPath } from "./db.js";
+import { sha256 as knowledgeSha256 } from "./knowledge.js";
 
 export class NotAllowedProjectError extends Error {
   constructor(projectId: string) {
@@ -63,14 +64,17 @@ export function upsertProject(input: {
   url?: string;
   tech_stack?: string;
   raw_json?: string;
+  workspace_id?: string;
 }) {
   return db
     .prepare(
-      `INSERT INTO projects (lovable_project_id, name, status, url, tech_stack, raw_json, updated_at)
-       VALUES (@lovable_project_id, @name, @status, @url, @tech_stack, @raw_json, datetime('now'))
+      `INSERT INTO projects (lovable_project_id, name, status, url, tech_stack, raw_json, workspace_id, updated_at)
+       VALUES (@lovable_project_id, @name, @status, @url, @tech_stack, @raw_json, @workspace_id, datetime('now'))
        ON CONFLICT(lovable_project_id) DO UPDATE SET
          name = excluded.name, status = excluded.status, url = excluded.url,
-         tech_stack = excluded.tech_stack, raw_json = excluded.raw_json, updated_at = excluded.updated_at
+         tech_stack = excluded.tech_stack, raw_json = excluded.raw_json,
+         workspace_id = COALESCE(excluded.workspace_id, projects.workspace_id),
+         updated_at = excluded.updated_at
        RETURNING *`,
     )
     .get({
@@ -80,7 +84,14 @@ export function upsertProject(input: {
       url: input.url ?? null,
       tech_stack: input.tech_stack ?? null,
       raw_json: input.raw_json ?? null,
+      workspace_id: input.workspace_id ?? null,
     });
+}
+
+export function getProjectMeta(lovableProjectId: string) {
+  return (db.prepare(`SELECT * FROM projects WHERE lovable_project_id = ?`).get(lovableProjectId) ?? null) as
+    | { lovable_project_id: string; name: string | null; workspace_id: string | null }
+    | null;
 }
 
 // ---- Checkpoint B: correction pipeline ----
@@ -990,6 +1001,267 @@ export function listEventsForRecord(kindPrefixes: string[], id: number) {
     .prepare(`SELECT * FROM events WHERE payload LIKE ? ORDER BY id DESC LIMIT 100`)
     .all(`%"id":${id}%`) as { kind: string }[];
   return rows.filter((r) => kindPrefixes.some((p) => r.kind.startsWith(p)));
+}
+
+// ---- Checkpoint D: Knowledge snapshots and versions ----
+// The app never writes to Lovable itself. These functions record what the
+// UI approved and what the executor (Claude Code over Lovable MCP) then read
+// back, so every write has a before/after with hashes and can be restored.
+
+export type KnowledgeTarget = "project" | "workspace";
+export type KnowledgeWriteStatus = "pending" | "written" | "stale" | "failed";
+
+export type KnowledgeVersionRow = {
+  id: number;
+  rule_id: number | null;
+  target: KnowledgeTarget;
+  project_id: string | null;
+  workspace_id: string | null;
+  previous_content: string;
+  new_content: string;
+  previous_sha256: string;
+  new_sha256: string;
+  rule_ids_json: string;
+  status: KnowledgeWriteStatus;
+  actor: string;
+  reason: string | null;
+  restored_from_version_id: number | null;
+  created_at: string;
+  written_at: string | null;
+  verified_at: string | null;
+  error: string | null;
+};
+
+function targetColumn(target: KnowledgeTarget): "project_id" | "workspace_id" {
+  return target === "project" ? "project_id" : "workspace_id";
+}
+
+function assertTargetId(target: KnowledgeTarget, projectId?: string, workspaceId?: string) {
+  if (target === "project") {
+    if (!projectId) throw new Error("target 'project' requires project_id");
+    assertAllowedProject(projectId);
+  } else if (!workspaceId) {
+    throw new Error("target 'workspace' requires workspace_id");
+  }
+}
+
+export function recordKnowledgeSnapshot(input: {
+  target: KnowledgeTarget;
+  project_id?: string;
+  workspace_id?: string;
+  content: string;
+  fetched_by: string;
+}) {
+  assertTargetId(input.target, input.project_id, input.workspace_id);
+  const row = db
+    .prepare(
+      `INSERT INTO knowledge_snapshots (target, project_id, workspace_id, content, sha256, fetched_by)
+       VALUES (@target, @project_id, @workspace_id, @content, @sha256, @fetched_by) RETURNING *`,
+    )
+    .get({
+      target: input.target,
+      project_id: input.target === "project" ? input.project_id : null,
+      workspace_id: input.target === "workspace" ? input.workspace_id : null,
+      content: input.content,
+      sha256: knowledgeSha256(input.content),
+      fetched_by: input.fetched_by,
+    }) as { id: number; sha256: string };
+  insertEvent("knowledge_snapshot.recorded", null, {
+    id: row.id,
+    target: input.target,
+    target_id: input.target === "project" ? input.project_id : input.workspace_id,
+    sha256: row.sha256,
+    chars: input.content.length,
+  });
+  return row;
+}
+
+export function latestKnowledgeSnapshot(target: KnowledgeTarget, targetId: string) {
+  return (db
+    .prepare(`SELECT * FROM knowledge_snapshots WHERE target = ? AND ${targetColumn(target)} = ? ORDER BY id DESC LIMIT 1`)
+    .get(target, targetId) ?? null) as
+    | { id: number; content: string; sha256: string; fetched_at: string; fetched_by: string }
+    | null;
+}
+
+// Rules that belong in the managed block of a given target right now.
+export function activeRulesForTarget(target: KnowledgeTarget, targetId: string) {
+  if (target === "project") {
+    return db
+      .prepare(
+        `SELECT r.id, r.instruction, r.state, r.scope FROM rules r
+         JOIN correction_candidates cc ON cc.id = r.correction_candidate_id
+         JOIN task_episodes te ON te.id = cc.task_episode_id
+         WHERE r.scope = 'project' AND r.state IN ('approved','supported','active') AND te.project_id = ?
+         ORDER BY r.id`,
+      )
+      .all(targetId) as { id: number; instruction: string; state: string; scope: string }[];
+  }
+  return db
+    .prepare(
+      `SELECT r.id, r.instruction, r.state, r.scope FROM rules r
+       WHERE r.scope = 'workspace' AND r.state IN ('approved','supported','active')
+       ORDER BY r.id`,
+    )
+    .all() as { id: number; instruction: string; state: string; scope: string }[];
+}
+
+export function setRuleEvidenceLevel(ruleId: number, level: string, actor: string) {
+  const existing = db.prepare(`SELECT evidence_level FROM rules WHERE id = ?`).get(ruleId) as
+    | { evidence_level: string }
+    | undefined;
+  if (!existing) throw new Error(`rule ${ruleId} not found`);
+  if (existing.evidence_level === level) return;
+  db.prepare(`UPDATE rules SET evidence_level = ?, updated_at = datetime('now') WHERE id = ?`).run(level, ruleId);
+  insertEvent("rule.evidence_level_changed", null, { id: ruleId, previous: existing.evidence_level, new: level, actor });
+}
+
+export function createPendingKnowledgeVersion(input: {
+  rule_id: number | null;
+  target: KnowledgeTarget;
+  project_id?: string;
+  workspace_id?: string;
+  previous_content: string;
+  new_content: string;
+  rule_ids: number[];
+  actor: string;
+  reason?: string;
+  restored_from_version_id?: number;
+}) {
+  assertTargetId(input.target, input.project_id, input.workspace_id);
+  const row = db
+    .prepare(
+      `INSERT INTO knowledge_versions
+         (rule_id, target, project_id, workspace_id, previous_content, new_content, previous_sha256, new_sha256,
+          rule_ids_json, status, actor, reason, restored_from_version_id)
+       VALUES (@rule_id, @target, @project_id, @workspace_id, @previous_content, @new_content, @previous_sha256, @new_sha256,
+               @rule_ids_json, 'pending', @actor, @reason, @restored_from_version_id)
+       RETURNING *`,
+    )
+    .get({
+      rule_id: input.rule_id,
+      target: input.target,
+      project_id: input.target === "project" ? input.project_id : null,
+      workspace_id: input.target === "workspace" ? input.workspace_id : null,
+      previous_content: input.previous_content,
+      new_content: input.new_content,
+      previous_sha256: knowledgeSha256(input.previous_content),
+      new_sha256: knowledgeSha256(input.new_content),
+      rule_ids_json: JSON.stringify(input.rule_ids),
+      actor: input.actor,
+      reason: input.reason ?? null,
+      restored_from_version_id: input.restored_from_version_id ?? null,
+    }) as KnowledgeVersionRow;
+  insertEvent("knowledge_version.pending", null, {
+    id: row.id,
+    rule_id: input.rule_id,
+    target: input.target,
+    restored_from_version_id: input.restored_from_version_id ?? null,
+    actor: input.actor,
+  });
+  return row;
+}
+
+export function getKnowledgeVersion(id: number) {
+  return (db.prepare(`SELECT * FROM knowledge_versions WHERE id = ?`).get(id) ?? null) as KnowledgeVersionRow | null;
+}
+
+function requirePendingVersion(id: number): KnowledgeVersionRow {
+  const v = getKnowledgeVersion(id);
+  if (!v) throw new Error(`knowledge_version ${id} not found`);
+  if (v.status !== "pending") throw new Error(`knowledge_version ${id} is ${v.status}, not pending`);
+  return v;
+}
+
+export function markKnowledgeWriteStale(versionId: number, reason: string) {
+  requirePendingVersion(versionId);
+  db.prepare(`UPDATE knowledge_versions SET status = 'stale', error = ? WHERE id = ?`).run(reason, versionId);
+  insertEvent("knowledge_version.stale", null, { id: versionId, reason });
+  return getKnowledgeVersion(versionId);
+}
+
+export function markKnowledgeWriteFailed(versionId: number, error: string) {
+  requirePendingVersion(versionId);
+  db.prepare(`UPDATE knowledge_versions SET status = 'failed', error = ? WHERE id = ?`).run(error, versionId);
+  insertEvent("knowledge_version.failed", null, { id: versionId, error });
+  return getKnowledgeVersion(versionId);
+}
+
+// The executor calls this with what it read back from Lovable AFTER writing.
+// Only a byte-identical read-back counts as written.
+export function recordKnowledgeReadback(versionId: number, readBackContent: string) {
+  const v = requirePendingVersion(versionId);
+  const readBackSha = knowledgeSha256(readBackContent);
+  if (readBackSha !== v.new_sha256) {
+    db.prepare(`UPDATE knowledge_versions SET status = 'failed', error = ? WHERE id = ?`).run(
+      `read-back hash mismatch: expected ${v.new_sha256.slice(0, 12)}…, got ${readBackSha.slice(0, 12)}…`,
+      versionId,
+    );
+    insertEvent("knowledge_version.failed", null, { id: versionId, error: "read-back hash mismatch" });
+    return getKnowledgeVersion(versionId);
+  }
+  db.prepare(
+    `UPDATE knowledge_versions SET status = 'written', written_at = datetime('now'), verified_at = datetime('now') WHERE id = ?`,
+  ).run(versionId);
+  insertEvent("knowledge_version.written", null, { id: versionId, target: v.target, sha256: readBackSha });
+
+  if (v.rule_id != null) {
+    if (v.restored_from_version_id != null) {
+      // A restore undid this rule's write: the rule is no longer in Lovable.
+      updateRule({ id: v.rule_id, state: "rolled_back", actor: "harness", reason: `restored knowledge version ${v.restored_from_version_id}` });
+    } else {
+      updateRule({ id: v.rule_id, state: "active", actor: "harness", reason: `knowledge version ${versionId} written` });
+      insertEvent("rule.applied", null, { id: v.rule_id, knowledge_version_id: versionId, target: v.target });
+    }
+  }
+  return getKnowledgeVersion(versionId);
+}
+
+export function listPendingKnowledgeWrites() {
+  return db
+    .prepare(
+      `SELECT id, rule_id, target, project_id, workspace_id, previous_sha256, new_sha256, new_content, created_at, actor, reason, restored_from_version_id
+       FROM knowledge_versions WHERE status = 'pending' ORDER BY id`,
+    )
+    .all();
+}
+
+export function listKnowledgeVersions(ruleId?: number) {
+  return (ruleId == null
+    ? db.prepare(`SELECT * FROM knowledge_versions ORDER BY id DESC`).all()
+    : db.prepare(`SELECT * FROM knowledge_versions WHERE rule_id = ? ORDER BY id DESC`).all(ruleId)) as KnowledgeVersionRow[];
+}
+
+// Supersede any still-pending write for a rule (decision changed before the
+// executor ran) so the executor never applies an out-of-date decision.
+export function cancelPendingKnowledgeWrites(ruleId: number, reason: string) {
+  const pending = db
+    .prepare(`SELECT id FROM knowledge_versions WHERE rule_id = ? AND status = 'pending'`)
+    .all(ruleId) as { id: number }[];
+  for (const p of pending) markKnowledgeWriteFailed(p.id, reason);
+  return pending.length;
+}
+
+// A restore is a new pending write whose new content is the target
+// version's previous content. previous_content is what we believe is live
+// now (that version's new_content), so the executor's freshness check still
+// applies. History is never rewritten.
+export function createRestoreVersion(versionId: number, actor: string, reason?: string) {
+  const v = getKnowledgeVersion(versionId);
+  if (!v) throw new Error(`knowledge_version ${versionId} not found`);
+  if (v.status !== "written") throw new Error(`only a written version can be restored (version ${versionId} is ${v.status})`);
+  return createPendingKnowledgeVersion({
+    rule_id: v.rule_id,
+    target: v.target,
+    ...(v.project_id ? { project_id: v.project_id } : {}),
+    ...(v.workspace_id ? { workspace_id: v.workspace_id } : {}),
+    previous_content: v.new_content,
+    new_content: v.previous_content,
+    rule_ids: [],
+    actor,
+    reason: reason ?? `restore knowledge version ${versionId}`,
+    restored_from_version_id: versionId,
+  });
 }
 
 export function listExperimentPlansForRule(ruleId: number) {

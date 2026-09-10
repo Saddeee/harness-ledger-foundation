@@ -1,14 +1,28 @@
-// The user-facing "Improvement" view (checkpoint C.2): one item per piece of
-// Lovable feedback, composed from a correction + its learning/rule + its
-// proof plan. Pure reads over store.ts plus a small action mapper; no new
-// semantics, no Lovable access. Contract: scratchpad/improvement-contract.md.
+// The user-facing "Improvement" view (checkpoint C.2 + D): one item per piece
+// of Lovable feedback, composed from a correction + its learning/rule + its
+// proof plan + its Knowledge write history. Pure reads over store.ts plus a
+// small action mapper; no Lovable access. Contracts:
+// scratchpad/improvement-contract.md and scratchpad/checkpoint-d-contract.md.
 import { z } from "zod";
 import * as store from "./store.js";
+import { KNOWLEDGE_CAP, composeManagedKnowledge } from "./knowledge.js";
 
 export type StageKey = "found" | "review" | "proof" | "in_lovable";
 export type StageState = "complete" | "current" | "future" | "blocked";
 export type Stage = { key: StageKey; state: StageState; note: string | null };
 export type Message = { id: number; author: "you" | "lovable"; sent_at: string | null; text: string };
+export type KnowledgeWriteStatus = "none" | "pending" | "written" | "stale" | "failed";
+export type KnowledgePreview = {
+  target: "project" | "workspace";
+  target_label: string;
+  based_on_snapshot_at: string | null;
+  current_user_text: string;
+  managed_block: string;
+  final_content: string;
+  char_count: number;
+  cap: number;
+  over_cap: boolean;
+};
 export type Improvement = {
   id: number;
   project: { id: string; name: string | null };
@@ -28,6 +42,22 @@ export type Improvement = {
     manual_cleanup: boolean;
   } | null;
   wording_history: { changed_at: string; from: string; to: string; reason: string | null }[];
+  lovable: {
+    write_status: KnowledgeWriteStatus;
+    written_at: string | null;
+    stale_reason: string | null;
+    previews: { project: KnowledgePreview | null; workspace: KnowledgePreview | null };
+    versions: {
+      id: number;
+      target: string;
+      status: KnowledgeWriteStatus;
+      written_at: string | null;
+      created_at: string;
+      reason: string | null;
+      restored_from_version_id: number | null;
+    }[];
+    untested: boolean;
+  };
   developer: {
     correction: unknown;
     learning: unknown | null;
@@ -36,6 +66,7 @@ export type Improvement = {
     hidden_evidence: unknown[];
     verification_plan: unknown | null;
     experiment_plans: unknown[];
+    knowledge_versions: unknown[];
     audit_events: unknown[];
   };
 };
@@ -81,17 +112,44 @@ function firstSentence(text: string | null | undefined): string {
 
 const ACCEPTED_RULE_STATES = new Set(["approved", "testing", "supported", "active"]);
 const PROOF_DONE_RULE_STATES = new Set(["supported", "active"]);
+const TARGET_LABEL: Record<"project" | "workspace", string> = {
+  project: "This project's Knowledge in Lovable",
+  workspace: "Workspace Knowledge — all your projects",
+};
 
-function proofOutcome(items: PlanItem[]): Improvement["proof"] extends infer P
-  ? P extends { outcome: infer O }
-    ? O
-    : never
-  : never {
+function proofOutcome(items: PlanItem[]): "not_run" | "passed" | "failed" | "unclear" | null {
   if (items.length === 0) return null;
   if (items.some((i) => i.status === "failed")) return "failed";
   if (items.some((i) => i.status === "unclear")) return "unclear";
   if (items.every((i) => i.status === "passed")) return "passed";
   return "not_run";
+}
+
+// The rules that would be in the managed block for a target if this rule
+// were added: the currently active ones plus this one (regardless of its
+// current state -- the preview shows what "Add" would write).
+function rulesForPreview(target: "project" | "workspace", targetId: string, rule: RuleRow | null) {
+  const active = store.activeRulesForTarget(target, targetId).map((r) => ({ id: r.id, instruction: r.instruction }));
+  if (rule && !active.some((r) => r.id === rule.id)) active.push({ id: rule.id, instruction: rule.instruction });
+  return active;
+}
+
+function buildPreview(target: "project" | "workspace", targetId: string | null, rule: RuleRow | null): KnowledgePreview | null {
+  if (!targetId) return null;
+  const snapshot = store.latestKnowledgeSnapshot(target, targetId);
+  if (!snapshot) return null;
+  const composed = composeManagedKnowledge(snapshot.content, rulesForPreview(target, targetId, rule));
+  return {
+    target,
+    target_label: TARGET_LABEL[target],
+    based_on_snapshot_at: snapshot.fetched_at,
+    current_user_text: composed.user_text,
+    managed_block: composed.managed_block,
+    final_content: composed.final_content,
+    char_count: composed.char_count,
+    cap: KNOWLEDGE_CAP,
+    over_cap: composed.over_cap,
+  };
 }
 
 function buildImprovement(c: CorrectionRow): Improvement {
@@ -101,6 +159,8 @@ function buildImprovement(c: CorrectionRow): Improvement {
     visible: EvidenceRow[];
     hidden: unknown[];
   };
+  const projectMeta = c.project_id ? store.getProjectMeta(c.project_id) : null;
+  const workspaceId = projectMeta?.workspace_id ?? null;
   const verificationPlan = rule ? store.getVerificationPlanForRule(rule.id) : null;
   const experimentPlans = rule ? store.listExperimentPlansForRule(rule.id) : [];
   const experiment = (experimentPlans[0] ?? null) as
@@ -133,18 +193,41 @@ function buildImprovement(c: CorrectionRow): Improvement {
     divergence = `You chose ${lay[c.proposed_scope]} for the lesson, but the rule is set to ${lay[rule.scope]}.`;
   }
 
+  // ---- Knowledge write history ----
+  const versions = rule ? store.listKnowledgeVersions(rule.id) : [];
+  const latest = versions[0] ?? null;
+  const writeStatus: KnowledgeWriteStatus = latest ? latest.status : "none";
+  const writtenVersion = versions.find((v) => v.status === "written") ?? null;
+  const proofComplete = outcome === "passed" || (ruleState != null && PROOF_DONE_RULE_STATES.has(ruleState));
+
   // ---- stages ----
   const reviewState: StageState = status === "skipped" ? "blocked" : status === "accepted" ? "complete" : "current";
   let proofState: StageState;
   if (reviewState !== "complete") proofState = reviewState === "blocked" ? "blocked" : "future";
   else if (experiment?.plan.starting_state_quality === "blocked" || experiment?.plan.status === "rejected") proofState = "blocked";
-  else if (outcome === "passed" || (ruleState && PROOF_DONE_RULE_STATES.has(ruleState))) proofState = "complete";
+  else if (proofComplete) proofState = "complete";
+  else if (writeStatus !== "none") proofState = "future"; // user chose to add without a proof
   else proofState = "current";
+
   let inLovableState: StageState;
-  if (ruleState === "active") inLovableState = "complete";
-  else if (proofState === "complete") inLovableState = "current";
-  else if (proofState === "blocked") inLovableState = "blocked";
-  else inLovableState = "future";
+  let inLovableNote: string;
+  if (writeStatus === "written" && ruleState === "active") {
+    inLovableState = "complete";
+    const d = shortDate(writtenVersion?.verified_at ?? latest?.verified_at ?? null);
+    inLovableNote = d ? `Added to Lovable, ${d}` : "Added to Lovable";
+  } else if (writeStatus === "pending") {
+    inLovableState = "current";
+    inLovableNote = "Waiting for Harness to add it";
+  } else if (writeStatus === "stale") {
+    inLovableState = "blocked";
+    inLovableNote = "Knowledge changed in Lovable — review the text again";
+  } else if (writeStatus === "failed") {
+    inLovableState = "blocked";
+    inLovableNote = "Adding failed — see More detail";
+  } else {
+    inLovableState = proofState === "complete" ? "current" : proofState === "blocked" ? "blocked" : "future";
+    inLovableNote = "Not in Lovable yet";
+  }
 
   const foundDate = shortDate(visible[0]?.occurred_at ?? null);
   const decidedDate = shortDate(c.reviewed_at);
@@ -152,8 +235,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
     outcome === "passed" ? "Passed"
     : outcome === "failed" ? "Failed"
     : outcome === "unclear" ? "Unclear"
-    : experiment ? "Proof proposed — running it isn't available yet"
-    : "Not proposed yet";
+    : "Not proven yet";
 
   const stages: Stage[] = [
     { key: "found", state: "complete", note: foundDate ? `Found in your Lovable chat, ${foundDate}` : "Found in your Lovable chat" },
@@ -163,7 +245,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
       note: status === "skipped" ? "Skipped" : status === "accepted" && decidedDate ? `You decided on ${decidedDate}` : status === "accepted" ? "You decided" : "Waiting for your decision",
     },
     { key: "proof", state: proofState, note: proofNote },
-    { key: "in_lovable", state: inLovableState, note: ruleState === "active" ? "Added" : "Nothing added yet" },
+    { key: "in_lovable", state: inLovableState, note: inLovableNote },
   ];
   const stage: StageKey = (stages.find((s) => s.state !== "complete")?.key ?? "in_lovable") as StageKey;
 
@@ -203,6 +285,25 @@ function buildImprovement(c: CorrectionRow): Improvement {
           }
         : null,
     wording_history,
+    lovable: {
+      write_status: writeStatus,
+      written_at: writtenVersion?.verified_at ?? null,
+      stale_reason: latest?.status === "stale" ? latest.error : null,
+      previews: {
+        project: buildPreview("project", c.project_id, rule),
+        workspace: buildPreview("workspace", workspaceId, rule),
+      },
+      versions: versions.map((v) => ({
+        id: v.id,
+        target: v.target,
+        status: v.status,
+        written_at: v.verified_at,
+        created_at: v.created_at,
+        reason: v.reason,
+        restored_from_version_id: v.restored_from_version_id,
+      })),
+      untested: status === "accepted" && !proofComplete,
+    },
     developer: {
       correction: c,
       learning,
@@ -211,6 +312,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
       hidden_evidence: hidden,
       verification_plan: verificationPlan,
       experiment_plans: experimentPlans,
+      knowledge_versions: versions,
       audit_events: [
         ...store.listEventsForRecord(["correction_candidate."], c.id),
         ...(rule ? store.listEventsForRecord(["rule."], rule.id) : []),
@@ -229,9 +331,8 @@ export function getImprovement(id: number): Improvement | null {
 }
 
 const ACTOR = "operator (local UI)";
-const destination = z.enum(["workspace", "project"]);
 const actionInput = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("accept"), id: z.number().int(), destination }),
+  z.object({ action: z.literal("accept"), id: z.number().int(), destination: z.enum(["workspace", "project", "skill"]) }),
   z.object({ action: z.literal("skip"), id: z.number().int() }),
   z.object({ action: z.literal("reopen"), id: z.number().int() }),
   z.object({
@@ -245,7 +346,33 @@ const actionInput = z.discriminatedUnion("action", [
     id: z.number().int(),
     destination: z.enum(["workspace", "project", "one_time"]),
   }),
+  z.object({ action: z.literal("restore"), id: z.number().int(), version_id: z.number().int() }),
 ]);
+
+// After the user approves "Add", stage the exact write for the executor --
+// only when a snapshot of the live Knowledge exists to compose from.
+function stagePendingWrite(improvement: Improvement, rule: RuleRow, target: "project" | "workspace") {
+  const preview = improvement.lovable.previews[target];
+  if (!preview) return;
+  if (preview.over_cap) throw new Error("This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first");
+  const snapshot = store.latestKnowledgeSnapshot(
+    target,
+    target === "project" ? improvement.project.id : (store.getProjectMeta(improvement.project.id)?.workspace_id ?? ""),
+  );
+  if (!snapshot) return;
+  store.cancelPendingKnowledgeWrites(rule.id, "superseded by a newer decision");
+  const ruleIds = rulesForPreview(target, target === "project" ? improvement.project.id : (store.getProjectMeta(improvement.project.id)?.workspace_id ?? ""), rule).map((r) => r.id);
+  store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target,
+    ...(target === "project" ? { project_id: improvement.project.id } : { workspace_id: store.getProjectMeta(improvement.project.id)?.workspace_id ?? undefined }),
+    previous_content: snapshot.content,
+    new_content: preview.final_content,
+    rule_ids: ruleIds,
+    actor: ACTOR,
+    reason: `user chose "${preview.target_label}" in the Inbox`,
+  });
+}
 
 export function improvementAction(input: unknown): Improvement {
   const a = actionInput.parse(input);
@@ -254,26 +381,42 @@ export function improvementAction(input: unknown): Improvement {
   const rule = store.getRuleForCorrection(a.id) as RuleRow | null;
 
   switch (a.action) {
-    case "accept":
+    case "accept": {
+      if (a.destination === "skill") throw new Error("Adding as a Skill isn't available yet — choose this project's Knowledge or Workspace Knowledge");
+      const destination = a.destination;
       store.recordHumanCorrectionDecision({
         id: a.id,
         final_classification: current.classification as never,
         reusable: true,
-        proposed_scope: a.destination,
+        proposed_scope: destination,
         reviewer: ACTOR,
       });
-      if (rule) store.updateRule({ id: rule.id, state: "approved", scope: a.destination, actor: ACTOR });
+      if (rule) {
+        store.updateRule({ id: rule.id, state: "approved", scope: destination, actor: ACTOR });
+        // Added without a completed proof: grounded in the user's own decision only.
+        if (!(current.proof?.outcome === "passed")) store.setRuleEvidenceLevel(rule.id, "human_grounded", ACTOR);
+        const refreshedForPreview = getImprovement(a.id);
+        if (refreshedForPreview) stagePendingWrite(refreshedForPreview, { ...rule, scope: destination, state: "approved" }, destination);
+      }
       break;
+    }
     case "skip":
       store.reviewCorrectionCandidate({ id: a.id, action: "exclude", reviewer: ACTOR });
-      if (rule) store.updateRule({ id: rule.id, state: "rejected", actor: ACTOR });
+      if (rule) {
+        store.cancelPendingKnowledgeWrites(rule.id, "cancelled: improvement skipped");
+        store.updateRule({ id: rule.id, state: "rejected", actor: ACTOR });
+      }
       break;
     case "reopen":
       store.reviewCorrectionCandidate({ id: a.id, action: "include", reviewer: ACTOR });
-      if (rule) store.updateRule({ id: rule.id, state: "proposed", actor: ACTOR });
+      if (rule) {
+        store.cancelPendingKnowledgeWrites(rule.id, "cancelled: decision reopened");
+        store.updateRule({ id: rule.id, state: "proposed", actor: ACTOR });
+      }
       break;
     case "change_wording":
       if (!rule) throw new Error("This improvement has no rule wording to change yet");
+      store.cancelPendingKnowledgeWrites(rule.id, "cancelled: wording changed after approval");
       store.updateRule({ id: rule.id, instruction: a.instruction, actor: ACTOR, ...(a.reason ? { reason: a.reason } : {}) });
       break;
     case "set_destination":
@@ -284,6 +427,13 @@ export function improvementAction(input: unknown): Improvement {
         if (rule) store.updateRule({ id: rule.id, scope: a.destination, actor: ACTOR });
       }
       break;
+    case "restore": {
+      if (!rule) throw new Error("This improvement has no rule to restore");
+      const version = store.getKnowledgeVersion(a.version_id);
+      if (!version || version.rule_id !== rule.id) throw new Error(`knowledge version ${a.version_id} does not belong to this improvement`);
+      store.createRestoreVersion(a.version_id, ACTOR);
+      break;
+    }
   }
   const refreshed = getImprovement(a.id);
   if (!refreshed) throw new Error(`improvement ${a.id} not found after update`);

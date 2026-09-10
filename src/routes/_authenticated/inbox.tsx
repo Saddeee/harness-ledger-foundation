@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImprovementCard, ImprovementDetail } from "@/components/harness/improvement";
-import { fetchImprovements } from "@/lib/improvements-client";
+import { fetchImprovements, isDeferred } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -76,31 +76,23 @@ function Page() {
     );
   }
 
+  // Pending items only; "Decide later" keeps an item here with a different chip.
   const pending = all.filter((i) => i.decision.status === "pending");
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Inbox</h1>
-        <p className="text-sm text-muted-foreground">
-          {pending.length === 0
-            ? "Nothing needs your decision."
-            : pending.length === 1
-              ? "One improvement is waiting for your decision."
-              : `${pending.length} improvements are waiting for your decision.`}
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold">Inbox</h1>
       {pending.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
             ? "Improvements Harness finds in your Lovable chats will appear here."
-            : "Everything you've decided on is under Improvements."}
+            : "Nothing needs your decision. Everything you've decided on is under Improvements."}
         </div>
       ) : (
         <ul className="space-y-3">
           {pending.map((i) => (
             <li key={i.id}>
-              <ImprovementCard item={i} onOpen={open} />
+              <ImprovementCard item={i} onOpen={open} deferred={isDeferred(i.id)} />
             </li>
           ))}
         </ul>

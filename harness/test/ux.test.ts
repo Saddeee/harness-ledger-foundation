@@ -1,6 +1,7 @@
-// Tests for the guided-UX presentation logic (checkpoint C.1/C.2). The logic
-// module lives in the root app (src/lib/harness-ux.ts) but is dependency-free,
-// so it's tested here with the same node:test runner as the data layer.
+// Tests for the guided-UX presentation logic (checkpoints C.1/C.2/D0). The
+// logic module lives in the root app (src/lib/harness-ux.ts) but is
+// dependency-free, so it's tested here with the same node:test runner as the
+// data layer. Page sources are checked structurally (no DOM).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -25,13 +26,18 @@ function count(haystack: string, needle: string): number {
 
 const DETAIL = "components/harness/improvement.tsx";
 const LAYOUT = "components/harness/decision-layout.tsx";
-const PAGES = [
-  "routes/_authenticated/inbox.tsx",
-  "routes/_authenticated/ledger.tsx",
-  "routes/_authenticated/overview.tsx",
-  DETAIL,
-  LAYOUT,
-];
+const INBOX = "routes/_authenticated/inbox.tsx";
+const LEDGER = "routes/_authenticated/ledger.tsx";
+const OVERVIEW = "routes/_authenticated/overview.tsx";
+const SHELL = "routes/_authenticated/route.tsx";
+const CLIENT = "lib/improvements-client.ts";
+const PAGES = [INBOX, LEDGER, OVERVIEW, DETAIL, LAYOUT];
+
+// Everything a person can read on the detail page: the component plus the
+// copy constants it pulls from harness-ux.ts (rendered through helpers).
+function detailCopy(): string {
+  return codeOnly(readApp(DETAIL)) + "\n" + ux.PROVE_INTRO + " " + ux.proveCostLine(6);
+}
 
 test("enum-to-label mappings: every spec'd example maps to the required plain-language label", () => {
   assert.equal(ux.label(ux.CLASSIFICATION_LABELS, "constraint_restatement"), "Existing expectation was missed");
@@ -47,6 +53,11 @@ test("enum-to-label mappings: every spec'd example maps to the required plain-la
   assert.equal(ux.label(ux.EXPERIMENT_TYPE_LABELS, "paired_control_treatment"), "Compare with and without the rule");
   assert.equal(ux.label(ux.FIELD_LABELS, "predicted_failure"), "Problem this should prevent");
   assert.deepEqual(Object.values(ux.STAGE_LABELS), ["Found", "Your review", "Proof", "In Lovable"]);
+  assert.deepEqual(Object.values(ux.DESTINATION_LABELS), [
+    "This project's Knowledge",
+    "Workspace Knowledge (all my projects)",
+    "As a Skill",
+  ]);
   for (const v of ["proposed", "approved", "testing", "supported", "active", "questioned", "disabled", "retired", "rolled_back", "rejected"]) {
     assert.notEqual(ux.label(ux.RULE_STATE_LABELS, v), v, `rule state ${v} needs a label`);
   }
@@ -66,6 +77,7 @@ test("default technical sections are collapsed and the detail page wraps them in
   const layout = codeOnly(readApp(LAYOUT));
   for (const tag of layout.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
   const detail = readApp(DETAIL);
+  for (const tag of codeOnly(detail).match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
   assert.match(detail, /<AdvancedDetails title="More detail">/);
   assert.match(detail, /Developer view/);
   // the developer view is the last thing inside More detail
@@ -73,41 +85,225 @@ test("default technical sections are collapsed and the detail page wraps them in
   assert.ok(detail.indexOf("developer-view:end") < detail.lastIndexOf("</AdvancedDetails>"));
 });
 
-test("action consequence text is present in every decision confirmation", () => {
-  const detail = readApp(DETAIL);
-  assert.match(detail, /Nothing is written to Lovable yet — adding isn't switched on\. You'll approve the exact Knowledge text first\./);
-  assert.match(detail, /Reviewing is free and changes nothing in Lovable\./);
-  for (const title of ["Add to all my projects?", "Add to this project only?", "Skip this improvement?"]) {
-    assert.ok(detail.includes(title), title);
+test("detail page order: project, instruction, why, decision panel, stage bar, What happened, proof, More detail", () => {
+  const detail = codeOnly(readApp(DETAIL));
+  const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
+  const order = [
+    ">Project<",
+    "{item.proposed_instruction}",
+    "Change the wording",
+    "{whyFor(item.classification)}",
+    "<DecisionPanel",
+    "<ProcessProgress",
+    "What happened",
+    "How Harness would prove this",
+    'title="More detail"',
+  ];
+  let last = -1;
+  for (const marker of order) {
+    const at = body.indexOf(marker);
+    assert.ok(at > last, `expected "${marker}" after the previous marker (at ${at}, previous ${last})`);
+    last = at;
   }
-  assert.match(detail, /Adding to Lovable isn't switched on yet — Harness saves your choice and shows you the exact Knowledge text before anything is written\./);
+  // the developer view is the last thing on the page (marker lives in a JSX comment)
+  const raw = readApp(DETAIL);
+  assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="More detail"'));
 });
 
-test("stage rendering uses the human note, never a state word alone", () => {
+test("decision panel: heading, three destinations with Skill disabled, nothing pre-selected, Add gated on a choice", () => {
+  const detail = codeOnly(readApp(DETAIL));
+  const panel = detail.slice(detail.indexOf("function DecisionPanel"), detail.indexOf("export function ImprovementDetail"));
+  assert.match(panel, /What do you want to do with this\?/);
+  assert.match(panel, /Add it to Lovable now/);
+  assert.match(panel, /useState<Choice \| null>\(null\)/, "no destination is pre-selected");
+  assert.ok(!/item\.destination/.test(panel), "the stale stored destination must not seed the panel");
+  assert.match(panel, /\{ key: "project" \}/);
+  assert.match(panel, /\{ key: "workspace" \}/);
+  assert.match(panel, /\{ key: "skill", disabled: true, note: SKILL_NOT_ON \}/);
+  assert.match(detail, /const SKILL_NOT_ON = "Not available yet";/);
+  assert.match(panel, /role="radio"/);
+  assert.match(panel, /aria-checked=\{choice === c\.key\}/);
+  assert.match(panel, /trigger="Add"/);
+  assert.match(panel, /disabled=\{destination == null\}/);
+  // Decide later / Skip are ghost buttons; Decide later has no dialog and is per-browser only
+  assert.match(panel, /"Decide now" : "Decide later"/);
+  assert.match(panel, /onDeferredChange\(!deferred\)/);
+  assert.match(detail, /const DEFERRED_PREFIX = "harness\.deferred:";|setDeferred\(item\.id, on\)/);
+  assert.match(codeOnly(readApp(CLIENT)), /const DEFERRED_PREFIX = "harness\.deferred:";/);
+  assert.match(codeOnly(readApp(CLIENT)), /const HOW_IT_WORKS_KEY = "harness\.howItWorksDismissed";/);
+  assert.match(panel, /<SkipConfirm/);
+  assert.match(detail, /trigger="Skip"\s+variant="ghost"/);
+  assert.match(detail, /title="Skip this improvement\?"/);
+});
+
+test("Prove it first: exact copy with the cost inline, Run proof disabled, no proof POST", () => {
+  const detail = codeOnly(readApp(DETAIL));
+  assert.equal(
+    ux.PROVE_INTRO,
+    "Harness runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.",
+  );
+  assert.equal(ux.proveCostLine(6), "Uses up to 6 Lovable credits.");
+  assert.equal(ux.proveCostLine(null), "Uses up to 6 Lovable credits.");
+  assert.match(detail, /\{PROVE_INTRO\} \{proveCostLine\(item\.proof\?\.lovable_credits_max\)\}/);
+  assert.match(detail, /<Button disabled aria-disabled className="w-full sm:w-auto">\s*Run proof/);
+  assert.match(detail, /const PROOF_NOT_ON = "Proof isn't switched on yet\.";/);
+  for (const page of PAGES) {
+    const code = codeOnly(readApp(page));
+    assert.ok(!/run_experiment|execute_experiment|remix_project|send_message|"run_proof"|action: "run"|action: "prove"/.test(code), page);
+  }
+});
+
+test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard, post-accept line", () => {
+  const detail = codeOnly(readApp(DETAIL));
+  const confirm = detail.slice(detail.indexOf("function AddConfirm"), detail.indexOf("function SkipConfirm"));
+  assert.match(confirm, /title=\{`Add to \$\{targetLabel\}\?`\}/);
+  assert.match(confirm, /Your existing Knowledge \(unchanged\)/);
+  assert.match(confirm, /\{preview\.managed_block\}/);
+  assert.match(confirm, /\{preview\.char_count\} of \{KNOWLEDGE_CHAR_LIMIT\.toLocaleString\("en-US"\)\} characters/);
+  assert.equal(ux.KNOWLEDGE_CHAR_LIMIT, 10000);
+  assert.match(detail, /"Uses no Lovable credits\.",/);
+  assert.match(detail, /"You can restore the previous version at any time\.",/);
+  assert.match(confirm, /consequences=\{preview \? PREVIEW_CONSEQUENCES : \[\]\}/);
+  // no snapshot yet -> save the choice, say so, and promise the read-back
+  assert.match(
+    detail,
+    /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; Harness will show you the exact text before writing\.";/,
+  );
+  assert.match(confirm, /confirmLabel=\{preview \? "Add" : "Save choice"\}/);
+  // over the cap -> the confirm button is disabled and the reason is shown
+  assert.match(
+    detail,
+    /const OVER_CAP_LINE =\s*"This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first\.";/,
+  );
+  assert.match(confirm, /confirmDisabled=\{overCap\}/);
+  assert.match(confirm, /\{overCap \? \(/);
+  // the confirmation posts the contract action, nothing else
+  assert.match(confirm, /\{ action: "accept", id: item\.id, destination \}/);
+  // afterwards: inline line + Open to the Improvements detail
+  assert.match(detail, /const SAVED_LINE = "Saved — now under Improvements › Waiting to be added\.";/);
+  assert.match(detail, /\{justAccepted && accepted \? \(/);
+  assert.match(detail, /navigate\(\{ to: "\/ledger", search: \{ improvement: item\.id \} \}\)/);
+  // the layout supports the preview slot and a disabled confirm
+  const layout = codeOnly(readApp(LAYOUT));
+  assert.match(layout, /children\?: ReactNode;/);
+  assert.match(layout, /<AlertDialogAction onClick=\{onConfirm\} disabled=\{confirmDisabled\}>/);
+});
+
+test("stage rendering uses the human note, never a state word alone; chip reads 'Needs your decision'", () => {
   const layout = readApp(LAYOUT);
   assert.match(layout, /\{s\.note\}/);
   assert.match(layout, /STAGE_LABELS\[s\.key\]/);
   assert.match(layout, /aria-current=\{s\.state === "current" \? "step" : undefined\}/);
   assert.ok(!/you are here/.test(codeOnly(layout)));
+  assert.equal(ux.PENDING_CHIP, "Needs your decision");
+  const detail = codeOnly(readApp(DETAIL));
+  assert.match(detail, /deferred\s*\?\s*"Decide later"\s*:\s*PENDING_CHIP/);
 });
 
-test("decisionSentence reflects the real lifecycle without implying Lovable changed", () => {
-  const pending = ux.decisionSentence({ decision: { status: "pending", decided_at: null }, destination: null, inLovable: false });
+test("lovableStatusLine / decisionSentence / improvementGroup follow the write lifecycle without implying Lovable changed", () => {
+  assert.equal(ux.lovableStatusLine(null), "Waiting for Harness to add it");
+  assert.equal(ux.lovableStatusLine({ write_status: "none", written_at: null }), "Waiting for Harness to add it");
+  assert.equal(ux.lovableStatusLine({ write_status: "pending", written_at: null }), "Waiting for Harness to add it");
+  assert.equal(ux.lovableStatusLine({ write_status: "written", written_at: "2026-09-10T08:00:00Z" }), "Added to Lovable, 10 Sep");
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "stale", written_at: null, stale_reason: null }),
+    "Needs attention: Knowledge changed in Lovable — review the text again",
+  );
+  assert.equal(ux.lovableStatusLine({ write_status: "failed", written_at: null }), "Needs attention: adding failed — see More detail");
+
+  const pending = ux.decisionSentence({ decision: { status: "pending", decided_at: null }, destination: null });
   assert.equal(pending, "Waiting for your decision.");
   const accepted = ux.decisionSentence({
     decision: { status: "accepted", decided_at: "2026-09-09T14:38:48Z" },
     destination: "workspace",
-    inLovable: false,
+    lovable: { write_status: "pending", written_at: null },
   });
-  assert.match(accepted, /^You chose: add to all my projects, on 9 Sep\. Not added to Lovable yet\.$/);
-  const skipped = ux.decisionSentence({ decision: { status: "skipped", decided_at: null }, destination: null, inLovable: false });
+  assert.equal(accepted, "You chose: add to all my projects, on 9 Sep. Waiting for Harness to add it.");
+  const skipped = ux.decisionSentence({ decision: { status: "skipped", decided_at: null }, destination: null });
   assert.equal(skipped, "You skipped this improvement.");
   const added = ux.decisionSentence({
     decision: { status: "accepted", decided_at: null },
     destination: "project",
-    inLovable: true,
+    lovable: { write_status: "written", written_at: "2026-09-10T08:00:00Z" },
   });
-  assert.equal(added, "You chose: add to this project only. Added to Lovable.");
+  assert.equal(added, "You chose: add to this project only. Added to Lovable, 10 Sep.");
+
+  assert.deepEqual([...ux.IMPROVEMENT_GROUPS], [
+    "Waiting to be added", "Proof in progress", "Proof done", "In Lovable", "Needs attention", "Decide later", "Skipped",
+  ]);
+  const g = (status: "pending" | "accepted" | "skipped", writeStatus: ux.LovableWriteStatus | null, proofOutcome: string | null = null, deferred = false) =>
+    ux.improvementGroup({ status, deferred, writeStatus, proofOutcome });
+  assert.equal(g("pending", null), null, "pending items belong in Inbox, not Improvements");
+  assert.equal(g("pending", null, null, true), "Decide later");
+  assert.equal(g("skipped", null), "Skipped");
+  assert.equal(g("accepted", "none"), "Waiting to be added");
+  assert.equal(g("accepted", "pending"), "Waiting to be added");
+  assert.equal(g("accepted", "pending", "not_run"), "Waiting to be added");
+  assert.equal(g("accepted", "written"), "In Lovable");
+  assert.equal(g("accepted", "stale"), "Needs attention");
+  assert.equal(g("accepted", "failed"), "Needs attention");
+  assert.equal(g("accepted", "none", "passed"), "Proof done");
+});
+
+test("Improvements page: contract groups only, non-empty only, no subtitle, restore only under In Lovable", () => {
+  const ledger = codeOnly(readApp(LEDGER));
+  assert.match(ledger, /IMPROVEMENT_GROUPS\.filter\(/);
+  assert.match(ledger, /\(grouped\.get\(g\)\?\.length \?\? 0\) > 0/);
+  assert.ok(!/Everything Harness has learned/.test(ledger), "no subtitle on Improvements");
+  assert.ok(!/Needs your decision|Waiting for proof|Ready to add/.test(ledger), "old group names are gone");
+  assert.match(ledger, /g === "In Lovable" \? \(/);
+  assert.match(ledger, /trigger="Restore previous version"/);
+  assert.match(ledger, /const RESTORE_TITLE = "Restore the previous Knowledge\?";/);
+  assert.match(ledger, /const RESTORE_BODY = "Harness will write the earlier text back, as a new version\.";/);
+  assert.match(ledger, /\{ action: "restore", id: item\.id, version_id: versionId \}/);
+  const inbox = codeOnly(readApp(INBOX));
+  assert.ok(!/is waiting for your decision/.test(inbox), "no subtitle on Inbox");
+  assert.match(inbox, /i\.decision\.status === "pending"/, "Decide-later items stay in Inbox");
+});
+
+test("wording history: reasons only for changes made in this UI; anything else is 'Updated by Harness'", () => {
+  assert.equal(
+    ux.wordingChangeLine({ changed_at: "2026-09-09T10:00:00Z", reason: "tighter", actor: "operator (local UI)" }),
+    "You changed the wording on 9 Sep — tighter.",
+  );
+  assert.equal(
+    ux.wordingChangeLine({ changed_at: "2026-09-09T10:00:00Z", reason: "internal classifier note", actor: "claude-checkpoint-b" }),
+    "Updated by Harness on 9 Sep.",
+  );
+  assert.equal(ux.wordingChangeLine({ changed_at: "2026-09-09T10:00:00Z", reason: "x", actor: "operator" }), "You changed the wording on 9 Sep.");
+  assert.match(codeOnly(readApp(DETAIL)), /\{wordingChangeLine\(w\)\}/);
+});
+
+test("Overview in local mode: the three How-Harness-works lines verbatim, dismissible, Next up, hosted cards gated", () => {
+  assert.deepEqual([...ux.HOW_IT_WORKS_STEPS], [
+    "Harness reads your Lovable chats and spots where you corrected Lovable.",
+    "It proposes one instruction per correction. You add it to Lovable, prove it first, or skip.",
+    "Nothing changes in Lovable until you say so. Proofs use Lovable credits; reviewing never does.",
+  ]);
+  const overview = codeOnly(readApp(OVERVIEW));
+  assert.match(overview, /How Harness works/);
+  assert.match(overview, /HOW_IT_WORKS_STEPS\.map/);
+  assert.match(overview, /setHowItWorksDismissed\(true\)/);
+  assert.match(overview, /\{mode === "local" \? <HowItWorksCard \/> : null\}/);
+  // How-it-works card comes before Next up; hosted cards only when hosted
+  assert.ok(overview.indexOf("<HowItWorksCard />") < overview.indexOf("<NextActionCard />"));
+  assert.match(overview, /\{mode === "hosted" \|\| mode === undefined \? <HostedCards \/> : null\}/);
+  // Next up never routes to Inbox when nothing is pending
+  assert.match(overview, /i\.decision\.status === "pending" && !isDeferred\(i\.id\)/);
+  const shell = codeOnly(readApp(SHELL));
+  assert.match(shell, /How Harness works/);
+  assert.match(shell, /setHowItWorksDismissed\(false\)/);
+});
+
+test("nav: local mode shows Overview, Inbox, Improvements, Settings only; hosted keeps everything", () => {
+  const shell = codeOnly(readApp(SHELL));
+  assert.match(shell, /const LOCAL_NAV = new Set<string>\(\["\/overview", "\/inbox", "\/ledger", "\/settings"\]\);/);
+  assert.match(shell, /mode === "local" \? NAV\.filter\(\(n\) => LOCAL_NAV\.has\(n\.to\)\) : NAV/);
+  assert.match(shell, /label: "Improvements"/);
+  assert.ok(!/label: "Ledger"/.test(shell));
+  const client = codeOnly(readApp(CLIENT));
+  assert.match(client, /staleTime: Infinity/);
+  assert.match(client, /json\.mode === "local" \? "local" : "hosted"/, "anything but a confirmed local answer is hosted");
 });
 
 test("formatDate / formatDay produce '8 Sep, HH:MM' style and pass non-dates through", () => {
@@ -131,21 +327,23 @@ test("lovableReplyText extracts what the user saw in the Lovable chat from a ver
 });
 
 test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness analysis' exactly once, nowhere else", () => {
-  const detail = codeOnly(readApp(DETAIL));
+  const detail = detailCopy();
   assert.ok(count(detail, "Lovable credits") <= 2, `Lovable credits x${count(detail, "Lovable credits")}`);
   assert.equal(count(detail, "Harness analysis"), 1);
-  for (const page of PAGES.filter((p) => p !== DETAIL)) {
-    let code = codeOnly(readApp(page));
-    if (page.endsWith("overview.tsx")) {
-      // the pre-existing hosted "Credits this month" budget card is out of scope;
-      // only the Next-up card is ours
-      code = code.slice(code.indexOf("function NextActionCard"), code.indexOf("function Overview"));
-    }
-    assert.equal(count(code, "credits"), 0, `${page} mentions credits`);
+  assert.equal(count(codeOnly(readApp(DETAIL)), "credit"), count(codeOnly(readApp(DETAIL)), "Lovable credits") + count(codeOnly(readApp(DETAIL)), "lovable_credits_max"));
+  for (const page of [INBOX, LEDGER, LAYOUT]) {
+    assert.equal(count(codeOnly(readApp(page)), "credit"), 0, `${page} mentions credits`);
   }
+  // Overview: only the hosted budget card (gated) and the onboarding steps mention credits
+  const overview = codeOnly(readApp(OVERVIEW));
+  const ours = overview.slice(overview.indexOf("function HowItWorksCard"), overview.indexOf("function HostedCards"));
+  assert.equal(count(ours, "credit"), 0);
   // the client lib carries the contract field name lovable_credits_max, but no user-facing credit copy
-  assert.equal(count(codeOnly(readApp("lib/improvements-client.ts")), "Lovable credits"), 0);
-  assert.equal(count(codeOnly(readApp("lib/harness-ux.ts")), "credits"), 0, "harness-ux.ts must not carry credit copy");
+  assert.equal(count(codeOnly(readApp(CLIENT)), "Lovable credits"), 0);
+  // harness-ux.ts carries exactly the two approved lines (proof cost, onboarding step 3)
+  const uxSource = codeOnly(readApp("lib/harness-ux.ts"));
+  assert.equal(count(uxSource, "Lovable credits"), 2);
+  assert.equal(count(uxSource, "credit"), 2);
 });
 
 test("no internal vocabulary in user-facing JSX outside the Developer view", () => {
@@ -157,33 +355,29 @@ test("no internal vocabulary in user-facing JSX outside the Developer view", () 
   for (const word of ["checkpoint", "message_id", "provenance", "confidence", "classifier"]) {
     assert.ok(!new RegExp(word, "i").test(userFacing), `${word} leaks into the user-facing detail`);
   }
-  for (const page of ["routes/_authenticated/inbox.tsx", "routes/_authenticated/ledger.tsx", "routes/_authenticated/overview.tsx", "lib/improvements-client.ts", LAYOUT]) {
+  for (const page of [INBOX, LEDGER, OVERVIEW, SHELL, CLIENT, LAYOUT, "lib/harness-ux.ts"]) {
     const code = codeOnly(readApp(page));
-    for (const word of ["checkpoint", "message_id", "provenance"]) {
+    for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
       assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into ${page}`);
     }
   }
 });
 
-test("no experiment execution action is exposed; the only run control is disabled", () => {
-  for (const page of PAGES) {
-    const code = codeOnly(readApp(page));
-    assert.ok(!/run_experiment|execute_experiment|remix_project|send_message|"run_proof"|action: "run"/.test(code), page);
-  }
-  const detail = readApp(DETAIL);
-  assert.match(detail, /<Button disabled aria-disabled className="w-full sm:w-auto">\s*Run proof/);
-  assert.match(detail, /Not available yet\./);
-});
-
-test("pages only fetch local harness routes and only the improvements endpoint", () => {
-  for (const page of ["routes/_authenticated/inbox.tsx", "routes/_authenticated/ledger.tsx", "routes/_authenticated/overview.tsx", "lib/improvements-client.ts", DETAIL]) {
+test("pages only fetch local harness routes: improvements and runtime, nothing else", () => {
+  for (const page of [INBOX, LEDGER, OVERVIEW, SHELL, CLIENT, DETAIL]) {
     const code = codeOnly(readApp(page));
     const targets = [...code.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]);
-    for (const t of targets) assert.match(t!, /^\/api\/public\/harness\/improvements$/, `${page} fetches ${t}`);
+    for (const t of targets) assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime)$/, `${page} fetches ${t}`);
     assert.ok(!/lovable\.dev|set_project_knowledge|setProjectKnowledge|createWorkspaceSkill/i.test(code), page);
   }
-  assert.ok(readApp("routes/_authenticated/inbox.tsx").includes("fetchImprovements"));
-  assert.ok(readApp("routes/_authenticated/ledger.tsx").includes("fetchImprovements"));
+  const client = codeOnly(readApp(CLIENT));
+  assert.match(client, /fetch\("\/api\/public\/harness\/improvements"/);
+  assert.match(client, /fetch\("\/api\/public\/harness\/runtime"/);
+  assert.ok(readApp(INBOX).includes("fetchImprovements"));
+  assert.ok(readApp(LEDGER).includes("fetchImprovements"));
+  // the only actions the UI can send
+  const actions = [...codeOnly(readApp(DETAIL) + readApp(LEDGER)).matchAll(/action: "([a-z_]+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(actions)].sort(), ["accept", "change_wording", "reopen", "restore", "skip"]);
 });
 
 test("Inbox cards are whole-card buttons with no separate Review button; nav says Improvements", () => {
@@ -193,9 +387,7 @@ test("Inbox cards are whole-card buttons with no separate Review button; nav say
   const detail = readApp(DETAIL);
   assert.match(detail, /<ClickableCard onClick=/);
   assert.ok(!/>\s*Review\s*<\/Button>/.test(detail));
-  assert.ok(!/>\s*Review\s*<\/Button>/.test(readApp("routes/_authenticated/inbox.tsx")));
-  assert.match(readApp("routes/_authenticated/route.tsx"), /label: "Improvements"/);
-  assert.ok(!/label: "Ledger"/.test(readApp("routes/_authenticated/route.tsx")));
+  assert.ok(!/>\s*Review\s*<\/Button>/.test(readApp(INBOX)));
 });
 
 test("evidence rendering only knows two authors and labels them for a person", () => {

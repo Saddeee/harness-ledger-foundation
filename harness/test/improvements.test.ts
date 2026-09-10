@@ -94,7 +94,7 @@ test("shape + initial state: pending, review current, proof future, project name
   ]);
   assert.equal(item.stages[0]!.note, "Found in your Lovable chat, 7 Sep");
   assert.equal(item.stages[1]!.note, "Waiting for your decision");
-  assert.equal(item.stages[2]!.note, "Not proposed yet");
+  assert.equal(item.stages[2]!.note, "Not proven yet");
   assert.equal(item.proof, null);
 });
 
@@ -131,8 +131,8 @@ test("proof block derives from plans; runnable is always false; proof note says 
   const item = imp.getImprovement(cc.id)!;
   assert.deepEqual(item.proof, { exists: true, runnable: false, lovable_credits_max: 6, outcome: "not_run", manual_cleanup: true });
   assert.equal(item.stages[2]!.state, "current");
-  assert.equal(item.stages[2]!.note, "Proof proposed — running it isn't available yet");
-  assert.equal(item.stages[3]!.note, "Nothing added yet");
+  assert.equal(item.stages[2]!.note, "Not proven yet");
+  assert.equal(item.stages[3]!.note, "Not in Lovable yet");
 });
 
 test("change_wording creates a rule_revision and appears in wording_history", () => {

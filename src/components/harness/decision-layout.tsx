@@ -128,7 +128,9 @@ export function ConfirmAction({
   confirmLabel,
   onConfirm,
   disabled,
+  confirmDisabled,
   variant,
+  children,
 }: {
   trigger: string;
   title: string;
@@ -137,7 +139,11 @@ export function ConfirmAction({
   confirmLabel: string;
   onConfirm: () => void;
   disabled?: boolean;
+  confirmDisabled?: boolean;
   variant?: "default" | "outline" | "ghost";
+  // Extra content shown between the body and the consequences, e.g. an
+  // exact preview of what will be written.
+  children?: ReactNode;
 }) {
   return (
     <AlertDialog>
@@ -146,23 +152,28 @@ export function ConfirmAction({
           {trigger}
         </Button>
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm">
               <p>{body}</p>
-              <ul className="list-disc pl-5">
-                {consequences.map((c) => (
-                  <li key={c}>{c}</li>
-                ))}
-              </ul>
+              {children}
+              {consequences.length > 0 ? (
+                <ul className="list-disc pl-5">
+                  {consequences.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>{confirmLabel}</AlertDialogAction>
+          <AlertDialogAction onClick={onConfirm} disabled={confirmDisabled}>
+            {confirmLabel}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

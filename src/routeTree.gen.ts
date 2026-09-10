@@ -26,6 +26,7 @@ import { Route as OauthCallbackRouteImport } from './routes/oauth/callback'
 import { Route as ApiPublicHarnessCorrectionsRouteImport } from './routes/api/public/harness/corrections'
 import { Route as ApiPublicHarnessImprovementsRouteImport } from './routes/api/public/harness/improvements'
 import { Route as ApiPublicHarnessRulesRouteImport } from './routes/api/public/harness/rules'
+import { Route as ApiPublicHarnessRuntimeRouteImport } from './routes/api/public/harness/runtime'
 import { Route as ApiPublicHooksQueueWorkerRouteImport } from './routes/api/public/hooks/queue-worker'
 import { Route as ApiPublicLovableConnectionRouteImport } from './routes/api/public/lovable/connection'
 import { Route as ApiPublicLovableOauthCallbackRouteImport } from './routes/api/public/lovable/oauth-callback'
@@ -119,6 +120,11 @@ const ApiPublicHarnessRulesRoute = ApiPublicHarnessRulesRouteImport.update({
   path: '/api/public/harness/rules',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHarnessRuntimeRoute = ApiPublicHarnessRuntimeRouteImport.update({
+  id: '/api/public/harness/runtime',
+  path: '/api/public/harness/runtime',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicHooksQueueWorkerRoute =
   ApiPublicHooksQueueWorkerRouteImport.update({
     id: '/api/public/hooks/queue-worker',
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
   '/api/public/harness/improvements': typeof ApiPublicHarnessImprovementsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
+  '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
   '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
   '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
@@ -197,6 +204,7 @@ export interface FileRoutesByTo {
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
   '/api/public/harness/improvements': typeof ApiPublicHarnessImprovementsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
+  '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
   '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
   '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
@@ -223,6 +231,7 @@ export interface FileRoutesById {
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
   '/api/public/harness/improvements': typeof ApiPublicHarnessImprovementsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
+  '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
   '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
   '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
@@ -249,6 +258,7 @@ export interface FileRouteTypes {
     | '/api/public/harness/corrections'
     | '/api/public/harness/improvements'
     | '/api/public/harness/rules'
+    | '/api/public/harness/runtime'
     | '/api/public/hooks/queue-worker'
     | '/api/public/lovable/connection'
     | '/api/public/lovable/oauth-callback'
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/api/public/harness/corrections'
     | '/api/public/harness/improvements'
     | '/api/public/harness/rules'
+    | '/api/public/harness/runtime'
     | '/api/public/hooks/queue-worker'
     | '/api/public/lovable/connection'
     | '/api/public/lovable/oauth-callback'
@@ -298,6 +309,7 @@ export interface FileRouteTypes {
     | '/api/public/harness/corrections'
     | '/api/public/harness/improvements'
     | '/api/public/harness/rules'
+    | '/api/public/harness/runtime'
     | '/api/public/hooks/queue-worker'
     | '/api/public/lovable/connection'
     | '/api/public/lovable/oauth-callback'
@@ -315,6 +327,7 @@ export interface RootRouteChildren {
   ApiPublicHarnessCorrectionsRoute: typeof ApiPublicHarnessCorrectionsRoute
   ApiPublicHarnessImprovementsRoute: typeof ApiPublicHarnessImprovementsRoute
   ApiPublicHarnessRulesRoute: typeof ApiPublicHarnessRulesRoute
+  ApiPublicHarnessRuntimeRoute: typeof ApiPublicHarnessRuntimeRoute
   ApiPublicHooksQueueWorkerRoute: typeof ApiPublicHooksQueueWorkerRoute
   ApiPublicLovableConnectionRoute: typeof ApiPublicLovableConnectionRoute
   ApiPublicLovableOauthCallbackRoute: typeof ApiPublicLovableOauthCallbackRoute
@@ -444,6 +457,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHarnessRulesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/harness/runtime': {
+      id: '/api/public/harness/runtime'
+      path: '/api/public/harness/runtime'
+      fullPath: '/api/public/harness/runtime'
+      preLoaderRoute: typeof ApiPublicHarnessRuntimeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/queue-worker': {
       id: '/api/public/hooks/queue-worker'
       path: '/api/public/hooks/queue-worker'
@@ -525,6 +545,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHarnessCorrectionsRoute: ApiPublicHarnessCorrectionsRoute,
   ApiPublicHarnessImprovementsRoute: ApiPublicHarnessImprovementsRoute,
   ApiPublicHarnessRulesRoute: ApiPublicHarnessRulesRoute,
+  ApiPublicHarnessRuntimeRoute: ApiPublicHarnessRuntimeRoute,
   ApiPublicHooksQueueWorkerRoute: ApiPublicHooksQueueWorkerRoute,
   ApiPublicLovableConnectionRoute: ApiPublicLovableConnectionRoute,
   ApiPublicLovableOauthCallbackRoute: ApiPublicLovableOauthCallbackRoute,

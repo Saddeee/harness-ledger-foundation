@@ -1,17 +1,28 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HOW_IT_WORKS_STEPS } from "@/lib/harness-ux";
+import {
+  HOW_IT_WORKS_EVENT,
+  fetchImprovements,
+  groupOf,
+  isDeferred,
+  isHowItWorksDismissed,
+  runtimeQueryOptions,
+  setHowItWorksDismissed,
+} from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/overview")({
   head: () => ({
     meta: [
       { title: "Overview — Harness Ledger" },
-      { name: "description", content: "This month's credit usage and job queue status." },
+      { name: "description", content: "What needs your attention next." },
       { property: "og:title", content: "Overview — Harness Ledger" },
-      { property: "og:description", content: "This month's credit usage and job queue status." },
+      { property: "og:description", content: "What needs your attention next." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -23,19 +34,43 @@ function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
-async function harnessHeaders(): Promise<HeadersInit> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+// The only place the product explains itself. Dismissable; the sidebar
+// footer link brings it back.
+function HowItWorksCard() {
+  const [dismissed, setDismissed] = useState(() => isHowItWorksDismissed());
+  useEffect(() => {
+    const show = () => setDismissed(false);
+    window.addEventListener(HOW_IT_WORKS_EVENT, show);
+    return () => window.removeEventListener(HOW_IT_WORKS_EVENT, show);
+  }, []);
+  if (dismissed) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">How Harness works</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ol className="list-decimal space-y-1 pl-5 text-sm">
+          {HOW_IT_WORKS_STEPS.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setHowItWorksDismissed(true);
+            setDismissed(true);
+          }}
+        >
+          Got it
+        </Button>
+      </CardContent>
+    </Card>
+  );
 }
 
 type NextAction = { text: string; label: string; improvementId: number; to: "/inbox" | "/ledger" };
-
-type ImprovementSummary = {
-  id: number;
-  decision: { status: "pending" | "accepted" | "skipped" };
-  stages: { key: string; state: string }[];
-};
 
 // Only the single most useful next user action; nothing else. Silently
 // absent when the local runtime isn't available (hosted preview).
@@ -44,18 +79,11 @@ function NextActionCard() {
   const { data } = useQuery({
     queryKey: ["harness-next-action"],
     queryFn: async (): Promise<NextAction | null> => {
-      const res = await fetch("/api/public/harness/improvements", {
-        headers: await harnessHeaders(),
-      });
-      if (!res.ok) return null;
-      const body = (await res.json()) as {
-        available: boolean;
-        improvements?: ImprovementSummary[];
-      };
-      if (!body.available) return null;
+      const body = await fetchImprovements().catch(() => null);
+      if (!body || !body.available) return null;
       const all = body.improvements ?? [];
 
-      const pending = all.filter((i) => i.decision.status === "pending");
+      const pending = all.filter((i) => i.decision.status === "pending" && !isDeferred(i.id));
       const firstPending = pending[0];
       if (firstPending) {
         return {
@@ -68,21 +96,29 @@ function NextActionCard() {
           to: "/inbox",
         };
       }
-      const waitingForProof = all.filter(
-        (i) =>
-          i.decision.status === "accepted" &&
-          !i.stages.some((s) => s.key === "proof" && s.state === "complete"),
-      );
-      const firstWaiting = waitingForProof[0];
+      const needsAttention = all.filter((i) => groupOf(i, false) === "Needs attention");
+      const firstAttention = needsAttention[0];
+      if (firstAttention) {
+        return {
+          text:
+            needsAttention.length === 1
+              ? "One improvement needs attention."
+              : `${needsAttention.length} improvements need attention.`,
+          label: "View",
+          improvementId: firstAttention.id,
+          to: "/ledger",
+        };
+      }
+      const waiting = all.filter((i) => groupOf(i, false) === "Waiting to be added");
+      const firstWaiting = waiting[0];
       if (firstWaiting) {
         return {
           text:
-            waitingForProof.length === 1
-              ? "One improvement is waiting for proof — running it isn't available yet."
-              : `${waitingForProof.length} improvements are waiting for proof — running it isn't available yet.`,
+            waiting.length === 1
+              ? "One improvement is waiting for Harness to add it to Lovable."
+              : `${waiting.length} improvements are waiting for Harness to add them to Lovable.`,
           label: "View",
           improvementId: firstWaiting.id,
-          // decided items live under Improvements, not Inbox
           to: "/ledger",
         };
       }
@@ -109,7 +145,9 @@ function NextActionCard() {
   );
 }
 
-function Overview() {
+// Hosted-runtime widgets (Supabase-backed). Only meaningful in the hosted
+// preview; the local runtime has no job queue and no hosted credit budget.
+function HostedCards() {
   const { data } = useQuery({
     queryKey: ["overview"],
     queryFn: async () => {
@@ -137,11 +175,7 @@ function Overview() {
   const pct = budget > 0 ? Math.min(100, (used / budget) * 100) : 0;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Overview</h1>
-
-      <NextActionCard />
-
+    <>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Credits this month</CardTitle>
@@ -168,6 +202,24 @@ function Overview() {
           <CardContent className="text-3xl font-semibold">{data?.running ?? 0}</CardContent>
         </Card>
       </div>
+    </>
+  );
+}
+
+function Overview() {
+  const runtime = useQuery(runtimeQueryOptions);
+  // Undefined while loading -> treated as hosted, so nothing flashes away.
+  const mode = runtime.data?.mode;
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-semibold">Overview</h1>
+
+      {mode === "local" ? <HowItWorksCard /> : null}
+
+      <NextActionCard />
+
+      {mode === "hosted" || mode === undefined ? <HostedCards /> : null}
     </div>
   );
 }
