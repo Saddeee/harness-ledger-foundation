@@ -16,7 +16,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import type { Stage } from "@/lib/harness-ux";
+import { STAGE_LABELS, type Stage } from "@/lib/harness-ux";
 
 export function RecommendationCallout({
   title,
@@ -128,6 +128,7 @@ export function ConfirmAction({
   confirmLabel,
   onConfirm,
   disabled,
+  variant,
 }: {
   trigger: string;
   title: string;
@@ -136,11 +137,12 @@ export function ConfirmAction({
   confirmLabel: string;
   onConfirm: () => void;
   disabled?: boolean;
+  variant?: "default" | "outline" | "ghost";
 }) {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button disabled={disabled} className="w-full sm:w-auto">
+        <Button disabled={disabled} variant={variant ?? "default"} className="w-full sm:w-auto">
           {trigger}
         </Button>
       </AlertDialogTrigger>
@@ -191,44 +193,68 @@ export function DetailSection({ title, children }: { title: string; children: Re
   );
 }
 
-const STAGE_STATE_LABEL: Record<Stage["state"], string> = {
+const STAGE_STATE_SR: Record<Stage["state"], string> = {
   complete: "done",
-  current: "you are here",
-  future: "later",
+  current: "current step",
+  future: "not yet",
   blocked: "blocked",
 };
 
-// The Found -> Review -> Test -> Add to Lovable journey. State is conveyed
-// with text as well as styling so it never relies on color alone.
+// The Found -> Your review -> Proof -> In Lovable journey. Each stage shows
+// its human note (e.g. "You decided on 9 Sep") so state never relies on
+// color alone; the state word itself is available to assistive tech.
 export function ProcessProgress({ stages }: { stages: Stage[] }) {
   return (
-    <ol aria-label="Progress" className="flex flex-wrap gap-2">
+    <ol aria-label="Progress" className="flex flex-wrap gap-x-4 gap-y-2">
       {stages.map((s, i) => (
         <li
           key={s.key}
-          className="flex items-center gap-2 text-sm"
+          className="flex min-w-0 flex-col gap-1 text-sm"
           aria-current={s.state === "current" ? "step" : undefined}
         >
-          <Badge
-            variant={
-              s.state === "complete" ? "secondary" : s.state === "current" ? "default" : "outline"
-            }
-            className={s.state === "blocked" ? "line-through" : undefined}
-          >
-            {i + 1}. {s.label}
-            <span className="sr-only"> ({STAGE_STATE_LABEL[s.state]})</span>
-          </Badge>
-          <span className="text-xs text-muted-foreground" aria-hidden="true">
-            {STAGE_STATE_LABEL[s.state]}
-          </span>
-          {i < stages.length - 1 ? (
-            <span aria-hidden="true" className="text-muted-foreground">
-              →
-            </span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={
+                s.state === "complete" ? "secondary" : s.state === "current" ? "default" : "outline"
+              }
+              className={s.state === "blocked" ? "line-through" : undefined}
+            >
+              {i + 1}. {STAGE_LABELS[s.key] ?? s.key}
+              <span className="sr-only"> ({STAGE_STATE_SR[s.state]})</span>
+            </Badge>
+            {i < stages.length - 1 ? (
+              <span aria-hidden="true" className="text-muted-foreground">
+                →
+              </span>
+            ) : null}
+          </div>
+          {s.note ? <span className="text-xs text-muted-foreground">{s.note}</span> : null}
         </li>
       ))}
     </ol>
+  );
+}
+
+// A whole-card click target: a real button, so it is keyboard focusable and
+// announced as one control, styled like the app's bordered cards.
+export function ClickableCard({
+  onClick,
+  ariaLabel,
+  children,
+}: {
+  onClick: () => void;
+  ariaLabel: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="w-full rounded-md border bg-card p-4 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </button>
   );
 }
 

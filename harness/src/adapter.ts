@@ -7,6 +7,10 @@
 import { z } from "zod";
 import * as store from "./store.js";
 
+// Checkpoint C.2: the single-item "Improvement" view and its actions.
+export { listImprovements, getImprovement, improvementAction } from "./improvements.js";
+export type { Improvement } from "./improvements.js";
+
 const classification = z.enum([
   "defect_correction", "constraint_restatement", "missing_requirement",
   "preference_revision", "scope_extension", "new_task", "question", "approval", "other",

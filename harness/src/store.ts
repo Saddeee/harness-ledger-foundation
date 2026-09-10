@@ -299,7 +299,7 @@ export function createCorrectionCandidate(input: {
 }
 
 export type ReviewAction =
-  | "confirm" | "reclassify" | "mark_one_time" | "mark_reusable" | "change_scope" | "exclude";
+  | "confirm" | "reclassify" | "mark_one_time" | "mark_reusable" | "change_scope" | "exclude" | "include";
 
 export function reviewCorrectionCandidate(input: {
   id: number;
@@ -332,6 +332,9 @@ export function reviewCorrectionCandidate(input: {
       break;
     case "exclude":
       patch.excluded_from_learning = 1;
+      break;
+    case "include":
+      patch.excluded_from_learning = 0;
       break;
   }
 
@@ -556,13 +559,29 @@ export function updateRule(input: {
   id: number;
   instruction?: string;
   state?: RuleState;
+  scope?: "project" | "workspace";
   reason?: string;
   actor: string;
 }) {
   const existing = db.prepare(`SELECT * FROM rules WHERE id = ?`).get(input.id) as
-    | { instruction: string; state: string }
+    | { instruction: string; state: string; scope: string }
     | undefined;
   if (!existing) throw new Error(`rule ${input.id} not found`);
+
+  // Scope is a destination choice, not a wording/state change: it is
+  // updated and audited via an event but does not create a rule_revision.
+  if (input.scope && input.scope !== existing.scope) {
+    db.prepare(`UPDATE rules SET scope = ?, updated_at = datetime('now') WHERE id = ?`).run(
+      input.scope,
+      input.id,
+    );
+    insertEvent("rule.scope_changed", null, {
+      id: input.id,
+      previous_scope: existing.scope,
+      new_scope: input.scope,
+      actor: input.actor,
+    });
+  }
 
   const newInstruction = input.instruction ?? existing.instruction;
   const newState = input.state ?? existing.state;
@@ -638,6 +657,25 @@ export function getCorrectionCandidate(id: number) {
     )
     .all(id);
   return { correction_candidate: cc, evidence };
+}
+
+// User-facing evidence is ONLY what was actually exchanged in the Lovable
+// chat: kind='message' with provenance='lovable_mcp', verbatim, chronological.
+// Everything else linked to the correction (Harness notes, build-log rows,
+// spec excerpts, git commits, diffs) is returned separately as hidden.
+export function getEvidenceForCorrection(correctionCandidateId: number) {
+  const all = db
+    .prepare(
+      `SELECT hi.* FROM history_items hi
+       JOIN correction_candidate_evidence cce ON cce.history_item_id = hi.id
+       WHERE cce.correction_candidate_id = ?
+       ORDER BY COALESCE(hi.occurred_at, '9999'), hi.id`,
+    )
+    .all(correctionCandidateId) as { kind: string; provenance: string }[];
+  return {
+    visible: all.filter((e) => e.kind === "message" && e.provenance === "lovable_mcp"),
+    hidden: all.filter((e) => !(e.kind === "message" && e.provenance === "lovable_mcp")),
+  };
 }
 
 export function listProjectRules(projectId?: string) {

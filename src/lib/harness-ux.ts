@@ -1,7 +1,6 @@
 // Pure, dependency-free presentation logic for the guided Harness UI.
 // No React, no imports -- so it can be unit-tested from harness/test via tsx.
-// Nothing here mutates data; it only maps internal state to plain language
-// and picks which action to foreground.
+// Nothing here mutates data; it only maps internal state to plain language.
 
 // ---- Plain-language labels for internal enum values ----
 
@@ -71,9 +70,45 @@ export const FIELD_LABELS: Record<string, string> = {
   applies_when: "When this applies",
 };
 
+export const STAGE_LABELS: Record<string, string> = {
+  found: "Found",
+  review: "Your review",
+  proof: "Proof",
+  in_lovable: "In Lovable",
+};
+
+export const DESTINATION_PHRASES: Record<string, string> = {
+  workspace: "add to all my projects",
+  project: "add to this project only",
+  one_time: "keep as a one-time decision",
+};
+
 export function label(map: Record<string, string>, value: string | null | undefined): string {
   if (value == null) return "";
   return map[value] ?? value;
+}
+
+// ---- One-line lay explanation, keyed by classification. Templates only:
+// never invents specifics about the item. ----
+
+export const WHY_TEMPLATES: Record<string, string> = {
+  constraint_restatement:
+    "Lovable missed something you already expected. Harness thinks this should become a standing instruction so it doesn't happen again.",
+  preference_revision:
+    "You changed how you want this done. Harness thinks the new way should become a standing instruction.",
+  missing_requirement:
+    "Part of what you needed wasn't in the request. Harness thinks it should become a standing instruction.",
+  defect_correction:
+    "Lovable made a mistake you had to fix. Harness thinks a standing instruction would prevent it.",
+  scope_extension:
+    "The request grew beyond its original scope. Harness thinks a standing instruction would set clearer expectations.",
+};
+
+const WHY_GENERIC =
+  "You corrected something Lovable did. Harness thinks it should become a standing instruction.";
+
+export function whyFor(classification: string | null | undefined): string {
+  return (classification && WHY_TEMPLATES[classification]) || WHY_GENERIC;
 }
 
 // ---- Text helpers ----
@@ -94,227 +129,99 @@ export function excerpt(text: string | null | undefined, max = 240): string {
   return `${cut.slice(0, lastSpace > 80 ? lastSpace : max)}…`;
 }
 
-// ---- Process progress: Found -> Review -> Test -> Add to Lovable ----
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
-export type StageKey = "found" | "review" | "test" | "add";
-export type StageState = "complete" | "current" | "future" | "blocked";
-export type Stage = { key: StageKey; label: string; state: StageState };
-
-export type StageInput = {
-  reviewed: boolean;
-  excludedFromLearning: boolean;
-  ruleState: string | null;
-  experimentStatus: string | null;
-  experimentStartingState: string | null;
-  testOutcome: "passed" | "failed" | "unclear" | "not_run" | null;
-};
-
-const REVIEW_DONE_RULE_STATES = new Set([
-  "approved",
-  "testing",
-  "supported",
-  "active",
-  "questioned",
-  "retired",
-  "rolled_back",
-]);
-const TEST_DONE_RULE_STATES = new Set(["supported", "active"]);
-
-export function computeStages(input: StageInput): Stage[] {
-  const found: Stage = { key: "found", label: "Found", state: "complete" };
-
-  let review: StageState;
-  if (input.excludedFromLearning || input.ruleState === "rejected") review = "blocked";
-  else if (input.reviewed && input.ruleState && REVIEW_DONE_RULE_STATES.has(input.ruleState))
-    review = "complete";
-  else review = "current";
-
-  let test: StageState;
-  if (review !== "complete") test = review === "blocked" ? "blocked" : "future";
-  else if (input.experimentStatus === "rejected" || input.experimentStartingState === "blocked")
-    test = "blocked";
-  else if (
-    input.testOutcome === "passed" ||
-    (input.ruleState && TEST_DONE_RULE_STATES.has(input.ruleState))
-  )
-    test = "complete";
-  else test = "current";
-
-  let add: StageState;
-  if (input.ruleState === "active") add = "complete";
-  else if (test === "complete") add = "current";
-  else if (test === "blocked") add = "blocked";
-  else add = "future";
-
-  return [
-    found,
-    { key: "review", label: "Review", state: review },
-    { key: "test", label: "Test", state: test },
-    { key: "add", label: "Add to Lovable", state: add },
-  ];
+// "8 Sep" (local time). Returns the input unchanged if it isn't a date.
+export function formatDay(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
 }
 
-// ---- Primary-action selection from lifecycle state ----
-
-export type Action = {
-  kind: string;
-  label: string;
-  consequence: string;
-};
-
-export const NO_LOVABLE_CHANGE = "Nothing will be changed in Lovable.";
-export const NO_CREDITS = "No Lovable credits will be used.";
-
-export const APPROVAL_CONFIRMATION = {
-  title: "Approve this rule?",
-  body: "This confirms that the rule represents a reusable instruction.",
-  noLovableChange: NO_LOVABLE_CHANGE,
-  noCredits: NO_CREDITS,
-  confirmLabel: "Approve rule",
-};
-
-export const CONTINUE_CONFIRMATION = {
-  title: "Record your decision?",
-  body: "This records that the lesson captures what you meant. Harness prepares a rule from it.",
-  noLovableChange: NO_LOVABLE_CHANGE,
-  noCredits: NO_CREDITS,
-  confirmLabel: "Yes, continue",
-};
-
-export function correctionPrimaryAction(input: {
-  reviewed: boolean;
-  excludedFromLearning: boolean;
-  hasRule: boolean;
-}): Action {
-  if (input.excludedFromLearning) {
-    return {
-      kind: "none",
-      label: "Excluded from learning",
-      consequence: "Harness will not create a rule from this.",
-    };
-  }
-  if (!input.reviewed) {
-    return {
-      kind: "confirm",
-      label: "Yes, continue",
-      consequence: `Harness prepares a rule. ${NO_LOVABLE_CHANGE} ${NO_CREDITS}`,
-    };
-  }
-  if (input.hasRule) {
-    return {
-      kind: "view_rule",
-      label: "View rule",
-      consequence: "Opens the rule Harness prepared from this lesson.",
-    };
-  }
-  return {
-    kind: "none",
-    label: "Waiting for Harness to draft a rule",
-    consequence: `${NO_LOVABLE_CHANGE} ${NO_CREDITS}`,
-  };
+// "8 Sep, 01:29" (local time).
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${formatDay(iso)}, ${hh}:${mm}`;
 }
 
-export function rulePrimaryAction(state: string | null | undefined): Action {
-  switch (state) {
-    case "proposed":
-      return {
-        kind: "approve",
-        label: "Approve rule",
-        consequence: `${NO_LOVABLE_CHANGE} ${NO_CREDITS}`,
-      };
-    case "approved":
-      return {
-        kind: "review_test",
-        label: "Review the proposed test",
-        consequence:
-          "Shows how Harness can check this rule. Running the test is not available yet, so nothing will be executed.",
-      };
-    case "rejected":
-    case "disabled":
-    case "retired":
-    case "rolled_back":
-      return {
-        kind: "return_to_proposed",
-        label: "Return to proposed",
-        consequence: `${NO_LOVABLE_CHANGE} ${NO_CREDITS}`,
-      };
-    default:
-      return { kind: "none", label: "No action needed", consequence: "" };
-  }
+// ---- Lovable reply extraction ----
+// A Lovable assistant message is stored verbatim, including its tool-use
+// log. The part a user actually saw in the Lovable chat is the "message"
+// field of each user_messaging--message_user block. This pulls those out;
+// the full verbatim text stays available behind "Show full response".
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
-// Plain-language status line for a rule, e.g. "Approved, not tested, not added to Lovable."
-export function ruleStatusSentence(
-  state: string | null | undefined,
-  testOutcome: string | null,
-): string {
-  const testPart =
-    testOutcome === "passed"
-      ? "test passed"
-      : testOutcome === "failed"
-        ? "test failed"
-        : "not tested";
-  switch (state) {
-    case "proposed":
-      return "Needs your review. Not tested, not added to Lovable.";
-    case "approved":
-      return `Approved, ${testPart}, not added to Lovable.`;
-    case "testing":
-      return "Being tested. Not added to Lovable.";
-    case "supported":
-      return "Test supported it. Not added to Lovable yet.";
-    case "active":
-      return "Active in Lovable.";
-    case "questioned":
-      return "Questioned after a failure. Still in Lovable.";
-    case "rejected":
-      return "Rejected. Not added to Lovable.";
-    default:
-      return `${label(RULE_STATE_LABELS, state)}. Not added to Lovable.`;
+const MESSAGE_USER_BLOCK =
+  /<lov-tool-use\b[^>]*?name="user_messaging--message_user"[^>]*?data="((?:[^"\\]|\\.)*)"/g;
+
+export function lovableReplyText(raw: string): string {
+  const out: string[] = [];
+  for (const match of raw.matchAll(MESSAGE_USER_BLOCK)) {
+    const attr = match[1] ?? "";
+    const unescaped = decodeHtmlEntities(attr).replace(/\\(["\\])/g, "$1");
+    try {
+      const parsed = JSON.parse(unescaped) as { message?: unknown };
+      if (typeof parsed.message === "string" && parsed.message.trim())
+        out.push(parsed.message.trim());
+    } catch {
+      // not a parsable block; skip it
+    }
   }
+  if (out.length > 0) return out.join("\n\n");
+  return excerpt(raw, 600);
 }
 
-// ---- Episode story derived from evidence items ----
+// ---- Improvement presentation ----
 
-export type EvidenceLike = {
-  id: number;
-  kind: string;
-  role: string | null;
-  content: string;
-  occurred_at: string | null;
-  provenance: string;
+export type Stage = {
+  key: "found" | "review" | "proof" | "in_lovable";
+  state: "complete" | "current" | "future" | "blocked";
+  note: string | null;
 };
 
-export type Story = {
-  requested: EvidenceLike | null;
-  built: EvidenceLike | null;
-  feedback: EvidenceLike | null;
-  changed: EvidenceLike[];
+export type DecisionLike = {
+  status: "pending" | "accepted" | "skipped";
+  decided_at: string | null;
 };
 
-const FEEDBACK_KINDS = new Set(["manual_note", "build_log_row"]);
-
-export function storyFromEvidence(evidence: EvidenceLike[]): Story {
-  const sorted = [...evidence].sort((a, b) => {
-    const ta = a.occurred_at ?? "9999";
-    const tb = b.occurred_at ?? "9999";
-    return ta === tb ? a.id - b.id : ta < tb ? -1 : 1;
-  });
-
-  const feedbackIdx = sorted.findIndex((e) => e.role === "operator" || FEEDBACK_KINDS.has(e.kind));
-  const before = feedbackIdx === -1 ? sorted : sorted.slice(0, feedbackIdx);
-  const after = feedbackIdx === -1 ? [] : sorted.slice(feedbackIdx + 1);
-
-  const requested = before.find((e) => e.kind === "message" && e.role === "user") ?? null;
-  const built =
-    before.find((e) => e.role === "assistant" || e.kind === "diff" || e.kind === "edit") ?? null;
-  const feedback = feedbackIdx === -1 ? null : (sorted[feedbackIdx] ?? null);
-  const changed = after.filter((e) => e.kind !== "spec_excerpt" || after.length <= 2);
-
-  return { requested, built, feedback, changed };
-}
-
-// Rule "title": the first sentence of its instruction.
-export function ruleTitle(instruction: string): string {
-  return firstSentence(instruction) || instruction;
+export function decisionSentence(input: {
+  decision: DecisionLike;
+  destination: string | null;
+  inLovable: boolean;
+}): string {
+  const when = input.decision.decided_at ? `, on ${formatDay(input.decision.decided_at)}` : "";
+  if (input.decision.status === "accepted") {
+    const choice = label(DESTINATION_PHRASES, input.destination) || "accept this";
+    return input.inLovable
+      ? `You chose: ${choice}${when}. Added to Lovable.`
+      : `You chose: ${choice}${when}. Not added to Lovable yet.`;
+  }
+  if (input.decision.status === "skipped") return `You skipped this improvement${when}.`;
+  return "Waiting for your decision.";
 }

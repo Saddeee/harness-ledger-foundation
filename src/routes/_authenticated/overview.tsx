@@ -29,11 +29,12 @@ async function harnessHeaders(): Promise<HeadersInit> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-type NextAction = {
-  text: string;
-  label: string;
-  to: "/inbox" | "/ledger";
-  search: Record<string, number>;
+type NextAction = { text: string; label: string; improvementId: number };
+
+type ImprovementSummary = {
+  id: number;
+  decision: { status: "pending" | "accepted" | "skipped" };
+  stages: { key: string; state: string }[];
 };
 
 // Only the single most useful next user action; nothing else. Silently
@@ -43,59 +44,43 @@ function NextActionCard() {
   const { data } = useQuery({
     queryKey: ["harness-next-action"],
     queryFn: async (): Promise<NextAction | null> => {
-      const headers = await harnessHeaders();
-      const [cRes, rRes] = await Promise.all([
-        fetch("/api/public/harness/corrections", { headers }),
-        fetch("/api/public/harness/rules", { headers }),
-      ]);
-      if (!cRes.ok || !rRes.ok) return null;
-      const c = (await cRes.json()) as {
+      const res = await fetch("/api/public/harness/improvements", {
+        headers: await harnessHeaders(),
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as {
         available: boolean;
-        corrections?: { id: number; reviewed: number; excluded_from_learning: number }[];
+        improvements?: ImprovementSummary[];
       };
-      const r = (await rRes.json()) as {
-        available: boolean;
-        rules?: { rule: { id: number; state: string } }[];
-      };
-      if (!c.available || !r.available) return null;
+      if (!body.available) return null;
+      const all = body.improvements ?? [];
 
-      const pending = (c.corrections ?? []).filter((x) => !x.reviewed && !x.excluded_from_learning);
-      const first = pending[0];
-      if (first) {
+      const pending = all.filter((i) => i.decision.status === "pending");
+      const firstPending = pending[0];
+      if (firstPending) {
         return {
           text:
             pending.length === 1
-              ? "One correction needs your review."
-              : `${pending.length} corrections need your review.`,
-          label: "Review correction",
-          to: "/inbox",
-          search: { correction: first.id },
+              ? "One improvement is waiting for your decision."
+              : `${pending.length} improvements are waiting for your decision.`,
+          label: "Review",
+          improvementId: firstPending.id,
         };
       }
-      const proposed = (r.rules ?? []).filter((x) => x.rule.state === "proposed");
-      const firstProposed = proposed[0];
-      if (firstProposed) {
+      const waitingForProof = all.filter(
+        (i) =>
+          i.decision.status === "accepted" &&
+          !i.stages.some((s) => s.key === "proof" && s.state === "complete"),
+      );
+      const firstWaiting = waitingForProof[0];
+      if (firstWaiting) {
         return {
           text:
-            proposed.length === 1
-              ? "One rule needs your approval."
-              : `${proposed.length} rules need your approval.`,
-          label: "Review rule",
-          to: "/ledger",
-          search: { rule: firstProposed.rule.id },
-        };
-      }
-      const approved = (r.rules ?? []).filter((x) => x.rule.state === "approved");
-      const firstApproved = approved[0];
-      if (firstApproved) {
-        return {
-          text:
-            approved.length === 1
-              ? "One approved rule is ready for test planning."
-              : `${approved.length} approved rules are ready for test planning.`,
-          label: "Review test plan",
-          to: "/ledger",
-          search: { rule: firstApproved.rule.id },
+            waitingForProof.length === 1
+              ? "One improvement is waiting for proof — running it isn't available yet."
+              : `${waitingForProof.length} improvements are waiting for proof — running it isn't available yet.`,
+          label: "View",
+          improvementId: firstWaiting.id,
         };
       }
       return null;
@@ -110,7 +95,10 @@ function NextActionCard() {
       </CardHeader>
       <CardContent className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm">{data.text}</p>
-        <Button size="sm" onClick={() => navigate({ to: data.to, search: data.search as never })}>
+        <Button
+          size="sm"
+          onClick={() => navigate({ to: "/inbox", search: { improvement: data.improvementId } })}
+        >
           {data.label}
         </Button>
       </CardContent>
