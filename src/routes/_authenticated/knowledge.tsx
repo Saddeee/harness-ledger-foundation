@@ -51,7 +51,9 @@ function versionStatusLine(v: KnowledgeVersionSummary): string {
   const base = (() => {
     switch (v.status) {
       case "written":
-        return `Written to Lovable${v.written_at ? `, ${formatDate(v.written_at)}` : ""}`;
+        return v.restored_from_version_id != null
+          ? `Reverted to an earlier version${v.written_at ? `, ${formatDate(v.written_at)}` : ""}`
+          : `Written to Lovable${v.written_at ? `, ${formatDate(v.written_at)}` : ""}`;
       case "pending":
         return "Staged — will be written at the next sync";
       case "stale":

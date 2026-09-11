@@ -319,7 +319,10 @@ function beginFlow(opts: { timeoutMs?: number } = {}): Flow {
       try {
         await client.connect(transport);
       } catch (err) {
-        if (!(err instanceof UnauthorizedError)) throw err;
+        if (!(err instanceof UnauthorizedError)) {
+          await transport.close().catch(() => {});
+          throw err;
+        }
         // The SDK has already run discovery, dynamic registration and PKCE and
         // called redirectToAuthorization(); wait for the loopback callback.
         const code = await codePromise;

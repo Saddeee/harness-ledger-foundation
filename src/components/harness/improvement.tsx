@@ -24,9 +24,9 @@ import {
   formatDay,
   label,
   lovableReplyText,
-  lovableStatusLine,
   proveCostLine,
   type StatusCtx,
+  versionStatusLine,
   whyFor,
   wordingChangeLine,
 } from "@/lib/harness-ux";
@@ -639,8 +639,7 @@ export function ImprovementDetail({
             {lovable.versions.map((v) => (
               <p key={v.id}>
                 {formatDay(v.created_at)} · {label(DESTINATION_LABELS, v.target)} ·{" "}
-                {lovableStatusLine({ write_status: v.status, written_at: v.written_at })}
-                {v.restored_from_version_id != null ? " · restored from an earlier version" : ""}
+                {versionStatusLine(v)}
               </p>
             ))}
           </DetailSection>

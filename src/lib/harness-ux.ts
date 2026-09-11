@@ -225,7 +225,10 @@ export const KNOWLEDGE_CHAR_LIMIT = 10000;
 // executor got to it -- never a failure. lovableStatusLine's switch below
 // has no case for it, so it falls into the same default branch as "none"
 // and "pending" -- no new copy needed.
-export type LovableWriteStatus = "none" | "pending" | "written" | "stale" | "failed" | "cancelled";
+// "reverted" covers a written restore: the rule it undid is no longer live
+// in Lovable, so it must never read as "written" (added).
+export type LovableWriteStatus =
+  "none" | "pending" | "written" | "stale" | "failed" | "cancelled" | "reverted";
 
 export type LovableStatusLike = {
   write_status: LovableWriteStatus;
@@ -257,6 +260,8 @@ export function lovableStatusLine(
   switch (input?.write_status) {
     case "written":
       return `Added to Lovable, ${formatDay(input.written_at)}`;
+    case "reverted":
+      return `Reverted to an earlier version, ${formatDay(input.written_at)}`;
     case "stale":
       return `Needs attention: ${input.stale_reason ?? "Knowledge changed in Lovable — review the text again"}`;
     case "failed":
@@ -269,6 +274,21 @@ export function lovableStatusLine(
         ? `Will be written at the next sync, ${formatDate(ctx.nextSyncAt)}`
         : "Will be written at the next sync";
   }
+}
+
+// One line for a single entry in a rule's Knowledge write history (used by
+// the per-version list on the Improvement detail page). A written restore
+// reads as "reverted", never as "written" (added) -- see LovableWriteStatus.
+export function versionStatusLine(v: {
+  status: LovableWriteStatus;
+  written_at: string | null;
+  restored_from_version_id: number | null;
+}): string {
+  return lovableStatusLine({
+    write_status:
+      v.status === "written" && v.restored_from_version_id != null ? "reverted" : v.status,
+    written_at: v.written_at,
+  });
 }
 
 export function decisionSentence(input: {
@@ -292,6 +312,7 @@ export const IMPROVEMENT_GROUPS = [
   "Waiting to be written",
   "Waiting to be tested",
   "In Lovable",
+  "Reverted",
   "Needs attention",
   "Skipped",
 ] as const;
@@ -306,6 +327,7 @@ export function improvementGroup(input: {
   if (input.status === "pending") return null;
   if (input.writeStatus === "stale" || input.writeStatus === "failed") return "Needs attention";
   if (input.writeStatus === "written") return "In Lovable";
+  if (input.writeStatus === "reverted") return "Reverted";
   if (input.testFirst) return "Waiting to be tested";
   return "Waiting to be written";
 }

@@ -21,8 +21,14 @@ export type Message = {
 // itself -- buildImprovement's "latest" skips cancelled versions when
 // deciding it -- but a version entry in lovable.versions can carry it, so
 // the history stays honest about what actually happened.
+// "reverted" is likewise synthesized, never a raw DB status: it's what
+// lovable.write_status reads when the latest non-cancelled version is a
+// WRITTEN restore (restored_from_version_id set) -- the rule it undid is no
+// longer live in Lovable, so "written" alone would be a false claim. A
+// version entry in lovable.versions still carries its raw DB status
+// ("written") plus restored_from_version_id.
 export type KnowledgeWriteStatus =
-  "none" | "pending" | "written" | "stale" | "failed" | "cancelled";
+  "none" | "pending" | "written" | "stale" | "failed" | "cancelled" | "reverted";
 export type KnowledgePreview = {
   target: "project" | "workspace";
   target_label: string;
@@ -126,7 +132,13 @@ function firstSentence(text: string | null | undefined): string {
   return (m ? m[0] : t).trim();
 }
 
-const ACCEPTED_RULE_STATES = new Set(["approved", "testing", "supported", "active"]);
+// "rolled_back" belongs here too: the user's decision to accept this
+// improvement still stands after a restore undoes its Knowledge write --
+// only the write itself was reverted, not the decision. Without it, a
+// restored item's decision would read back as "pending" (never decided),
+// dropping it out of Improvements and back into the Inbox, which is exactly
+// the kind of false read Problem 1 is about.
+const ACCEPTED_RULE_STATES = new Set(["approved", "testing", "supported", "active", "rolled_back"]);
 const PROOF_DONE_RULE_STATES = new Set(["supported", "active"]);
 const TARGET_LABEL: Record<"project" | "workspace", string> = {
   project: "This project's Knowledge in Lovable",
@@ -231,7 +243,16 @@ function buildImprovement(c: CorrectionRow): Improvement {
   // deciding what the rule's Knowledge status currently is. lovable.versions
   // below still lists every version, cancelled ones included.
   const latest = versions.find((v) => v.status !== "cancelled") ?? null;
-  const writeStatus: KnowledgeWriteStatus = latest ? latest.status : "none";
+  // A restore writes a new version whose content undoes an earlier one; once
+  // that write is verified, the rule it undid is no longer live in Lovable
+  // (see recordKnowledgeReadback), so surfacing it as plain "written" would
+  // read as "added" when the true story is the opposite.
+  const isRevert = latest?.status === "written" && latest.restored_from_version_id != null;
+  const writeStatus: KnowledgeWriteStatus = latest
+    ? isRevert
+      ? "reverted"
+      : latest.status
+    : "none";
   const writtenVersion = versions.find((v) => v.status === "written") ?? null;
   const proofComplete =
     outcome === "passed" || (ruleState != null && PROOF_DONE_RULE_STATES.has(ruleState));

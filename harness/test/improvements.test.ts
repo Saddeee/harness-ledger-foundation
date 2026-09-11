@@ -586,3 +586,93 @@ test("plain accept on an item that was never test-first does not throw when no e
     assert.equal(accepted.decision.test_first, false);
   });
 });
+
+test("a restored Knowledge version reads as reverted, never as written (added)", () => {
+  const PROJECT5 = "improvements-test-project-5";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT5, "test5");
+  store.upsertProject({ lovable_project_id: PROJECT5, name: "Restore Test Project" });
+
+  const msg5 = store.upsertHistoryItem({
+    project_id: PROJECT5,
+    kind: "message",
+    external_id: "m-restore-1",
+    role: "user",
+    content: "never skip the review step",
+    occurred_at: "2026-09-10T10:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const ep5 = store.createTaskEpisode({
+    project_id: PROJECT5,
+    title: "restore episode",
+    provenance: "llm_derived",
+    evidence_history_item_ids: [msg5.id],
+  }) as { id: number };
+  const cc5 = store.createCorrectionCandidate({
+    task_episode_id: ep5.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "The review step was skipped without approval. More words here.",
+    evidence_history_item_ids: [msg5.id],
+  }) as { id: number };
+  const l5 = store.createLearning({
+    correction_candidate_id: cc5.id,
+    observed_problem: "p",
+    desired_behavior: "Never skip the review step.",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "llm_derived",
+    created_by: "test",
+  }) as { id: number };
+  const rule5 = store.createRule({
+    learning_id: l5.id,
+    correction_candidate_id: cc5.id,
+    instruction: "Never skip the review step without asking first.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "unreviewed changes shipped",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+
+  // 1. Accept with a snapshot already present, so the write stages
+  // immediately (same pattern as the switching-to-test_first test above).
+  store.recordKnowledgeSnapshot({ target: "project", project_id: PROJECT5, content: "# Knowledge\n\nProject five.", fetched_by: "test" });
+  imp.improvementAction({ action: "accept", id: cc5.id, destination: "project" });
+  const staged5 = (store.listPendingKnowledgeWrites() as { id: number; rule_id: number; new_content: string }[]).filter(
+    (w) => w.rule_id === rule5.id,
+  );
+  assert.equal(staged5.length, 1, "the accept stages exactly one pending write");
+
+  // 2. Simulate the executor: it writes to Lovable, then reads back and
+  // verifies -- recordKnowledgeReadback marks the version written.
+  store.recordKnowledgeReadback(staged5[0]!.id, staged5[0]!.new_content);
+  const written5 = imp.getImprovement(cc5.id)!;
+  assert.equal(written5.lovable.write_status, "written");
+  assert.equal(
+    improvementGroup({
+      status: written5.decision.status,
+      writeStatus: written5.lovable.write_status,
+      testFirst: written5.decision.test_first,
+    }),
+    "In Lovable",
+  );
+
+  // 3. The user restores that version: a new pending write whose content
+  // undoes it. The executor writes and verifies it the same way.
+  const restoreVersion = store.createRestoreVersion(staged5[0]!.id, "test") as { id: number; new_content: string };
+  store.recordKnowledgeReadback(restoreVersion.id, restoreVersion.new_content);
+
+  const reverted5 = imp.getImprovement(cc5.id)!;
+  assert.equal(reverted5.lovable.write_status, "reverted", "a written restore must never read as plain 'written'");
+  assert.equal(
+    improvementGroup({
+      status: reverted5.decision.status,
+      writeStatus: reverted5.lovable.write_status,
+      testFirst: reverted5.decision.test_first,
+    }),
+    "Reverted",
+  );
+  assert.match(lovableStatusLine(reverted5.lovable), /^Reverted to an earlier version/);
+});

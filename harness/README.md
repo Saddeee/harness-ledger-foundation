@@ -133,7 +133,8 @@ your current Knowledge yet" and an accepted choice stays `write_status:
 **Beat 1 — the user approves in the UI.** "Add it to Lovable now" composes
 the exact final text from the latest snapshot (everything outside
 `<!-- harness:start -->`…`<!-- harness:end -->` preserved byte-for-byte, the
-managed block regenerated, 9,000-char cap) and stores a `knowledge_versions`
+managed block regenerated, capped at the Knowledge limit setting -- default
+9,000 characters, configurable in Settings) and stores a `knowledge_versions`
 row with `status: "pending"`, both hashes, and the rule ids. Nothing has
 touched Lovable yet.
 

@@ -235,6 +235,10 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
     "Needs attention: Knowledge changed in Lovable — review the text again",
   );
   assert.equal(ux.lovableStatusLine({ write_status: "failed", written_at: null }), "Needs attention: adding failed — see Details");
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "reverted", written_at: "2026-09-10T08:00:00Z" }),
+    "Reverted to an earlier version, 10 Sep",
+  );
 
   const pending = ux.decisionSentence({ decision: { status: "pending", decided_at: null }, destination: null });
   assert.equal(pending, "Waiting for your decision.");
@@ -261,7 +265,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   assert.equal(testFirstSentence, "You chose: add to this project only. Saved for testing — nothing is written until the test runs.");
 
   assert.deepEqual([...ux.IMPROVEMENT_GROUPS], [
-    "Waiting to be written", "Waiting to be tested", "In Lovable", "Needs attention", "Skipped",
+    "Waiting to be written", "Waiting to be tested", "In Lovable", "Reverted", "Needs attention", "Skipped",
   ]);
   const g = (status: "pending" | "accepted" | "skipped", writeStatus: ux.LovableWriteStatus | null, testFirst = false) =>
     ux.improvementGroup({ status, writeStatus, testFirst });
@@ -270,12 +274,28 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   assert.equal(g("accepted", "none"), "Waiting to be written");
   assert.equal(g("accepted", "pending"), "Waiting to be written");
   assert.equal(g("accepted", "written"), "In Lovable");
+  assert.equal(g("accepted", "reverted"), "Reverted");
   assert.equal(g("accepted", "stale"), "Needs attention");
   assert.equal(g("accepted", "failed"), "Needs attention");
   assert.equal(g("accepted", "none", true), "Waiting to be tested");
   assert.equal(g("accepted", "written", true), "In Lovable", "a written version always wins over test_first");
+  assert.equal(g("accepted", "reverted", true), "Reverted", "a reverted version always wins over test_first");
 
   assert.ok(!/Waiting for Harness/.test(readApp("lib/harness-ux.ts")));
+
+  assert.equal(
+    ux.versionStatusLine({ status: "written", written_at: "2026-09-10T08:00:00Z", restored_from_version_id: null }),
+    "Added to Lovable, 10 Sep",
+  );
+  assert.equal(
+    ux.versionStatusLine({ status: "written", written_at: "2026-09-10T08:00:00Z", restored_from_version_id: 7 }),
+    "Reverted to an earlier version, 10 Sep",
+    "a written version that restored an earlier one reads as reverted, not written",
+  );
+  assert.equal(
+    ux.versionStatusLine({ status: "pending", written_at: null, restored_from_version_id: null }),
+    "Will be written at the next sync",
+  );
 });
 
 test("Improvements page: contract groups only, non-empty only, decision cards, restore lives in the card", () => {
