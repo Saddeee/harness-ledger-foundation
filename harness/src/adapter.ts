@@ -36,7 +36,28 @@ export {
   allowProject,
   disallowProject,
   getCorrectionIdForRule,
+  getProjectSettings,
+  setProjectSettings,
+  effectiveMaxActiveRules,
+  sumLlmCostThisMonth,
 } from "./store.js";
+
+// Round 3: per-provider LLM API keys, stored in their own 0600 file, never in
+// SQLite and never returned beyond has_key/last4 (see llm-keys.ts).
+export {
+  setKey as setLlmKey,
+  removeKey as removeLlmKey,
+  keyStatus as llmKeyStatus,
+} from "./llm-keys.js";
+
+// Round 3: a small, pure line diff for the Instructions page's "What
+// changed" view (see diff.ts).
+export { lineDiff } from "./diff.js";
+
+// Round 3: removable demo data -- only the read is re-exported here (the
+// Instructions page's "Demo data is loaded" notice); --add/--remove stay a
+// deliberate CLI-only operation (npm run harness:demo -- --add|--remove).
+export { demoLoaded } from "./demo.js";
 
 const classification = z.enum([
   "defect_correction",

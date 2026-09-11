@@ -215,10 +215,21 @@ type PendingWrite = {
  */
 export async function executeWrites(
   lovable: LovableReader & LovableWriter,
-): Promise<{ written: number; stale: number; failed: number }> {
-  const counts = { written: 0, stale: 0, failed: 0 };
+): Promise<{ written: number; stale: number; failed: number; skipped_auto_write: number }> {
+  const counts = { written: 0, stale: 0, failed: 0, skipped_auto_write: 0 };
 
   for (const row of store.listPendingKnowledgeWrites() as PendingWrite[]) {
+    // A project with auto_write off is left entirely alone here: the write
+    // stays staged (not stale, not failed) until the user turns it back on.
+    // Workspace-target rows have no project_id and are never affected.
+    if (
+      row.target === "project" &&
+      row.project_id &&
+      !store.getProjectSettings(row.project_id).auto_write
+    ) {
+      counts.skipped_auto_write += 1;
+      continue;
+    }
     const targetId = row.target === "project" ? row.project_id : row.workspace_id;
     try {
       if (!targetId) throw new Error(`knowledge_version ${row.id} has no ${row.target} id`);
@@ -316,6 +327,7 @@ export async function runAll(
     counts.written = writes.written;
     counts.stale = writes.stale;
     counts.failed = writes.failed;
+    counts.skipped_auto_write = writes.skipped_auto_write;
     store.insertEvent("executor.sync.writes", null, writes);
   } catch (err) {
     ok = false;

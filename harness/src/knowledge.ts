@@ -40,13 +40,24 @@ export type Composed = {
   final_content: string;
   char_count: number;
   over_cap: boolean;
+  active_rules_count: number;
+  over_rules: boolean;
 };
 
 function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
-export function composeManagedKnowledge(currentContent: string, rules: ManagedRule[]): Composed {
+// `maxActiveRules` is the effective cap for the target this is being
+// composed for -- a project target's own override (or the global default
+// when it has none), or the global default outright for a workspace target.
+// Omitting it (nothing to enforce yet, e.g. a caller with no opinion) never
+// flags over_rules.
+export function composeManagedKnowledge(
+  currentContent: string,
+  rules: ManagedRule[],
+  maxActiveRules?: number,
+): Composed {
   const managed_block = buildManagedBlock(rules);
   const starts = countOccurrences(currentContent, HARNESS_START);
   const ends = countOccurrences(currentContent, HARNESS_END);
@@ -80,5 +91,7 @@ export function composeManagedKnowledge(currentContent: string, rules: ManagedRu
     final_content,
     char_count: final_content.length,
     over_cap: final_content.length > Number(getSetting("knowledge_char_cap")),
+    active_rules_count: rules.length,
+    over_rules: maxActiveRules !== undefined && rules.length > maxActiveRules,
   };
 }

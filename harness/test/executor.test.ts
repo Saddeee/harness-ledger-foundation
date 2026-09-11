@@ -226,7 +226,7 @@ test("executeWrites writes, verifies the read-back and marks the version written
   const v = stagePending("live text", "live text + rule");
 
   const counts = await beats.executeWrites(fake);
-  assert.deepEqual(counts, { written: 1, stale: 0, failed: 0 });
+  assert.deepEqual(counts, { written: 1, stale: 0, failed: 0, skipped_auto_write: 0 });
   assert.deepEqual(fake.setCalls, [{ kind: "project", id: PROJECT, content: "live text + rule" }]);
   assert.equal(store.getKnowledgeVersion(v.id)?.status, "written");
 });
@@ -237,7 +237,7 @@ test("executeWrites marks a version stale when live content drifted, without cal
   fake.projectKnowledge[PROJECT] = "someone else edited it";
 
   const counts = await beats.executeWrites(fake);
-  assert.deepEqual(counts, { written: 0, stale: 1, failed: 0 });
+  assert.deepEqual(counts, { written: 0, stale: 1, failed: 0, skipped_auto_write: 0 });
   assert.equal(fake.setCalls.length, 0);
   const row = store.getKnowledgeVersion(v.id)!;
   assert.equal(row.status, "stale");
@@ -252,10 +252,39 @@ test("executeWrites marks a version failed when the Lovable write throws", async
   const v = stagePending("live text", "another rule");
 
   const counts = await beats.executeWrites(fake);
-  assert.deepEqual(counts, { written: 0, stale: 0, failed: 1 });
+  assert.deepEqual(counts, { written: 0, stale: 0, failed: 1, skipped_auto_write: 0 });
   const row = store.getKnowledgeVersion(v.id)!;
   assert.equal(row.status, "failed");
   assert.match(row.error ?? "", /lovable exploded/);
+});
+
+test("executeWrites skips a pending project-target write when the project has auto_write off, workspace writes unaffected", async () => {
+  store.setProjectSettings(PROJECT, { auto_write: false });
+  const fake = new FakeLovable();
+  fake.projectKnowledge[PROJECT] = "live text";
+  fake.workspaceKnowledge = "live workspace text";
+  const projectVersion = stagePending("live text", "project write while auto_write is off");
+  const workspaceVersion = store.createPendingKnowledgeVersion({
+    rule_id: null,
+    target: "workspace",
+    workspace_id: WORKSPACE,
+    previous_content: "live workspace text",
+    new_content: "workspace write is unaffected",
+    rule_ids: [],
+    actor: "test",
+  });
+
+  const counts = await beats.executeWrites(fake);
+  assert.deepEqual(counts, { written: 1, stale: 0, failed: 0, skipped_auto_write: 1 });
+  assert.equal(store.getKnowledgeVersion(projectVersion.id)?.status, "pending", "left pending, not touched at all");
+  assert.equal(store.getKnowledgeVersion(workspaceVersion.id)?.status, "written");
+  assert.deepEqual(fake.setCalls, [{ kind: "workspace", id: WORKSPACE, content: "workspace write is unaffected" }]);
+
+  // Turning it back on lets the same pending write through on the next pass.
+  store.setProjectSettings(PROJECT, { auto_write: true });
+  const second = await beats.executeWrites(fake);
+  assert.deepEqual(second, { written: 1, stale: 0, failed: 0, skipped_auto_write: 0 });
+  assert.equal(store.getKnowledgeVersion(projectVersion.id)?.status, "written");
 });
 
 // -------------------------------------------------------------- schedule

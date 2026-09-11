@@ -131,3 +131,40 @@ test("no Lovable action is created by correction or rule review (audit trail is 
   assert.ok(events.length > 0);
   assert.ok(events.every((e) => !/lovable/i.test(e.kind)));
 });
+
+// ---- Round 3 re-exports ----
+
+test("adapter re-exports per-project settings and the effective max reader", () => {
+  assert.deepEqual(adapter.getProjectSettings(PROJECT), { max_active_rules: null, auto_write: true });
+  const patched = adapter.setProjectSettings(PROJECT, { max_active_rules: 5 });
+  assert.deepEqual(patched, { max_active_rules: 5, auto_write: true });
+  assert.equal(adapter.effectiveMaxActiveRules(PROJECT), 5);
+});
+
+test("adapter re-exports the LLM cost-this-month reader", () => {
+  assert.equal(adapter.sumLlmCostThisMonth(), 0);
+});
+
+test("adapter re-exports demoLoaded", () => {
+  assert.equal(adapter.demoLoaded(), false);
+});
+
+test("adapter re-exports the LLM key store under the documented aliases", () => {
+  assert.deepEqual(adapter.llmKeyStatus().openai, { has_key: false, last4: null });
+  adapter.setLlmKey("openai", "sk-adapter-test-1234");
+  assert.deepEqual(adapter.llmKeyStatus().openai, { has_key: true, last4: "1234" });
+  adapter.removeLlmKey("openai");
+  assert.deepEqual(adapter.llmKeyStatus().openai, { has_key: false, last4: null });
+});
+
+test("adapter re-exports lineDiff", () => {
+  assert.deepEqual(adapter.lineDiff("a\nb", "a\nc"), {
+    added: 1,
+    removed: 1,
+    lines: [
+      { kind: " ", text: "a" },
+      { kind: "-", text: "b" },
+      { kind: "+", text: "c" },
+    ],
+  });
+});

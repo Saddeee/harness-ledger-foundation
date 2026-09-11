@@ -1393,7 +1393,29 @@ export type SettingKey =
   | "sync_window_start_hour"
   | "sync_window_end_hour"
   | "knowledge_char_cap"
-  | "require_approval_before_write";
+  | "require_approval_before_write"
+  | "llm_provider"
+  | "llm_models"
+  | "llm_monthly_budget_usd"
+  | "max_active_rules";
+
+// AI analysis is not switched on anywhere yet (see the spec's "still out of
+// scope" section) -- these four keys only give the Settings page and the
+// Knowledge composer something to read and validate ahead of that.
+export const LLM_PROVIDERS = ["openai", "anthropic", "google"] as const;
+export type LlmProvider = (typeof LLM_PROVIDERS)[number];
+
+export type LlmRole = "classifier" | "miner" | "reviewer" | "proposer";
+const LLM_ROLES: LlmRole[] = ["classifier", "miner", "reviewer", "proposer"];
+export type LlmModelChoice = { provider: LlmProvider; model: string };
+export type LlmModels = Record<LlmRole, LlmModelChoice>;
+
+const DEFAULT_LLM_MODELS: LlmModels = {
+  classifier: { provider: "openai", model: "gpt-5.4-mini" },
+  miner: { provider: "openai", model: "gpt-5.5" },
+  reviewer: { provider: "openai", model: "gpt-5.5" },
+  proposer: { provider: "openai", model: "gpt-5.5" },
+};
 
 export const SETTING_DEFAULTS: Record<SettingKey, string> = {
   sync_enabled: "true",
@@ -1402,6 +1424,10 @@ export const SETTING_DEFAULTS: Record<SettingKey, string> = {
   sync_window_end_hour: "22",
   knowledge_char_cap: "9000",
   require_approval_before_write: "true",
+  llm_provider: "openai",
+  llm_models: JSON.stringify(DEFAULT_LLM_MODELS),
+  llm_monthly_budget_usd: "10",
+  max_active_rules: "12",
 };
 
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
@@ -1432,6 +1458,45 @@ function assertBooleanSetting(key: SettingKey, raw: string): void {
   }
 }
 
+function assertLlmProvider(raw: string): void {
+  if (!(LLM_PROVIDERS as readonly string[]).includes(raw)) {
+    throw new Error(`llm_provider must be one of: ${LLM_PROVIDERS.join(", ")}`);
+  }
+}
+
+function assertLlmModels(raw: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("llm_models must be valid JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("llm_models must be a JSON object");
+  }
+  const obj = parsed as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  const expected = [...LLM_ROLES].sort();
+  if (keys.length !== expected.length || !keys.every((k, i) => k === expected[i])) {
+    throw new Error(`llm_models must define exactly the roles: ${LLM_ROLES.join(", ")}`);
+  }
+  for (const role of LLM_ROLES) {
+    const choice = obj[role];
+    if (typeof choice !== "object" || choice === null || Array.isArray(choice)) {
+      throw new Error(`llm_models.${role} must be an object with provider and model`);
+    }
+    const { provider, model } = choice as Record<string, unknown>;
+    if (typeof provider !== "string" || !(LLM_PROVIDERS as readonly string[]).includes(provider)) {
+      throw new Error(`llm_models.${role}.provider must be one of: ${LLM_PROVIDERS.join(", ")}`);
+    }
+    if (typeof model !== "string" || model.length === 0 || model.length > 100) {
+      throw new Error(
+        `llm_models.${role}.model must be a non-empty string of at most 100 characters`,
+      );
+    }
+  }
+}
+
 // Validates the whole patch before writing anything, so a rejected patch
 // leaves every existing setting untouched (no partial application).
 export function setSettings(
@@ -1449,6 +1514,14 @@ export function setSettings(
       assertIntInRange(key, value, 15, 1440);
     } else if (key === "knowledge_char_cap") {
       assertIntInRange(key, value, 1000, 10000);
+    } else if (key === "llm_provider") {
+      assertLlmProvider(value);
+    } else if (key === "llm_models") {
+      assertLlmModels(value);
+    } else if (key === "llm_monthly_budget_usd") {
+      assertIntInRange(key, value, 1, 1000);
+    } else if (key === "max_active_rules") {
+      assertIntInRange(key, value, 1, 50);
     } else {
       // sync_window_start_hour / sync_window_end_hour
       assertIntInRange(key, value, 0, 24);
@@ -1789,3 +1862,123 @@ export function getCorrectionIdForRule(ruleId: number): number | null {
   return row ? row.correction_candidate_id : null;
 }
 // ---- end Task 5 ----
+
+// ---- Round 3 (v8): per-project settings ----
+// Overrides of the two global defaults that matter per-project: how many
+// active rules a project's managed Knowledge block may carry, and whether
+// the executor is allowed to write approved changes for it automatically.
+// No row for a project means "use the defaults" -- see effectiveMaxActiveRules
+// and executeWrites' auto_write check in executor/beats.ts.
+
+export type ProjectSettings = { max_active_rules: number | null; auto_write: boolean };
+
+const PROJECT_SETTINGS_DEFAULT: ProjectSettings = { max_active_rules: null, auto_write: true };
+
+export function getProjectSettings(projectId: string): ProjectSettings {
+  const row = db
+    .prepare(`SELECT max_active_rules, auto_write FROM project_settings WHERE project_id = ?`)
+    .get(projectId) as { max_active_rules: number | null; auto_write: number } | undefined;
+  if (!row) return { ...PROJECT_SETTINGS_DEFAULT };
+  return { max_active_rules: row.max_active_rules, auto_write: row.auto_write === 1 };
+}
+
+function assertMaxActiveRules(value: number | null): void {
+  if (value === null) return;
+  if (!Number.isInteger(value) || value < 1 || value > 50) {
+    throw new Error(
+      "max_active_rules must be an integer between 1 and 50, or null to use the default",
+    );
+  }
+}
+
+// Validates before writing anything and only touches the fields present in
+// the patch, mirroring setSettings' all-or-nothing behavior.
+export function setProjectSettings(
+  projectId: string,
+  patch: { max_active_rules?: number | null; auto_write?: boolean },
+): ProjectSettings {
+  assertAllowedProject(projectId);
+  if (patch.max_active_rules !== undefined) assertMaxActiveRules(patch.max_active_rules);
+
+  const current = getProjectSettings(projectId);
+  const merged: ProjectSettings = {
+    max_active_rules:
+      patch.max_active_rules === undefined ? current.max_active_rules : patch.max_active_rules,
+    auto_write: patch.auto_write === undefined ? current.auto_write : patch.auto_write,
+  };
+
+  db.prepare(
+    `INSERT INTO project_settings (project_id, max_active_rules, auto_write, updated_at)
+     VALUES (@project_id, @max_active_rules, @auto_write, datetime('now'))
+     ON CONFLICT(project_id) DO UPDATE SET
+       max_active_rules = excluded.max_active_rules, auto_write = excluded.auto_write, updated_at = excluded.updated_at`,
+  ).run({
+    project_id: projectId,
+    max_active_rules: merged.max_active_rules,
+    auto_write: merged.auto_write ? 1 : 0,
+  });
+  insertEvent("project_settings.updated", projectId, { ...merged });
+  return merged;
+}
+
+// The project's own override when set, else the global default -- what
+// knowledge.ts's compose step and improvements.ts's preview should actually
+// enforce for a project target.
+export function effectiveMaxActiveRules(projectId: string): number {
+  const override = getProjectSettings(projectId).max_active_rules;
+  return override ?? Number(getSetting("max_active_rules"));
+}
+// ---- end round 3 per-project settings ----
+
+// ---- Round 3 (v8): LLM calls ----
+// Empty until AI analysis ships; insertLlmCall exists now so that feature
+// has somewhere to record to, and sumLlmCostThisMonth/listLlmCalls exist now
+// so the Settings page's "Spent this month" line and any future calls list
+// are real reads from day one, not placeholders swapped in later.
+
+export function insertLlmCall(input: {
+  role: LlmRole;
+  provider: string;
+  model: string;
+  tokens_in?: number;
+  tokens_out?: number;
+  cost_usd?: number;
+}) {
+  const row = db
+    .prepare(
+      `INSERT INTO llm_calls (role, provider, model, tokens_in, tokens_out, cost_usd)
+       VALUES (@role, @provider, @model, @tokens_in, @tokens_out, @cost_usd) RETURNING *`,
+    )
+    .get({
+      role: input.role,
+      provider: input.provider,
+      model: input.model,
+      tokens_in: input.tokens_in ?? 0,
+      tokens_out: input.tokens_out ?? 0,
+      cost_usd: input.cost_usd ?? 0,
+    }) as { id: number };
+  insertEvent("llm_call.recorded", null, {
+    id: row.id,
+    role: input.role,
+    provider: input.provider,
+  });
+  return row;
+}
+
+// SQLite's datetime('now') (what created_at defaults to) is UTC, so
+// strftime('%Y-%m', ...) comparisons here are UTC-month comparisons without
+// any extra timezone handling.
+export function sumLlmCostThisMonth(): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(cost_usd), 0) as total FROM llm_calls
+       WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`,
+    )
+    .get() as { total: number };
+  return row.total;
+}
+
+export function listLlmCalls(limit = 50) {
+  return db.prepare(`SELECT * FROM llm_calls ORDER BY id DESC LIMIT ?`).all(limit);
+}
+// ---- end round 3 LLM calls ----

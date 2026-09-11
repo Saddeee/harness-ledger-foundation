@@ -39,6 +39,8 @@ export type KnowledgePreview = {
   char_count: number;
   cap: number;
   over_cap: boolean;
+  active_rules_count: number;
+  over_rules: boolean;
 };
 export type Improvement = {
   id: number;
@@ -173,9 +175,17 @@ function buildPreview(
   if (!targetId) return null;
   const snapshot = store.latestKnowledgeSnapshot(target, targetId);
   if (!snapshot) return null;
+  // A project target enforces its own effective max (its override, else the
+  // global default); a workspace target has no per-project override to
+  // consult, so it always uses the global default directly.
+  const maxActiveRules =
+    target === "project"
+      ? store.effectiveMaxActiveRules(targetId)
+      : Number(store.getSetting("max_active_rules"));
   const composed = composeManagedKnowledge(
     snapshot.content,
     rulesForPreview(target, targetId, rule),
+    maxActiveRules,
   );
   return {
     target,
@@ -187,6 +197,8 @@ function buildPreview(
     char_count: composed.char_count,
     cap: Number(store.getSetting("knowledge_char_cap")),
     over_cap: composed.over_cap,
+    active_rules_count: composed.active_rules_count,
+    over_rules: composed.over_rules,
   };
 }
 
@@ -478,6 +490,10 @@ function stagePendingWrite(
     throw new Error(
       "This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first",
     );
+  if (preview.over_rules)
+    throw new Error(
+      `This project already has ${preview.active_rules_count} active rules — retire one on the Instructions page first`,
+    );
   const snapshot = store.latestKnowledgeSnapshot(
     target,
     target === "project"
@@ -570,7 +586,7 @@ export function stageApprovedWrites(): { staged: number; skipped: number } {
     if (versions.some((v) => v.status === "pending" || v.status === "written")) continue;
 
     const preview = improvement.lovable.previews[target];
-    if (!preview || preview.over_cap) {
+    if (!preview || preview.over_cap || preview.over_rules) {
       skipped += 1;
       continue;
     }

@@ -53,10 +53,26 @@ test("composer flags the 9,000-character cap", () => {
   assert.equal(composeManagedKnowledge("short", [{ id: 1, instruction: "y" }]).over_cap, false);
 });
 
+test("composer flags over_rules when maxActiveRules is exceeded, and always reports active_rules_count", () => {
+  const twoRules = [{ id: 1, instruction: "First." }, { id: 2, instruction: "Second." }];
+  const withMax1 = composeManagedKnowledge("doc", twoRules, 1);
+  assert.equal(withMax1.active_rules_count, 2);
+  assert.equal(withMax1.over_rules, true);
+
+  const withMax2 = composeManagedKnowledge("doc", twoRules, 2);
+  assert.equal(withMax2.active_rules_count, 2);
+  assert.equal(withMax2.over_rules, false);
+
+  // No max given -- never flagged, even with many rules.
+  const noMax = composeManagedKnowledge("doc", twoRules);
+  assert.equal(noMax.active_rules_count, 2);
+  assert.equal(noMax.over_rules, false);
+});
+
 // ---- migration ----
 
 test("migrations through v7 applied once; earlier tables and rows intact", () => {
-  assert.equal(schemaVersion(), 7);
+  assert.equal(schemaVersion(), 8);
   const names = new Set((db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map((r) => r.name));
   for (const t of ["knowledge_snapshots", "knowledge_versions", "rules", "correction_candidates", "allowed_projects", "settings"]) assert.ok(names.has(t), t);
   const cols = (db.prepare(`PRAGMA table_info(projects)`).all() as { name: string }[]).map((c) => c.name);
@@ -250,6 +266,56 @@ test("workspace preview needs the project's workspace id; composed from the work
   assert.equal(out.lovable.previews.workspace!.current_user_text, "");
   assert.ok(out.lovable.previews.workspace!.managed_block.includes("- Third rule."));
   assert.equal(out.lovable.previews.workspace!.target_label, "Workspace Knowledge — all your projects");
+});
+
+test("over_rules: preview flags it, accept refuses to stage, stageApprovedWrites skips -- max 1, two approved rules", () => {
+  const PROJECT2 = "knowledge-test-project-2";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT2, "test2");
+  store.recordKnowledgeSnapshot({ target: "project", project_id: PROJECT2, content: "base doc", fetched_by: "test" });
+  store.setProjectSettings(PROJECT2, { max_active_rules: 1 });
+
+  function makeRuleFor(projectId: string, instruction: string) {
+    const item = store.upsertHistoryItem({
+      project_id: projectId,
+      kind: "message",
+      external_id: `msg-${Math.random()}`,
+      role: "user",
+      content: "please fix",
+      occurred_at: "2026-09-08T10:00:00Z",
+      provenance: "lovable_mcp",
+    }) as { id: number };
+    const ep = store.createTaskEpisode({ project_id: projectId, title: "ep", provenance: "manual", evidence_history_item_ids: [item.id] }) as { id: number };
+    const cc = store.createCorrectionCandidate({ task_episode_id: ep.id, classification: "constraint_restatement", is_correction: true, summary: "s", evidence_history_item_ids: [item.id] }) as { id: number };
+    const learning = store.createLearning({ correction_candidate_id: cc.id, observed_problem: "p", desired_behavior: "d", reuse_rationale: "r", proposed_scope: "project", provenance: "manual", created_by: "test" }) as { id: number };
+    const rule = store.createRule({ learning_id: learning.id, correction_candidate_id: cc.id, instruction, scope: "project", applies_when: "always", predicted_failure: "f", ownership: "harness", created_by: "test" }) as { id: number };
+    return { correctionId: cc.id, ruleId: rule.id };
+  }
+
+  const D = makeRuleFor(PROJECT2, "Rule D.");
+  const E = makeRuleFor(PROJECT2, "Rule E.");
+
+  // D alone is fine: it would be the project's only active rule (max 1).
+  const outD = improvements.improvementAction({ action: "accept", id: D.correctionId, destination: "project" });
+  assert.equal(outD.lovable.write_status, "pending");
+  assert.equal((db.prepare(`SELECT state FROM rules WHERE id = ?`).get(D.ruleId) as { state: string }).state, "approved");
+
+  // E would make a second active rule for a project capped at 1.
+  const previewE = improvements.getImprovement(E.correctionId)!.lovable.previews.project!;
+  assert.equal(previewE.active_rules_count, 2);
+  assert.equal(previewE.over_rules, true);
+  assert.throws(
+    () => improvements.improvementAction({ action: "accept", id: E.correctionId, destination: "project" }),
+    /active rules/,
+  );
+  // The rule itself was already approved before the write-staging refusal,
+  // but nothing was staged for it.
+  assert.equal((db.prepare(`SELECT state FROM rules WHERE id = ?`).get(E.ruleId) as { state: string }).state, "approved");
+  assert.equal((store.listPendingKnowledgeWrites() as { rule_id: number }[]).filter((p) => p.rule_id === E.ruleId).length, 0);
+
+  // The executor's path (stageApprovedWrites) skips instead of throwing.
+  const staged = improvements.stageApprovedWrites();
+  assert.ok(staged.skipped >= 1);
+  assert.equal((store.listPendingKnowledgeWrites() as { rule_id: number }[]).filter((p) => p.rule_id === E.ruleId).length, 0);
 });
 
 test("no Lovable import and no network call in the knowledge path", () => {

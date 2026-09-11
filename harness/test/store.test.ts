@@ -13,13 +13,13 @@ const store = await import("../src/store.js");
 const PROJECT = "test-project-id";
 
 test("schema migration: applies all migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 7);
+  assert.equal(schemaVersion(), 8);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2, 3, 4, 5, 6, 7],
+    [1, 2, 3, 4, 5, 6, 7, 8],
   );
   const tableNames = new Set(
     (db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map(
@@ -32,6 +32,7 @@ test("schema migration: applies all migrations exactly once, expected tables exi
     "correction_candidates", "correction_candidate_evidence", "agent_actions",
     "learnings", "rules", "rule_revisions", // checkpoint B
     "settings", "skill_snapshots", "sync_runs", "sync_requests", // checkpoint E (v5)
+    "project_settings", "llm_calls", // round 3 (v8)
   ]) {
     assert.ok(tableNames.has(t), `expected table ${t} to exist`);
   }
@@ -302,4 +303,105 @@ test("v5 allow/disallow project and history stats", () => {
   // recorded, so the history row must survive the FK-pragma delete.
   const remaining = db.prepare(`SELECT COUNT(*) n FROM history_items WHERE project_id = ?`).get("p-new") as { n: number };
   assert.equal(remaining.n, 1);
+});
+
+// ---- Round 3 (v8): AI-analysis settings, per-project settings, llm_calls ----
+
+test("v8 settings: llm_provider/llm_models/llm_monthly_budget_usd/max_active_rules defaults and validation", () => {
+  assert.equal(store.getSetting("llm_provider"), "openai");
+  assert.equal(store.getSetting("llm_monthly_budget_usd"), "10");
+  assert.equal(store.getSetting("max_active_rules"), "12");
+  const defaultModels = JSON.parse(store.getSetting("llm_models"));
+  assert.deepEqual(Object.keys(defaultModels).sort(), ["classifier", "miner", "proposer", "reviewer"]);
+  assert.deepEqual(defaultModels.classifier, { provider: "openai", model: "gpt-5.4-mini" });
+  assert.deepEqual(defaultModels.miner, { provider: "openai", model: "gpt-5.5" });
+
+  assert.throws(() => store.setSettings({ llm_provider: "cohere" }), /openai|anthropic|google/);
+  const okProvider = store.setSettings({ llm_provider: "anthropic" });
+  assert.equal(okProvider.llm_provider, "anthropic");
+
+  assert.throws(() => store.setSettings({ llm_monthly_budget_usd: "0" }), /1.*1000|between/);
+  assert.throws(() => store.setSettings({ llm_monthly_budget_usd: "1001" }), /1.*1000|between/);
+  assert.equal(store.setSettings({ llm_monthly_budget_usd: "25" }).llm_monthly_budget_usd, "25");
+
+  assert.throws(() => store.setSettings({ max_active_rules: "0" }), /1.*50|between/);
+  assert.throws(() => store.setSettings({ max_active_rules: "51" }), /1.*50|between/);
+  assert.equal(store.setSettings({ max_active_rules: "20" }).max_active_rules, "20");
+
+  assert.throws(() => store.setSettings({ llm_models: "not json" }), /json/i);
+  assert.throws(
+    () => store.setSettings({ llm_models: JSON.stringify({ classifier: { provider: "openai", model: "x" } }) }),
+    /classifier|miner|reviewer|proposer|roles/i,
+  );
+  assert.throws(
+    () =>
+      store.setSettings({
+        llm_models: JSON.stringify({
+          classifier: { provider: "not-a-provider", model: "x" },
+          miner: { provider: "openai", model: "x" },
+          reviewer: { provider: "openai", model: "x" },
+          proposer: { provider: "openai", model: "x" },
+        }),
+      }),
+    /provider/i,
+  );
+  assert.throws(
+    () =>
+      store.setSettings({
+        llm_models: JSON.stringify({
+          classifier: { provider: "openai", model: "" },
+          miner: { provider: "openai", model: "x" },
+          reviewer: { provider: "openai", model: "x" },
+          proposer: { provider: "openai", model: "x" },
+        }),
+      }),
+    /model/i,
+  );
+  const goodModels = {
+    classifier: { provider: "anthropic", model: "claude-x" },
+    miner: { provider: "openai", model: "gpt-x" },
+    reviewer: { provider: "google", model: "gemini-x" },
+    proposer: { provider: "openai", model: "gpt-x" },
+  };
+  const updated = store.setSettings({ llm_models: JSON.stringify(goodModels) });
+  assert.deepEqual(JSON.parse(updated.llm_models), goodModels);
+
+  // A rejected patch leaves every existing setting untouched.
+  const before = store.getSettings();
+  assert.throws(() => store.setSettings({ max_active_rules: "999", llm_provider: "openai" }));
+  assert.deepEqual(store.getSettings(), before);
+});
+
+test("v8 project settings: defaults, override, effective max, validation", () => {
+  store.allowProject("ps-project", "Project settings test");
+  assert.deepEqual(store.getProjectSettings("ps-project"), { max_active_rules: null, auto_write: true });
+  assert.equal(store.effectiveMaxActiveRules("ps-project"), Number(store.getSetting("max_active_rules")));
+
+  const patched = store.setProjectSettings("ps-project", { max_active_rules: 3, auto_write: false });
+  assert.deepEqual(patched, { max_active_rules: 3, auto_write: false });
+  assert.deepEqual(store.getProjectSettings("ps-project"), { max_active_rules: 3, auto_write: false });
+  assert.equal(store.effectiveMaxActiveRules("ps-project"), 3);
+
+  // Partial patch only touches the given fields.
+  store.setProjectSettings("ps-project", { auto_write: true });
+  assert.deepEqual(store.getProjectSettings("ps-project"), { max_active_rules: 3, auto_write: true });
+
+  // null clears the override back to "use the default".
+  store.setProjectSettings("ps-project", { max_active_rules: null });
+  assert.equal(store.getProjectSettings("ps-project").max_active_rules, null);
+  assert.equal(store.effectiveMaxActiveRules("ps-project"), Number(store.getSetting("max_active_rules")));
+
+  assert.throws(() => store.setProjectSettings("ps-project", { max_active_rules: 0 }), /1.*50|between/);
+  assert.throws(() => store.setProjectSettings("ps-project", { max_active_rules: 51 }), /1.*50|between/);
+  assert.throws(() => store.setProjectSettings("not-allowed-project", { auto_write: false }), store.NotAllowedProjectError);
+});
+
+test("v8 llm_calls: insert, sum this month, list", () => {
+  assert.equal(store.sumLlmCostThisMonth(), 0);
+  store.insertLlmCall({ role: "classifier", provider: "openai", model: "gpt-5.4-mini", tokens_in: 100, tokens_out: 20, cost_usd: 0.02 });
+  store.insertLlmCall({ role: "miner", provider: "openai", model: "gpt-5.5", tokens_in: 500, tokens_out: 200, cost_usd: 0.5 });
+  assert.ok(Math.abs(store.sumLlmCostThisMonth() - 0.52) < 1e-9);
+  const calls = store.listLlmCalls(10) as { role: string; provider: string; model: string }[];
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]!.role, "miner"); // most recent first
 });

@@ -1,0 +1,85 @@
+/**
+ * LLM provider API keys: stored in a single 0600 JSON file next to the
+ * SQLite database (never in SQLite itself, never returned or logged
+ * verbatim), mirroring the 0600-file pattern executor/lovable-auth.ts uses
+ * for the Lovable OAuth tokens. Nothing here calls a provider -- see the
+ * spec's "Analysis is not switched on yet" line: these keys are stored for
+ * when it is.
+ */
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve as resolvePath, join } from "node:path";
+
+export const LLM_PROVIDERS = ["openai", "anthropic", "google"] as const;
+export type LlmProvider = (typeof LLM_PROVIDERS)[number];
+
+type KeysFile = Partial<Record<LlmProvider, string>>;
+
+export function keysFilePath(): string {
+  const explicit = process.env.HARNESS_LLM_KEYS_PATH;
+  if (explicit) return resolvePath(explicit);
+  const dbPath = resolvePath(process.env.HARNESS_DB_PATH ?? "./data/harness.db");
+  return join(dirname(dbPath), "llm-keys.json");
+}
+
+function isLlmProvider(value: string): value is LlmProvider {
+  return (LLM_PROVIDERS as readonly string[]).includes(value);
+}
+
+function assertProvider(provider: string): asserts provider is LlmProvider {
+  if (!isLlmProvider(provider)) {
+    throw new Error(
+      `unknown LLM provider: ${provider} (expected one of ${LLM_PROVIDERS.join(", ")})`,
+    );
+  }
+}
+
+function readKeysFile(file: string): KeysFile {
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as KeysFile;
+  } catch {
+    return {};
+  }
+}
+
+function writeKeysFile(file: string, data: KeysFile): void {
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 });
+  // writeFileSync only applies `mode` when it creates the file.
+  chmodSync(file, 0o600);
+}
+
+/** Stores `key` for `provider`, overwriting any existing key for it. */
+export function setKey(provider: string, key: string): void {
+  assertProvider(provider);
+  if (!key || !key.trim()) throw new Error("key must not be empty");
+  const file = keysFilePath();
+  const data = readKeysFile(file);
+  data[provider] = key;
+  writeKeysFile(file, data);
+}
+
+/** Removes any stored key for `provider`. A no-op if none was stored. */
+export function removeKey(provider: string): void {
+  assertProvider(provider);
+  const file = keysFilePath();
+  if (!existsSync(file)) return;
+  const data = readKeysFile(file);
+  if (!(provider in data)) return;
+  delete data[provider];
+  writeKeysFile(file, data);
+}
+
+/**
+ * Never returns the raw key -- only whether one is stored and its last four
+ * characters, which is all any route or UI may show.
+ */
+export function keyStatus(): Record<LlmProvider, { has_key: boolean; last4: string | null }> {
+  const file = keysFilePath();
+  const data = existsSync(file) ? readKeysFile(file) : {};
+  const out = {} as Record<LlmProvider, { has_key: boolean; last4: string | null }>;
+  for (const provider of LLM_PROVIDERS) {
+    const key = data[provider];
+    out[provider] = key ? { has_key: true, last4: key.slice(-4) } : { has_key: false, last4: null };
+  }
+  return out;
+}

@@ -457,4 +457,36 @@ export const MIGRATIONS: Migration[] = [
       PRAGMA foreign_keys=ON;
     `,
   },
+  {
+    version: 8,
+    name: "round3_settings_and_llm",
+    sql: `
+      -- Per-project overrides of the two global defaults (settings.max_active_rules
+      -- and "auto-write on"). No row means "use the defaults" -- see
+      -- getProjectSettings/effectiveMaxActiveRules in store.ts. No REFERENCES to
+      -- allowed_projects, matching sync_cursors' shape, so disallowing a project
+      -- never needs the foreign_keys pragma dance to clean this table up.
+      CREATE TABLE IF NOT EXISTS project_settings (
+        project_id TEXT PRIMARY KEY,
+        max_active_rules INTEGER,
+        auto_write INTEGER NOT NULL DEFAULT 1 CHECK (auto_write IN (0,1)),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      -- Empty until AI analysis actually ships (see spec section 8, "still out
+      -- of scope"): this only gives the Settings page's "Spent this month"
+      -- line something real to sum once it does.
+      CREATE TABLE IF NOT EXISTS llm_calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        tokens_in INTEGER NOT NULL DEFAULT 0,
+        tokens_out INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_llm_calls_created_at ON llm_calls(created_at);
+    `,
+  },
 ];
