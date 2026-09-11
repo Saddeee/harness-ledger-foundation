@@ -89,7 +89,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
   const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
   const order = [
     "{backLabel}",
-    '<DecisionCard item={item} onChanged={onChanged} busy={busy} run={run} titleAs="h1" />',
+    "<DecisionCard item={item}",
     "Change the wording",
     "{whyFor(item.classification)}",
     "What happened",
@@ -104,6 +104,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
     assert.ok(at > last, `expected "${marker}" after the previous marker (at ${at}, previous ${last})`);
     last = at;
   }
+  assert.match(body, /<DecisionCard item=\{item\}[^>]*busy=\{busy\}[^>]*run=\{run\}[^>]*titleAs="h1"/);
   const raw = readApp(DETAIL);
   assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="Details"'));
   // proof is hidden until it can run
@@ -122,7 +123,8 @@ test("decision card: three buttons for pending items, Change decision for decide
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} \/>/);
   const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
   assert.match(decided, />\s*Change decision\s*<\/summary>/);
-  assert.match(decided, /trigger=\{`Add to \$\{label\(DESTINATION_LABELS, d\)\} instead`\}/);
+  assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
+  assert.match(decided, /trigger="Try adding again"/);
   assert.match(decided, /trigger="Restore previous version"/);
   assert.match(decided, /\{ action: "restore", id: item\.id, version_id: latestWritten\.id \}/);
   assert.match(decided, /\{ action: "reopen", id: item\.id \}/);

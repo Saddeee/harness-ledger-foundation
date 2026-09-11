@@ -188,6 +188,12 @@ function DecidedStatus({ item, busy, run }: { item: Improvement; busy: boolean; 
       {accepted && lovable.write_status === "stale" && lovable.stale_reason ? (
         <p className="text-xs text-muted-foreground">{lovable.stale_reason}</p>
       ) : null}
+      {accepted && lovable.write_status === "failed" ? (
+        <p className="text-xs text-muted-foreground">
+          Harness could not write this to Lovable. You can try again, choose the other destination,
+          or skip it.
+        </p>
+      ) : null}
       <details>
         <summary className="cursor-pointer text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           Change decision
@@ -205,13 +211,24 @@ function DecidedStatus({ item, busy, run }: { item: Improvement; busy: boolean; 
                     busy={busy}
                     run={run}
                     variant="outline"
-                    trigger={`Add to ${label(DESTINATION_LABELS, d)} instead`}
+                    trigger={`${ADD_LABELS[d]} instead`}
                   />
                 ))}
               <SkipConfirm item={item} busy={busy} run={run} />
             </>
           ) : null}
-          {accepted && written ? (
+          {accepted &&
+          lovable.write_status === "failed" &&
+          (item.destination === "project" || item.destination === "workspace") ? (
+            <AddConfirm
+              item={item}
+              destination={item.destination}
+              busy={busy}
+              run={run}
+              trigger="Try adding again"
+            />
+          ) : null}
+          {accepted && written && latestWritten ? (
             <ConfirmAction
               trigger="Restore previous version"
               variant="outline"
@@ -219,14 +236,13 @@ function DecidedStatus({ item, busy, run }: { item: Improvement; busy: boolean; 
               body={RESTORE_BODY}
               consequences={[]}
               confirmLabel="Restore"
-              disabled={busy || !latestWritten}
-              onConfirm={() => {
-                if (!latestWritten) return;
+              disabled={busy}
+              onConfirm={() =>
                 void run(
                   { action: "restore", id: item.id, version_id: latestWritten.id },
                   "Restore requested — Harness will write the earlier text back",
-                );
-              }}
+                )
+              }
             />
           ) : null}
           {skipped ? (
@@ -384,6 +400,12 @@ export function ImprovementDetail({
 
       <DecisionCard item={item} onChanged={onChanged} busy={busy} run={run} titleAs="h1" />
 
+      {item.decision.divergence ? (
+        <p role="status" className="rounded-md border p-3 text-sm">
+          {item.decision.divergence}
+        </p>
+      ) : null}
+
       <div className="space-y-2">
         {item.proposed_instruction ? (
           <button
@@ -436,12 +458,6 @@ export function ImprovementDetail({
         ) : null}
         <p className="text-sm text-muted-foreground">{whyFor(item.classification)}</p>
       </div>
-
-      {item.decision.divergence ? (
-        <p role="status" className="rounded-md border p-3 text-sm">
-          {item.decision.divergence}
-        </p>
-      ) : null}
 
       <section aria-labelledby={`story-${item.id}`} className="space-y-3">
         <h2 id={`story-${item.id}`} className="text-lg font-semibold">
