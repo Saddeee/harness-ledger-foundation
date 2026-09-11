@@ -116,10 +116,12 @@ full parity with it.
 ## Adding a rule to Lovable (two-beat)
 
 The app never writes to Lovable. Adding an instruction to Knowledge is a
-two-beat handshake between the UI and Claude Code holding both MCP servers:
+two-beat handshake between the UI and the local executor
+(`npm run harness:executor`, see below), which holds the Lovable connection.
+Beats 0 and 2 are the executor's; beat 1 is the user's click.
 
-**Beat 0 — snapshot (before the user can even see a preview).** Claude Code
-reads the live Knowledge and records it verbatim:
+**Beat 0 — snapshot (before the user can even see a preview).** The executor
+reads the live Knowledge and records it verbatim, on every sync:
 
 1. `get_project_knowledge(project_id)` (or `get_workspace_knowledge(workspace_id)`) over Lovable MCP.
 2. `record_knowledge_snapshot(target, project_id | workspace_id, content, fetched_by)` over Harness MCP.
@@ -135,7 +137,8 @@ managed block regenerated, 9,000-char cap) and stores a `knowledge_versions`
 row with `status: "pending"`, both hashes, and the rule ids. Nothing has
 touched Lovable yet.
 
-**Beat 2 — Claude Code executes, exactly this, per pending write:**
+**Beat 2 — the executor executes, exactly this, per pending write, at the
+next sync (`--once` or the loop):**
 
 1. `list_pending_knowledge_writes()` → each row carries `target`, the id,
    `previous_sha256` (what the write was composed against) and `new_content`.
@@ -147,6 +150,36 @@ touched Lovable yet.
    version `written` (and the rule `active`, stage "In Lovable") only if the
    read-back is byte-identical; otherwise `failed`.
 7. Any other error → `mark_knowledge_write_failed(version_id, error)`.
+
+## Executor
+
+The executor is the only process that talks to Lovable. It holds the OAuth
+connection, reads chats and Knowledge, and performs beat 2 above. It spends no
+credits, runs no AI, and may call only eight Lovable tools (`get_me`,
+`list_projects`, `list_messages`, get/set project knowledge, get/set workspace
+knowledge, `list_workspace_skills`).
+
+```
+npm run harness:executor -- --connect      # once: browser consent, tokens to data/lovable-auth.json (0600)
+npm run harness:executor -- --status       # connection, schedule, last run, next run
+npm run harness:executor -- --once         # one full pass, then exit (crontab-friendly)
+npm run harness:executor                   # the scheduler loop; Ctrl-C to stop
+npm run harness:executor -- --disconnect   # revoke and delete the local credentials
+```
+
+One pass runs four beats, each idempotent: sync history (newest-first per
+allowed project, stopping at the first page containing a message already
+stored, content redacted), snapshot Knowledge (project + workspace, skipped
+when the sha256 is unchanged), snapshot workspace Skills, then execute pending
+Knowledge writes. Every pass writes one `sync_runs` row with counts.
+
+The loop ticks every 30 s. It runs immediately when the UI's "Sync now" left a
+`sync_requests` row, otherwise on the schedule in `settings`
+(`sync_enabled`, `sync_interval_minutes`, `sync_window_start_hour`,
+`sync_window_end_hour` — by default hourly between 10:00 and 22:00 local). Only
+one run at a time; a run still marked running after 15 minutes is treated as
+crashed. While not connected it logs the connect hint at most once per ten
+minutes and does nothing else.
 
 A restore ("Restore previous version" in the UI) is just another pending
 row whose `new_content` is the earlier version's `previous_content`; it goes

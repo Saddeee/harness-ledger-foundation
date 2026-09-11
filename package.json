@@ -16,6 +16,7 @@
     "ui": "npm --prefix harness run ui",
     "harness:install": "npm --prefix harness install",
     "harness:build": "npm --prefix harness run build",
+    "harness:executor": "npm --prefix harness run executor --",
     "typecheck": "tsc --noEmit"
   },
   "overrides": {

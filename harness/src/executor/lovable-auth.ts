@@ -61,7 +61,7 @@ function readAuthFile(file: string): AuthFile {
 }
 
 function writeAuthFile(file: string, data: AuthFile): void {
-  mkdirSync(dirname(file), { recursive: true });
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 });
   // writeFileSync only applies `mode` when creating the file.
   chmodSync(file, 0o600);
@@ -213,6 +213,11 @@ function toMe(raw: unknown): Me {
   };
 }
 
+/** Query-string text only ever reaches the terminal, and only as one safe line. */
+function escapeForLog(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 200);
+}
+
 type Flow = { url: Promise<string>; done: Promise<Me> };
 
 /**
@@ -264,15 +269,24 @@ function beginFlow(opts: { timeoutMs?: number } = {}): Flow {
         const code = reqUrl.searchParams.get("code");
         const state = reqUrl.searchParams.get("state");
         const error = reqUrl.searchParams.get("error");
-        const fail = (message: string, httpStatus = 400) => {
+        // Nothing from the query string reaches the response body: the page is
+        // a fixed string, and the real reason travels through failCode().
+        const respond = (httpStatus: number, body: string) => {
           res.writeHead(httpStatus, { "content-type": "text/html; charset=utf-8" });
-          res.end(`<!doctype html><p>${message}</p>`);
+          res.end(`<!doctype html><meta charset=utf-8><p>${body}</p>`);
+        };
+        const fail = (message: string) => {
+          respond(400, "Authorization failed. Return to the terminal for details.");
           failCode(new Error(message));
         };
-        if (error) return fail(`Authorization failed: ${error}`);
+        if (error) return fail(`Authorization failed: ${escapeForLog(error)}`);
         if (!code) return fail("Authorization failed: no code returned.");
         if (!provider.currentState || state !== provider.currentState) {
-          return fail("Authorization failed: state mismatch.");
+          // A stray or forged callback must not kill a flow the user may still
+          // be completing in the browser: answer 400 and keep listening until
+          // the matching state arrives or the timeout fires.
+          respond(400, "Unexpected callback. Ignoring it.");
+          return;
         }
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(

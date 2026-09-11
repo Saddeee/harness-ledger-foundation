@@ -1,13 +1,43 @@
 /**
- * Tiny operator CLI for the Lovable connection: `npm run executor -- status|connect|disconnect`.
- * Prints no secrets.
+ * Operator CLI: `npm run harness:executor -- [--connect|--status|--disconnect|--once]`.
+ * With no flag it runs the scheduler loop until interrupted. Prints no secrets.
  */
 import { connect, disconnect, status } from "./lovable-auth.js";
+import { loop, runOnce, nextRunAt, scheduleFromSettings } from "./schedule.js";
+import { getSettings, latestSyncRun } from "../store.js";
 
-const command = process.argv[2] ?? "status";
+const USAGE = "Usage: npm run harness:executor -- [--connect | --status | --disconnect | --once]";
 
-if (command === "status") {
-  console.log(JSON.stringify(status(), null, 2));
+// Accept both `--status` and the bare `status` the first version took.
+const command = (process.argv[2] ?? "").replace(/^--/, "");
+
+function printStatus(): void {
+  const connection = status();
+  const schedule = scheduleFromSettings(getSettings());
+  const last = latestSyncRun();
+  const lastStarted = last ? new Date(last.started_at.replace(" ", "T") + "Z") : null;
+  console.log(
+    JSON.stringify(
+      {
+        connection,
+        schedule,
+        last_run: last,
+        next_run_at: nextRunAt(new Date(), lastStarted, schedule)?.toISOString() ?? null,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+if (command === "" || command === "loop") {
+  await loop();
+} else if (command === "status") {
+  printStatus();
+} else if (command === "once") {
+  const result = await runOnce();
+  if (!result.ran) process.exit(0);
+  if (!result.ok) process.exit(1);
 } else if (command === "connect") {
   const me = await connect();
   console.log(`Connected as ${me.email ?? "(unknown)"} — ${me.workspaces.length} workspace(s).`);
@@ -15,6 +45,6 @@ if (command === "status") {
   await disconnect();
   console.log("Disconnected. Local credentials removed.");
 } else {
-  console.error(`Unknown command "${command}". Use status | connect | disconnect.`);
+  console.error(`Unknown command "${process.argv[2]}". ${USAGE}`);
   process.exit(1);
 }

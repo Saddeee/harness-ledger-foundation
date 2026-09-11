@@ -142,16 +142,24 @@ export async function openLovableClient(): Promise<LovableClient> {
     // as UnauthorizedError, which the caller turns into a "reconnect" prompt.
   });
   const client = new Client({ name: "harness-ledger-local", version: "0.1.0" });
-  await client.connect(
-    new StreamableHTTPClientTransport(new URL(LOVABLE_MCP_URL), { authProvider: provider }),
-  );
+  const transport = new StreamableHTTPClientTransport(new URL(LOVABLE_MCP_URL), {
+    authProvider: provider,
+  });
+  try {
+    await client.connect(transport);
+  } catch (err) {
+    // Leave no half-open socket behind when the connection never came up.
+    await transport.close().catch(() => {});
+    throw err;
+  }
 
   async function call(name: string, args: Record<string, unknown>): Promise<unknown> {
     try {
       return parseToolResult(await client.callTool({ name, arguments: args }));
     } catch (err) {
       if (isUnauthorized(err)) {
-        // The transport refreshes the access token on the next attempt.
+        // Only reached when the SDK's own refresh has already failed; one more
+        // attempt lets a freshly stored token (e.g. from a parallel connect) win.
         return parseToolResult(await client.callTool({ name, arguments: args }));
       }
       const after = retryAfterSeconds(err);

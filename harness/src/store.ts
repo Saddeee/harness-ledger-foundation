@@ -1509,6 +1509,14 @@ export function requestSync(): { id: number; created: boolean } {
   return { id: row.id, created: true };
 }
 
+// The scheduler only needs to know that work was asked for; taking the
+// request is runAll's job.
+export function hasOpenSyncRequest(): boolean {
+  return (
+    db.prepare(`SELECT 1 FROM sync_requests WHERE status = 'requested' LIMIT 1`).get() !== undefined
+  );
+}
+
 export function takeSyncRequest(runId: number): number | null {
   const existing = db
     .prepare(`SELECT id FROM sync_requests WHERE status = 'requested' ORDER BY id ASC LIMIT 1`)
