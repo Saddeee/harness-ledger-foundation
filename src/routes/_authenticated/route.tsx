@@ -1,14 +1,8 @@
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { SETTINGS_DEFAULTS } from "@/lib/settings-defaults";
 import { Button } from "@/components/ui/button";
-import {
-  HOW_IT_WORKS_EVENT,
-  runtimeQueryOptions,
-  setHowItWorksDismissed,
-} from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -20,22 +14,20 @@ export const Route = createFileRoute("/_authenticated")({
   component: AuthedLayout,
 });
 
+// The same four pages in every runtime. Scoreboard, Versions, Demo and Jobs
+// stay routable (Jobs is linked from Settings › Advanced) but are not in the
+// sidebar until they have content.
 const NAV = [
-  { to: "/overview", label: "Overview" },
   { to: "/inbox", label: "Inbox" },
   { to: "/ledger", label: "Improvements" },
   { to: "/projects", label: "Projects" },
-  { to: "/scoreboard", label: "Scoreboard" },
-  { to: "/versions", label: "Versions" },
   { to: "/settings", label: "Settings" },
-  { to: "/demo", label: "Demo" },
-  { to: "/jobs", label: "Jobs" },
 ] as const;
 
-// The local runtime is a single-user tool for deciding on improvements; the
-// hosted-era screens (projects, scoreboard, versions, demo, jobs) stay
-// reachable only in the hosted preview.
-const LOCAL_NAV = new Set<string>(["/overview", "/inbox", "/ledger", "/settings"]);
+// Kept as a constant so the <Link to="/"> tag stays on one line: it is a
+// pure landing-page link, not a runtime-dependent nav item.
+const HOW_IT_WORKS_LINK_CLASS =
+  "mb-3 block text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 async function seedSettings(userId: string) {
   const rows = Object.entries(SETTINGS_DEFAULTS).map(([key, value]) => ({
@@ -52,10 +44,6 @@ async function seedSettings(userId: string) {
 function AuthedLayout() {
   const { user } = Route.useRouteContext();
   const navigate = useNavigate();
-  const runtime = useQuery(runtimeQueryOptions);
-  // Undefined while loading -> treated as hosted, so nothing flashes away.
-  const mode = runtime.data?.mode;
-  const items = mode === "local" ? NAV.filter((n) => LOCAL_NAV.has(n.to)) : NAV;
 
   useEffect(() => {
     if (user?.id) void seedSettings(user.id);
@@ -66,7 +54,7 @@ function AuthedLayout() {
       <aside className="w-56 shrink-0 border-r bg-muted/30 p-4">
         <div className="mb-6 text-sm font-semibold">Harness Ledger</div>
         <nav className="flex flex-col gap-1">
-          {items.map((item) => (
+          {NAV.map((item) => (
             <Link
               key={item.to}
               to={item.to}
@@ -78,19 +66,9 @@ function AuthedLayout() {
           ))}
         </nav>
         <div className="mt-6 border-t pt-4">
-          {mode === "local" ? (
-            <button
-              type="button"
-              className="mb-3 text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => {
-                setHowItWorksDismissed(false);
-                window.dispatchEvent(new Event(HOW_IT_WORKS_EVENT));
-                navigate({ to: "/overview" });
-              }}
-            >
-              How Harness works
-            </button>
-          ) : null}
+          <Link to="/" className={HOW_IT_WORKS_LINK_CLASS}>
+            How Harness works
+          </Link>
           <p className="mb-2 truncate text-xs text-muted-foreground">{user?.email}</p>
           <Button
             variant="outline"

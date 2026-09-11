@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { runtimeQueryOptions } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
@@ -78,7 +81,7 @@ function SettingsPage() {
     else {
       toast.success("Settings saved");
       qc.invalidateQueries({ queryKey: ["settings"] });
-      qc.invalidateQueries({ queryKey: ["overview"] });
+      qc.invalidateQueries({ queryKey: ["hosted-usage"] });
     }
   }
 
@@ -142,6 +145,85 @@ function SettingsPage() {
           Save settings
         </Button>
       </div>
+
+      <AdvancedSection />
     </div>
+  );
+}
+
+function currentMonth() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+// Hosted-runtime widgets (Supabase-backed) that used to live on Overview.
+// Only meaningful in the hosted preview; the local runtime has no job queue
+// and no hosted credit budget, so this renders nothing there.
+function AdvancedSection() {
+  const runtime = useQuery(runtimeQueryOptions);
+  const { data } = useQuery({
+    queryKey: ["hosted-usage"],
+    enabled: runtime.data?.mode === "hosted",
+    queryFn: async () => {
+      const month = currentMonth();
+      const [budgetRes, totalRes, jobsRes] = await Promise.all([
+        supabase.from("settings").select("value").eq("key", "monthly_credit_budget").maybeSingle(),
+        supabase.from("credit_month_totals").select("total").eq("month", month).maybeSingle(),
+        supabase.from("job_queue").select("status").in("status", ["queued", "running"]),
+      ]);
+      const budget = Number(budgetRes.data?.value ?? 0);
+      const used = Number(totalRes.data?.total ?? 0);
+      const jobs = jobsRes.data ?? [];
+      return {
+        budget,
+        used,
+        queued: jobs.filter((j) => j.status === "queued").length,
+        running: jobs.filter((j) => j.status === "running").length,
+      };
+    },
+    refetchInterval: 15000,
+  });
+
+  if (runtime.data?.mode !== "hosted") return null;
+
+  const budget = data?.budget ?? 0;
+  const used = data?.used ?? 0;
+  const pct = budget > 0 ? Math.min(100, (used / budget) * 100) : 0;
+
+  return (
+    <details className="rounded-md border">
+      <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        Advanced
+      </summary>
+      <div className="space-y-4 border-t p-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Credits this month</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Progress value={pct} />
+            <p className="text-sm text-muted-foreground">
+              {used} of {budget} credits used ({Math.round(pct)}%)
+            </p>
+          </CardContent>
+        </Card>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Queued jobs</CardTitle>
+            </CardHeader>
+            <CardContent className="text-3xl font-semibold">{data?.queued ?? 0}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Running jobs</CardTitle>
+            </CardHeader>
+            <CardContent className="text-3xl font-semibold">{data?.running ?? 0}</CardContent>
+          </Card>
+        </div>
+        <Link to="/jobs" className="text-sm text-primary underline underline-offset-2">
+          Job queue and event log
+        </Link>
+      </div>
+    </details>
   );
 }

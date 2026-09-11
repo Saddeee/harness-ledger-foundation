@@ -28,10 +28,9 @@ const DETAIL = "components/harness/improvement.tsx";
 const LAYOUT = "components/harness/decision-layout.tsx";
 const INBOX = "routes/_authenticated/inbox.tsx";
 const LEDGER = "routes/_authenticated/ledger.tsx";
-const OVERVIEW = "routes/_authenticated/overview.tsx";
 const SHELL = "routes/_authenticated/route.tsx";
 const CLIENT = "lib/improvements-client.ts";
-const PAGES = [INBOX, LEDGER, OVERVIEW, DETAIL, LAYOUT];
+const PAGES = [INBOX, LEDGER, DETAIL, LAYOUT];
 
 // Everything a person can read on the detail page: the component plus the
 // copy constants it pulls from harness-ux.ts (rendered through helpers).
@@ -130,7 +129,6 @@ test("decision panel: heading, three destinations with Skill disabled, nothing p
   assert.match(panel, /onDeferredChange\(!deferred\)/);
   assert.match(detail, /const DEFERRED_PREFIX = "harness\.deferred:";|setDeferred\(item\.id, on\)/);
   assert.match(codeOnly(readApp(CLIENT)), /const DEFERRED_PREFIX = "harness\.deferred:";/);
-  assert.match(codeOnly(readApp(CLIENT)), /const HOW_IT_WORKS_KEY = "harness\.howItWorksDismissed";/);
   assert.match(panel, /<SkipConfirm/);
   assert.match(detail, /trigger="Skip"\s+variant="ghost"/);
   assert.match(detail, /title="Skip this improvement\?"/);
@@ -274,34 +272,48 @@ test("wording history: reasons only for changes made in this UI; anything else i
   assert.match(codeOnly(readApp(DETAIL)), /\{wordingChangeLine\(w\)\}/);
 });
 
-test("Overview in local mode: the three How-Harness-works lines verbatim, dismissible, Next up, hosted cards gated", () => {
-  assert.deepEqual([...ux.HOW_IT_WORKS_STEPS], [
-    "Harness reads your Lovable chats and spots where you corrected Lovable.",
-    "It proposes one instruction per correction. You add it to Lovable, prove it first, or skip.",
-    "Nothing changes in Lovable until you say so. Proofs use Lovable credits; reviewing never does.",
-  ]);
-  const overview = codeOnly(readApp(OVERVIEW));
-  assert.match(overview, /How Harness works/);
-  assert.match(overview, /HOW_IT_WORKS_STEPS\.map/);
-  assert.match(overview, /setHowItWorksDismissed\(true\)/);
-  assert.match(overview, /\{mode === "local" \? <HowItWorksCard \/> : null\}/);
-  // How-it-works card comes before Next up; hosted cards only when hosted
-  assert.ok(overview.indexOf("<HowItWorksCard />") < overview.indexOf("<NextActionCard />"));
-  assert.match(overview, /\{mode === "hosted" \|\| mode === undefined \? <HostedCards \/> : null\}/);
-  // Next up never routes to Inbox when nothing is pending
-  assert.match(overview, /i\.decision\.status === "pending" && !isDeferred\(i\.id\)/);
-  const shell = codeOnly(readApp(SHELL));
-  assert.match(shell, /How Harness works/);
-  assert.match(shell, /setHowItWorksDismissed\(false\)/);
+test("Overview is gone: the route only redirects to Inbox and nothing links to /overview", () => {
+  const overview = codeOnly(readApp("routes/_authenticated/overview.tsx"));
+  assert.match(overview, /throw redirect\(\{ to: "\/inbox", replace: true \}\)/);
+  assert.ok(!/component:/.test(overview), "no component; it is a pure redirect");
+  for (const page of [
+    INBOX,
+    LEDGER,
+    SHELL,
+    CLIENT,
+    DETAIL,
+    LAYOUT,
+    "routes/login.tsx",
+    "routes/index.tsx",
+    "routes/_authenticated/settings.tsx",
+  ]) {
+    assert.ok(!/["'`]\/overview["'`]/.test(codeOnly(readApp(page))), `${page} still links to /overview`);
+  }
 });
 
-test("nav: local mode shows Overview, Inbox, Improvements, Settings only; hosted keeps everything", () => {
+test("Settings: hosted usage cards live under Advanced, gated to the hosted runtime, with a link to Jobs", () => {
+  const settings = codeOnly(readApp("routes/_authenticated/settings.tsx"));
+  assert.match(settings, /function AdvancedSection/);
+  assert.match(settings, /if \(runtime\.data\?\.mode !== "hosted"\) return null;/);
+  assert.match(settings, /<summary[^>]*>\s*Advanced\s*<\/summary>/);
+  assert.match(settings, /<Link to="\/jobs"/);
+  assert.match(settings, /Credits this month/);
+  assert.match(settings, /<AdvancedSection \/>/);
+  assert.ok(!/queryKey: \["overview"\]/.test(settings));
+});
+
+test("nav: Inbox, Improvements, Projects, Settings in every runtime; How Harness works links to the landing page", () => {
   const shell = codeOnly(readApp(SHELL));
-  assert.match(shell, /const LOCAL_NAV = new Set<string>\(\["\/overview", "\/inbox", "\/ledger", "\/settings"\]\);/);
-  assert.match(shell, /mode === "local" \? NAV\.filter\(\(n\) => LOCAL_NAV\.has\(n\.to\)\) : NAV/);
-  assert.match(shell, /label: "Improvements"/);
-  assert.ok(!/label: "Ledger"/.test(shell));
+  assert.match(shell, /\{ to: "\/inbox", label: "Inbox" \}/);
+  assert.match(shell, /\{ to: "\/ledger", label: "Improvements" \}/);
+  assert.match(shell, /\{ to: "\/projects", label: "Projects" \}/);
+  assert.match(shell, /\{ to: "\/settings", label: "Settings" \}/);
+  assert.equal(count(shell, 'label: "'), 4, "exactly four nav items");
+  assert.ok(!/LOCAL_NAV|runtimeQueryOptions|mode === "local"/.test(shell), "nav never depends on the runtime");
+  assert.ok(!/label: "Ledger"|label: "Overview"/.test(shell));
+  assert.match(shell, /<Link to="\/"[^>]*>\s*How Harness works\s*<\/Link>/);
   const client = codeOnly(readApp(CLIENT));
+  assert.ok(!/HowItWorks|howItWorks|HOW_IT_WORKS/.test(client), "no onboarding state in the client lib");
   assert.match(client, /staleTime: Infinity/);
   assert.match(client, /json\.mode === "local" \? "local" : "hosted"/, "anything but a confirmed local answer is hosted");
 });
@@ -334,10 +346,6 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   for (const page of [INBOX, LEDGER, LAYOUT]) {
     assert.equal(count(codeOnly(readApp(page)), "credit"), 0, `${page} mentions credits`);
   }
-  // Overview: only the hosted budget card (gated) and the onboarding steps mention credits
-  const overview = codeOnly(readApp(OVERVIEW));
-  const ours = overview.slice(overview.indexOf("function HowItWorksCard"), overview.indexOf("function HostedCards"));
-  assert.equal(count(ours, "credit"), 0);
   // the client lib carries the contract field name lovable_credits_max, but no user-facing credit copy
   assert.equal(count(codeOnly(readApp(CLIENT)), "Lovable credits"), 0);
   // harness-ux.ts carries exactly the two approved lines (proof cost, onboarding step 3)
@@ -355,7 +363,7 @@ test("no internal vocabulary in user-facing JSX outside the Developer view", () 
   for (const word of ["checkpoint", "message_id", "provenance", "confidence", "classifier"]) {
     assert.ok(!new RegExp(word, "i").test(userFacing), `${word} leaks into the user-facing detail`);
   }
-  for (const page of [INBOX, LEDGER, OVERVIEW, SHELL, CLIENT, LAYOUT, "lib/harness-ux.ts"]) {
+  for (const page of [INBOX, LEDGER, SHELL, CLIENT, LAYOUT, "lib/harness-ux.ts", "routes/_authenticated/settings.tsx"]) {
     const code = codeOnly(readApp(page));
     for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
       assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into ${page}`);
@@ -364,7 +372,7 @@ test("no internal vocabulary in user-facing JSX outside the Developer view", () 
 });
 
 test("pages only fetch local harness routes: improvements and runtime, nothing else", () => {
-  for (const page of [INBOX, LEDGER, OVERVIEW, SHELL, CLIENT, DETAIL]) {
+  for (const page of [INBOX, LEDGER, SHELL, CLIENT, DETAIL]) {
     const code = codeOnly(readApp(page));
     const targets = [...code.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]);
     for (const t of targets) assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime)$/, `${page} fetches ${t}`);

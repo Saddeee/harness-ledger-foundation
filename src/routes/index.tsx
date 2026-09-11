@@ -29,7 +29,7 @@ function Index() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      navigate({ to: data.session ? "/overview" : "/login", replace: true });
+      navigate({ to: data.session ? "/inbox" : "/login", replace: true });
     });
   }, [navigate]);
 

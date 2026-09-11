@@ -180,8 +180,6 @@ export function groupOf(item: Improvement, deferred: boolean): ImprovementGroup 
 // ---- Per-browser conveniences (never product state) ----
 
 const DEFERRED_PREFIX = "harness.deferred:";
-const HOW_IT_WORKS_KEY = "harness.howItWorksDismissed";
-export const HOW_IT_WORKS_EVENT = "harness:show-how-it-works";
 
 export function isDeferred(id: number): boolean {
   try {
@@ -197,22 +195,5 @@ export function setDeferred(id: number, on: boolean): void {
     else localStorage.removeItem(DEFERRED_PREFIX + id);
   } catch {
     // storage unavailable: the item simply stays "Needs your decision"
-  }
-}
-
-export function isHowItWorksDismissed(): boolean {
-  try {
-    return localStorage.getItem(HOW_IT_WORKS_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function setHowItWorksDismissed(on: boolean): void {
-  try {
-    if (on) localStorage.setItem(HOW_IT_WORKS_KEY, "1");
-    else localStorage.removeItem(HOW_IT_WORKS_KEY);
-  } catch {
-    // ignore
   }
 }
