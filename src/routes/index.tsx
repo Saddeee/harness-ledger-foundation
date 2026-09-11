@@ -29,10 +29,13 @@ export const Route = createFileRoute("/")({
 // The only place the product explains itself. Public; a signed-in visitor
 // sees the same page with the button pointing at Inbox.
 function Landing() {
-  const [signedIn, setSignedIn] = useState(false);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSignedIn(Boolean(data.session)));
+    supabase.auth
+      .getSession()
+      .then(({ data }) => setSignedIn(Boolean(data.session)))
+      .catch(() => setSignedIn(false));
   }, []);
 
   return (
@@ -63,11 +66,13 @@ function Landing() {
           ))}
         </ol>
 
-        <div>
-          <Button asChild size="lg">
-            <Link to={signedIn ? "/inbox" : "/login"}>{signedIn ? "Open Inbox" : "Sign in"}</Link>
-          </Button>
-        </div>
+        {signedIn !== null && (
+          <div>
+            <Button asChild size="lg">
+              <Link to={signedIn ? "/inbox" : "/login"}>{signedIn ? "Open Inbox" : "Sign in"}</Link>
+            </Button>
+          </div>
+        )}
       </div>
     </main>
   );
