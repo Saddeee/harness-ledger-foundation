@@ -8,6 +8,7 @@
     "dev": "tsx src/mcp-server.ts",
     "ui": "tsx src/web/server.ts",
     "seed": "tsx src/seed.ts",
+    "executor": "tsx src/executor/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "test": "tsx --test test/*.test.ts"
