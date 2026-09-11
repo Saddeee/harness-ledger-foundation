@@ -1611,6 +1611,8 @@ export function allowProject(lovableProjectId: string, label: string) {
 }
 
 export function disallowProject(lovableProjectId: string): void {
+  // Safe only because better-sqlite3 is synchronous: nothing else can run a
+  // statement on this connection between the two pragma calls.
   db.pragma("foreign_keys = OFF");
   try {
     db.prepare(`DELETE FROM allowed_projects WHERE lovable_project_id = ?`).run(lovableProjectId);

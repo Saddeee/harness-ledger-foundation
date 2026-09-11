@@ -298,4 +298,8 @@ test("v5 allow/disallow project and history stats", () => {
   assert.equal(store.listHistoryStats().find((s) => s.project_id === "p-new")?.history_count, 1);
   store.disallowProject("p-new");
   assert.ok(!store.getAllowedProjects().some((p) => (p as { lovable_project_id: string }).lovable_project_id === "p-new"));
+  // Disallowing only stops future reads: the ledger keeps what it already
+  // recorded, so the history row must survive the FK-pragma delete.
+  const remaining = db.prepare(`SELECT COUNT(*) n FROM history_items WHERE project_id = ?`).get("p-new") as { n: number };
+  assert.equal(remaining.n, 1);
 });
