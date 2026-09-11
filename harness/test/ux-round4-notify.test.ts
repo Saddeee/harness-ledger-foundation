@@ -38,11 +38,15 @@ test("route.tsx: Uses improvements query with 60s refetch interval", () => {
   assert(code.includes('queryKey: ["harness-improvements"]'), "Missing harness-improvements query key");
 });
 
-test("improvements-client.ts: Exports NOTIFY_KEY and helper functions", () => {
-  const src = readApp(CLIENT);
+test("browser-prefs.ts: Exports NOTIFY_KEY and helper functions", () => {
+  const src = readApp("lib/browser-prefs.ts");
   assert(src.includes('NOTIFY_KEY = "harness.notifyInBrowser"'), "Missing NOTIFY_KEY definition");
   assert(src.includes("isNotifyEnabled"), "Missing isNotifyEnabled function");
   assert(src.includes("setNotifyEnabled"), "Missing setNotifyEnabled function");
+});
+
+test("improvements-client.ts: Exports pendingCount (no notification functions)", () => {
+  const src = readApp(CLIENT);
   assert(src.includes("pendingCount"), "Missing pendingCount function");
 });
 

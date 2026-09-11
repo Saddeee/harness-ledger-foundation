@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { SETTINGS_DEFAULTS } from "@/lib/settings-defaults";
 import { Button } from "@/components/ui/button";
-import { fetchImprovements, pendingCount, isNotifyEnabled } from "@/lib/improvements-client";
+import { fetchImprovements, pendingCount } from "@/lib/improvements-client";
+import { isNotifyEnabled } from "@/lib/browser-prefs";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,

@@ -75,7 +75,8 @@ test("executor.ts: GET returns llm + defaults, POST supports llm_settings/llm_ke
   assert.match(code, /llm:\s*\{/);
   assert.match(code, /provider:\s*settings\.llm_provider/);
   assert.match(code, /models:\s*JSON\.parse\(settings\.llm_models\)/);
-  assert.match(code, /monthly_budget_usd:\s*Number\(settings\.llm_monthly_budget_usd\)/);
+  assert.match(code, /monthly_token_budget:\s*Number\(settings\.llm_monthly_token_budget\)/);
+  assert.match(code, /tokens_this_month:\s*adapter\.sumLlmTokensThisMonth\(\)/);
   assert.match(code, /spent_usd:\s*adapter\.sumLlmCostThisMonth\(\)/);
   assert.match(code, /defaults:\s*\{\s*max_active_rules:\s*Number\(settings\.max_active_rules\)\s*\}/);
 

@@ -26,9 +26,8 @@ import {
   type LlmModels,
   type LlmProvider,
   type LlmRole,
-  isNotifyEnabled,
-  setNotifyEnabled,
 } from "@/lib/improvements-client";
+import { isNotifyEnabled, setNotifyEnabled } from "@/lib/browser-prefs";
 
 const DEFAULT_SCHEDULE: ExecutorSchedule = {
   enabled: true,
@@ -118,7 +117,7 @@ export function LocalSettings() {
     if (!llm) return;
     setLlmProvider(llm.provider);
     setLlmModels(llm.models);
-    setBudget(llm.monthly_budget_usd);
+    setBudget(llm.monthly_token_budget);
   }, [executor.data?.llm]);
 
   useEffect(() => {
@@ -177,7 +176,7 @@ export function LocalSettings() {
           action: "llm_settings",
           llm_provider: llmProvider,
           llm_models: llmModels,
-          llm_monthly_budget_usd: budget,
+          monthly_token_budget: budget,
         });
       } catch (e) {
         settingsError = e instanceof Error ? e.message : "unknown error";
@@ -441,7 +440,7 @@ export function LocalSettings() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="llm-budget">Monthly budget (USD, 1–1000)</Label>
+          <Label htmlFor="llm-budget">Monthly token budget</Label>
           <Input
             id="llm-budget"
             type="number"

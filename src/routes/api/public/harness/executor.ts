@@ -152,7 +152,8 @@ async function handleGet({ request }: { request: Request }) {
       llm: {
         provider: settings.llm_provider,
         models: JSON.parse(settings.llm_models) as unknown,
-        monthly_budget_usd: Number(settings.llm_monthly_budget_usd),
+        monthly_token_budget: Number(settings.llm_monthly_token_budget),
+        tokens_this_month: adapter.sumLlmTokensThisMonth(),
         spent_usd: adapter.sumLlmCostThisMonth(),
         keys: keyStatus,
       },
@@ -224,8 +225,8 @@ async function handlePost({ request }: { request: Request }) {
       const patch: Partial<Record<string, string>> = {};
       if (body["provider"] !== undefined) patch["llm_provider"] = String(body["provider"]);
       if (body["models"] !== undefined) patch["llm_models"] = JSON.stringify(body["models"]);
-      if (body["monthly_budget_usd"] !== undefined)
-        patch["llm_monthly_budget_usd"] = String(body["monthly_budget_usd"]);
+      if (body["monthly_token_budget"] !== undefined)
+        patch["llm_monthly_token_budget"] = String(body["monthly_token_budget"]);
       const settings = adapter.setSettings(patch);
       return Response.json({ available: true, settings });
     }
