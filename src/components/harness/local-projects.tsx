@@ -24,8 +24,10 @@ import {
   fetchProjects,
   postExecutor,
   postProjects,
+  type ProjectsResponse,
 } from "@/lib/improvements-client";
 
+const PROJECTS_KEY = ["harness-projects"] as const;
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -63,7 +65,7 @@ function lastSyncLine(
 export function LocalProjects() {
   const qc = useQueryClient();
   const executor = useQuery(executorQueryOptions);
-  const projects = useQuery({ queryKey: ["harness-projects"], queryFn: fetchProjects });
+  const projects = useQuery({ queryKey: PROJECTS_KEY, queryFn: fetchProjects });
   const [connecting, setConnecting] = useState(false);
 
   // Polls GET executor every 3 s until the connection shows as connected,
@@ -83,7 +85,7 @@ export function LocalProjects() {
             setConnecting(false);
             toast.success("Lovable connected");
             void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
-            void qc.invalidateQueries({ queryKey: ["harness-projects"] });
+            void qc.invalidateQueries({ queryKey: PROJECTS_KEY });
           }
         })
         .catch(() => {
@@ -108,7 +110,7 @@ export function LocalProjects() {
     onSuccess: () => {
       toast.success("Disconnected");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
-      void qc.invalidateQueries({ queryKey: ["harness-projects"] });
+      void qc.invalidateQueries({ queryKey: PROJECTS_KEY });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Disconnect failed"),
   });
@@ -118,18 +120,41 @@ export function LocalProjects() {
     onSuccess: () => {
       toast.success("Sync requested");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
-      void qc.invalidateQueries({ queryKey: ["harness-projects"] });
+      void qc.invalidateQueries({ queryKey: PROJECTS_KEY });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Sync failed"),
   });
+
+  // Which row is mid-flight, so one slow toggle doesn't freeze every other
+  // switch in the table.
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const setAllowed = useMutation({
     mutationFn: (v: { id: string; name: string; allow: boolean }) =>
       v.allow
         ? postProjects({ action: "allow", lovable_project_id: v.id, label: v.name })
         : postProjects({ action: "disallow", lovable_project_id: v.id }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["harness-projects"] }),
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not update the project"),
+    // Flip the switch immediately and put it back if the server refuses.
+    onMutate: async (v) => {
+      setTogglingId(v.id);
+      await qc.cancelQueries({ queryKey: PROJECTS_KEY });
+      const previous = qc.getQueryData<ProjectsResponse>(PROJECTS_KEY);
+      if (previous?.all) {
+        qc.setQueryData<ProjectsResponse>(PROJECTS_KEY, {
+          ...previous,
+          all: previous.all.map((p) => (p.id === v.id ? { ...p, allowed: v.allow } : p)),
+        });
+      }
+      return { previous };
+    },
+    onError: (e, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData<ProjectsResponse>(PROJECTS_KEY, ctx.previous);
+      toast.error(e instanceof Error ? e.message : "Could not update the project");
+    },
+    onSettled: () => {
+      setTogglingId(null);
+      void qc.invalidateQueries({ queryKey: PROJECTS_KEY });
+    },
   });
 
   if (executor.isLoading || projects.isLoading) {
@@ -245,7 +270,7 @@ export function LocalProjects() {
                   <TableCell>
                     <Switch
                       checked={p.allowed}
-                      disabled={setAllowed.isPending}
+                      disabled={togglingId === p.id}
                       onCheckedChange={(v) =>
                         setAllowed.mutate({ id: p.id, name: p.name, allow: v })
                       }
