@@ -45,11 +45,11 @@ const rule = store.createRule({
 }) as { id: number };
 
 test("additive migration: schema version 3 applied, no data loss on existing tables", () => {
-  assert.equal(schemaVersion(), 6);
+  assert.equal(schemaVersion(), 7);
   const migrations = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
-  assert.deepEqual(migrations.map((m) => m.version), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(migrations.map((m) => m.version), [1, 2, 3, 4, 5, 6, 7]);
   const tableNames = new Set(
     (db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map(
       (r) => r.name,

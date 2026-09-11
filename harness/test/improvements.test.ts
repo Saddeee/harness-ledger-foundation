@@ -9,7 +9,7 @@ process.env.HARNESS_DB_PATH = join(mkdtempSync(join(tmpdir(), "harness-improveme
 const { db } = await import("../src/db.js");
 const store = await import("../src/store.js");
 const imp = await import("../src/improvements.js");
-const { improvementGroup } = await import("../../src/lib/harness-ux.ts");
+const { improvementGroup, lovableStatusLine } = await import("../../src/lib/harness-ux.ts");
 
 const PROJECT = "improvements-test-project";
 db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT, "test");
@@ -220,6 +220,23 @@ test("switching to test_first cancels any Knowledge write already staged from a 
   const testFirstItem = imp.improvementAction({ action: "accept", id: cc.id, destination: "project", test_first: true });
   assert.deepEqual(store.listPendingKnowledgeWrites(), [], "switching to test_first cancels the previously staged write");
   assert.equal(testFirstItem.decision.test_first, true);
+  // The cancelled write must not read as a failure: write_status ignores
+  // it entirely (falls back to "none", not "failed"), so the group and
+  // status line are the test-first ones, not "Needs attention".
+  assert.equal(testFirstItem.lovable.write_status, "none", "a cancelled write must not surface as failed");
+  assert.equal(
+    improvementGroup({
+      status: testFirstItem.decision.status,
+      writeStatus: testFirstItem.lovable.write_status,
+      testFirst: testFirstItem.decision.test_first,
+    }),
+    "Waiting to be tested",
+  );
+  assert.match(lovableStatusLine(testFirstItem.lovable, { testFirst: true }), /^Saved for testing/);
+  // The history stays honest, though: the cancelled version is still
+  // listed, just not treated as the current status.
+  const cancelledVersions = testFirstItem.lovable.versions.filter((v) => v.status === "cancelled");
+  assert.equal(cancelledVersions.length, 1, "the superseded write appears in lovable.versions as cancelled");
 
   // 3. Switching back to a plain accept re-stages a real write the normal
   // way; a pending write genuinely exists again, and decision.test_first
@@ -280,4 +297,79 @@ test("accept with test_first: true approves the rule and its experiment plan but
   store.recordKnowledgeReadback(pending.id, pending.new_content);
   const afterWrite = imp.getImprovement(cc.id)!;
   assert.equal(afterWrite.decision.test_first, false, "flips false once a written version exists");
+});
+
+test("cancelPendingKnowledgeWrites marks a pending write cancelled, not failed", () => {
+  store.cancelPendingKnowledgeWrites(rule.id, "test setup");
+  store.recordKnowledgeSnapshot({ target: "project", project_id: PROJECT, content: "# Knowledge\n\nMore text.", fetched_by: "test" });
+  const version = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: PROJECT,
+    previous_content: "# Knowledge\n\nMore text.",
+    new_content: "# Knowledge\n\nMore text.\n\nedited.",
+    rule_ids: [rule.id],
+    actor: "test",
+  }) as { id: number };
+
+  const cancelledCount = store.cancelPendingKnowledgeWrites(rule.id, "test: cancel not fail");
+  assert.equal(cancelledCount, 1);
+  const reloaded = store.getKnowledgeVersion(version.id) as { status: string; error: string | null } | null;
+  assert.equal(reloaded?.status, "cancelled");
+  assert.equal(reloaded?.error, "test: cancel not fail");
+});
+
+test("v7 migration (checkpoint_g_cancelled_writes) rebuilds knowledge_versions without losing existing rows, and the new status CHECK accepts 'cancelled'", async () => {
+  const { default: Database } = await import("better-sqlite3");
+  const { MIGRATIONS } = await import("../src/migrations.js");
+
+  const tmpDb = new Database(":memory:");
+  tmpDb.pragma("foreign_keys = ON");
+  const upToV6 = [...MIGRATIONS].filter((m) => m.version <= 6).sort((a, b) => a.version - b.version);
+  for (const m of upToV6) tmpDb.exec(m.sql);
+
+  // Seed one knowledge_versions row under the pre-v7 schema, the way a
+  // real deployment would have data sitting there before upgrading.
+  tmpDb.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run("v7-test-project", "p");
+  tmpDb
+    .prepare(
+      `INSERT INTO knowledge_versions
+         (id, rule_id, target, project_id, previous_content, new_content, previous_sha256, new_sha256, rule_ids_json, status, actor)
+       VALUES (1, NULL, 'project', 'v7-test-project', 'a', 'b', 'sha-a', 'sha-b', '[]', 'written', 'test')`,
+    )
+    .run();
+  const before = (tmpDb.prepare(`SELECT COUNT(*) n FROM knowledge_versions`).get() as { n: number }).n;
+  assert.equal(before, 1);
+
+  const v7 = MIGRATIONS.find((m) => m.version === 7)!;
+  tmpDb.exec(v7.sql);
+
+  const after = (tmpDb.prepare(`SELECT COUNT(*) n FROM knowledge_versions`).get() as { n: number }).n;
+  assert.equal(after, 1, "the v7 rebuild preserves the existing row");
+  const row = tmpDb.prepare(`SELECT * FROM knowledge_versions WHERE id = 1`).get() as { status: string; actor: string; new_sha256: string };
+  assert.equal(row.status, "written");
+  assert.equal(row.actor, "test");
+  assert.equal(row.new_sha256, "sha-b");
+
+  // The widened CHECK genuinely accepts 'cancelled' now.
+  assert.doesNotThrow(() =>
+    tmpDb
+      .prepare(
+        `INSERT INTO knowledge_versions
+           (rule_id, target, project_id, previous_content, new_content, previous_sha256, new_sha256, rule_ids_json, status, actor)
+         VALUES (NULL, 'project', 'v7-test-project', 'a', 'b', 'sha-a', 'sha-b', '[]', 'cancelled', 'test')`,
+      )
+      .run(),
+  );
+  assert.throws(() =>
+    tmpDb
+      .prepare(
+        `INSERT INTO knowledge_versions
+           (rule_id, target, project_id, previous_content, new_content, previous_sha256, new_sha256, rule_ids_json, status, actor)
+         VALUES (NULL, 'project', 'v7-test-project', 'a', 'b', 'sha-a', 'sha-b', '[]', 'not-a-real-status', 'test')`,
+      )
+      .run(),
+  );
+
+  tmpDb.close();
 });

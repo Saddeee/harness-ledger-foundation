@@ -1009,7 +1009,10 @@ export function listEventsForRecord(kindPrefixes: string[], id: number) {
 // back, so every write has a before/after with hashes and can be restored.
 
 export type KnowledgeTarget = "project" | "workspace";
-export type KnowledgeWriteStatus = "pending" | "written" | "stale" | "failed";
+// "cancelled" -- a decision changed (skip, reopen, switching to
+// test-first) before the executor got to a pending write -- see
+// markKnowledgeWriteCancelled.
+export type KnowledgeWriteStatus = "pending" | "written" | "stale" | "failed" | "cancelled";
 
 export type KnowledgeVersionRow = {
   id: number;
@@ -1233,12 +1236,13 @@ export function listKnowledgeVersions(ruleId?: number) {
 }
 
 // Supersede any still-pending write for a rule (decision changed before the
-// executor ran) so the executor never applies an out-of-date decision.
+// executor ran) so the executor never applies an out-of-date decision. Not
+// a failure -- see markKnowledgeWriteCancelled below.
 export function cancelPendingKnowledgeWrites(ruleId: number, reason: string) {
   const pending = db
     .prepare(`SELECT id FROM knowledge_versions WHERE rule_id = ? AND status = 'pending'`)
     .all(ruleId) as { id: number }[];
-  for (const p of pending) markKnowledgeWriteFailed(p.id, reason);
+  for (const p of pending) markKnowledgeWriteCancelled(p.id, reason);
   return pending.length;
 }
 
@@ -1628,6 +1632,21 @@ export function setExperimentPlanStatus(id: number, status: "proposed" | "approv
   return getExperimentPlan(id);
 }
 // ---- end Task 4 ----
+
+// ---- Task 4 round 2: cancelled writes ----
+// A cancelled write is not a failure: it means a decision changed (skip,
+// reopen, or switching to test-first) before the executor got to it, not
+// that Harness tried and failed to write it. Keeping "cancelled" distinct
+// from "failed" stops cancelPendingKnowledgeWrites from making an
+// unrelated, ordinary decision change read as "Needs attention: adding
+// failed" in the UI.
+export function markKnowledgeWriteCancelled(versionId: number, reason: string) {
+  requirePendingVersion(versionId);
+  db.prepare(`UPDATE knowledge_versions SET status = 'cancelled', error = ? WHERE id = ?`).run(reason, versionId);
+  insertEvent("knowledge_version.cancelled", null, { id: versionId, reason });
+  return getKnowledgeVersion(versionId);
+}
+// ---- end Task 4 round 2 ----
 
 // ---- Task 5: rule → improvement ----
 // The inverse of getRuleForCorrection: given a rule, the correction

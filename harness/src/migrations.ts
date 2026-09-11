@@ -404,4 +404,57 @@ export const MIGRATIONS: Migration[] = [
       CREATE TABLE IF NOT EXISTS sync_cursors (project_id TEXT PRIMARY KEY, cursor TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
     `,
   },
+  {
+    version: 7,
+    name: "checkpoint_g_cancelled_writes",
+    sql: `
+      -- Cancelling a staged Knowledge write (a decision changed -- skip,
+      -- reopen, or switching to test-first -- before the executor got to
+      -- it) is not a failure and must not read as one. SQLite cannot ALTER
+      -- a CHECK constraint, so this rebuilds knowledge_versions with the
+      -- same columns and a status CHECK widened to include 'cancelled',
+      -- preserving every existing row.
+      --
+      -- No other table has a foreign key into knowledge_versions -- only
+      -- its own self-referencing restored_from_version_id -- so this is
+      -- safe without disabling foreign key enforcement (verified: DROP
+      -- TABLE does not re-validate a table's own self-reference, and a
+      -- single INSERT...SELECT checks its self-referencing FK once at the
+      -- end of the statement, by which every row is already present). The
+      -- PRAGMA bracket below follows SQLite's own recommended recipe for
+      -- this kind of rebuild regardless; db.ts runs each migration inside
+      -- a transaction, where toggling foreign_keys is a documented no-op,
+      -- so today these two statements are inert -- kept for defense in
+      -- depth / forward-compatibility if that ever changes.
+      PRAGMA foreign_keys=OFF;
+
+      CREATE TABLE knowledge_versions_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER REFERENCES rules(id),
+        target TEXT NOT NULL CHECK (target IN ('project','workspace')),
+        project_id TEXT REFERENCES allowed_projects(lovable_project_id),
+        workspace_id TEXT,
+        previous_content TEXT NOT NULL,
+        new_content TEXT NOT NULL,
+        previous_sha256 TEXT NOT NULL,
+        new_sha256 TEXT NOT NULL,
+        rule_ids_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','written','stale','failed','cancelled')),
+        actor TEXT NOT NULL,
+        reason TEXT,
+        restored_from_version_id INTEGER REFERENCES knowledge_versions_new(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        written_at TEXT,
+        verified_at TEXT,
+        error TEXT
+      );
+      INSERT INTO knowledge_versions_new SELECT * FROM knowledge_versions ORDER BY id;
+      DROP TABLE knowledge_versions;
+      ALTER TABLE knowledge_versions_new RENAME TO knowledge_versions;
+      CREATE INDEX IF NOT EXISTS idx_knowledge_versions_rule ON knowledge_versions(rule_id);
+      CREATE INDEX IF NOT EXISTS idx_knowledge_versions_status ON knowledge_versions(status);
+
+      PRAGMA foreign_keys=ON;
+    `,
+  },
 ];

@@ -220,7 +220,12 @@ export const DESTINATION_LABELS: Record<string, string> = {
 
 export const KNOWLEDGE_CHAR_LIMIT = 10000;
 
-export type LovableWriteStatus = "none" | "pending" | "written" | "stale" | "failed";
+// "cancelled" covers a version that was staged and then superseded by a
+// later decision (skip, reopen, or switching to test-first) before the
+// executor got to it -- never a failure. lovableStatusLine's switch below
+// has no case for it, so it falls into the same default branch as "none"
+// and "pending" -- no new copy needed.
+export type LovableWriteStatus = "none" | "pending" | "written" | "stale" | "failed" | "cancelled";
 
 export type LovableStatusLike = {
   write_status: LovableWriteStatus;

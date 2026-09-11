@@ -11,7 +11,12 @@ export type StageKey = "found" | "review" | "proof" | "in_lovable";
 export type StageState = "complete" | "current" | "future" | "blocked";
 export type Stage = { key: StageKey; state: StageState; note: string | null };
 export type Message = { id: number; author: "you" | "lovable"; sent_at: string | null; text: string };
-export type KnowledgeWriteStatus = "none" | "pending" | "written" | "stale" | "failed";
+// "cancelled" (a staged write superseded by a later decision, e.g. skip,
+// reopen, or switching to test-first) never appears as lovable.write_status
+// itself -- buildImprovement's "latest" skips cancelled versions when
+// deciding it -- but a version entry in lovable.versions can carry it, so
+// the history stays honest about what actually happened.
+export type KnowledgeWriteStatus = "none" | "pending" | "written" | "stale" | "failed" | "cancelled";
 export type KnowledgePreview = {
   target: "project" | "workspace";
   target_label: string;
@@ -195,7 +200,11 @@ function buildImprovement(c: CorrectionRow): Improvement {
 
   // ---- Knowledge write history ----
   const versions = rule ? store.listKnowledgeVersions(rule.id) : [];
-  const latest = versions[0] ?? null;
+  // Cancelling a write (skip, reopen, switching to test-first) is not a
+  // failure and must not surface as one -- skip cancelled versions when
+  // deciding what the rule's Knowledge status currently is. lovable.versions
+  // below still lists every version, cancelled ones included.
+  const latest = versions.find((v) => v.status !== "cancelled") ?? null;
   const writeStatus: KnowledgeWriteStatus = latest ? latest.status : "none";
   const writtenVersion = versions.find((v) => v.status === "written") ?? null;
   const proofComplete = outcome === "passed" || (ruleState != null && PROOF_DONE_RULE_STATES.has(ruleState));
