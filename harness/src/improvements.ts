@@ -199,12 +199,17 @@ function buildImprovement(c: CorrectionRow): Improvement {
   const writeStatus: KnowledgeWriteStatus = latest ? latest.status : "none";
   const writtenVersion = versions.find((v) => v.status === "written") ?? null;
   const proofComplete = outcome === "passed" || (ruleState != null && PROOF_DONE_RULE_STATES.has(ruleState));
-  // "Test it first": the rule and its experiment plan are approved, but
-  // nothing has been written to Knowledge yet -- see ensureApprovedExperimentPlan.
+  // "Test it first": the rule and its experiment plan are approved, and
+  // nothing is staged or written to Knowledge yet -- see
+  // ensureApprovedExperimentPlan. A pending version (a real write the
+  // executor will apply at the next sync -- e.g. from switching back to a
+  // plain accept) or a written one both mean the item has moved on from
+  // "waiting to be tested".
   const hasApprovedExperimentPlan = experimentPlans.some(
     (p) => (p as { plan: { status: string } } | null)?.plan.status === "approved",
   );
-  const testFirst = hasApprovedExperimentPlan && !writtenVersion;
+  const hasPendingVersion = versions.some((v) => v.status === "pending");
+  const testFirst = hasApprovedExperimentPlan && !hasPendingVersion && !writtenVersion;
 
   // ---- stages ----
   const reviewState: StageState = status === "skipped" ? "blocked" : status === "accepted" ? "complete" : "current";

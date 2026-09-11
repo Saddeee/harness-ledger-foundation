@@ -9,6 +9,7 @@ process.env.HARNESS_DB_PATH = join(mkdtempSync(join(tmpdir(), "harness-improveme
 const { db } = await import("../src/db.js");
 const store = await import("../src/store.js");
 const imp = await import("../src/improvements.js");
+const { improvementGroup } = await import("../../src/lib/harness-ux.ts");
 
 const PROJECT = "improvements-test-project";
 db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT, "test");
@@ -221,24 +222,30 @@ test("switching to test_first cancels any Knowledge write already staged from a 
   assert.equal(testFirstItem.decision.test_first, true);
 
   // 3. Switching back to a plain accept re-stages a real write the normal
-  // way; a pending write genuinely exists again.
+  // way; a pending write genuinely exists again, and decision.test_first
+  // must read false immediately -- a pending write is a real write the
+  // executor will apply at the next sync, so nothing about this item is
+  // "waiting to be tested" any more.
   imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
   const pendingWrites = store.listPendingKnowledgeWrites() as { id: number }[];
   assert.equal(pendingWrites.length, 1, "the plain accept re-stages exactly one pending write");
   const afterSecondPlainAccept = imp.getImprovement(cc.id)!;
   assert.equal(afterSecondPlainAccept.lovable.write_status, "pending", 'write_status shows the real pending write, not "none"');
-  // Note: decision.test_first can still read true here -- per the original
-  // contract it only flips to false once a version is actually WRITTEN
-  // (see the test below), which is unrelated to and unaffected by this
-  // fix. What this fix guarantees is that the write pipeline itself
-  // (pending Knowledge writes) always reflects the user's most recent
-  // choice, which write_status now correctly does.
+  assert.equal(afterSecondPlainAccept.decision.test_first, false, "a staged write means the item is no longer waiting to be tested");
+  assert.equal(
+    improvementGroup({
+      status: afterSecondPlainAccept.decision.status,
+      writeStatus: afterSecondPlainAccept.lovable.write_status,
+      testFirst: afterSecondPlainAccept.decision.test_first,
+    }),
+    "Waiting to be written",
+    "the Improvements page groups it as a normal pending write, not as waiting to be tested",
+  );
 });
 
-test("accept with test_first: true approves the rule and its experiment plan but stages no Knowledge write; test_first only flips false once a version is WRITTEN, not merely staged", () => {
+test("accept with test_first: true approves the rule and its experiment plan but stages no Knowledge write; once any version for the rule has been WRITTEN, test_first is false for good", () => {
   // Start from a clean pending state regardless of what earlier tests in
-  // this file left behind, and seed a Knowledge snapshot so a plain accept
-  // below is actually able to stage a write.
+  // this file left behind.
   imp.improvementAction({ action: "reopen", id: cc.id });
   store.cancelPendingKnowledgeWrites(rule.id, "test setup");
   store.recordKnowledgeSnapshot({ target: "project", project_id: PROJECT, content: "# Knowledge\n\nExisting text.", fetched_by: "test" });
@@ -254,18 +261,23 @@ test("accept with test_first: true approves the rule and its experiment plan but
   assert.ok(plans.length >= 1, "an experiment plan exists for the rule");
   assert.equal(plans[0]!.plan.status, "approved");
 
-  // A later plain accept (no test_first) stages a write the normal way --
-  // but decision.test_first only flips to false once a version is actually
-  // WRITTEN (the executor's read-back confirmed it), not merely staged as
-  // pending. Right after the plain accept the write is still only pending,
-  // so test_first must still read true.
-  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
-  const pendingWrites = store.listPendingKnowledgeWrites() as { id: number; new_content: string }[];
-  assert.equal(pendingWrites.length, 1, "the plain accept staged exactly one pending write");
-  const afterPlainAccept = imp.getImprovement(cc.id)!;
-  assert.equal(afterPlainAccept.decision.test_first, true, "still true: a pending write is not a written one");
-
-  store.recordKnowledgeReadback(pendingWrites[0]!.id, pendingWrites[0]!.new_content);
+  // Stage and write a Knowledge version directly through the store (not via
+  // a plain "accept" action -- that transition, and its immediate effect
+  // on decision.test_first, is covered by the "switching to test_first
+  // cancels..." test above). This isolates the other half of the contract:
+  // once a version has actually been WRITTEN for the rule, test_first is
+  // false, and (since the written-version check looks at the rule's whole
+  // history, not just the latest version) stays false from then on.
+  const pending = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: PROJECT,
+    previous_content: "# Knowledge\n\nExisting text.",
+    new_content: "# Knowledge\n\nExisting text.\n\nWritten by the test.",
+    rule_ids: [rule.id],
+    actor: "test",
+  }) as { id: number; new_content: string };
+  store.recordKnowledgeReadback(pending.id, pending.new_content);
   const afterWrite = imp.getImprovement(cc.id)!;
   assert.equal(afterWrite.decision.test_first, false, "flips false once a written version exists");
 });
