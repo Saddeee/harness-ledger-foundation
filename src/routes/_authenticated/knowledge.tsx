@@ -109,6 +109,9 @@ function ManagedBlockText({
 
 // Collapsed after ~12 lines so a long Knowledge document doesn't dominate
 // the page; "Show all" reveals the rest, with the managed block marked.
+// Text that already carries a Harness-managed block is never collapsed: the
+// truncated preview would drop or split the "Added by Harness" marking, and
+// seeing what Harness added is the whole point of this page.
 function KnowledgeText({
   content,
   managedBlockPresent,
@@ -121,7 +124,7 @@ function KnowledgeText({
     return <p className="text-sm text-muted-foreground">Nothing here yet.</p>;
   }
   const lines = content.split("\n");
-  const isLong = lines.length > COLLAPSE_LINES;
+  const isLong = lines.length > COLLAPSE_LINES && !managedBlockPresent;
 
   if (isLong && !showAll) {
     const preview = lines.slice(0, COLLAPSE_LINES).join("\n");
@@ -383,7 +386,9 @@ function Page() {
 
       {targets.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
-          Nothing to show yet. Allow a project on the Projects page, then press Sync now.
+          {executor.data?.connection?.connected === false
+            ? "Connect Lovable on the Projects page, then press Sync now."
+            : "Nothing to show yet. Allow a project on the Projects page, then press Sync now."}
         </div>
       ) : (
         targets.map((t) => (
