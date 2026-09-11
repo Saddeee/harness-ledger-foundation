@@ -89,7 +89,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
   const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
   const order = [
     "{backLabel}",
-    '<DecisionCard item={item} onChanged={onChanged} titleAs="h1" />',
+    '<DecisionCard item={item} onChanged={onChanged} busy={busy} run={run} titleAs="h1" />',
     "Change the wording",
     "{whyFor(item.classification)}",
     "What happened",

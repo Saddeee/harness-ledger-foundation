@@ -254,13 +254,19 @@ export function DecisionCard({
   onChanged,
   onOpen,
   titleAs = "h2",
+  busy: busyProp,
+  run: runProp,
 }: {
   item: Improvement;
   onChanged: () => void;
   onOpen?: (id: number) => void;
   titleAs?: "h1" | "h2";
+  busy?: boolean;
+  run?: Run;
 }) {
-  const { busy, run } = useRun(onChanged);
+  const own = useRun(onChanged);
+  const busy = busyProp ?? own.busy;
+  const run = runProp ?? own.run;
   const pending = item.decision.status === "pending";
   const Title = titleAs;
   const titleId = `improvement-${item.id}`;
@@ -387,7 +393,7 @@ export function ImprovementDetail({
         </button>
       </div>
 
-      <DecisionCard item={item} onChanged={onChanged} titleAs="h1" />
+      <DecisionCard item={item} onChanged={onChanged} busy={busy} run={run} titleAs="h1" />
 
       <div className="space-y-2">
         {item.proposed_instruction ? (
