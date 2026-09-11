@@ -241,17 +241,15 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   assert.equal(g("accepted", "none", "passed"), "Proof done");
 });
 
-test("Improvements page: contract groups only, non-empty only, no subtitle, restore only under In Lovable", () => {
+test("Improvements page: contract groups only, non-empty only, decision cards, restore lives in the card", () => {
   const ledger = codeOnly(readApp(LEDGER));
   assert.match(ledger, /IMPROVEMENT_GROUPS\.filter\(/);
   assert.match(ledger, /\(grouped\.get\(g\)\?\.length \?\? 0\) > 0/);
   assert.ok(!/Everything Harness has learned/.test(ledger), "no subtitle on Improvements");
-  assert.ok(!/Needs your decision|Waiting for proof|Ready to add/.test(ledger), "old group names are gone");
-  assert.match(ledger, /g === "In Lovable" \? \(/);
-  assert.match(ledger, /trigger="Restore previous version"/);
-  assert.match(ledger, /const RESTORE_TITLE = "Restore the previous Knowledge\?";/);
-  assert.match(ledger, /const RESTORE_BODY = "Harness will write the earlier text back, as a new version\.";/);
-  assert.match(ledger, /\{ action: "restore", id: item\.id, version_id: versionId \}/);
+  assert.ok(!/Needs your decision|Waiting for proof|Ready to add|Decide later/.test(ledger), "old group names are gone");
+  assert.match(ledger, /<DecisionCard item=\{i\} onChanged=\{refresh\} onOpen=\{open\} \/>/);
+  assert.ok(!/Restore previous version|action: "restore"|ConfirmAction|ImprovementCard|ClickableCard/.test(ledger));
+  assert.ok(!/export function ImprovementCard/.test(readApp(DETAIL)), "the temporary wrapper is gone");
   const inbox = codeOnly(readApp(INBOX));
   assert.match(inbox, /i\.decision\.status === "pending"/, "only pending items are in Inbox");
 });

@@ -316,17 +316,6 @@ export function DecisionCard({
   );
 }
 
-// Kept only until the Improvements page moves to DecisionCard (next task).
-export function ImprovementCard({
-  item,
-  onOpen,
-}: {
-  item: Improvement;
-  onOpen: (id: number) => void;
-}) {
-  return <DecisionCard item={item} onChanged={() => {}} onOpen={onOpen} />;
-}
-
 // ---- Detail pieces ----
 
 function MessageBlock({ m }: { m: Message }) {

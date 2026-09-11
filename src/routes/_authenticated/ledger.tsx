@@ -1,28 +1,17 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ConfirmAction } from "@/components/harness/decision-layout";
-import { ImprovementCard, ImprovementDetail } from "@/components/harness/improvement";
+import { DecisionCard, ImprovementDetail } from "@/components/harness/improvement";
 import { IMPROVEMENT_GROUPS, type ImprovementGroup } from "@/lib/harness-ux";
-import {
-  fetchImprovements,
-  groupOf,
-  lovableOf,
-  postImprovementAction,
-  type Improvement,
-} from "@/lib/improvements-client";
+import { fetchImprovements, groupOf, type Improvement } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/ledger")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    improvement:
-      typeof search["improvement"] === "number"
-        ? search["improvement"]
-        : typeof search["improvement"] === "string"
-          ? Number(search["improvement"])
-          : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): { improvement?: number } => {
+    const raw = search["improvement"];
+    const id = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : undefined;
+    return id != null && Number.isFinite(id) ? { improvement: id } : {};
+  },
   head: () => ({
     meta: [
       { title: "Improvements — Harness Ledger" },
@@ -36,16 +25,6 @@ export const Route = createFileRoute("/_authenticated/ledger")({
   component: Page,
 });
 
-const RESTORE_TITLE = "Restore the previous Knowledge?";
-const RESTORE_BODY = "Harness will write the earlier text back, as a new version.";
-
-function latestWrittenVersionId(item: Improvement): number | null {
-  const written = lovableOf(item)
-    .versions.filter((v) => v.status === "written")
-    .sort((a, b) => b.id - a.id);
-  return written[0]?.id ?? null;
-}
-
 function Page() {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -55,22 +34,7 @@ function Page() {
   const query = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
   const refresh = () => qc.invalidateQueries({ queryKey: ["harness-improvements"] });
   const open = (id: number) => navigate({ to: "/ledger", search: { improvement: id } });
-  const back = () => navigate({ to: "/ledger", search: { improvement: undefined } });
-
-  async function restore(item: Improvement) {
-    const versionId = latestWrittenVersionId(item);
-    if (versionId == null) {
-      toast.error("No written version to restore from.");
-      return;
-    }
-    try {
-      await postImprovementAction({ action: "restore", id: item.id, version_id: versionId });
-      toast.success("Restore requested — Harness will write the earlier text back.");
-      refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Restore failed");
-    }
-  }
+  const back = () => navigate({ to: "/ledger", search: {} });
 
   if (query.isLoading) {
     return (
@@ -172,21 +136,8 @@ function Page() {
               </h2>
               <ul className="space-y-3">
                 {items.map((i) => (
-                  <li key={i.id} className="space-y-2">
-                    <ImprovementCard item={i} onOpen={open} />
-                    {g === "In Lovable" ? (
-                      <div className="flex justify-end">
-                        <ConfirmAction
-                          trigger="Restore previous version"
-                          variant="outline"
-                          title={RESTORE_TITLE}
-                          body={RESTORE_BODY}
-                          consequences={[]}
-                          confirmLabel="Restore"
-                          onConfirm={() => void restore(i)}
-                        />
-                      </div>
-                    ) : null}
+                  <li key={i.id}>
+                    <DecisionCard item={i} onChanged={refresh} onOpen={open} />
                   </li>
                 ))}
               </ul>
