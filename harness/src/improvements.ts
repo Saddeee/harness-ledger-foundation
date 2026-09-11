@@ -446,7 +446,10 @@ export function improvementAction(input: unknown): Improvement {
         if (a.test_first) {
           // Test it first: approve the rule and its experiment plan, but
           // stage no Knowledge write -- nothing is written until the test
-          // runs (and the user later accepts for real).
+          // runs (and the user later accepts for real). Cancel any write
+          // that was already staged from an earlier plain accept, so the
+          // executor never writes what the user just switched away from.
+          store.cancelPendingKnowledgeWrites(rule.id, "cancelled: switched to test-first");
           ensureApprovedExperimentPlan({ ...rule, scope: destination, state: "approved" }, current);
         } else {
           const refreshedForPreview = getImprovement(a.id);

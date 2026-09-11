@@ -199,6 +199,42 @@ test("no Lovable import and no network call in improvements.ts / adapter.ts / st
   }
 });
 
+test("switching to test_first cancels any Knowledge write already staged from a plain accept, and a later plain accept re-stages a normal write", () => {
+  // Start clean and self-contained: don't depend on state any other test
+  // in this file happens to leave behind. This test must run before the
+  // one below that marks a version WRITTEN (once that happens, this rule's
+  // decision.test_first can never read true again -- see that test).
+  imp.improvementAction({ action: "reopen", id: cc.id });
+  store.cancelPendingKnowledgeWrites(rule.id, "test setup");
+  store.recordKnowledgeSnapshot({ target: "project", project_id: PROJECT, content: "# Knowledge\n\nExisting text.", fetched_by: "test" });
+
+  // 1. A plain accept stages a write the normal way.
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  assert.equal(store.listPendingKnowledgeWrites().length, 1, "plain accept stages one pending write");
+
+  // 2. Switching to test_first (no reopen in between) must cancel that
+  // now-stale staged write -- otherwise the executor would still write it
+  // at the next sync even though the UI says "nothing is written until the
+  // test runs". This reproduces the reported bug.
+  const testFirstItem = imp.improvementAction({ action: "accept", id: cc.id, destination: "project", test_first: true });
+  assert.deepEqual(store.listPendingKnowledgeWrites(), [], "switching to test_first cancels the previously staged write");
+  assert.equal(testFirstItem.decision.test_first, true);
+
+  // 3. Switching back to a plain accept re-stages a real write the normal
+  // way; a pending write genuinely exists again.
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  const pendingWrites = store.listPendingKnowledgeWrites() as { id: number }[];
+  assert.equal(pendingWrites.length, 1, "the plain accept re-stages exactly one pending write");
+  const afterSecondPlainAccept = imp.getImprovement(cc.id)!;
+  assert.equal(afterSecondPlainAccept.lovable.write_status, "pending", 'write_status shows the real pending write, not "none"');
+  // Note: decision.test_first can still read true here -- per the original
+  // contract it only flips to false once a version is actually WRITTEN
+  // (see the test below), which is unrelated to and unaffected by this
+  // fix. What this fix guarantees is that the write pipeline itself
+  // (pending Knowledge writes) always reflects the user's most recent
+  // choice, which write_status now correctly does.
+});
+
 test("accept with test_first: true approves the rule and its experiment plan but stages no Knowledge write; test_first only flips false once a version is WRITTEN, not merely staged", () => {
   // Start from a clean pending state regardless of what earlier tests in
   // this file left behind, and seed a Knowledge snapshot so a plain accept
