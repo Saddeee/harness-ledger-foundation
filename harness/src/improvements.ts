@@ -593,6 +593,28 @@ export function improvementAction(input: unknown): Improvement {
           store.cancelPendingKnowledgeWrites(rule.id, "cancelled: switched to test-first");
           ensureApprovedExperimentPlan({ ...rule, scope: destination, state: "approved" }, current);
         } else {
+          // "Add it now" withdraws an earlier "Test it first" request. If
+          // the rule's experiment plan is still approved and nothing has
+          // ever been written for this rule, put the plan back to proposed
+          // -- otherwise decision.test_first keeps reading true (see
+          // ensureApprovedExperimentPlan / the testFirst derivation above)
+          // even though the user just chose to add it now. This matters
+          // most when no Knowledge snapshot exists yet: stagePendingWrite
+          // below then has nothing to compose against and stages no write,
+          // so without this, the item would sit at test_first: true forever
+          // and stageApprovedWrites (which skips test_first items) would
+          // never pick it up once a snapshot finally arrives.
+          const plans = store.listExperimentPlansForRule(rule.id) as unknown as {
+            plan: { id: number; status: string };
+          }[];
+          const hasWrittenVersion = store
+            .listKnowledgeVersions(rule.id)
+            .some((v) => v.status === "written");
+          if (!hasWrittenVersion)
+            for (const p of plans)
+              if (p.plan.status === "approved")
+                store.setExperimentPlanStatus(p.plan.id, "proposed", ACTOR);
+
           const refreshedForPreview = getImprovement(a.id);
           if (refreshedForPreview)
             stagePendingWrite(

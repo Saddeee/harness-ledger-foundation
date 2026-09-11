@@ -454,3 +454,135 @@ test("stageApprovedWrites stages accepted writes that had no snapshot at accept 
     1,
   );
 });
+
+test('"Add it now" withdraws an earlier "Test it first" request, even before any Knowledge snapshot exists', () => {
+  const PROJECT3 = "improvements-test-project-3";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT3, "test3");
+  store.upsertProject({ lovable_project_id: PROJECT3, name: "No Snapshot Project" });
+
+  const msg3 = store.upsertHistoryItem({
+    project_id: PROJECT3,
+    kind: "message",
+    external_id: "m-nosnap-1",
+    role: "user",
+    content: "never delete user uploads",
+    occurred_at: "2026-09-10T10:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const ep3 = store.createTaskEpisode({
+    project_id: PROJECT3,
+    title: "no snapshot episode",
+    provenance: "llm_derived",
+    evidence_history_item_ids: [msg3.id],
+  }) as { id: number };
+  const cc3 = store.createCorrectionCandidate({
+    task_episode_id: ep3.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "User uploads were deleted without approval. More words here.",
+    evidence_history_item_ids: [msg3.id],
+  }) as { id: number };
+  const l3 = store.createLearning({
+    correction_candidate_id: cc3.id,
+    observed_problem: "p",
+    desired_behavior: "Do not delete user uploads without approval.",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "llm_derived",
+    created_by: "test",
+  }) as { id: number };
+  const rule3 = store.createRule({
+    learning_id: l3.id,
+    correction_candidate_id: cc3.id,
+    instruction: "Never delete user uploads without asking first.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "silent data loss",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+
+  // No snapshot of PROJECT3's Knowledge has ever been recorded.
+
+  // 1. "Test it first" approves the rule and its experiment plan.
+  const testFirstItem = imp.improvementAction({ action: "accept", id: cc3.id, destination: "project", test_first: true });
+  assert.equal(testFirstItem.decision.test_first, true);
+
+  // 2. Choosing "Add it now" (a plain accept, before any snapshot exists)
+  // must withdraw that test request immediately: test_first flips to
+  // false right away, even though there is still no snapshot to stage a
+  // pending write from.
+  const plainAcceptItem = imp.improvementAction({ action: "accept", id: cc3.id, destination: "project" });
+  assert.equal(plainAcceptItem.decision.test_first, false, "plain accept withdraws the test-first request even with no snapshot");
+  assert.deepEqual(
+    (store.listPendingKnowledgeWrites() as { rule_id: number }[]).filter((w) => w.rule_id === rule3.id),
+    [],
+    "still no snapshot to stage a write from",
+  );
+  const plans3 = store.listExperimentPlansForRule(rule3.id) as { plan: { status: string } }[];
+  assert.equal(plans3[0]!.plan.status, "proposed", "the experiment plan is put back to proposed, not left approved");
+
+  // 3. Once a snapshot exists, the executor's next sync picks the item up.
+  store.recordKnowledgeSnapshot({ target: "project", project_id: PROJECT3, content: "# Knowledge\n\nProject three.", fetched_by: "test" });
+  const result = imp.stageApprovedWrites();
+  assert.equal(result.staged, 1);
+  const staged3 = (store.listPendingKnowledgeWrites() as { rule_id: number }[]).filter((w) => w.rule_id === rule3.id);
+  assert.equal(staged3.length, 1, "exactly one pending write is staged for the rule");
+});
+
+test("plain accept on an item that was never test-first does not throw when no experiment plan exists", () => {
+  const PROJECT4 = "improvements-test-project-4";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT4, "test4");
+  store.upsertProject({ lovable_project_id: PROJECT4, name: "Never Test First Project" });
+
+  const msg4 = store.upsertHistoryItem({
+    project_id: PROJECT4,
+    kind: "message",
+    external_id: "m-plain-1",
+    role: "user",
+    content: "always confirm before sending emails",
+    occurred_at: "2026-09-10T10:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const ep4 = store.createTaskEpisode({
+    project_id: PROJECT4,
+    title: "plain accept episode",
+    provenance: "llm_derived",
+    evidence_history_item_ids: [msg4.id],
+  }) as { id: number };
+  const cc4 = store.createCorrectionCandidate({
+    task_episode_id: ep4.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "Emails were sent without confirmation. More words here.",
+    evidence_history_item_ids: [msg4.id],
+  }) as { id: number };
+  const l4 = store.createLearning({
+    correction_candidate_id: cc4.id,
+    observed_problem: "p",
+    desired_behavior: "Always confirm before sending emails.",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "llm_derived",
+    created_by: "test",
+  }) as { id: number };
+  store.createRule({
+    learning_id: l4.id,
+    correction_candidate_id: cc4.id,
+    instruction: "Always confirm before sending emails.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "unwanted emails sent",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+
+  assert.doesNotThrow(() => {
+    const accepted = imp.improvementAction({ action: "accept", id: cc4.id, destination: "project" });
+    assert.equal(accepted.decision.test_first, false);
+  });
+});
