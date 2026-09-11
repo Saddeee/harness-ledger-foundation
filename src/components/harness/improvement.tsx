@@ -290,22 +290,53 @@ export function DecisionCard({
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="text-sm font-semibold">{projectName(item)}</p>
+        <div
+          className={
+            onOpen
+              ? "min-w-0 flex-1 space-y-3 cursor-pointer rounded-md -m-1 p-1 hover:bg-accent/50"
+              : "min-w-0 flex-1 space-y-3"
+          }
+          role={onOpen ? "link" : undefined}
+          tabIndex={onOpen ? 0 : undefined}
+          onClick={onOpen ? () => onOpen(item.id) : undefined}
+          onKeyDown={
+            onOpen
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onOpen(item.id);
+                  }
+                }
+              : undefined
+          }
+        >
+          <p className="text-sm font-semibold">{projectName(item)}</p>
+          <Title
+            id={titleId}
+            className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
+          >
+            {onOpen ? (
+              <button
+                type="button"
+                className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => onOpen(item.id)}
+              >
+                {item.title}
+              </button>
+            ) : (
+              item.title
+            )}
+          </Title>
+          {item.proposed_instruction ? (
+            <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+              {item.proposed_instruction}
+            </blockquote>
+          ) : (
+            <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
+          )}
+        </div>
         {pending ? null : <Badge variant="secondary">{groupOf(item)}</Badge>}
       </div>
-      <Title
-        id={titleId}
-        className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
-      >
-        {item.title}
-      </Title>
-      {item.proposed_instruction ? (
-        <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-          {item.proposed_instruction}
-        </blockquote>
-      ) : (
-        <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
-      )}
 
       {pending ? (
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -316,18 +347,6 @@ export function DecisionCard({
       ) : (
         <DecidedStatus item={item} busy={busy} run={run} />
       )}
-
-      {onOpen ? (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onOpen(item.id)}
-          >
-            Details
-          </button>
-        </div>
-      ) : null}
     </article>
   );
 }

@@ -119,7 +119,8 @@ test("decision card: three buttons for pending items, Change decision for decide
   assert.match(card, /<AddConfirm item=\{item\} destination="workspace" busy=\{busy\} run=\{run\} variant="outline" \/>/);
   assert.match(card, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
   assert.match(card, /\{onOpen \? \(/);
-  assert.match(card, />\s*Details\s*<\/button>/);
+  assert.match(card, /onClick=\{\(\) => onOpen\(item\.id\)\}/);
+  assert.ok(!/>\s*Details\s*<\/button>/.test(card), "no separate Details link; the card opens the item");
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} \/>/);
   const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
   assert.match(decided, />\s*Change decision\s*<\/summary>/);
