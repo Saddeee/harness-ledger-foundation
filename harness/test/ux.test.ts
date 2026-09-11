@@ -450,7 +450,9 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
     const targets = [...code.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]);
     for (const t of targets)
       assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects|skills)$/, `${page} fetches ${t}`);
-    assert.ok(!/lovable\.dev|set_project_knowledge|setProjectKnowledge|createWorkspaceSkill/i.test(code), page);
+    // Allow lovable.dev in href links (D1); forbid API calls and MCP tools
+    const codeWithoutHrefs = code.replace(/href=\{[^}]*lovable\.dev[^}]*\}|href="[^"]*lovable\.dev[^"]*"|href='[^']*lovable\.dev[^']*'/g, "");
+    assert.ok(!/lovable\.dev|set_project_knowledge|setProjectKnowledge|createWorkspaceSkill/i.test(codeWithoutHrefs), page);
   }
   const client = codeOnly(readApp(CLIENT));
   assert.match(client, /fetch\("\/api\/public\/harness\/improvements"/);

@@ -535,16 +535,28 @@ export function DecisionCard({
 
 // ---- Detail pieces ----
 
-function MessageBlock({ m }: { m: Message }) {
+function MessageBlock({ m, projectId }: { m: Message; projectId?: string }) {
   const isLovable = m.author === "lovable";
   const readable = isLovable ? lovableReplyText(m.text) : m.text;
   const tooLong = !isLovable && readable.length > LONG_TEXT;
   return (
     <li className="rounded-md border bg-muted/30 p-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {isLovable ? "Lovable replied" : "You asked Lovable"}
-        {m.sent_at ? ` · ${formatDate(m.sent_at)}` : ""}
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {isLovable ? "Lovable replied" : "You asked Lovable"}
+          {m.sent_at ? ` · ${formatDate(m.sent_at)}` : ""}
+        </p>
+        {!isLovable && projectId ? (
+          <a
+            href={`https://lovable.dev/projects/${projectId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Open in Lovable
+          </a>
+        ) : null}
+      </div>
       <p className="mt-1 whitespace-pre-wrap text-sm">
         {tooLong ? `${readable.slice(0, LONG_TEXT)}…` : readable}
       </p>
@@ -686,7 +698,7 @@ export function ImprovementDetail({
         ) : (
           <ol className="space-y-2">
             {item.evidence.map((m) => (
-              <MessageBlock key={m.id} m={m} />
+              <MessageBlock key={m.id} m={m} projectId={item.project.id} />
             ))}
           </ol>
         )}
