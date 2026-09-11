@@ -147,7 +147,7 @@ test("local-projects.tsx: connection card, sync card, allowed switch, connect fl
   assert.ok(!/claude code/i.test(code));
 });
 
-test("local-settings.tsx: three sections with the exact sentences, schedule and cap posts, validation errors toast", () => {
+test("local-settings.tsx: five sections with the exact sentences, schedule and cap posts, validation errors toast", () => {
   const code = codeOnly(readApp(LOCAL_SETTINGS));
   const raw = readApp(LOCAL_SETTINGS);
 
@@ -172,9 +172,10 @@ test("local-settings.tsx: three sections with the exact sentences, schedule and 
   assert.match(code, /onError:/);
   assert.match(code, /toast\.error\(/);
 
-  // save buttons per section (at least two distinct mutations)
+  // save buttons per section: schedule, cap, AI analysis settings, key
+  // save, key remove, and project defaults (Round 3 §4)
   assert.match(code, /useMutation\(/);
-  assert.equal(count(code, "useMutation("), 2, "one save mutation for schedule, one for the cap");
+  assert.equal(count(code, "useMutation("), 6, "schedule, cap, llm settings, llm key, llm key remove, defaults");
 
   // only the local Harness client helpers
   assert.ok(!/\bfetch\(/.test(code), "local-settings.tsx must not call fetch directly");
@@ -186,7 +187,10 @@ test("local-settings.tsx: three sections with the exact sentences, schedule and 
   assert.equal(count(raw, "credit"), 1);
 
   for (const tag of code.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag));
-  for (const word of ["checkpoint", "message_id", "provenance", "confidence", "classifier"]) {
+  // "classifier" is dropped from this page's ban: Round 3 §4 makes it a
+  // legitimate user-facing AI-analysis role label ("Classifier"), not a
+  // leaked implementation term.
+  for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
     assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into local-settings.tsx`);
   }
   assert.ok(!/\bspec\b/i.test(code));

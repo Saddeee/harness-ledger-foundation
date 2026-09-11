@@ -51,6 +51,9 @@ const PREVIEW_BODY = "This is the exact text Harness will write to your Lovable 
 const PREVIEW_CONSEQUENCES = ["You can restore the previous version at any time."];
 const OVER_CAP_LINE =
   "This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first.";
+function overRulesLine(activeRulesCount: number): string {
+  return `This project already has ${activeRulesCount} active rules. Retire one on the Instructions page first.`;
+}
 const SAVED_LINE = "Added — will be written at the next sync.";
 const RESTORE_TITLE = "Restore the previous Knowledge?";
 const RESTORE_BODY = "Harness will write the earlier text back, as a new version.";
@@ -131,6 +134,7 @@ function AddConfirm({
   const preview = lovableOf(item).previews[destination];
   const targetLabel = preview?.target_label ?? label(DESTINATION_LABELS, destination);
   const overCap = preview?.over_cap === true;
+  const overRules = preview?.over_rules === true;
   return (
     <ConfirmAction
       trigger={trigger ?? ADD_LABELS[destination]}
@@ -138,7 +142,7 @@ function AddConfirm({
       body={preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
       consequences={preview ? PREVIEW_CONSEQUENCES : []}
       confirmLabel={wantsTest ? "Save for testing" : preview ? "Add" : "Save choice"}
-      confirmDisabled={overCap || choice == null}
+      confirmDisabled={overCap || overRules || choice == null}
       disabled={busy}
       onOpenChange={(open) => {
         if (!open) setChoice(null);
@@ -215,6 +219,11 @@ function AddConfirm({
           {overCap ? (
             <p role="alert" className="text-xs text-destructive">
               {OVER_CAP_LINE}
+            </p>
+          ) : null}
+          {overRules ? (
+            <p role="alert" className="text-xs text-destructive">
+              {overRulesLine(preview.active_rules_count)}
             </p>
           ) : null}
         </div>

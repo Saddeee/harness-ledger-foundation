@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LovableClientDotjsonRouteImport } from './routes/lovable-client[.]json'
 import { Route as AuthenticatedDemoRouteImport } from './routes/_authenticated/demo'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
+import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
 import { Route as AuthenticatedJobsRouteImport } from './routes/_authenticated/jobs'
 import { Route as AuthenticatedKnowledgeRouteImport } from './routes/_authenticated/knowledge'
 import { Route as AuthenticatedLedgerRouteImport } from './routes/_authenticated/ledger'
@@ -22,6 +23,7 @@ import { Route as AuthenticatedOverviewRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedScoreboardRouteImport } from './routes/_authenticated/scoreboard'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedSkillsRouteImport } from './routes/_authenticated/skills'
 import { Route as AuthenticatedVersionsRouteImport } from './routes/_authenticated/versions'
 import { Route as OauthCallbackRouteImport } from './routes/oauth/callback'
 import { Route as ApiPublicHarnessCorrectionsRouteImport } from './routes/api/public/harness/corrections'
@@ -68,6 +70,12 @@ const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
   path: '/inbox',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedInstructionsRoute =
+  AuthenticatedInstructionsRouteImport.update({
+    id: '/instructions',
+    path: '/instructions',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedJobsRoute = AuthenticatedJobsRouteImport.update({
   id: '/jobs',
   path: '/jobs',
@@ -101,6 +109,11 @@ const AuthenticatedScoreboardRoute = AuthenticatedScoreboardRouteImport.update({
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedSkillsRoute = AuthenticatedSkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedVersionsRoute = AuthenticatedVersionsRouteImport.update({
@@ -201,6 +214,7 @@ export interface FileRoutesByFullPath {
   '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/demo': typeof AuthenticatedDemoRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/instructions': typeof AuthenticatedInstructionsRoute
   '/jobs': typeof AuthenticatedJobsRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/ledger': typeof AuthenticatedLedgerRoute
@@ -208,6 +222,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof AuthenticatedProjectsRoute
   '/scoreboard': typeof AuthenticatedScoreboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/skills': typeof AuthenticatedSkillsRoute
   '/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -231,6 +246,7 @@ export interface FileRoutesByTo {
   '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/demo': typeof AuthenticatedDemoRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/instructions': typeof AuthenticatedInstructionsRoute
   '/jobs': typeof AuthenticatedJobsRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/ledger': typeof AuthenticatedLedgerRoute
@@ -238,6 +254,7 @@ export interface FileRoutesByTo {
   '/projects': typeof AuthenticatedProjectsRoute
   '/scoreboard': typeof AuthenticatedScoreboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/skills': typeof AuthenticatedSkillsRoute
   '/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -263,6 +280,7 @@ export interface FileRoutesById {
   '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/_authenticated/demo': typeof AuthenticatedDemoRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
+  '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
   '/_authenticated/jobs': typeof AuthenticatedJobsRoute
   '/_authenticated/knowledge': typeof AuthenticatedKnowledgeRoute
   '/_authenticated/ledger': typeof AuthenticatedLedgerRoute
@@ -270,6 +288,7 @@ export interface FileRoutesById {
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/_authenticated/scoreboard': typeof AuthenticatedScoreboardRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/skills': typeof AuthenticatedSkillsRoute
   '/_authenticated/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -295,6 +314,7 @@ export interface FileRouteTypes {
     | '/lovable-client.json'
     | '/demo'
     | '/inbox'
+    | '/instructions'
     | '/jobs'
     | '/knowledge'
     | '/ledger'
@@ -302,6 +322,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/scoreboard'
     | '/settings'
+    | '/skills'
     | '/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -325,6 +346,7 @@ export interface FileRouteTypes {
     | '/lovable-client.json'
     | '/demo'
     | '/inbox'
+    | '/instructions'
     | '/jobs'
     | '/knowledge'
     | '/ledger'
@@ -332,6 +354,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/scoreboard'
     | '/settings'
+    | '/skills'
     | '/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -356,6 +379,7 @@ export interface FileRouteTypes {
     | '/lovable-client.json'
     | '/_authenticated/demo'
     | '/_authenticated/inbox'
+    | '/_authenticated/instructions'
     | '/_authenticated/jobs'
     | '/_authenticated/knowledge'
     | '/_authenticated/ledger'
@@ -363,6 +387,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects'
     | '/_authenticated/scoreboard'
     | '/_authenticated/settings'
+    | '/_authenticated/skills'
     | '/_authenticated/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -447,6 +472,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInboxRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/instructions': {
+      id: '/_authenticated/instructions'
+      path: '/instructions'
+      fullPath: '/instructions'
+      preLoaderRoute: typeof AuthenticatedInstructionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/jobs': {
       id: '/_authenticated/jobs'
       path: '/jobs'
@@ -494,6 +526,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/skills': {
+      id: '/_authenticated/skills'
+      path: '/skills'
+      fullPath: '/skills'
+      preLoaderRoute: typeof AuthenticatedSkillsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/versions': {
@@ -614,6 +653,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDemoRoute: typeof AuthenticatedDemoRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
+  AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
   AuthenticatedJobsRoute: typeof AuthenticatedJobsRoute
   AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
   AuthenticatedLedgerRoute: typeof AuthenticatedLedgerRoute
@@ -621,12 +661,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
   AuthenticatedScoreboardRoute: typeof AuthenticatedScoreboardRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSkillsRoute: typeof AuthenticatedSkillsRoute
   AuthenticatedVersionsRoute: typeof AuthenticatedVersionsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDemoRoute: AuthenticatedDemoRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
+  AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
   AuthenticatedJobsRoute: AuthenticatedJobsRoute,
   AuthenticatedKnowledgeRoute: AuthenticatedKnowledgeRoute,
   AuthenticatedLedgerRoute: AuthenticatedLedgerRoute,
@@ -634,6 +676,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
   AuthenticatedScoreboardRoute: AuthenticatedScoreboardRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSkillsRoute: AuthenticatedSkillsRoute,
   AuthenticatedVersionsRoute: AuthenticatedVersionsRoute,
 }
 

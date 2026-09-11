@@ -4,10 +4,12 @@
 // (fetchExecutor/postExecutor/fetchProjects/postProjects) -- the browser
 // never reaches Lovable itself; syncing and Knowledge writes happen in the
 // executor process.
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -24,6 +26,7 @@ import {
   fetchProjects,
   postExecutor,
   postProjects,
+  type ProjectSettings,
   type ProjectsResponse,
 } from "@/lib/improvements-client";
 
@@ -34,13 +37,78 @@ const POLL_TIMEOUT_MS = 10 * 60 * 1000;
 const MCP_CREDITS_LINE =
   "Harness reads your chats and Knowledge through Lovable's MCP. Reading and writing Knowledge uses no credits.";
 
+// The store's own default (harness/src/store.ts SETTING_DEFAULTS), used only
+// until GET executor answers with the default actually in force.
+const DEFAULT_MAX_ACTIVE_RULES = 12;
+
 type Row = {
   id: string;
   name: string;
   allowed: boolean;
   last_synced_at: string | null;
   history_count: number | null;
+  settings: ProjectSettings | null;
 };
+
+// Per-project overrides of the two global defaults (spec §5): how many
+// active rules this project may carry, and whether the executor is allowed
+// to write approved changes for it automatically.
+function ProjectSettingsPanel({
+  projectId,
+  settings,
+  defaultMaxActiveRules,
+  onSaved,
+}: {
+  projectId: string;
+  settings: ProjectSettings;
+  defaultMaxActiveRules: number;
+  onSaved: () => void;
+}) {
+  const [maxActiveRules, setMaxActiveRules] = useState(
+    settings.max_active_rules == null ? "" : String(settings.max_active_rules),
+  );
+  const [autoWrite, setAutoWrite] = useState(settings.auto_write);
+
+  const save = useMutation({
+    mutationFn: () =>
+      postProjects({
+        action: "project_settings",
+        lovable_project_id: projectId,
+        max_active_rules: maxActiveRules.trim() === "" ? null : Number(maxActiveRules),
+        auto_write: autoWrite,
+      }),
+    onSuccess: () => {
+      toast.success("Project settings saved");
+      onSaved();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save project settings"),
+  });
+
+  return (
+    <div className="space-y-4 rounded-md border bg-muted/30 p-4">
+      <div className="space-y-2">
+        <Label htmlFor={`max-active-rules-${projectId}`}>Max active rules</Label>
+        <Input
+          id={`max-active-rules-${projectId}`}
+          type="number"
+          min={1}
+          max={50}
+          placeholder={`use default (${defaultMaxActiveRules})`}
+          value={maxActiveRules}
+          onChange={(e) => setMaxActiveRules(e.target.value)}
+          className="max-w-[16rem]"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={`auto-write-${projectId}`}>Write approved changes automatically</Label>
+        <Switch id={`auto-write-${projectId}`} checked={autoWrite} onCheckedChange={setAutoWrite} />
+      </div>
+      <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+        {save.isPending ? "Saving…" : "Save"}
+      </Button>
+    </div>
+  );
+}
 
 function lastSyncLine(
   lastRun:
@@ -129,6 +197,10 @@ export function LocalProjects() {
   // switch in the table.
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
+  // Which row's per-project settings panel is open (spec §5); at most one at
+  // a time.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   const setAllowed = useMutation({
     mutationFn: (v: { id: string; name: string; allow: boolean }) =>
       v.allow
@@ -172,6 +244,9 @@ export function LocalProjects() {
   const nextRunAt = executor.data?.next_run_at ?? null;
   const running = Boolean(executor.data?.running);
 
+  const defaultMaxActiveRules =
+    executor.data?.defaults?.max_active_rules ?? DEFAULT_MAX_ACTIVE_RULES;
+
   const allowedRows = projects.data?.allowed ?? [];
   const allRows = projects.data?.all;
   const rows: Row[] = allRows
@@ -183,6 +258,7 @@ export function LocalProjects() {
           allowed: p.allowed,
           last_synced_at: known?.last_synced_at ?? null,
           history_count: known?.history_count ?? null,
+          settings: known?.settings ?? null,
         };
       })
     : allowedRows.map((p) => ({
@@ -191,6 +267,7 @@ export function LocalProjects() {
         allowed: true,
         last_synced_at: p.last_synced_at,
         history_count: p.history_count,
+        settings: p.settings,
       }));
 
   return (
@@ -265,20 +342,50 @@ export function LocalProjects() {
               </TableRow>
             ) : (
               rows.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>{p.name}</TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={p.allowed}
-                      disabled={togglingId === p.id}
-                      onCheckedChange={(v) =>
-                        setAllowed.mutate({ id: p.id, name: p.name, allow: v })
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>{p.last_synced_at ? formatDate(p.last_synced_at) : "—"}</TableCell>
-                  <TableCell>{p.history_count ?? "—"}</TableCell>
-                </TableRow>
+                <Fragment key={p.id}>
+                  <TableRow>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {p.allowed && p.settings ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-1 text-xs"
+                            aria-expanded={expandedId === p.id}
+                            onClick={() => setExpandedId((cur) => (cur === p.id ? null : p.id))}
+                          >
+                            {expandedId === p.id ? "▾" : "▸"} Settings
+                          </Button>
+                        ) : null}
+                        <span>{p.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={p.allowed}
+                        disabled={togglingId === p.id}
+                        onCheckedChange={(v) =>
+                          setAllowed.mutate({ id: p.id, name: p.name, allow: v })
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>{p.last_synced_at ? formatDate(p.last_synced_at) : "—"}</TableCell>
+                    <TableCell>{p.history_count ?? "—"}</TableCell>
+                  </TableRow>
+                  {expandedId === p.id && p.settings ? (
+                    <TableRow>
+                      <TableCell colSpan={4}>
+                        <ProjectSettingsPanel
+                          projectId={p.id}
+                          settings={p.settings}
+                          defaultMaxActiveRules={defaultMaxActiveRules}
+                          onSaved={() => void qc.invalidateQueries({ queryKey: PROJECTS_KEY })}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </Fragment>
               ))
             )}
           </TableBody>

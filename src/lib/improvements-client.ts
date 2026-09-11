@@ -28,6 +28,8 @@ export type KnowledgePreview = {
   char_count: number;
   cap: number;
   over_cap: boolean;
+  active_rules_count: number;
+  over_rules: boolean;
 };
 
 export type KnowledgeVersion = {

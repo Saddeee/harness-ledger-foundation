@@ -1,8 +1,10 @@
 // Settings page for the local runtime: the sync schedule, the Knowledge
-// character cap, and a read-only note about approval. Only talks to the
-// executor route (fetchExecutor/postExecutor) -- nothing on this page ever
-// writes to Lovable itself; it only changes what the executor does on its
-// own schedule.
+// character cap, AI analysis (provider/key/per-role models/budget -- stored
+// only, analysis itself is not switched on), the defaults new projects get,
+// and a read-only note about approval. Only talks to the executor route
+// (fetchExecutor/postExecutor) -- nothing on this page ever writes to
+// Lovable itself; it only changes what the executor does on its own
+// schedule, and what Harness stores for when analysis ships.
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -11,9 +13,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   executorQueryOptions,
   postExecutor,
   type ExecutorSchedule,
+  type LlmModels,
+  type LlmProvider,
+  type LlmRole,
 } from "@/lib/improvements-client";
 
 const DEFAULT_SCHEDULE: ExecutorSchedule = {
@@ -31,12 +43,46 @@ const SCHEDULE_LINE =
 const CAP_LINE = "Lovable allows 10,000 characters; Harness keeps a margin.";
 const APPROVAL_LINE = "Nothing is written to Lovable until you approve it here.";
 
+// ---- AI analysis (Round 3 §4). Stored only -- analysis itself doesn't run
+// yet, so nothing here ever calls a provider. ----
+const LLM_PROVIDERS: { value: LlmProvider; label: string }[] = [
+  { value: "openai", label: "OpenAI" },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "google", label: "Google" },
+];
+const LLM_ROLES: { key: LlmRole; label: string }[] = [
+  { key: "classifier", label: "Classifier" },
+  { key: "miner", label: "Miner" },
+  { key: "reviewer", label: "Reviewer" },
+  { key: "proposer", label: "Proposer" },
+];
+const DEFAULT_LLM_PROVIDER: LlmProvider = "openai";
+const DEFAULT_LLM_MODELS: LlmModels = {
+  classifier: { provider: "openai", model: "" },
+  miner: { provider: "openai", model: "" },
+  reviewer: { provider: "openai", model: "" },
+  proposer: { provider: "openai", model: "" },
+};
+const DEFAULT_BUDGET_USD = 10;
+const AI_ANALYSIS_LINE =
+  "Analysis is not switched on yet. Your key and choices are stored for when it is; nothing is sent to any provider today.";
+
+// The store's own default (harness/src/store.ts SETTING_DEFAULTS), used only
+// until GET executor answers with the default actually in force.
+const DEFAULT_MAX_ACTIVE_RULES = 12;
+
 export function LocalSettings() {
   const qc = useQueryClient();
   const executor = useQuery(executorQueryOptions);
 
   const [schedule, setSchedule] = useState<ExecutorSchedule>(DEFAULT_SCHEDULE);
   const [cap, setCap] = useState(DEFAULT_CAP);
+
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>(DEFAULT_LLM_PROVIDER);
+  const [llmModels, setLlmModels] = useState<LlmModels>(DEFAULT_LLM_MODELS);
+  const [budget, setBudget] = useState(DEFAULT_BUDGET_USD);
+  const [keyInput, setKeyInput] = useState("");
+  const [maxActiveRules, setMaxActiveRules] = useState(DEFAULT_MAX_ACTIVE_RULES);
 
   useEffect(() => {
     if (executor.data?.schedule) setSchedule(executor.data.schedule);
@@ -46,6 +92,22 @@ export function LocalSettings() {
     const saved = executor.data?.settings?.knowledge_char_cap;
     if (saved != null) setCap(saved);
   }, [executor.data?.settings?.knowledge_char_cap]);
+
+  useEffect(() => {
+    const llm = executor.data?.llm;
+    if (!llm) return;
+    setLlmProvider(llm.provider);
+    setLlmModels(llm.models);
+    setBudget(llm.monthly_budget_usd);
+  }, [executor.data?.llm]);
+
+  useEffect(() => {
+    const saved = executor.data?.defaults?.max_active_rules;
+    if (saved != null) setMaxActiveRules(saved);
+  }, [executor.data?.defaults?.max_active_rules]);
+
+  const keyStatus = executor.data?.llm?.keys?.[llmProvider] ?? { has_key: false, last4: null };
+  const spentUsd = executor.data?.llm?.spent_usd ?? 0;
 
   const saveSchedule = useMutation({
     mutationFn: () =>
@@ -70,6 +132,50 @@ export function LocalSettings() {
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save the limit"),
+  });
+
+  const saveLlmSettings = useMutation({
+    mutationFn: () =>
+      postExecutor({
+        action: "llm_settings",
+        llm_provider: llmProvider,
+        llm_models: llmModels,
+        llm_monthly_budget_usd: budget,
+      }),
+    onSuccess: () => {
+      toast.success("AI analysis settings saved");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Could not save the AI analysis settings"),
+  });
+
+  const saveLlmKey = useMutation({
+    mutationFn: () => postExecutor({ action: "llm_key", provider: llmProvider, key: keyInput }),
+    onSuccess: () => {
+      toast.success("Key saved");
+      setKeyInput("");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save the key"),
+  });
+
+  const removeLlmKey = useMutation({
+    mutationFn: () => postExecutor({ action: "llm_key_remove", provider: llmProvider }),
+    onSuccess: () => {
+      toast.success("Key removed");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not remove the key"),
+  });
+
+  const saveDefaults = useMutation({
+    mutationFn: () => postExecutor({ action: "defaults", max_active_rules: maxActiveRules }),
+    onSuccess: () => {
+      toast.success("Defaults saved");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save the defaults"),
   });
 
   return (
@@ -157,6 +263,144 @@ export function LocalSettings() {
 
         <Button onClick={() => saveCap.mutate()} disabled={saveCap.isPending}>
           {saveCap.isPending ? "Saving…" : "Save limit"}
+        </Button>
+      </section>
+
+      <section className="space-y-4 rounded-md border p-4">
+        <h2 className="text-lg font-medium">AI analysis</h2>
+
+        <div className="space-y-2">
+          <Label htmlFor="llm-provider">Provider</Label>
+          <Select value={llmProvider} onValueChange={(v) => setLlmProvider(v as LlmProvider)}>
+            <SelectTrigger id="llm-provider" className="w-full sm:w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LLM_PROVIDERS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="llm-key">API key</Label>
+          {keyStatus.has_key ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm">Key saved, ends in …{keyStatus.last4}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => removeLlmKey.mutate()}
+                disabled={removeLlmKey.isPending}
+              >
+                {removeLlmKey.isPending ? "Removing…" : "Remove"}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                id="llm-key"
+                type="password"
+                autoComplete="off"
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                size="sm"
+                onClick={() => saveLlmKey.mutate()}
+                disabled={saveLlmKey.isPending || keyInput.trim().length === 0}
+              >
+                {saveLlmKey.isPending ? "Saving…" : "Save key"}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Model per role</p>
+          {LLM_ROLES.map(({ key, label: roleLabel }) => (
+            <div key={key} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor={`llm-role-provider-${key}`}>{roleLabel} provider</Label>
+                <Select
+                  value={llmModels[key].provider}
+                  onValueChange={(v) =>
+                    setLlmModels((m) => ({
+                      ...m,
+                      [key]: { ...m[key], provider: v as LlmProvider },
+                    }))
+                  }
+                >
+                  <SelectTrigger id={`llm-role-provider-${key}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LLM_PROVIDERS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`llm-role-model-${key}`}>{roleLabel} model</Label>
+                <Input
+                  id={`llm-role-model-${key}`}
+                  value={llmModels[key].model}
+                  onChange={(e) =>
+                    setLlmModels((m) => ({
+                      ...m,
+                      [key]: { ...m[key], model: e.target.value },
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="llm-budget">Monthly budget (USD, 1–1000)</Label>
+          <Input
+            id="llm-budget"
+            type="number"
+            min={1}
+            max={1000}
+            value={budget}
+            onChange={(e) => setBudget(Number(e.target.value))}
+          />
+          <p className="text-sm text-muted-foreground">Spent this month: ${spentUsd.toFixed(2)}</p>
+        </div>
+
+        <p className="text-sm text-muted-foreground">{AI_ANALYSIS_LINE}</p>
+
+        <Button onClick={() => saveLlmSettings.mutate()} disabled={saveLlmSettings.isPending}>
+          {saveLlmSettings.isPending ? "Saving…" : "Save AI analysis"}
+        </Button>
+      </section>
+
+      <section className="space-y-4 rounded-md border p-4">
+        <h2 className="text-lg font-medium">Defaults for projects</h2>
+
+        <div className="space-y-2">
+          <Label htmlFor="default-max-active-rules">Max active rules per project (1–50)</Label>
+          <Input
+            id="default-max-active-rules"
+            type="number"
+            min={1}
+            max={50}
+            value={maxActiveRules}
+            onChange={(e) => setMaxActiveRules(Number(e.target.value))}
+          />
+        </div>
+
+        <Button onClick={() => saveDefaults.mutate()} disabled={saveDefaults.isPending}>
+          {saveDefaults.isPending ? "Saving…" : "Save defaults"}
         </Button>
       </section>
 
