@@ -39,13 +39,28 @@ export {
 } from "./store.js";
 
 const classification = z.enum([
-  "defect_correction", "constraint_restatement", "missing_requirement",
-  "preference_revision", "scope_extension", "new_task", "question", "approval", "other",
+  "defect_correction",
+  "constraint_restatement",
+  "missing_requirement",
+  "preference_revision",
+  "scope_extension",
+  "new_task",
+  "question",
+  "approval",
+  "other",
 ]);
 const proposedScope = z.enum(["project", "workspace", "one_time"]);
 const ruleState = z.enum([
-  "proposed", "approved", "testing", "supported", "active", "questioned",
-  "disabled", "retired", "rolled_back", "rejected",
+  "proposed",
+  "approved",
+  "testing",
+  "supported",
+  "active",
+  "questioned",
+  "disabled",
+  "retired",
+  "rolled_back",
+  "rejected",
 ]);
 
 // Single-fetch list that already carries everything a detail view needs
@@ -73,7 +88,14 @@ export function getCorrection(id: number) {
 
 const reviewInput = z.object({
   id: z.number().int(),
-  action: z.enum(["confirm", "reclassify", "mark_one_time", "mark_reusable", "change_scope", "exclude"]),
+  action: z.enum([
+    "confirm",
+    "reclassify",
+    "mark_one_time",
+    "mark_reusable",
+    "change_scope",
+    "exclude",
+  ]),
   classification: classification.optional(),
   proposed_scope: proposedScope.optional(),
   reviewer: z.string().default("operator (local UI)"),

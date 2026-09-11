@@ -155,11 +155,7 @@ export async function snapshotKnowledge(
 ): Promise<{ snapshots: number }> {
   let snapshots = 0;
 
-  const record = (
-    target: "project" | "workspace",
-    targetId: string,
-    content: string,
-  ): void => {
+  const record = (target: "project" | "workspace", targetId: string, content: string): void => {
     if (store.latestKnowledgeSnapshot(target, targetId)?.sha256 === sha256(content)) return;
     store.recordKnowledgeSnapshot({
       target,
@@ -174,7 +170,8 @@ export async function snapshotKnowledge(
   for (const projectId of allowedProjectIds()) {
     record("project", projectId, await lovable.getProjectKnowledge(projectId));
   }
-  if (workspaceId) record("workspace", workspaceId, await lovable.getWorkspaceKnowledge(workspaceId));
+  if (workspaceId)
+    record("workspace", workspaceId, await lovable.getWorkspaceKnowledge(workspaceId));
 
   return { snapshots };
 }

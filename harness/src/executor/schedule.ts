@@ -117,7 +117,10 @@ export async function loop(opts: { tickMs?: number; once?: boolean } = {}): Prom
       if (!connected) {
         await closeClient();
         const now = Date.now();
-        if (now - lastNotConnectedLog >= NOT_CONNECTED_LOG_INTERVAL_MS || lastNotConnectedLog === 0) {
+        if (
+          now - lastNotConnectedLog >= NOT_CONNECTED_LOG_INTERVAL_MS ||
+          lastNotConnectedLog === 0
+        ) {
           lastNotConnectedLog = now;
           console.log("Not connected — run `npm run harness:executor -- --connect`");
         }
@@ -149,7 +152,9 @@ export async function loop(opts: { tickMs?: number; once?: boolean } = {}): Prom
           // Opening the client failed (expired grant, network): drop it so the
           // next tick reconnects rather than reusing a dead transport.
           await closeClient();
-          console.error(`Sync run could not start: ${err instanceof Error ? err.message : String(err)}`);
+          console.error(
+            `Sync run could not start: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
 

@@ -215,6 +215,7 @@ function toMe(raw: unknown): Me {
 
 /** Query-string text only ever reaches the terminal, and only as one safe line. */
 function escapeForLog(value: string): string {
+  // eslint-disable-next-line no-control-regex -- strips control characters before logging
   return value.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 200);
 }
 
@@ -408,8 +409,7 @@ export async function disconnect(): Promise<void> {
       const authServer = prm?.authorization_servers?.[0];
       if (authServer) {
         const meta = (await discoverAuthorizationServerMetadata(authServer)) as
-          | { revocation_endpoint?: string }
-          | undefined;
+          { revocation_endpoint?: string } | undefined;
         if (meta?.revocation_endpoint) {
           await fetch(meta.revocation_endpoint, {
             method: "POST",

@@ -36,7 +36,9 @@ export interface LovableReader {
   ): Promise<{ messages: LovableMessage[]; next_cursor: string | null; has_more: boolean }>;
   getProjectKnowledge(projectId: string): Promise<string>;
   getWorkspaceKnowledge(workspaceId: string): Promise<string>;
-  listWorkspaceSkills(workspaceId: string): Promise<
+  listWorkspaceSkills(
+    workspaceId: string,
+  ): Promise<
     { name: string; description: string | null; content: string; updated_at: string | null }[]
   >;
 }

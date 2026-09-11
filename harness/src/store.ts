@@ -89,14 +89,24 @@ export function upsertProject(input: {
 }
 
 export function getProjectMeta(lovableProjectId: string) {
-  return (db.prepare(`SELECT * FROM projects WHERE lovable_project_id = ?`).get(lovableProjectId) ?? null) as
-    | { lovable_project_id: string; name: string | null; workspace_id: string | null }
-    | null;
+  return (db.prepare(`SELECT * FROM projects WHERE lovable_project_id = ?`).get(lovableProjectId) ??
+    null) as {
+    lovable_project_id: string;
+    name: string | null;
+    workspace_id: string | null;
+  } | null;
 }
 
 // ---- Checkpoint B: correction pipeline ----
 
-const PROVENANCE = ["lovable_mcp", "git_history", "build_log", "spec", "manual", "llm_derived"] as const;
+const PROVENANCE = [
+  "lovable_mcp",
+  "git_history",
+  "build_log",
+  "spec",
+  "manual",
+  "llm_derived",
+] as const;
 export type Provenance = (typeof PROVENANCE)[number];
 
 export function createProjectSnapshot(input: {
@@ -120,7 +130,9 @@ export function createProjectSnapshot(input: {
       provenance: input.provenance,
       source_ref: input.source_ref ?? null,
     });
-  insertEvent("project_snapshot.created", input.lovable_project_id, { id: (row as { id: number }).id });
+  insertEvent("project_snapshot.created", input.lovable_project_id, {
+    id: (row as { id: number }).id,
+  });
   return row;
 }
 
@@ -218,9 +230,7 @@ function linkEvidence(
   historyItemIds?: number[],
 ) {
   if (!historyItemIds?.length) return;
-  const stmt = db.prepare(
-    `INSERT OR IGNORE INTO ${table} (${fk}, history_item_id) VALUES (?, ?)`,
-  );
+  const stmt = db.prepare(`INSERT OR IGNORE INTO ${table} (${fk}, history_item_id) VALUES (?, ?)`);
   for (const hid of historyItemIds) stmt.run(id, hid);
 }
 
@@ -249,14 +259,26 @@ export function updateTaskEpisode(input: {
     status: input.status ?? null,
     ended_at: input.ended_at ?? null,
   });
-  linkEvidence("task_episode_evidence", "task_episode_id", input.id, input.add_evidence_history_item_ids);
+  linkEvidence(
+    "task_episode_evidence",
+    "task_episode_id",
+    input.id,
+    input.add_evidence_history_item_ids,
+  );
   insertEvent("task_episode.updated", null, { id: input.id });
   return db.prepare(`SELECT * FROM task_episodes WHERE id = ?`).get(input.id);
 }
 
 const CLASSIFICATIONS = [
-  "defect_correction", "constraint_restatement", "missing_requirement",
-  "preference_revision", "scope_extension", "new_task", "question", "approval", "other",
+  "defect_correction",
+  "constraint_restatement",
+  "missing_requirement",
+  "preference_revision",
+  "scope_extension",
+  "new_task",
+  "question",
+  "approval",
+  "other",
 ] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
 
@@ -296,7 +318,12 @@ export function createCorrectionCandidate(input: {
       confidence: input.confidence ?? null,
       evidence_reason: input.evidence_reason ?? null,
     }) as { id: number };
-  linkEvidence("correction_candidate_evidence", "correction_candidate_id", row.id, input.evidence_history_item_ids);
+  linkEvidence(
+    "correction_candidate_evidence",
+    "correction_candidate_id",
+    row.id,
+    input.evidence_history_item_ids,
+  );
   insertEvent("correction_candidate.created", null, { id: row.id });
 
   if (input.classification_meta) {
@@ -310,7 +337,13 @@ export function createCorrectionCandidate(input: {
 }
 
 export type ReviewAction =
-  | "confirm" | "reclassify" | "mark_one_time" | "mark_reusable" | "change_scope" | "exclude" | "include";
+  | "confirm"
+  | "reclassify"
+  | "mark_one_time"
+  | "mark_reusable"
+  | "change_scope"
+  | "exclude"
+  | "include";
 
 export function reviewCorrectionCandidate(input: {
   id: number;
@@ -377,8 +410,7 @@ export function proposeReclassification(input: {
   meta?: ClassificationMeta;
 }) {
   const existing = db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(input.id) as
-    | { classification: string }
-    | undefined;
+    { classification: string } | undefined;
   if (!existing) throw new Error(`correction_candidate ${input.id} not found`);
 
   db.prepare(
@@ -433,8 +465,7 @@ export function recordHumanCorrectionDecision(input: {
   reviewer: string;
 }) {
   const existing = db.prepare(`SELECT * FROM correction_candidates WHERE id = ?`).get(input.id) as
-    | { classification: string }
-    | undefined;
+    { classification: string } | undefined;
   if (!existing) throw new Error(`correction_candidate ${input.id} not found`);
 
   db.prepare(
@@ -557,8 +588,16 @@ export function createRule(input: {
 }
 
 const RULE_STATES = [
-  "proposed", "approved", "testing", "supported", "active", "questioned",
-  "disabled", "retired", "rolled_back", "rejected",
+  "proposed",
+  "approved",
+  "testing",
+  "supported",
+  "active",
+  "questioned",
+  "disabled",
+  "retired",
+  "rolled_back",
+  "rejected",
 ] as const;
 export type RuleState = (typeof RULE_STATES)[number];
 
@@ -575,8 +614,7 @@ export function updateRule(input: {
   actor: string;
 }) {
   const existing = db.prepare(`SELECT * FROM rules WHERE id = ?`).get(input.id) as
-    | { instruction: string; state: string; scope: string }
-    | undefined;
+    { instruction: string; state: string; scope: string } | undefined;
   if (!existing) throw new Error(`rule ${input.id} not found`);
 
   // Scope is a destination choice, not a wording/state change: it is
@@ -602,7 +640,15 @@ export function updateRule(input: {
     db.prepare(
       `INSERT INTO rule_revisions (rule_id, previous_instruction, previous_state, new_instruction, new_state, reason, actor)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(input.id, existing.instruction, existing.state, newInstruction, newState, input.reason ?? null, input.actor);
+    ).run(
+      input.id,
+      existing.instruction,
+      existing.state,
+      newInstruction,
+      newState,
+      input.reason ?? null,
+      input.actor,
+    );
 
     db.prepare(
       `UPDATE rules SET instruction = ?, state = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -691,11 +737,7 @@ export function getEvidenceForCorrection(correctionCandidateId: number) {
 
 export function listProjectRules(projectId?: string) {
   if (!projectId) {
-    return db
-      .prepare(
-        `SELECT r.* FROM rules r ORDER BY r.created_at DESC`,
-      )
-      .all();
+    return db.prepare(`SELECT r.* FROM rules r ORDER BY r.created_at DESC`).all();
   }
   return db
     .prepare(
@@ -755,7 +797,10 @@ export function createVerificationDefinition(input: {
       confidence: input.confidence ?? null,
       enabled: input.enabled === false ? 0 : 1,
     }) as { id: number };
-  insertEvent("verification_definition.created", null, { id: row.id, verifier_type: input.verifier_type });
+  insertEvent("verification_definition.created", null, {
+    id: row.id,
+    verifier_type: input.verifier_type,
+  });
   return row;
 }
 
@@ -795,7 +840,10 @@ export function linkVerificationToRule(ruleId: number, verificationDefinitionId:
   db.prepare(
     `INSERT OR IGNORE INTO rule_verification_links (rule_id, verification_definition_id) VALUES (?, ?)`,
   ).run(ruleId, verificationDefinitionId);
-  insertEvent("rule_verification_link.created", null, { rule_id: ruleId, verification_definition_id: verificationDefinitionId });
+  insertEvent("rule_verification_link.created", null, {
+    rule_id: ruleId,
+    verification_definition_id: verificationDefinitionId,
+  });
   return { rule_id: ruleId, verification_definition_id: verificationDefinitionId };
 }
 
@@ -811,7 +859,9 @@ export function createVerificationPlan(input: {
       `INSERT INTO verification_plans (rule_id, failure_signature, failure_condition, created_by)
        VALUES (?, ?, ?, ?) RETURNING *`,
     )
-    .get(input.rule_id, input.failure_signature, input.failure_condition, input.created_by) as { id: number };
+    .get(input.rule_id, input.failure_signature, input.failure_condition, input.created_by) as {
+    id: number;
+  };
 
   const itemStmt = db.prepare(
     `INSERT INTO verification_plan_items (verification_plan_id, verification_definition_id) VALUES (?, ?)`,
@@ -889,7 +939,11 @@ export function createExperimentPlan(input: {
   );
   for (const vid of input.verification_definition_ids) linkStmt.run(plan.id, vid);
 
-  insertEvent("experiment_plan.created", null, { id: plan.id, rule_id: input.rule_id, status: "proposed" });
+  insertEvent("experiment_plan.created", null, {
+    id: plan.id,
+    rule_id: input.rule_id,
+    status: "proposed",
+  });
   return plan;
 }
 
@@ -935,7 +989,10 @@ export function registerExperimentResource(input: {
       source_project_id: input.source_project_id,
       safe_to_modify: input.safe_to_modify ? 1 : 0,
     }) as { id: number };
-  insertEvent("experiment_resource.registered", null, { id: row.id, resource_type: input.resource_type });
+  insertEvent("experiment_resource.registered", null, {
+    id: row.id,
+    resource_type: input.resource_type,
+  });
   return row;
 }
 
@@ -983,15 +1040,19 @@ export function listCleanupRequiredResources() {
 
 // Read helpers for the guided UI (checkpoint C.1): pure reads, no new semantics.
 export function getLearningForCorrection(correctionCandidateId: number) {
-  return db
-    .prepare(`SELECT * FROM learnings WHERE correction_candidate_id = ? ORDER BY id ASC LIMIT 1`)
-    .get(correctionCandidateId) ?? null;
+  return (
+    db
+      .prepare(`SELECT * FROM learnings WHERE correction_candidate_id = ? ORDER BY id ASC LIMIT 1`)
+      .get(correctionCandidateId) ?? null
+  );
 }
 
 export function getRuleForCorrection(correctionCandidateId: number) {
-  return db
-    .prepare(`SELECT * FROM rules WHERE correction_candidate_id = ? ORDER BY id ASC LIMIT 1`)
-    .get(correctionCandidateId) ?? null;
+  return (
+    db
+      .prepare(`SELECT * FROM rules WHERE correction_candidate_id = ? ORDER BY id ASC LIMIT 1`)
+      .get(correctionCandidateId) ?? null
+  );
 }
 
 // Events whose kind starts with one of the prefixes and whose payload
@@ -1081,10 +1142,16 @@ export function recordKnowledgeSnapshot(input: {
 
 export function latestKnowledgeSnapshot(target: KnowledgeTarget, targetId: string) {
   return (db
-    .prepare(`SELECT * FROM knowledge_snapshots WHERE target = ? AND ${targetColumn(target)} = ? ORDER BY id DESC LIMIT 1`)
-    .get(target, targetId) ?? null) as
-    | { id: number; content: string; sha256: string; fetched_at: string; fetched_by: string }
-    | null;
+    .prepare(
+      `SELECT * FROM knowledge_snapshots WHERE target = ? AND ${targetColumn(target)} = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(target, targetId) ?? null) as {
+    id: number;
+    content: string;
+    sha256: string;
+    fetched_at: string;
+    fetched_by: string;
+  } | null;
 }
 
 // Rules that belong in the managed block of a given target right now.
@@ -1111,12 +1178,19 @@ export function activeRulesForTarget(target: KnowledgeTarget, targetId: string) 
 
 export function setRuleEvidenceLevel(ruleId: number, level: string, actor: string) {
   const existing = db.prepare(`SELECT evidence_level FROM rules WHERE id = ?`).get(ruleId) as
-    | { evidence_level: string }
-    | undefined;
+    { evidence_level: string } | undefined;
   if (!existing) throw new Error(`rule ${ruleId} not found`);
   if (existing.evidence_level === level) return;
-  db.prepare(`UPDATE rules SET evidence_level = ?, updated_at = datetime('now') WHERE id = ?`).run(level, ruleId);
-  insertEvent("rule.evidence_level_changed", null, { id: ruleId, previous: existing.evidence_level, new: level, actor });
+  db.prepare(`UPDATE rules SET evidence_level = ?, updated_at = datetime('now') WHERE id = ?`).run(
+    level,
+    ruleId,
+  );
+  insertEvent("rule.evidence_level_changed", null, {
+    id: ruleId,
+    previous: existing.evidence_level,
+    new: level,
+    actor,
+  });
 }
 
 export function createPendingKnowledgeVersion(input: {
@@ -1166,26 +1240,34 @@ export function createPendingKnowledgeVersion(input: {
 }
 
 export function getKnowledgeVersion(id: number) {
-  return (db.prepare(`SELECT * FROM knowledge_versions WHERE id = ?`).get(id) ?? null) as KnowledgeVersionRow | null;
+  return (db.prepare(`SELECT * FROM knowledge_versions WHERE id = ?`).get(id) ??
+    null) as KnowledgeVersionRow | null;
 }
 
 function requirePendingVersion(id: number): KnowledgeVersionRow {
   const v = getKnowledgeVersion(id);
   if (!v) throw new Error(`knowledge_version ${id} not found`);
-  if (v.status !== "pending") throw new Error(`knowledge_version ${id} is ${v.status}, not pending`);
+  if (v.status !== "pending")
+    throw new Error(`knowledge_version ${id} is ${v.status}, not pending`);
   return v;
 }
 
 export function markKnowledgeWriteStale(versionId: number, reason: string) {
   requirePendingVersion(versionId);
-  db.prepare(`UPDATE knowledge_versions SET status = 'stale', error = ? WHERE id = ?`).run(reason, versionId);
+  db.prepare(`UPDATE knowledge_versions SET status = 'stale', error = ? WHERE id = ?`).run(
+    reason,
+    versionId,
+  );
   insertEvent("knowledge_version.stale", null, { id: versionId, reason });
   return getKnowledgeVersion(versionId);
 }
 
 export function markKnowledgeWriteFailed(versionId: number, error: string) {
   requirePendingVersion(versionId);
-  db.prepare(`UPDATE knowledge_versions SET status = 'failed', error = ? WHERE id = ?`).run(error, versionId);
+  db.prepare(`UPDATE knowledge_versions SET status = 'failed', error = ? WHERE id = ?`).run(
+    error,
+    versionId,
+  );
   insertEvent("knowledge_version.failed", null, { id: versionId, error });
   return getKnowledgeVersion(versionId);
 }
@@ -1200,21 +1282,42 @@ export function recordKnowledgeReadback(versionId: number, readBackContent: stri
       `read-back hash mismatch: expected ${v.new_sha256.slice(0, 12)}…, got ${readBackSha.slice(0, 12)}…`,
       versionId,
     );
-    insertEvent("knowledge_version.failed", null, { id: versionId, error: "read-back hash mismatch" });
+    insertEvent("knowledge_version.failed", null, {
+      id: versionId,
+      error: "read-back hash mismatch",
+    });
     return getKnowledgeVersion(versionId);
   }
   db.prepare(
     `UPDATE knowledge_versions SET status = 'written', written_at = datetime('now'), verified_at = datetime('now') WHERE id = ?`,
   ).run(versionId);
-  insertEvent("knowledge_version.written", null, { id: versionId, target: v.target, sha256: readBackSha });
+  insertEvent("knowledge_version.written", null, {
+    id: versionId,
+    target: v.target,
+    sha256: readBackSha,
+  });
 
   if (v.rule_id != null) {
     if (v.restored_from_version_id != null) {
       // A restore undid this rule's write: the rule is no longer in Lovable.
-      updateRule({ id: v.rule_id, state: "rolled_back", actor: "harness", reason: `restored knowledge version ${v.restored_from_version_id}` });
+      updateRule({
+        id: v.rule_id,
+        state: "rolled_back",
+        actor: "harness",
+        reason: `restored knowledge version ${v.restored_from_version_id}`,
+      });
     } else {
-      updateRule({ id: v.rule_id, state: "active", actor: "harness", reason: `knowledge version ${versionId} written` });
-      insertEvent("rule.applied", null, { id: v.rule_id, knowledge_version_id: versionId, target: v.target });
+      updateRule({
+        id: v.rule_id,
+        state: "active",
+        actor: "harness",
+        reason: `knowledge version ${versionId} written`,
+      });
+      insertEvent("rule.applied", null, {
+        id: v.rule_id,
+        knowledge_version_id: versionId,
+        target: v.target,
+      });
     }
   }
   return getKnowledgeVersion(versionId);
@@ -1230,9 +1333,13 @@ export function listPendingKnowledgeWrites() {
 }
 
 export function listKnowledgeVersions(ruleId?: number) {
-  return (ruleId == null
-    ? db.prepare(`SELECT * FROM knowledge_versions ORDER BY id DESC`).all()
-    : db.prepare(`SELECT * FROM knowledge_versions WHERE rule_id = ? ORDER BY id DESC`).all(ruleId)) as KnowledgeVersionRow[];
+  return (
+    ruleId == null
+      ? db.prepare(`SELECT * FROM knowledge_versions ORDER BY id DESC`).all()
+      : db
+          .prepare(`SELECT * FROM knowledge_versions WHERE rule_id = ? ORDER BY id DESC`)
+          .all(ruleId)
+  ) as KnowledgeVersionRow[];
 }
 
 // Supersede any still-pending write for a rule (decision changed before the
@@ -1253,7 +1360,8 @@ export function cancelPendingKnowledgeWrites(ruleId: number, reason: string) {
 export function createRestoreVersion(versionId: number, actor: string, reason?: string) {
   const v = getKnowledgeVersion(versionId);
   if (!v) throw new Error(`knowledge_version ${versionId} not found`);
-  if (v.status !== "written") throw new Error(`only a written version can be restored (version ${versionId} is ${v.status})`);
+  if (v.status !== "written")
+    throw new Error(`only a written version can be restored (version ${versionId} is ${v.status})`);
   return createPendingKnowledgeVersion({
     rule_id: v.rule_id,
     target: v.target,
@@ -1301,8 +1409,7 @@ const BOOLEAN_SETTING_KEYS: SettingKey[] = ["sync_enabled", "require_approval_be
 
 export function getSetting(key: SettingKey): string {
   const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as
-    | { value: string }
-    | undefined;
+    { value: string } | undefined;
   return row?.value ?? SETTING_DEFAULTS[key];
 }
 
@@ -1327,7 +1434,9 @@ function assertBooleanSetting(key: SettingKey, raw: string): void {
 
 // Validates the whole patch before writing anything, so a rejected patch
 // leaves every existing setting untouched (no partial application).
-export function setSettings(patch: Partial<Record<SettingKey, string>>): Record<SettingKey, string> {
+export function setSettings(
+  patch: Partial<Record<SettingKey, string>>,
+): Record<SettingKey, string> {
   const merged: Record<SettingKey, string> = { ...getSettings() };
   const toWrite: [SettingKey, string][] = [];
 
@@ -1440,7 +1549,9 @@ export function latestSkillSnapshots(workspaceId: string): {
 }
 
 export function startSyncRun(kind: "scheduled" | "manual" | "once"): number {
-  const row = db.prepare(`INSERT INTO sync_runs (kind) VALUES (?) RETURNING id`).get(kind) as { id: number };
+  const row = db.prepare(`INSERT INTO sync_runs (kind) VALUES (?) RETURNING id`).get(kind) as {
+    id: number;
+  };
   insertEvent("sync_run.started", null, { id: row.id, kind });
   return row.id;
 }
@@ -1508,7 +1619,9 @@ export function requestSync(): { id: number; created: boolean } {
     .prepare(`SELECT id FROM sync_requests WHERE status = 'requested' ORDER BY id ASC LIMIT 1`)
     .get() as { id: number } | undefined;
   if (existing) return { id: existing.id, created: false };
-  const row = db.prepare(`INSERT INTO sync_requests DEFAULT VALUES RETURNING id`).get() as { id: number };
+  const row = db.prepare(`INSERT INTO sync_requests DEFAULT VALUES RETURNING id`).get() as {
+    id: number;
+  };
   insertEvent("sync_request.created", null, { id: row.id });
   return { id: row.id, created: true };
 }
@@ -1526,7 +1639,10 @@ export function takeSyncRequest(runId: number): number | null {
     .prepare(`SELECT id FROM sync_requests WHERE status = 'requested' ORDER BY id ASC LIMIT 1`)
     .get() as { id: number } | undefined;
   if (!existing) return null;
-  db.prepare(`UPDATE sync_requests SET status = 'running', run_id = ? WHERE id = ?`).run(runId, existing.id);
+  db.prepare(`UPDATE sync_requests SET status = 'running', run_id = ? WHERE id = ?`).run(
+    runId,
+    existing.id,
+  );
   insertEvent("sync_request.taken", null, { id: existing.id, run_id: runId });
   return existing.id;
 }
@@ -1541,8 +1657,7 @@ export function completeSyncRequest(id: number): void {
 // project's history has been read to the end.
 export function getSyncCursor(projectId: string): string | null {
   const row = db.prepare(`SELECT cursor FROM sync_cursors WHERE project_id = ?`).get(projectId) as
-    | { cursor: string }
-    | undefined;
+    { cursor: string } | undefined;
   return row?.cursor ?? null;
 }
 
@@ -1568,7 +1683,11 @@ export function countHistoryItemsAwaitingAnalysis(): number {
   return row.n;
 }
 
-export function listHistoryStats(): { project_id: string; history_count: number; last_synced_at: string | null }[] {
+export function listHistoryStats(): {
+  project_id: string;
+  history_count: number;
+  last_synced_at: string | null;
+}[] {
   return db
     .prepare(
       `SELECT ap.lovable_project_id as project_id,
@@ -1602,12 +1721,13 @@ export function latestHistoryExternalIds(projectId: string, limit: number): Set<
 // because that history must survive a permission change) and restored
 // immediately after.
 export function allowProject(lovableProjectId: string, label: string) {
-  db.prepare(`INSERT OR IGNORE INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
-    lovableProjectId,
-    label,
-  );
+  db.prepare(
+    `INSERT OR IGNORE INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`,
+  ).run(lovableProjectId, label);
   insertEvent("allowed_project.allowed", lovableProjectId, { label });
-  return db.prepare(`SELECT * FROM allowed_projects WHERE lovable_project_id = ?`).get(lovableProjectId);
+  return db
+    .prepare(`SELECT * FROM allowed_projects WHERE lovable_project_id = ?`)
+    .get(lovableProjectId);
 }
 
 export function disallowProject(lovableProjectId: string): void {
@@ -1626,10 +1746,16 @@ export function disallowProject(lovableProjectId: string): void {
 // Moves an experiment plan between the three states the schema allows
 // (proposed/approved/rejected) -- e.g. when the user chooses "test it
 // first" on an Improvement, approving the rule also approves its plan.
-export function setExperimentPlanStatus(id: number, status: "proposed" | "approved" | "rejected", actor: string) {
+export function setExperimentPlanStatus(
+  id: number,
+  status: "proposed" | "approved" | "rejected",
+  actor: string,
+) {
   const existing = db.prepare(`SELECT id FROM experiment_plans WHERE id = ?`).get(id);
   if (!existing) throw new Error(`experiment plan ${id} not found`);
-  db.prepare(`UPDATE experiment_plans SET status = ?, updated_at = datetime('now') WHERE id = ?`).run(status, id);
+  db.prepare(
+    `UPDATE experiment_plans SET status = ?, updated_at = datetime('now') WHERE id = ?`,
+  ).run(status, id);
   insertEvent("experiment_plan.status_changed", null, { id, status, actor });
   return getExperimentPlan(id);
 }
@@ -1644,7 +1770,10 @@ export function setExperimentPlanStatus(id: number, status: "proposed" | "approv
 // failed" in the UI.
 export function markKnowledgeWriteCancelled(versionId: number, reason: string) {
   requirePendingVersion(versionId);
-  db.prepare(`UPDATE knowledge_versions SET status = 'cancelled', error = ? WHERE id = ?`).run(reason, versionId);
+  db.prepare(`UPDATE knowledge_versions SET status = 'cancelled', error = ? WHERE id = ?`).run(
+    reason,
+    versionId,
+  );
   insertEvent("knowledge_version.cancelled", null, { id: versionId, reason });
   return getKnowledgeVersion(versionId);
 }
@@ -1656,8 +1785,7 @@ export function markKnowledgeWriteCancelled(versionId: number, reason: string) {
 // active rule shown in a managed block back to its Improvement.
 export function getCorrectionIdForRule(ruleId: number): number | null {
   const row = db.prepare(`SELECT correction_candidate_id FROM rules WHERE id = ?`).get(ruleId) as
-    | { correction_candidate_id: number }
-    | undefined;
+    { correction_candidate_id: number } | undefined;
   return row ? row.correction_candidate_id : null;
 }
 // ---- end Task 5 ----

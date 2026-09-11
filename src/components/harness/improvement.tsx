@@ -114,9 +114,12 @@ function AddConfirm({
   // the selected one (or the first, before anything is chosen) is tabbable.
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const onOptionKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1
-      : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1
-      : 0;
+    const step =
+      e.key === "ArrowDown" || e.key === "ArrowRight"
+        ? 1
+        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+          ? -1
+          : 0;
     if (step === 0) return;
     e.preventDefault();
     const order = ["now", "test"] as const;

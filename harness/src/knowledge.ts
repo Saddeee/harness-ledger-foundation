@@ -16,7 +16,9 @@ export const KNOWLEDGE_CAP = 9000;
 
 export class MalformedMarkersError extends Error {
   constructor(detail: string) {
-    super(`Knowledge has malformed Harness markers (${detail}); refusing to compose rather than risk overwriting your text`);
+    super(
+      `Knowledge has malformed Harness markers (${detail}); refusing to compose rather than risk overwriting your text`,
+    );
     this.name = "MalformedMarkersError";
   }
 }
@@ -50,7 +52,10 @@ export function composeManagedKnowledge(currentContent: string, rules: ManagedRu
   const ends = countOccurrences(currentContent, HARNESS_END);
 
   if (starts > 1 || ends > 1) throw new MalformedMarkersError("more than one start or end marker");
-  if (starts !== ends) throw new MalformedMarkersError(starts ? "start marker without end marker" : "end marker without start marker");
+  if (starts !== ends)
+    throw new MalformedMarkersError(
+      starts ? "start marker without end marker" : "end marker without start marker",
+    );
 
   let user_text: string;
   let final_content: string;
@@ -61,7 +66,8 @@ export function composeManagedKnowledge(currentContent: string, rules: ManagedRu
   } else {
     const startIdx = currentContent.indexOf(HARNESS_START);
     const endIdx = currentContent.indexOf(HARNESS_END);
-    if (endIdx < startIdx) throw new MalformedMarkersError("end marker appears before start marker");
+    if (endIdx < startIdx)
+      throw new MalformedMarkersError("end marker appears before start marker");
     const before = currentContent.slice(0, startIdx);
     const after = currentContent.slice(endIdx + HARNESS_END.length);
     user_text = before + after;
