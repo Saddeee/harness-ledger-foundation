@@ -13,13 +13,13 @@ const store = await import("../src/store.js");
 const PROJECT = "test-project-id";
 
 test("schema migration: applies all migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 4);
+  assert.equal(schemaVersion(), 5);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2, 3, 4],
+    [1, 2, 3, 4, 5],
   );
   const tableNames = new Set(
     (db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map(
@@ -31,6 +31,7 @@ test("schema migration: applies all migrations exactly once, expected tables exi
     "project_snapshots", "history_items", "task_episodes", "task_episode_evidence",
     "correction_candidates", "correction_candidate_evidence", "agent_actions",
     "learnings", "rules", "rule_revisions", // checkpoint B
+    "settings", "skill_snapshots", "sync_runs", "sync_requests", // checkpoint E (v5)
   ]) {
     assert.ok(tableNames.has(t), `expected table ${t} to exist`);
   }
@@ -242,4 +243,59 @@ test("get_rule / list_project_rules expose the full chain", () => {
 
   const projectRules = store.listProjectRules(PROJECT) as { id: number }[];
   assert.ok(projectRules.some((r) => r.id === ruleId));
+});
+
+// ---- Checkpoint E (v5): settings, skill snapshots, sync runs/requests ----
+
+test("v5 settings: defaults, validation, persistence", () => {
+  assert.equal(store.getSetting("sync_interval_minutes"), "60");
+  assert.deepEqual(store.getSettings().sync_window_start_hour, "10");
+  const next = store.setSettings({ sync_interval_minutes: "30", sync_window_start_hour: "8", sync_window_end_hour: "20" });
+  assert.equal(next.sync_interval_minutes, "30");
+  assert.throws(() => store.setSettings({ sync_interval_minutes: "5" }), /15/);
+  assert.throws(() => store.setSettings({ sync_window_start_hour: "22", sync_window_end_hour: "10" }), /before/);
+  assert.throws(() => store.setSettings({ knowledge_char_cap: "20000" }), /10000/);
+  assert.throws(() => store.setSettings({ sync_enabled: "yes" }), /true|false/);
+});
+
+test("v5 skill snapshots dedupe by content and return latest per name", () => {
+  const a = store.recordSkillSnapshot({ workspace_id: "ws1", name: "deploy", description: "d", content: "v1", updated_at_remote: null, fetched_by: "test" });
+  const b = store.recordSkillSnapshot({ workspace_id: "ws1", name: "deploy", description: "d", content: "v1", updated_at_remote: null, fetched_by: "test" });
+  const c = store.recordSkillSnapshot({ workspace_id: "ws1", name: "deploy", description: "d", content: "v2", updated_at_remote: null, fetched_by: "test" });
+  assert.equal(a.inserted, true); assert.equal(b.inserted, false); assert.equal(c.inserted, true);
+  const latest = store.latestSkillSnapshots("ws1");
+  assert.equal(latest.length, 1); assert.equal(latest[0]!.content, "v2");
+});
+
+test("v5 sync runs and requests", () => {
+  assert.equal(store.latestSyncRun(), null);
+  const r1 = store.requestSync(); const r2 = store.requestSync();
+  assert.equal(r1.created, true); assert.equal(r2.created, false); assert.equal(r1.id, r2.id);
+  const run = store.startSyncRun("manual");
+  assert.ok(store.runningSyncRun());
+  assert.equal(store.takeSyncRequest(run), r1.id);
+  assert.equal(store.takeSyncRequest(run), null);
+  store.completeSyncRequest(r1.id);
+  store.finishSyncRun(run, { ok: true, counts: { messages: 3 } });
+  assert.equal(store.runningSyncRun(), null);
+  assert.deepEqual(store.latestSyncRun()?.counts, { messages: 3 });
+});
+
+test("v5 allow/disallow project and history stats", () => {
+  store.allowProject("p-new", "New");
+  assert.ok(store.getAllowedProjects().some((p) => (p as { lovable_project_id: string }).lovable_project_id === "p-new"));
+  store.upsertHistoryItem({
+    project_id: "p-new",
+    kind: "message",
+    external_id: "m1",
+    role: "user",
+    content: "hi",
+    occurred_at: "2026-09-11T10:00:00Z",
+    provenance: "manual",
+  });
+  assert.equal(store.countHistoryItemsAwaitingAnalysis() >= 1, true);
+  assert.ok(store.latestHistoryExternalIds("p-new", 10).has("m1"));
+  assert.equal(store.listHistoryStats().find((s) => s.project_id === "p-new")?.history_count, 1);
+  store.disallowProject("p-new");
+  assert.ok(!store.getAllowedProjects().some((p) => (p as { lovable_project_id: string }).lovable_project_id === "p-new"));
 });

@@ -55,12 +55,20 @@ test("composer flags the 9,000-character cap", () => {
 
 // ---- migration ----
 
-test("migration v4 applied once; earlier tables and rows intact", () => {
-  assert.equal(schemaVersion(), 4);
+test("migrations through v5 applied once; earlier tables and rows intact", () => {
+  assert.equal(schemaVersion(), 5);
   const names = new Set((db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map((r) => r.name));
-  for (const t of ["knowledge_snapshots", "knowledge_versions", "rules", "correction_candidates", "allowed_projects"]) assert.ok(names.has(t), t);
+  for (const t of ["knowledge_snapshots", "knowledge_versions", "rules", "correction_candidates", "allowed_projects", "settings"]) assert.ok(names.has(t), t);
   const cols = (db.prepare(`PRAGMA table_info(projects)`).all() as { name: string }[]).map((c) => c.name);
   assert.ok(cols.includes("workspace_id"));
+});
+
+test("composer cap is read from settings, not just the KNOWLEDGE_CAP constant", () => {
+  store.setSettings({ knowledge_char_cap: "1200" });
+  const out = composeManagedKnowledge("x".repeat(1450), [{ id: 1, instruction: "y".repeat(20) }]);
+  assert.ok(out.final_content.length >= 1500, `expected a ~1500-char preview, got ${out.final_content.length}`);
+  assert.equal(out.over_cap, true);
+  store.setSettings({ knowledge_char_cap: String(KNOWLEDGE_CAP) });
 });
 
 // ---- fixture: one improvement with a rule ----

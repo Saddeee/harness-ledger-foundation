@@ -368,4 +368,28 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_knowledge_versions_status ON knowledge_versions(status);
     `,
   },
+  {
+    version: 5,
+    name: "checkpoint_e_executor_settings",
+    sql: `
+      -- Key/value settings for the executor and knowledge composition (sync
+      -- cadence, the local sync window, the Knowledge character cap, and
+      -- whether a write needs human approval before the executor applies
+      -- it). Missing keys fall back to SETTING_DEFAULTS in store.ts.
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+      -- A verbatim copy of a Lovable Skill as read at a point in time,
+      -- mirroring knowledge_snapshots' append-only, sha256-deduped shape.
+      CREATE TABLE IF NOT EXISTS skill_snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, content TEXT NOT NULL, sha256 TEXT NOT NULL, updated_at_remote TEXT, fetched_at TEXT NOT NULL DEFAULT (datetime('now')), fetched_by TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS idx_skill_snapshots_ws_name ON skill_snapshots(workspace_id, name, id);
+
+      -- One row per executor run (scheduled, a manual "sync now", or a
+      -- one-off). finished_at stays NULL while the run is in progress.
+      CREATE TABLE IF NOT EXISTS sync_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL CHECK (kind IN ('scheduled','manual','once')), started_at TEXT NOT NULL DEFAULT (datetime('now')), finished_at TEXT, ok INTEGER, error TEXT, counts_json TEXT NOT NULL DEFAULT '{}');
+
+      -- A "sync now" request from the UI, coalesced: only one 'requested'
+      -- row exists at a time until a run takes it.
+      CREATE TABLE IF NOT EXISTS sync_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, requested_at TEXT NOT NULL DEFAULT (datetime('now')), status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','running','done')), run_id INTEGER REFERENCES sync_runs(id));
+    `,
+  },
 ];

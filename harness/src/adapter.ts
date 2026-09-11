@@ -11,6 +11,32 @@ import * as store from "./store.js";
 export { listImprovements, getImprovement, improvementAction } from "./improvements.js";
 export type { Improvement } from "./improvements.js";
 
+// Checkpoint E (v5): settings, skill snapshots, sync coordination, and the
+// read helpers the executor and local UI need. Plain re-exports -- store.ts
+// already validates ranges/enums itself (setSettings, allowed_projects
+// constraints), so no extra zod schema is needed for these narrow functions.
+export {
+  getAllowedProjects,
+  getProjectMeta,
+  latestKnowledgeSnapshot,
+  listKnowledgeVersions,
+  activeRulesForTarget,
+  listPendingKnowledgeWrites,
+  createRestoreVersion,
+  getKnowledgeVersion,
+  listEvents,
+  getSettings,
+  setSettings,
+  latestSkillSnapshots,
+  latestSyncRun,
+  runningSyncRun,
+  requestSync,
+  countHistoryItemsAwaitingAnalysis,
+  listHistoryStats,
+  allowProject,
+  disallowProject,
+} from "./store.js";
+
 const classification = z.enum([
   "defect_correction", "constraint_restatement", "missing_requirement",
   "preference_revision", "scope_extension", "new_task", "question", "approval", "other",

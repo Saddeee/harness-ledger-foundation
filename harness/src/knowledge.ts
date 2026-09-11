@@ -1,9 +1,11 @@
-// Pure composition of the Harness-managed section of Lovable Knowledge.
-// No database, no network: given the current Knowledge text and the rules
-// that should be in the managed block, produce the exact text to write.
-// Everything outside the markers is preserved byte-for-byte; Harness only
-// ever regenerates what sits between them.
+// Composition of the Harness-managed section of Lovable Knowledge. No
+// network: given the current Knowledge text and the rules that should be in
+// the managed block, produce the exact text to write. The only local-store
+// read is the configurable character cap (knowledge_char_cap in settings,
+// default 9000 below). Everything outside the markers is preserved
+// byte-for-byte; Harness only ever regenerates what sits between them.
 import { createHash } from "node:crypto";
+import { getSetting } from "./store.js";
 
 export const HARNESS_START = "<!-- harness:start -->";
 export const HARNESS_END = "<!-- harness:end -->";
@@ -71,6 +73,6 @@ export function composeManagedKnowledge(currentContent: string, rules: ManagedRu
     managed_block,
     final_content,
     char_count: final_content.length,
-    over_cap: final_content.length > KNOWLEDGE_CAP,
+    over_cap: final_content.length > Number(getSetting("knowledge_char_cap")),
   };
 }
