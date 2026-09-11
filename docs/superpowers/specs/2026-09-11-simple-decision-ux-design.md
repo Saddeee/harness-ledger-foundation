@@ -40,7 +40,9 @@ uses everywhere: **found, add, skip**.
        credits. You see the exact text before it is written and can restore
        the previous version.
   - One primary button "Sign in" (-> `/login`). Nothing else.
-- A signed-in visitor hitting `/` is redirected to `/inbox`.
+- A signed-in visitor hitting `/` sees the same page; the one button reads
+  "Open Inbox" instead of "Sign in". The page never redirects, so the
+  sidebar link below can point at it.
 - The sidebar link "How Harness works" links to `/` (works in both runtimes).
 - The "How Harness works" card and its dismissed-state localStorage logic are
   removed from the app. `HOW_IT_WORKS_STEPS` stays in `harness-ux.ts` and is
@@ -51,8 +53,9 @@ uses everywhere: **found, add, skip**.
 - Sidebar, identical in local and hosted runtime:
   Inbox, Improvements, Projects, Settings.
 - `LOCAL_NAV` filtering is deleted.
-- `/overview` route is removed; `/login` and `/` redirect signed-in users to
-  `/inbox`. Any `to: "/overview"` becomes `to: "/inbox"`.
+- `/overview` becomes a redirect-only route to `/inbox` (old links keep
+  working); `/login` sends signed-in users to `/inbox`. Any
+  `to: "/overview"` becomes `to: "/inbox"`.
 - The Overview "Next up" logic becomes an optional one-line header on Inbox
   (see 3). The hosted-only credit/queue cards move to Settings under an
   "Advanced" section together with a link to `/jobs`.
