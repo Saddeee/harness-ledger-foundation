@@ -201,9 +201,21 @@ test("stage rendering uses the human note, never a state word alone; decided car
 });
 
 test("lovableStatusLine / decisionSentence / improvementGroup follow the write lifecycle without implying Lovable changed", () => {
-  assert.equal(ux.lovableStatusLine(null), "Waiting for Harness to add it");
-  assert.equal(ux.lovableStatusLine({ write_status: "none", written_at: null }), "Waiting for Harness to add it");
-  assert.equal(ux.lovableStatusLine({ write_status: "pending", written_at: null }), "Waiting for Harness to add it");
+  assert.equal(ux.lovableStatusLine(null), "Will be written at the next sync");
+  assert.equal(ux.lovableStatusLine({ write_status: "none", written_at: null }), "Will be written at the next sync");
+  assert.equal(ux.lovableStatusLine({ write_status: "pending", written_at: null }), "Will be written at the next sync");
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "pending", written_at: null }, { nextSyncAt: "2026-09-10T08:00:00Z" }),
+    "Will be written at the next sync, 10 Sep, 08:00",
+  );
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "none", written_at: null }, { connected: false }),
+    "Connect Lovable on the Projects page to let Harness write this",
+  );
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "none", written_at: null }, { testFirst: true }),
+    "Saved for testing — nothing is written until the test runs",
+  );
   assert.equal(ux.lovableStatusLine({ write_status: "written", written_at: "2026-09-10T08:00:00Z" }), "Added to Lovable, 10 Sep");
   assert.equal(
     ux.lovableStatusLine({ write_status: "stale", written_at: null, stale_reason: null }),
@@ -218,7 +230,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
     destination: "workspace",
     lovable: { write_status: "pending", written_at: null },
   });
-  assert.equal(accepted, "You chose: add to all my projects, on 9 Sep. Waiting for Harness to add it.");
+  assert.equal(accepted, "You chose: add to all my projects, on 9 Sep. Will be written at the next sync.");
   const skipped = ux.decisionSentence({ decision: { status: "skipped", decided_at: null }, destination: null });
   assert.equal(skipped, "You skipped this improvement.");
   const added = ux.decisionSentence({
@@ -227,21 +239,30 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
     lovable: { write_status: "written", written_at: "2026-09-10T08:00:00Z" },
   });
   assert.equal(added, "You chose: add to this project only. Added to Lovable, 10 Sep.");
+  const testFirstSentence = ux.decisionSentence({
+    decision: { status: "accepted", decided_at: null },
+    destination: "project",
+    lovable: { write_status: "none", written_at: null },
+    ctx: { testFirst: true },
+  });
+  assert.equal(testFirstSentence, "You chose: add to this project only. Saved for testing — nothing is written until the test runs.");
 
   assert.deepEqual([...ux.IMPROVEMENT_GROUPS], [
-    "Waiting to be added", "Proof in progress", "Proof done", "In Lovable", "Needs attention", "Skipped",
+    "Waiting to be written", "Waiting to be tested", "In Lovable", "Needs attention", "Skipped",
   ]);
-  const g = (status: "pending" | "accepted" | "skipped", writeStatus: ux.LovableWriteStatus | null, proofOutcome: string | null = null) =>
-    ux.improvementGroup({ status, writeStatus, proofOutcome });
+  const g = (status: "pending" | "accepted" | "skipped", writeStatus: ux.LovableWriteStatus | null, testFirst = false) =>
+    ux.improvementGroup({ status, writeStatus, testFirst });
   assert.equal(g("pending", null), null, "pending items belong in Inbox, not Improvements");
   assert.equal(g("skipped", null), "Skipped");
-  assert.equal(g("accepted", "none"), "Waiting to be added");
-  assert.equal(g("accepted", "pending"), "Waiting to be added");
-  assert.equal(g("accepted", "pending", "not_run"), "Waiting to be added");
+  assert.equal(g("accepted", "none"), "Waiting to be written");
+  assert.equal(g("accepted", "pending"), "Waiting to be written");
   assert.equal(g("accepted", "written"), "In Lovable");
   assert.equal(g("accepted", "stale"), "Needs attention");
   assert.equal(g("accepted", "failed"), "Needs attention");
-  assert.equal(g("accepted", "none", "passed"), "Proof done");
+  assert.equal(g("accepted", "none", true), "Waiting to be tested");
+  assert.equal(g("accepted", "written", true), "In Lovable", "a written version always wins over test_first");
+
+  assert.ok(!/Waiting for Harness/.test(readApp("lib/harness-ux.ts")));
 });
 
 test("Improvements page: contract groups only, non-empty only, decision cards, restore lives in the card", () => {

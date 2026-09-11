@@ -1270,3 +1270,332 @@ export function listExperimentPlansForRule(ruleId: number) {
     .all(ruleId) as { id: number }[];
   return plans.map((p) => getExperimentPlan(p.id));
 }
+
+// ---- Checkpoint E (v5): executor settings, skill snapshots, sync runs/requests ----
+// Local-only bookkeeping for the executor (next checkpoint) and the API
+// routes/UI that talk to it. Nothing here calls Lovable MCP or the network.
+
+export type SettingKey =
+  | "sync_enabled"
+  | "sync_interval_minutes"
+  | "sync_window_start_hour"
+  | "sync_window_end_hour"
+  | "knowledge_char_cap"
+  | "require_approval_before_write";
+
+export const SETTING_DEFAULTS: Record<SettingKey, string> = {
+  sync_enabled: "true",
+  sync_interval_minutes: "60",
+  sync_window_start_hour: "10",
+  sync_window_end_hour: "22",
+  knowledge_char_cap: "9000",
+  require_approval_before_write: "true",
+};
+
+const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
+const BOOLEAN_SETTING_KEYS: SettingKey[] = ["sync_enabled", "require_approval_before_write"];
+
+export function getSetting(key: SettingKey): string {
+  const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? SETTING_DEFAULTS[key];
+}
+
+export function getSettings(): Record<SettingKey, string> {
+  const out = {} as Record<SettingKey, string>;
+  for (const key of SETTING_KEYS) out[key] = getSetting(key);
+  return out;
+}
+
+function assertIntInRange(key: SettingKey, raw: string, min: number, max: number): void {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new Error(`${key} must be an integer between ${min} and ${max}`);
+  }
+}
+
+function assertBooleanSetting(key: SettingKey, raw: string): void {
+  if (raw !== "true" && raw !== "false") {
+    throw new Error(`${key} must be true or false`);
+  }
+}
+
+// Validates the whole patch before writing anything, so a rejected patch
+// leaves every existing setting untouched (no partial application).
+export function setSettings(patch: Partial<Record<SettingKey, string>>): Record<SettingKey, string> {
+  const merged: Record<SettingKey, string> = { ...getSettings() };
+  const toWrite: [SettingKey, string][] = [];
+
+  for (const key of Object.keys(patch) as SettingKey[]) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (BOOLEAN_SETTING_KEYS.includes(key)) {
+      assertBooleanSetting(key, value);
+    } else if (key === "sync_interval_minutes") {
+      assertIntInRange(key, value, 15, 1440);
+    } else if (key === "knowledge_char_cap") {
+      assertIntInRange(key, value, 1000, 10000);
+    } else {
+      // sync_window_start_hour / sync_window_end_hour
+      assertIntInRange(key, value, 0, 24);
+    }
+    merged[key] = value;
+    toWrite.push([key, value]);
+  }
+
+  if (patch.sync_window_start_hour !== undefined || patch.sync_window_end_hour !== undefined) {
+    if (!(Number(merged.sync_window_start_hour) < Number(merged.sync_window_end_hour))) {
+      throw new Error("sync_window_start_hour must be before sync_window_end_hour");
+    }
+  }
+
+  const upsert = db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  );
+  const writeAll = db.transaction((entries: [SettingKey, string][]) => {
+    for (const [key, value] of entries) upsert.run(key, value);
+  });
+  writeAll(toWrite);
+
+  if (toWrite.length) insertEvent("settings.updated", null, { keys: toWrite.map(([k]) => k) });
+  return getSettings();
+}
+
+// A verbatim copy of a Lovable Skill, deduped by content hash per
+// (workspace_id, name) so re-fetching an unchanged Skill is a no-op.
+export function recordSkillSnapshot(input: {
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  content: string;
+  updated_at_remote: string | null;
+  fetched_by: string;
+}): { id: number; inserted: boolean } {
+  const sha = knowledgeSha256(input.content);
+  const latest = db
+    .prepare(
+      `SELECT id, sha256 FROM skill_snapshots WHERE workspace_id = ? AND name = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(input.workspace_id, input.name) as { id: number; sha256: string } | undefined;
+  if (latest && latest.sha256 === sha) {
+    return { id: latest.id, inserted: false };
+  }
+  const row = db
+    .prepare(
+      `INSERT INTO skill_snapshots (workspace_id, name, description, content, sha256, updated_at_remote, fetched_by)
+       VALUES (@workspace_id, @name, @description, @content, @sha256, @updated_at_remote, @fetched_by)
+       RETURNING id`,
+    )
+    .get({
+      workspace_id: input.workspace_id,
+      name: input.name,
+      description: input.description,
+      content: input.content,
+      sha256: sha,
+      updated_at_remote: input.updated_at_remote,
+      fetched_by: input.fetched_by,
+    }) as { id: number };
+  insertEvent("skill_snapshot.recorded", null, {
+    id: row.id,
+    workspace_id: input.workspace_id,
+    name: input.name,
+  });
+  return { id: row.id, inserted: true };
+}
+
+export function latestSkillSnapshots(workspaceId: string): {
+  name: string;
+  description: string | null;
+  content: string;
+  sha256: string;
+  updated_at_remote: string | null;
+  fetched_at: string;
+}[] {
+  return db
+    .prepare(
+      `SELECT name, description, content, sha256, updated_at_remote, fetched_at
+       FROM skill_snapshots s
+       WHERE workspace_id = ?
+         AND id = (
+           SELECT id FROM skill_snapshots s2
+           WHERE s2.workspace_id = s.workspace_id AND s2.name = s.name
+           ORDER BY id DESC LIMIT 1
+         )
+       ORDER BY name`,
+    )
+    .all(workspaceId) as {
+    name: string;
+    description: string | null;
+    content: string;
+    sha256: string;
+    updated_at_remote: string | null;
+    fetched_at: string;
+  }[];
+}
+
+export function startSyncRun(kind: "scheduled" | "manual" | "once"): number {
+  const row = db.prepare(`INSERT INTO sync_runs (kind) VALUES (?) RETURNING id`).get(kind) as { id: number };
+  insertEvent("sync_run.started", null, { id: row.id, kind });
+  return row.id;
+}
+
+export function finishSyncRun(
+  id: number,
+  result: { ok: boolean; error?: string | null; counts?: Record<string, number> },
+): void {
+  db.prepare(
+    `UPDATE sync_runs SET finished_at = datetime('now'), ok = ?, error = ?, counts_json = ? WHERE id = ?`,
+  ).run(result.ok ? 1 : 0, result.error ?? null, JSON.stringify(result.counts ?? {}), id);
+  insertEvent("sync_run.finished", null, { id, ok: result.ok, error: result.error ?? null });
+}
+
+export function latestSyncRun(): {
+  id: number;
+  kind: string;
+  started_at: string;
+  finished_at: string | null;
+  ok: number | null;
+  error: string | null;
+  counts: Record<string, number>;
+} | null {
+  const row = db.prepare(`SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1`).get() as
+    | {
+        id: number;
+        kind: string;
+        started_at: string;
+        finished_at: string | null;
+        ok: number | null;
+        error: string | null;
+        counts_json: string;
+      }
+    | undefined;
+  if (!row) return null;
+  return {
+    id: row.id,
+    kind: row.kind,
+    started_at: row.started_at,
+    finished_at: row.finished_at,
+    ok: row.ok,
+    error: row.error,
+    counts: JSON.parse(row.counts_json) as Record<string, number>,
+  };
+}
+
+// finished_at IS NULL and started within the last 15 minutes -- a run that
+// has been "running" longer than that is treated as stuck/crashed, not
+// blocking a fresh one.
+export function runningSyncRun(): { id: number; started_at: string } | null {
+  const row = db
+    .prepare(
+      `SELECT id, started_at FROM sync_runs
+       WHERE finished_at IS NULL AND started_at >= datetime('now', '-15 minutes')
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get() as { id: number; started_at: string } | undefined;
+  return row ?? null;
+}
+
+// Coalesced "sync now": returns the existing open request instead of
+// stacking a second one.
+export function requestSync(): { id: number; created: boolean } {
+  const existing = db
+    .prepare(`SELECT id FROM sync_requests WHERE status = 'requested' ORDER BY id ASC LIMIT 1`)
+    .get() as { id: number } | undefined;
+  if (existing) return { id: existing.id, created: false };
+  const row = db.prepare(`INSERT INTO sync_requests DEFAULT VALUES RETURNING id`).get() as { id: number };
+  insertEvent("sync_request.created", null, { id: row.id });
+  return { id: row.id, created: true };
+}
+
+export function takeSyncRequest(runId: number): number | null {
+  const existing = db
+    .prepare(`SELECT id FROM sync_requests WHERE status = 'requested' ORDER BY id ASC LIMIT 1`)
+    .get() as { id: number } | undefined;
+  if (!existing) return null;
+  db.prepare(`UPDATE sync_requests SET status = 'running', run_id = ? WHERE id = ?`).run(runId, existing.id);
+  insertEvent("sync_request.taken", null, { id: existing.id, run_id: runId });
+  return existing.id;
+}
+
+export function completeSyncRequest(id: number): void {
+  db.prepare(`UPDATE sync_requests SET status = 'done' WHERE id = ?`).run(id);
+  insertEvent("sync_request.completed", null, { id });
+}
+
+export function countHistoryItemsAwaitingAnalysis(): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) as n FROM history_items hi
+       WHERE hi.kind = 'message' AND hi.role = 'user'
+         AND NOT EXISTS (SELECT 1 FROM task_episode_evidence tee WHERE tee.history_item_id = hi.id)`,
+    )
+    .get() as { n: number };
+  return row.n;
+}
+
+export function listHistoryStats(): { project_id: string; history_count: number; last_synced_at: string | null }[] {
+  return db
+    .prepare(
+      `SELECT ap.lovable_project_id as project_id,
+              COUNT(hi.id) as history_count,
+              MAX(hi.created_at) as last_synced_at
+       FROM allowed_projects ap
+       LEFT JOIN history_items hi ON hi.project_id = ap.lovable_project_id
+       GROUP BY ap.lovable_project_id
+       ORDER BY ap.lovable_project_id`,
+    )
+    .all() as { project_id: string; history_count: number; last_synced_at: string | null }[];
+}
+
+export function latestHistoryExternalIds(projectId: string, limit: number): Set<string> {
+  const rows = db
+    .prepare(
+      `SELECT external_id FROM history_items
+       WHERE project_id = ? AND kind = 'message' AND external_id IS NOT NULL
+       ORDER BY id DESC LIMIT ?`,
+    )
+    .all(projectId, limit) as { external_id: string }[];
+  return new Set(rows.map((r) => r.external_id));
+}
+
+// Curating allowed_projects from the UI (distinct from the out-of-band
+// `npm run seed` flow): insert-or-ignore, never touching history_items.
+// Disallow removes only the permission row -- history rows for that project
+// are left exactly as they are, so re-allowing the same project later loses
+// nothing. Foreign key enforcement is relaxed around the delete only (every
+// other table's project_id column deliberately has no ON DELETE action,
+// because that history must survive a permission change) and restored
+// immediately after.
+export function allowProject(lovableProjectId: string, label: string) {
+  db.prepare(`INSERT OR IGNORE INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    lovableProjectId,
+    label,
+  );
+  insertEvent("allowed_project.allowed", lovableProjectId, { label });
+  return db.prepare(`SELECT * FROM allowed_projects WHERE lovable_project_id = ?`).get(lovableProjectId);
+}
+
+export function disallowProject(lovableProjectId: string): void {
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.prepare(`DELETE FROM allowed_projects WHERE lovable_project_id = ?`).run(lovableProjectId);
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+  insertEvent("allowed_project.disallowed", lovableProjectId, {});
+}
+
+// ---- Task 4: experiment plan status ----
+// Moves an experiment plan between the three states the schema allows
+// (proposed/approved/rejected) -- e.g. when the user chooses "test it
+// first" on an Improvement, approving the rule also approves its plan.
+export function setExperimentPlanStatus(id: number, status: "proposed" | "approved" | "rejected", actor: string) {
+  const existing = db.prepare(`SELECT id FROM experiment_plans WHERE id = ?`).get(id);
+  if (!existing) throw new Error(`experiment plan ${id} not found`);
+  db.prepare(`UPDATE experiment_plans SET status = ?, updated_at = datetime('now') WHERE id = ?`).run(status, id);
+  insertEvent("experiment_plan.status_changed", null, { id, status, actor });
+  return getExperimentPlan(id);
+}
+// ---- end Task 4 ----

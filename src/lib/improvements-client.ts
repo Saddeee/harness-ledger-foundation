@@ -60,6 +60,7 @@ export type Improvement = {
     status: "pending" | "accepted" | "skipped";
     decided_at: string | null;
     divergence: string | null;
+    test_first: boolean;
   };
   stage: Stage["key"];
   stages: Stage[];
@@ -172,6 +173,6 @@ export function groupOf(item: Improvement): ImprovementGroup | null {
   return improvementGroup({
     status: item.decision.status,
     writeStatus: lovableOf(item).write_status,
-    proofOutcome: item.proof?.outcome ?? null,
+    testFirst: item.decision.test_first,
   });
 }

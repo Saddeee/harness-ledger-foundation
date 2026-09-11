@@ -229,8 +229,14 @@ export type LovableStatusLike = {
 };
 
 // One line describing where the instruction stands in Lovable. Never claims
-// it was added unless a verified write exists.
-export function lovableStatusLine(input: LovableStatusLike | null | undefined): string {
+// it was added unless a verified write exists. `ctx` carries what the local
+// executor knows (when it next runs, whether Lovable is connected) and
+// whether the user chose to test the instruction first -- all optional, so
+// existing single-argument callers keep working unchanged.
+export function lovableStatusLine(
+  input: LovableStatusLike | null | undefined,
+  ctx?: { nextSyncAt?: string | null; connected?: boolean; testFirst?: boolean },
+): string {
   switch (input?.write_status) {
     case "written":
       return `Added to Lovable, ${formatDay(input.written_at)}`;
@@ -239,7 +245,12 @@ export function lovableStatusLine(input: LovableStatusLike | null | undefined): 
     case "failed":
       return "Needs attention: adding failed — see Details";
     default:
-      return "Waiting for Harness to add it";
+      if (ctx?.testFirst) return "Saved for testing — nothing is written until the test runs";
+      if (ctx?.connected === false)
+        return "Connect Lovable on the Projects page to let Harness write this";
+      return ctx?.nextSyncAt
+        ? `Will be written at the next sync, ${formatDate(ctx.nextSyncAt)}`
+        : "Will be written at the next sync";
   }
 }
 
@@ -247,11 +258,12 @@ export function decisionSentence(input: {
   decision: DecisionLike;
   destination: string | null;
   lovable?: LovableStatusLike | null;
+  ctx?: { nextSyncAt?: string | null; connected?: boolean; testFirst?: boolean };
 }): string {
   const when = input.decision.decided_at ? `, on ${formatDay(input.decision.decided_at)}` : "";
   if (input.decision.status === "accepted") {
     const choice = label(DESTINATION_PHRASES, input.destination) || "accept this";
-    return `You chose: ${choice}${when}. ${lovableStatusLine(input.lovable)}.`;
+    return `You chose: ${choice}${when}. ${lovableStatusLine(input.lovable, input.ctx)}.`;
   }
   if (input.decision.status === "skipped") return `You skipped this improvement${when}.`;
   return "Waiting for your decision.";
@@ -260,9 +272,8 @@ export function decisionSentence(input: {
 // ---- Improvements page grouping (also the card chip). Pure so it is testable. ----
 
 export const IMPROVEMENT_GROUPS = [
-  "Waiting to be added",
-  "Proof in progress",
-  "Proof done",
+  "Waiting to be written",
+  "Waiting to be tested",
   "In Lovable",
   "Needs attention",
   "Skipped",
@@ -272,20 +283,14 @@ export type ImprovementGroup = (typeof IMPROVEMENT_GROUPS)[number];
 export function improvementGroup(input: {
   status: "pending" | "accepted" | "skipped";
   writeStatus: LovableWriteStatus | null | undefined;
-  proofOutcome: string | null | undefined;
+  testFirst: boolean;
 }): ImprovementGroup | null {
   if (input.status === "skipped") return "Skipped";
   if (input.status === "pending") return null;
   if (input.writeStatus === "stale" || input.writeStatus === "failed") return "Needs attention";
   if (input.writeStatus === "written") return "In Lovable";
-  if (input.proofOutcome === "running") return "Proof in progress";
-  if (
-    input.proofOutcome === "passed" ||
-    input.proofOutcome === "failed" ||
-    input.proofOutcome === "unclear"
-  )
-    return "Proof done";
-  return "Waiting to be added";
+  if (input.testFirst) return "Waiting to be tested";
+  return "Waiting to be written";
 }
 
 // ---- Proof copy ----

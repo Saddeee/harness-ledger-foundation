@@ -198,3 +198,38 @@ test("no Lovable import and no network call in improvements.ts / adapter.ts / st
     assert.ok(!/fetch\(|http\.request|https\.request/.test(code), `${file} must not make network calls`);
   }
 });
+
+test("accept with test_first: true approves the rule and its experiment plan but stages no Knowledge write; test_first only flips false once a version is WRITTEN, not merely staged", () => {
+  // Start from a clean pending state regardless of what earlier tests in
+  // this file left behind, and seed a Knowledge snapshot so a plain accept
+  // below is actually able to stage a write.
+  imp.improvementAction({ action: "reopen", id: cc.id });
+  store.cancelPendingKnowledgeWrites(rule.id, "test setup");
+  store.recordKnowledgeSnapshot({ target: "project", project_id: PROJECT, content: "# Knowledge\n\nExisting text.", fetched_by: "test" });
+
+  const item = imp.improvementAction({ action: "accept", id: cc.id, destination: "project", test_first: true });
+  assert.equal(item.decision.status, "accepted");
+  assert.equal(item.decision.test_first, true);
+  assert.deepEqual(store.listPendingKnowledgeWrites(), [], "test_first accept stages no Knowledge write");
+
+  const r = db.prepare(`SELECT state FROM rules WHERE id = ?`).get(rule.id) as { state: string };
+  assert.equal(r.state, "approved");
+  const plans = store.listExperimentPlansForRule(rule.id) as { plan: { status: string } }[];
+  assert.ok(plans.length >= 1, "an experiment plan exists for the rule");
+  assert.equal(plans[0]!.plan.status, "approved");
+
+  // A later plain accept (no test_first) stages a write the normal way --
+  // but decision.test_first only flips to false once a version is actually
+  // WRITTEN (the executor's read-back confirmed it), not merely staged as
+  // pending. Right after the plain accept the write is still only pending,
+  // so test_first must still read true.
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  const pendingWrites = store.listPendingKnowledgeWrites() as { id: number; new_content: string }[];
+  assert.equal(pendingWrites.length, 1, "the plain accept staged exactly one pending write");
+  const afterPlainAccept = imp.getImprovement(cc.id)!;
+  assert.equal(afterPlainAccept.decision.test_first, true, "still true: a pending write is not a written one");
+
+  store.recordKnowledgeReadback(pendingWrites[0]!.id, pendingWrites[0]!.new_content);
+  const afterWrite = imp.getImprovement(cc.id)!;
+  assert.equal(afterWrite.decision.test_first, false, "flips false once a written version exists");
+});

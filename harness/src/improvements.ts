@@ -30,7 +30,7 @@ export type Improvement = {
   proposed_instruction: string | null;
   destination: "workspace" | "project" | "one_time" | null;
   classification: string;
-  decision: { status: "pending" | "accepted" | "skipped"; decided_at: string | null; divergence: string | null };
+  decision: { status: "pending" | "accepted" | "skipped"; decided_at: string | null; divergence: string | null; test_first: boolean };
   stage: StageKey;
   stages: Stage[];
   evidence: Message[];
@@ -199,6 +199,12 @@ function buildImprovement(c: CorrectionRow): Improvement {
   const writeStatus: KnowledgeWriteStatus = latest ? latest.status : "none";
   const writtenVersion = versions.find((v) => v.status === "written") ?? null;
   const proofComplete = outcome === "passed" || (ruleState != null && PROOF_DONE_RULE_STATES.has(ruleState));
+  // "Test it first": the rule and its experiment plan are approved, but
+  // nothing has been written to Knowledge yet -- see ensureApprovedExperimentPlan.
+  const hasApprovedExperimentPlan = experimentPlans.some(
+    (p) => (p as { plan: { status: string } } | null)?.plan.status === "approved",
+  );
+  const testFirst = hasApprovedExperimentPlan && !writtenVersion;
 
   // ---- stages ----
   const reviewState: StageState = status === "skipped" ? "blocked" : status === "accepted" ? "complete" : "current";
@@ -265,7 +271,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
     proposed_instruction: rule?.instruction ?? null,
     destination: rule ? rule.scope : (c.proposed_scope ?? null),
     classification: c.classification,
-    decision: { status, decided_at: status === "pending" ? null : c.reviewed_at, divergence },
+    decision: { status, decided_at: status === "pending" ? null : c.reviewed_at, divergence, test_first: testFirst },
     stage,
     stages,
     evidence: visible.map((e) => ({
@@ -332,7 +338,12 @@ export function getImprovement(id: number): Improvement | null {
 
 const ACTOR = "operator (local UI)";
 const actionInput = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("accept"), id: z.number().int(), destination: z.enum(["workspace", "project", "skill"]) }),
+  z.object({
+    action: z.literal("accept"),
+    id: z.number().int(),
+    destination: z.enum(["workspace", "project", "skill"]),
+    test_first: z.boolean().optional(),
+  }),
   z.object({ action: z.literal("skip"), id: z.number().int() }),
   z.object({ action: z.literal("reopen"), id: z.number().int() }),
   z.object({
@@ -374,6 +385,43 @@ function stagePendingWrite(improvement: Improvement, rule: RuleRow, target: "pro
   });
 }
 
+// After the user approves "Test it first", the rule is approved but no
+// Knowledge write is staged -- instead, its experiment plan is approved so
+// the plan is ready to run. A rule may already have a plan (e.g. from an
+// earlier proof pass); reuse and approve it rather than creating a second
+// one. Only a "proposed" plan is moved to "approved" here -- a rejected
+// plan is left alone.
+function ensureApprovedExperimentPlan(rule: RuleRow, improvement: Improvement) {
+  const plans = store.listExperimentPlansForRule(rule.id) as unknown as { plan: { id: number; status: string } }[];
+  const existing = plans[0] ?? null;
+  if (existing) {
+    if (existing.plan.status === "proposed") store.setExperimentPlanStatus(existing.plan.id, "approved", ACTOR);
+    return;
+  }
+  const exactPrompt = improvement.evidence.find((e) => e.author === "you")?.text ?? "";
+  const created = store.createExperimentPlan({
+    rule_id: rule.id,
+    source_project_id: improvement.project.id,
+    experiment_type: "paired_control_treatment",
+    starting_state_quality: "historical_only",
+    control_configuration: "Not yet defined — saved for testing before a full experiment plan is written.",
+    treatment_configuration: "Not yet defined — saved for testing before a full experiment plan is written.",
+    exact_prompt: exactPrompt,
+    protected_checks: "[]",
+    estimated_credits: 0,
+    max_permitted_credits: 0,
+    resource_strategy: "Not yet defined.",
+    cleanup_requirements: "Not yet defined.",
+    risks: "Not yet defined.",
+    success_conditions: "Not yet defined.",
+    inconclusive_conditions: "Not yet defined.",
+    stop_conditions: "Not yet defined.",
+    created_by: "owner via UI",
+    verification_definition_ids: [],
+  }) as { id: number };
+  store.setExperimentPlanStatus(created.id, "approved", ACTOR);
+}
+
 export function improvementAction(input: unknown): Improvement {
   const a = actionInput.parse(input);
   const current = getImprovement(a.id);
@@ -395,8 +443,15 @@ export function improvementAction(input: unknown): Improvement {
         store.updateRule({ id: rule.id, state: "approved", scope: destination, actor: ACTOR });
         // Added without a completed proof: grounded in the user's own decision only.
         if (!(current.proof?.outcome === "passed")) store.setRuleEvidenceLevel(rule.id, "human_grounded", ACTOR);
-        const refreshedForPreview = getImprovement(a.id);
-        if (refreshedForPreview) stagePendingWrite(refreshedForPreview, { ...rule, scope: destination, state: "approved" }, destination);
+        if (a.test_first) {
+          // Test it first: approve the rule and its experiment plan, but
+          // stage no Knowledge write -- nothing is written until the test
+          // runs (and the user later accepts for real).
+          ensureApprovedExperimentPlan({ ...rule, scope: destination, state: "approved" }, current);
+        } else {
+          const refreshedForPreview = getImprovement(a.id);
+          if (refreshedForPreview) stagePendingWrite(refreshedForPreview, { ...rule, scope: destination, state: "approved" }, destination);
+        }
       }
       break;
     }
