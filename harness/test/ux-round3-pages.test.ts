@@ -402,7 +402,7 @@ test("local-settings.tsx: one AI-analysis save action (settings + key when typed
 
   // one combined mutation: key first (only when typed), then settings
   assert.match(code, /const saveAiAnalysis = useMutation\(/);
-  assert.match(code, /if \(keyInput\.trim\(\)\.length > 0\)/);
+  assert.match(code, /if \(keyInput\.trim\(\)\)/);
   const saveFn = code.slice(
     code.indexOf("const saveAiAnalysis = useMutation("),
     code.indexOf("const removeLlmKey = useMutation("),

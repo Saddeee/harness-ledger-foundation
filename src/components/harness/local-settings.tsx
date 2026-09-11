@@ -151,27 +151,55 @@ export function LocalSettings() {
   });
 
   // One save action for the whole section: if a key was typed, it's saved
-  // first (so a settings save never silently drops it), then the
-  // provider/models/budget. One toast either way.
+  // independently (so a settings save failure never silently drops it), then the
+  // provider/models/budget. Each part reports its own error if it fails.
   const saveAiAnalysis = useMutation({
     mutationFn: async () => {
-      if (keyInput.trim().length > 0) {
-        await postExecutor({ action: "llm_key", provider: llmProvider, key: keyInput });
+      let keyError: string | null = null;
+      let keySaved = false;
+
+      if (keyInput.trim()) {
+        try {
+          await postExecutor({ action: "llm_key", provider: llmProvider, key: keyInput });
+          keySaved = true;
+        } catch (e) {
+          keyError = e instanceof Error ? e.message : "unknown error";
+        }
       }
-      return postExecutor({
-        action: "llm_settings",
-        llm_provider: llmProvider,
-        llm_models: llmModels,
-        llm_monthly_budget_usd: budget,
-      });
+
+      let settingsError: string | null = null;
+      try {
+        await postExecutor({
+          action: "llm_settings",
+          llm_provider: llmProvider,
+          llm_models: llmModels,
+          llm_monthly_budget_usd: budget,
+        });
+      } catch (e) {
+        settingsError = e instanceof Error ? e.message : "unknown error";
+      }
+
+      return { keyError, settingsError, keySaved };
     },
-    onSuccess: () => {
-      toast.success("AI analysis settings saved");
-      setKeyInput("");
+    onSuccess: ({ keyError, settingsError, keySaved }) => {
+      if (settingsError) {
+        toast.error(`Could not save the model choices: ${settingsError}`);
+        if (keyError) {
+          toast.error(`Could not save the key: ${keyError}`);
+        }
+      } else {
+        if (keyError) {
+          toast.error(`Model choices saved, but the key was not: ${keyError}`);
+        } else {
+          toast.success("AI analysis settings saved");
+        }
+      }
+      if (keySaved) setKeyInput("");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Could not save the AI analysis settings"),
+    onError: () => {
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
   });
 
   const removeLlmKey = useMutation({
