@@ -1628,3 +1628,15 @@ export function setExperimentPlanStatus(id: number, status: "proposed" | "approv
   return getExperimentPlan(id);
 }
 // ---- end Task 4 ----
+
+// ---- Task 5: rule → improvement ----
+// The inverse of getRuleForCorrection: given a rule, the correction
+// candidate id it exists to fix. The Knowledge routes use this to link each
+// active rule shown in a managed block back to its Improvement.
+export function getCorrectionIdForRule(ruleId: number): number | null {
+  const row = db.prepare(`SELECT correction_candidate_id FROM rules WHERE id = ?`).get(ruleId) as
+    | { correction_candidate_id: number }
+    | undefined;
+  return row ? row.correction_candidate_id : null;
+}
+// ---- end Task 5 ----

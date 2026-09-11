@@ -24,7 +24,10 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedVersionsRouteImport } from './routes/_authenticated/versions'
 import { Route as OauthCallbackRouteImport } from './routes/oauth/callback'
 import { Route as ApiPublicHarnessCorrectionsRouteImport } from './routes/api/public/harness/corrections'
+import { Route as ApiPublicHarnessExecutorRouteImport } from './routes/api/public/harness/executor'
 import { Route as ApiPublicHarnessImprovementsRouteImport } from './routes/api/public/harness/improvements'
+import { Route as ApiPublicHarnessKnowledgeRouteImport } from './routes/api/public/harness/knowledge'
+import { Route as ApiPublicHarnessProjectsRouteImport } from './routes/api/public/harness/projects'
 import { Route as ApiPublicHarnessRulesRouteImport } from './routes/api/public/harness/rules'
 import { Route as ApiPublicHarnessRuntimeRouteImport } from './routes/api/public/harness/runtime'
 import { Route as ApiPublicHooksQueueWorkerRouteImport } from './routes/api/public/hooks/queue-worker'
@@ -109,10 +112,28 @@ const ApiPublicHarnessCorrectionsRoute =
     path: '/api/public/harness/corrections',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHarnessExecutorRoute =
+  ApiPublicHarnessExecutorRouteImport.update({
+    id: '/api/public/harness/executor',
+    path: '/api/public/harness/executor',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHarnessImprovementsRoute =
   ApiPublicHarnessImprovementsRouteImport.update({
     id: '/api/public/harness/improvements',
     path: '/api/public/harness/improvements',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHarnessKnowledgeRoute =
+  ApiPublicHarnessKnowledgeRouteImport.update({
+    id: '/api/public/harness/knowledge',
+    path: '/api/public/harness/knowledge',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHarnessProjectsRoute =
+  ApiPublicHarnessProjectsRouteImport.update({
+    id: '/api/public/harness/projects',
+    path: '/api/public/harness/projects',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicHarnessRulesRoute = ApiPublicHarnessRulesRouteImport.update({
@@ -177,7 +198,10 @@ export interface FileRoutesByFullPath {
   '/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
+  '/api/public/harness/executor': typeof ApiPublicHarnessExecutorRoute
   '/api/public/harness/improvements': typeof ApiPublicHarnessImprovementsRoute
+  '/api/public/harness/knowledge': typeof ApiPublicHarnessKnowledgeRoute
+  '/api/public/harness/projects': typeof ApiPublicHarnessProjectsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
   '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
@@ -202,7 +226,10 @@ export interface FileRoutesByTo {
   '/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
+  '/api/public/harness/executor': typeof ApiPublicHarnessExecutorRoute
   '/api/public/harness/improvements': typeof ApiPublicHarnessImprovementsRoute
+  '/api/public/harness/knowledge': typeof ApiPublicHarnessKnowledgeRoute
+  '/api/public/harness/projects': typeof ApiPublicHarnessProjectsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
   '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
@@ -229,7 +256,10 @@ export interface FileRoutesById {
   '/_authenticated/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
+  '/api/public/harness/executor': typeof ApiPublicHarnessExecutorRoute
   '/api/public/harness/improvements': typeof ApiPublicHarnessImprovementsRoute
+  '/api/public/harness/knowledge': typeof ApiPublicHarnessKnowledgeRoute
+  '/api/public/harness/projects': typeof ApiPublicHarnessProjectsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
   '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
@@ -256,7 +286,10 @@ export interface FileRouteTypes {
     | '/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
+    | '/api/public/harness/executor'
     | '/api/public/harness/improvements'
+    | '/api/public/harness/knowledge'
+    | '/api/public/harness/projects'
     | '/api/public/harness/rules'
     | '/api/public/harness/runtime'
     | '/api/public/hooks/queue-worker'
@@ -281,7 +314,10 @@ export interface FileRouteTypes {
     | '/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
+    | '/api/public/harness/executor'
     | '/api/public/harness/improvements'
+    | '/api/public/harness/knowledge'
+    | '/api/public/harness/projects'
     | '/api/public/harness/rules'
     | '/api/public/harness/runtime'
     | '/api/public/hooks/queue-worker'
@@ -307,7 +343,10 @@ export interface FileRouteTypes {
     | '/_authenticated/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
+    | '/api/public/harness/executor'
     | '/api/public/harness/improvements'
+    | '/api/public/harness/knowledge'
+    | '/api/public/harness/projects'
     | '/api/public/harness/rules'
     | '/api/public/harness/runtime'
     | '/api/public/hooks/queue-worker'
@@ -325,7 +364,10 @@ export interface RootRouteChildren {
   LovableClientDotjsonRoute: typeof LovableClientDotjsonRoute
   OauthCallbackRoute: typeof OauthCallbackRoute
   ApiPublicHarnessCorrectionsRoute: typeof ApiPublicHarnessCorrectionsRoute
+  ApiPublicHarnessExecutorRoute: typeof ApiPublicHarnessExecutorRoute
   ApiPublicHarnessImprovementsRoute: typeof ApiPublicHarnessImprovementsRoute
+  ApiPublicHarnessKnowledgeRoute: typeof ApiPublicHarnessKnowledgeRoute
+  ApiPublicHarnessProjectsRoute: typeof ApiPublicHarnessProjectsRoute
   ApiPublicHarnessRulesRoute: typeof ApiPublicHarnessRulesRoute
   ApiPublicHarnessRuntimeRoute: typeof ApiPublicHarnessRuntimeRoute
   ApiPublicHooksQueueWorkerRoute: typeof ApiPublicHooksQueueWorkerRoute
@@ -443,11 +485,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHarnessCorrectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/harness/executor': {
+      id: '/api/public/harness/executor'
+      path: '/api/public/harness/executor'
+      fullPath: '/api/public/harness/executor'
+      preLoaderRoute: typeof ApiPublicHarnessExecutorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/harness/improvements': {
       id: '/api/public/harness/improvements'
       path: '/api/public/harness/improvements'
       fullPath: '/api/public/harness/improvements'
       preLoaderRoute: typeof ApiPublicHarnessImprovementsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/harness/knowledge': {
+      id: '/api/public/harness/knowledge'
+      path: '/api/public/harness/knowledge'
+      fullPath: '/api/public/harness/knowledge'
+      preLoaderRoute: typeof ApiPublicHarnessKnowledgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/harness/projects': {
+      id: '/api/public/harness/projects'
+      path: '/api/public/harness/projects'
+      fullPath: '/api/public/harness/projects'
+      preLoaderRoute: typeof ApiPublicHarnessProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/harness/rules': {
@@ -543,7 +606,10 @@ const rootRouteChildren: RootRouteChildren = {
   LovableClientDotjsonRoute: LovableClientDotjsonRoute,
   OauthCallbackRoute: OauthCallbackRoute,
   ApiPublicHarnessCorrectionsRoute: ApiPublicHarnessCorrectionsRoute,
+  ApiPublicHarnessExecutorRoute: ApiPublicHarnessExecutorRoute,
   ApiPublicHarnessImprovementsRoute: ApiPublicHarnessImprovementsRoute,
+  ApiPublicHarnessKnowledgeRoute: ApiPublicHarnessKnowledgeRoute,
+  ApiPublicHarnessProjectsRoute: ApiPublicHarnessProjectsRoute,
   ApiPublicHarnessRulesRoute: ApiPublicHarnessRulesRoute,
   ApiPublicHarnessRuntimeRoute: ApiPublicHarnessRuntimeRoute,
   ApiPublicHooksQueueWorkerRoute: ApiPublicHooksQueueWorkerRoute,

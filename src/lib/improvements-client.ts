@@ -148,6 +148,158 @@ export const runtimeQueryOptions = {
   staleTime: Infinity,
 } as const;
 
+// ---- Contract (matches GET/POST /api/public/harness/knowledge) ----
+
+export type KnowledgeCurrent = { content: string; sha256: string; fetched_at: string } | null;
+
+export type KnowledgeVersionSummary = {
+  id: number;
+  status: string;
+  created_at: string;
+  written_at: string | null;
+  actor: string;
+  reason: string | null;
+  restored_from_version_id: number | null;
+  char_count: number;
+};
+
+export type KnowledgeActiveRule = { id: number; text: string; improvement_id: number | null };
+
+export type KnowledgeTargetView = {
+  target: "project" | "workspace";
+  id: string;
+  name: string;
+  current: KnowledgeCurrent;
+  managed_block_present: boolean;
+  active_rules: KnowledgeActiveRule[];
+  versions: KnowledgeVersionSummary[];
+  pending_write: { version_id: number; created_at: string } | null;
+};
+
+export type KnowledgeSkills = {
+  fetched_at: string;
+  items: { name: string; description: string | null; updated_at: string | null; content: string }[];
+} | null;
+
+export type KnowledgeResponse = {
+  available: boolean;
+  reason?: string;
+  targets?: KnowledgeTargetView[];
+  skills?: KnowledgeSkills;
+  awaiting_analysis?: number;
+};
+
+export async function fetchKnowledge(): Promise<KnowledgeResponse> {
+  const res = await fetch("/api/public/harness/knowledge", { headers: await authHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as KnowledgeResponse;
+}
+
+export async function postKnowledge(body: Record<string, unknown>) {
+  const res = await fetch("/api/public/harness/knowledge", {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as { available?: boolean; error?: string; reason?: string };
+  if (!res.ok) throw new Error(json.error ?? "request failed");
+  if (json.available === false) throw new Error(json.reason ?? "local runtime unavailable");
+  return json;
+}
+
+// ---- Contract (matches GET/POST /api/public/harness/executor) ----
+
+export type ExecutorConnection = {
+  connected: boolean;
+  email: string | null;
+  workspaces: { id: string; name: string }[];
+};
+
+export type ExecutorSchedule = {
+  enabled: boolean;
+  interval_minutes: number;
+  window_start_hour: number;
+  window_end_hour: number;
+};
+
+export type ExecutorLastRun = {
+  started_at: string;
+  finished_at: string | null;
+  ok: boolean | null;
+  error: string | null;
+  counts: Record<string, number>;
+} | null;
+
+export type ExecutorResponse = {
+  available: boolean;
+  reason?: string;
+  connection?: ExecutorConnection;
+  schedule?: ExecutorSchedule;
+  last_run?: ExecutorLastRun;
+  next_run_at?: string | null;
+  running?: boolean;
+};
+
+export async function fetchExecutor(): Promise<ExecutorResponse> {
+  const res = await fetch("/api/public/harness/executor", { headers: await authHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as ExecutorResponse;
+}
+
+export async function postExecutor(body: Record<string, unknown>) {
+  const res = await fetch("/api/public/harness/executor", {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as { available?: boolean; error?: string; reason?: string };
+  if (!res.ok) throw new Error(json.error ?? "request failed");
+  if (json.available === false) throw new Error(json.reason ?? "local runtime unavailable");
+  return json;
+}
+
+export const executorQueryOptions = {
+  queryKey: ["harness-executor"],
+  queryFn: fetchExecutor,
+  staleTime: 30_000,
+} as const;
+
+// ---- Contract (matches GET/POST /api/public/harness/projects) ----
+
+export type AllowedProject = {
+  id: string;
+  name: string;
+  last_synced_at: string | null;
+  history_count: number;
+};
+export type LovableProjectListing = { id: string; name: string; allowed: boolean };
+
+export type ProjectsResponse = {
+  available: boolean;
+  reason?: string;
+  allowed?: AllowedProject[];
+  all?: LovableProjectListing[];
+  lovable_error?: string;
+};
+
+export async function fetchProjects(): Promise<ProjectsResponse> {
+  const res = await fetch("/api/public/harness/projects", { headers: await authHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as ProjectsResponse;
+}
+
+export async function postProjects(body: Record<string, unknown>) {
+  const res = await fetch("/api/public/harness/projects", {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as { available?: boolean; error?: string; reason?: string };
+  if (!res.ok) throw new Error(json.error ?? "request failed");
+  if (json.available === false) throw new Error(json.reason ?? "local runtime unavailable");
+  return json;
+}
+
 export function projectName(item: Improvement): string {
   return item.project.name ?? item.project.id;
 }

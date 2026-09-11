@@ -390,11 +390,12 @@ test("no internal vocabulary in user-facing JSX outside the Developer view", () 
   }
 });
 
-test("pages only fetch local harness routes: improvements and runtime, nothing else", () => {
+test("pages only fetch local harness routes: improvements, runtime, knowledge, executor, projects -- nothing else", () => {
   for (const page of [INBOX, LEDGER, SHELL, CLIENT, DETAIL]) {
     const code = codeOnly(readApp(page));
     const targets = [...code.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]);
-    for (const t of targets) assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime)$/, `${page} fetches ${t}`);
+    for (const t of targets)
+      assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects)$/, `${page} fetches ${t}`);
     assert.ok(!/lovable\.dev|set_project_knowledge|setProjectKnowledge|createWorkspaceSkill/i.test(code), page);
   }
   const client = codeOnly(readApp(CLIENT));
@@ -447,4 +448,37 @@ test("landing page: public, three steps from HOW_IT_WORKS_STEPS, one button, nev
   const login = codeOnly(readApp("routes/login.tsx"));
   assert.equal(count(login, 'to: "/inbox"'), 3);
   assert.match(login, /emailRedirectTo: `\$\{window\.location\.origin\}\/inbox`/);
+});
+
+// ---- Task 5: knowledge, executor, projects routes ----
+
+const KNOWLEDGE_ROUTE = "routes/api/public/harness/knowledge.ts";
+const EXECUTOR_ROUTE = "routes/api/public/harness/executor.ts";
+const PROJECTS_ROUTE = "routes/api/public/harness/projects.ts";
+const RUNTIME_LIB = "lib/server/harness-runtime.ts";
+
+test("harness-runtime.ts never mentions a spec document, and every new route enforces auth through the shared adapter", () => {
+  const runtimeLib = readApp(RUNTIME_LIB);
+  assert.ok(!/SPEC/.test(runtimeLib), "harness-runtime.ts must not reference a spec document");
+
+  for (const route of [KNOWLEDGE_ROUTE, EXECUTOR_ROUTE, PROJECTS_ROUTE]) {
+    const code = readApp(route);
+    assert.match(code, /requireAuth\(/, `${route} must call requireAuth(`);
+    assert.match(code, /loadHarnessAdapter\(/, `${route} must call loadHarnessAdapter(`);
+  }
+});
+
+test("improvements-client.ts fetches exactly the five local harness routes", () => {
+  const client = codeOnly(readApp(CLIENT));
+  const targets = new Set([...client.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]));
+  assert.deepEqual(
+    [...targets].sort(),
+    [
+      "/api/public/harness/executor",
+      "/api/public/harness/improvements",
+      "/api/public/harness/knowledge",
+      "/api/public/harness/projects",
+      "/api/public/harness/runtime",
+    ],
+  );
 });

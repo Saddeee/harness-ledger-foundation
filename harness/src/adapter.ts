@@ -35,6 +35,7 @@ export {
   listHistoryStats,
   allowProject,
   disallowProject,
+  getCorrectionIdForRule,
 } from "./store.js";
 
 const classification = z.enum([
