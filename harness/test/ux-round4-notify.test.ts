@@ -69,3 +69,9 @@ test("no <details> elements are open", () => {
     assert(!src.includes("<details open"), "Found <details open in source file");
   }
 });
+
+test("route.tsx uses initialised ref for first-load flag", () => {
+  const src = readApp(ROUTE);
+  assert(src.includes("initialised.current"), "Missing initialised.current usage");
+  assert(!src.includes("previousPendingIds.current.size === 0"), "Found old first-load check");
+});

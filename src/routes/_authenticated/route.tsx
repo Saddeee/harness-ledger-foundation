@@ -49,6 +49,7 @@ function AuthedLayout() {
   const { user } = Route.useRouteContext();
   const navigate = useNavigate();
   const previousPendingIds = useRef<Set<number>>(new Set());
+  const initialised = useRef(false);
 
   const improvementsQuery = useQuery({
     queryKey: ["harness-improvements"],
@@ -70,8 +71,9 @@ function AuthedLayout() {
     );
 
     // Don't notify on the first load
-    if (previousPendingIds.current.size === 0) {
+    if (!initialised.current) {
       previousPendingIds.current = currentPendingIds;
+      initialised.current = true;
       return;
     }
 
