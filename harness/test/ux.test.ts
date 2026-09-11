@@ -176,7 +176,7 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   // no snapshot yet -> save the choice, say so, and promise the read-back
   assert.match(
     detail,
-    /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; at the next sync Harness reads it, then writes this exact text\. You can see the result on the Knowledge page\.";/,
+    /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; at the next sync Harness reads it, then writes this exact text\. You can see the result on the Instructions page\.";/,
   );
   // Task 8: confirm label now reflects the two-choice selection, not
   // whether a preview is available.

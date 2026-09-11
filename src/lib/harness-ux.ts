@@ -246,6 +246,10 @@ export type StatusCtx = {
   nextSyncAt?: string | null | undefined;
   connected?: boolean | undefined;
   testFirst?: boolean | undefined;
+  // Round 3 §5: this project's "write approved changes automatically" is
+  // off. Callers set this only for project-destination items (a workspace
+  // write isn't gated by one project's flag) -- see DecisionCard/DecidedStatus.
+  autoWriteOff?: boolean | undefined;
 };
 
 // One line describing where the instruction stands in Lovable. Never claims
@@ -270,6 +274,7 @@ export function lovableStatusLine(
       if (ctx?.testFirst) return "Saved for testing — nothing is written until the test runs";
       if (ctx?.connected === false)
         return "Connect Lovable on the Projects page to let Harness write this";
+      if (ctx?.autoWriteOff) return "Waiting for you to turn on automatic writes for this project";
       return ctx?.nextSyncAt
         ? `Will be written at the next sync, ${formatDate(ctx.nextSyncAt)}`
         : "Will be written at the next sync";

@@ -50,11 +50,27 @@ const LLM_PROVIDERS: { value: LlmProvider; label: string }[] = [
   { value: "anthropic", label: "Anthropic" },
   { value: "google", label: "Google" },
 ];
-const LLM_ROLES: { key: LlmRole; label: string }[] = [
-  { key: "classifier", label: "Classifier" },
-  { key: "miner", label: "Miner" },
-  { key: "reviewer", label: "Reviewer" },
-  { key: "proposer", label: "Proposer" },
+const LLM_ROLES: { key: LlmRole; label: string; hint: string }[] = [
+  {
+    key: "classifier",
+    label: "Classifier",
+    hint: "Sorts each chat message: new request, correction, question or approval.",
+  },
+  {
+    key: "miner",
+    label: "Miner",
+    hint: "Turns your corrections into proposed instructions.",
+  },
+  {
+    key: "reviewer",
+    label: "Reviewer",
+    hint: "Judges a build or a test result.",
+  },
+  {
+    key: "proposer",
+    label: "Proposer",
+    hint: "Suggests an instruction when a build fails and none covers it.",
+  },
 ];
 const DEFAULT_LLM_PROVIDER: LlmProvider = "openai";
 const DEFAULT_LLM_MODELS: LlmModels = {
@@ -134,30 +150,28 @@ export function LocalSettings() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save the limit"),
   });
 
-  const saveLlmSettings = useMutation({
-    mutationFn: () =>
-      postExecutor({
+  // One save action for the whole section: if a key was typed, it's saved
+  // first (so a settings save never silently drops it), then the
+  // provider/models/budget. One toast either way.
+  const saveAiAnalysis = useMutation({
+    mutationFn: async () => {
+      if (keyInput.trim().length > 0) {
+        await postExecutor({ action: "llm_key", provider: llmProvider, key: keyInput });
+      }
+      return postExecutor({
         action: "llm_settings",
         llm_provider: llmProvider,
         llm_models: llmModels,
         llm_monthly_budget_usd: budget,
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success("AI analysis settings saved");
+      setKeyInput("");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
     onError: (e) =>
       toast.error(e instanceof Error ? e.message : "Could not save the AI analysis settings"),
-  });
-
-  const saveLlmKey = useMutation({
-    mutationFn: () => postExecutor({ action: "llm_key", provider: llmProvider, key: keyInput }),
-    onSuccess: () => {
-      toast.success("Key saved");
-      setKeyInput("");
-      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save the key"),
   });
 
   const removeLlmKey = useMutation({
@@ -269,8 +283,8 @@ export function LocalSettings() {
       <section className="space-y-4 rounded-md border p-4">
         <h2 className="text-lg font-medium">AI analysis</h2>
 
-        <div className="space-y-2">
-          <Label htmlFor="llm-provider">Provider</Label>
+        <div className="space-y-1">
+          <Label htmlFor="llm-provider">Key for</Label>
           <Select value={llmProvider} onValueChange={(v) => setLlmProvider(v as LlmProvider)}>
             <SelectTrigger id="llm-provider" className="w-full sm:w-56">
               <SelectValue />
@@ -283,6 +297,7 @@ export function LocalSettings() {
               ))}
             </SelectContent>
           </Select>
+          <p className="text-xs text-muted-foreground">Which provider the key below belongs to.</p>
         </div>
 
         <div className="space-y-2">
@@ -296,69 +311,70 @@ export function LocalSettings() {
                 onClick={() => removeLlmKey.mutate()}
                 disabled={removeLlmKey.isPending}
               >
-                {removeLlmKey.isPending ? "Removing…" : "Remove"}
+                {removeLlmKey.isPending ? "Removing…" : "Remove key"}
               </Button>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="space-y-1">
               <Input
                 id="llm-key"
                 type="password"
                 autoComplete="off"
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
-                className="flex-1"
               />
-              <Button
-                size="sm"
-                onClick={() => saveLlmKey.mutate()}
-                disabled={saveLlmKey.isPending || keyInput.trim().length === 0}
-              >
-                {saveLlmKey.isPending ? "Saving…" : "Save key"}
-              </Button>
+              <p className="text-xs text-muted-foreground">
+                Saved when you press Save AI analysis below.
+              </p>
             </div>
           )}
         </div>
 
         <div className="space-y-3">
           <p className="text-sm font-medium">Model per role</p>
-          {LLM_ROLES.map(({ key, label: roleLabel }) => (
-            <div key={key} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor={`llm-role-provider-${key}`}>{roleLabel} provider</Label>
-                <Select
-                  value={llmModels[key].provider}
-                  onValueChange={(v) =>
-                    setLlmModels((m) => ({
-                      ...m,
-                      [key]: { ...m[key], provider: v as LlmProvider },
-                    }))
-                  }
-                >
-                  <SelectTrigger id={`llm-role-provider-${key}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LLM_PROVIDERS.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          {LLM_ROLES.map(({ key, label: roleLabel, hint }) => (
+            <div key={key} className="space-y-2">
+              <div>
+                <p className="text-sm">{roleLabel}</p>
+                <p className="text-xs text-muted-foreground">{hint}</p>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor={`llm-role-model-${key}`}>{roleLabel} model</Label>
-                <Input
-                  id={`llm-role-model-${key}`}
-                  value={llmModels[key].model}
-                  onChange={(e) =>
-                    setLlmModels((m) => ({
-                      ...m,
-                      [key]: { ...m[key], model: e.target.value },
-                    }))
-                  }
-                />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor={`llm-role-provider-${key}`}>{roleLabel} provider</Label>
+                  <Select
+                    value={llmModels[key].provider}
+                    onValueChange={(v) =>
+                      setLlmModels((m) => ({
+                        ...m,
+                        [key]: { ...m[key], provider: v as LlmProvider },
+                      }))
+                    }
+                  >
+                    <SelectTrigger id={`llm-role-provider-${key}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LLM_PROVIDERS.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor={`llm-role-model-${key}`}>{roleLabel} model</Label>
+                  <Input
+                    id={`llm-role-model-${key}`}
+                    value={llmModels[key].model}
+                    onChange={(e) =>
+                      setLlmModels((m) => ({
+                        ...m,
+                        [key]: { ...m[key], model: e.target.value },
+                      }))
+                    }
+                  />
+                </div>
               </div>
             </div>
           ))}
@@ -379,8 +395,8 @@ export function LocalSettings() {
 
         <p className="text-sm text-muted-foreground">{AI_ANALYSIS_LINE}</p>
 
-        <Button onClick={() => saveLlmSettings.mutate()} disabled={saveLlmSettings.isPending}>
-          {saveLlmSettings.isPending ? "Saving…" : "Save AI analysis"}
+        <Button onClick={() => saveAiAnalysis.mutate()} disabled={saveAiAnalysis.isPending}>
+          {saveAiAnalysis.isPending ? "Saving…" : "Save AI analysis"}
         </Button>
       </section>
 

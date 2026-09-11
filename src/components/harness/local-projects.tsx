@@ -96,12 +96,18 @@ function ProjectSettingsPanel({
           placeholder={`use default (${defaultMaxActiveRules})`}
           value={maxActiveRules}
           onChange={(e) => setMaxActiveRules(e.target.value)}
+          disabled={save.isPending}
           className="max-w-[16rem]"
         />
       </div>
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor={`auto-write-${projectId}`}>Write approved changes automatically</Label>
-        <Switch id={`auto-write-${projectId}`} checked={autoWrite} onCheckedChange={setAutoWrite} />
+        <Switch
+          id={`auto-write-${projectId}`}
+          checked={autoWrite}
+          onCheckedChange={setAutoWrite}
+          disabled={save.isPending}
+        />
       </div>
       <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
         {save.isPending ? "Saving…" : "Save"}

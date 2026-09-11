@@ -49,6 +49,10 @@ export type LovableInfo = {
   previews: { project: KnowledgePreview | null; workspace: KnowledgePreview | null };
   versions: KnowledgeVersion[];
   untested: boolean;
+  // The project's "write approved changes automatically" flag (Round 3 §5).
+  // Present for every improvement; the UI only acts on it for
+  // project-destination items -- see lovableOf's fallback below.
+  auto_write: boolean;
 };
 
 export type Improvement = {
@@ -388,6 +392,7 @@ export function lovableOf(item: Improvement): LovableInfo {
       previews: { project: null, workspace: null },
       versions: [],
       untested: false,
+      auto_write: true,
     }
   );
 }

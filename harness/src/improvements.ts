@@ -81,6 +81,11 @@ export type Improvement = {
       restored_from_version_id: number | null;
     }[];
     untested: boolean;
+    // The project's effective "write approved changes automatically" flag
+    // (spec §5) -- workspace-destination items still carry the project's own
+    // flag (a workspace write happens alongside the project's own Knowledge
+    // sync), but the UI only surfaces it for project-destination items.
+    auto_write: boolean;
   };
   developer: {
     correction: unknown;
@@ -423,6 +428,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
         restored_from_version_id: v.restored_from_version_id,
       })),
       untested: status === "accepted" && !proofComplete,
+      auto_write: c.project_id ? store.getProjectSettings(c.project_id).auto_write : true,
     },
     developer: {
       correction: c,

@@ -1,9 +1,11 @@
 // The Instructions page (formerly Knowledge): what Harness currently sees in
 // each Lovable project's/workspace's Knowledge, the rules it added, and the
 // version history of every write, with a "What changed" line diff per
-// version (Round 3 §2). Skills live on their own route/page. Body headings
-// keep Lovable's own term, "Knowledge" -- only the page's name in the nav
-// and URL changed. Only talks to the local Harness routes
+// version (Round 3 §2). Skills live on their own route/page. Section
+// headings below the title keep Lovable's own term, "Knowledge" (e.g. the
+// per-target heading, "Rules Harness added"), since that's what the user
+// sees in Lovable itself; only the page's own title, and its name in the
+// nav and URL, say "Instructions". Only talks to the local Harness routes
 // (fetchKnowledge/postKnowledge/postExecutor) -- writing to Lovable itself
 // happens in the executor process, never from this page.
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -349,7 +351,7 @@ function Page() {
   if (query.isLoading) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Knowledge</h1>
+        <h1 className="text-2xl font-semibold">Instructions</h1>
         <div className="rounded-md border p-6 text-sm text-muted-foreground">Loading…</div>
       </div>
     );
@@ -357,7 +359,7 @@ function Page() {
   if (query.isError) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Knowledge</h1>
+        <h1 className="text-2xl font-semibold">Instructions</h1>
         <div
           role="alert"
           className="rounded-md border border-destructive/50 bg-destructive/5 p-6 text-sm text-destructive"
@@ -370,7 +372,7 @@ function Page() {
   if (query.data && query.data.available === false) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Knowledge</h1>
+        <h1 className="text-2xl font-semibold">Instructions</h1>
         <p className="text-sm text-muted-foreground">
           Knowledge is available when Harness runs on your machine.
         </p>
@@ -385,7 +387,7 @@ function Page() {
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Knowledge</h1>
+        <h1 className="text-2xl font-semibold">Instructions</h1>
         <Button
           variant="outline"
           size="sm"
@@ -413,9 +415,7 @@ function Page() {
               ? "1 synced message is waiting for analysis."
               : `${awaiting} synced messages are waiting for analysis.`}
           </p>
-          <p className="text-xs text-muted-foreground">
-            Analysis uses Harness's own AI and runs when you ask for it.
-          </p>
+          <p className="text-xs text-muted-foreground">Analysis is not switched on yet.</p>
         </div>
       ) : null}
 

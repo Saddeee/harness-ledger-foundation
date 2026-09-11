@@ -676,3 +676,15 @@ test("a restored Knowledge version reads as reverted, never as written (added)",
   );
   assert.match(lovableStatusLine(reverted5.lovable), /^Reverted to an earlier version/);
 });
+
+test("lovable.auto_write reflects the project's setting (Round 3 §5): defaults true, flips with the override", () => {
+  assert.equal(store.getProjectSettings(PROJECT).auto_write, true, "no override yet -- default is on");
+  assert.equal(imp.getImprovement(cc.id)!.lovable.auto_write, true);
+
+  store.setProjectSettings(PROJECT, { auto_write: false });
+  assert.equal(imp.getImprovement(cc.id)!.lovable.auto_write, false);
+
+  // restore, so this project's setting is untouched for any test that runs after this one
+  store.setProjectSettings(PROJECT, { auto_write: true });
+  assert.equal(imp.getImprovement(cc.id)!.lovable.auto_write, true);
+});

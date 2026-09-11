@@ -46,7 +46,7 @@ export type { Improvement, Message };
 // ---- Shared copy (kept in one place so the tests can count it) ----
 
 const NO_SNAPSHOT_BODY =
-  "Harness hasn't read your current Knowledge yet. Your choice is saved; at the next sync Harness reads it, then writes this exact text. You can see the result on the Knowledge page.";
+  "Harness hasn't read your current Knowledge yet. Your choice is saved; at the next sync Harness reads it, then writes this exact text. You can see the result on the Instructions page.";
 const PREVIEW_BODY = "This is the exact text Harness will write to your Lovable Knowledge.";
 const PREVIEW_CONSEQUENCES = ["You can restore the previous version at any time."];
 const OVER_CAP_LINE =
@@ -412,6 +412,9 @@ export function DecisionCard({
     nextSyncAt: executor.data?.next_run_at ?? null,
     connected: executor.data?.connection?.connected,
     testFirst: item.decision.test_first,
+    // A workspace write isn't gated by one project's flag, so this only
+    // ever applies to project-destination items (Round 3 §5).
+    autoWriteOff: item.destination === "project" && item.lovable?.auto_write === false,
   };
   const pending = item.decision.status === "pending";
   const Title = titleAs;

@@ -172,10 +172,10 @@ test("local-settings.tsx: five sections with the exact sentences, schedule and c
   assert.match(code, /onError:/);
   assert.match(code, /toast\.error\(/);
 
-  // save buttons per section: schedule, cap, AI analysis settings, key
-  // save, key remove, and project defaults (Round 3 §4)
+  // save buttons per section: schedule, cap, one combined AI analysis save
+  // (settings + key when typed), key remove, and project defaults (Round 3 §4)
   assert.match(code, /useMutation\(/);
-  assert.equal(count(code, "useMutation("), 6, "schedule, cap, llm settings, llm key, llm key remove, defaults");
+  assert.equal(count(code, "useMutation("), 5, "schedule, cap, ai analysis save, llm key remove, defaults");
 
   // only the local Harness client helpers
   assert.ok(!/\bfetch\(/.test(code), "local-settings.tsx must not call fetch directly");

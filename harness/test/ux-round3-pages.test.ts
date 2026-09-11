@@ -7,6 +7,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+const ux = await import("../../src/lib/harness-ux.ts");
+
 function readApp(rel: string): string {
   return readFileSync(new URL(`../../src/${rel}`, import.meta.url), "utf8");
 }
@@ -370,4 +372,130 @@ test("improvements-client.ts: KnowledgePreview carries active_rules_count and ov
   const preview = client.slice(client.indexOf("export type KnowledgePreview"), client.indexOf("export type KnowledgeVersion"));
   assert.match(preview, /active_rules_count: number;/);
   assert.match(preview, /over_rules: boolean;/);
+});
+
+// ---- Fix round 1 (review of the initial Task 3b delivery) ----
+
+test("instructions.tsx: the page's own title is 'Instructions' in every state, not 'Knowledge'", () => {
+  const raw = readApp(INSTRUCTIONS_PAGE);
+  const code = codeOnly(raw);
+  const h1s = code.match(/<h1[^>]*>([^<]*)<\/h1>/g) ?? [];
+  assert.ok(h1s.length >= 4, `expected at least 4 <h1> states, found ${h1s.length}`);
+  for (const h1 of h1s) assert.match(h1, /<h1[^>]*>Instructions<\/h1>/);
+  assert.ok(!/<h1[^>]*>Knowledge<\/h1>/.test(code), "no <h1> should still read Knowledge");
+});
+
+test("instructions.tsx: the awaiting-analysis note agrees with Settings -- analysis is not switched on yet", () => {
+  const raw = readApp(INSTRUCTIONS_PAGE);
+  assert.ok(raw.includes("Analysis is not switched on yet."));
+  assert.ok(!raw.includes("Analysis uses Harness's own AI and runs when you ask for it."));
+});
+
+test("local-settings.tsx: one AI-analysis save action (settings + key when typed), no separate Save key button", () => {
+  const raw = readApp(LOCAL_SETTINGS);
+  const code = codeOnly(raw);
+
+  assert.ok(!raw.includes("Save key"), "the separate Save key button is gone");
+  assert.ok(raw.includes("Remove key"), "the remove button is now labeled Remove key");
+  assert.ok(raw.includes("Key for"), "the top provider select is labeled Key for");
+  assert.ok(raw.includes("Which provider the key below belongs to."));
+
+  // one combined mutation: key first (only when typed), then settings
+  assert.match(code, /const saveAiAnalysis = useMutation\(/);
+  assert.match(code, /if \(keyInput\.trim\(\)\.length > 0\)/);
+  const saveFn = code.slice(
+    code.indexOf("const saveAiAnalysis = useMutation("),
+    code.indexOf("const removeLlmKey = useMutation("),
+  );
+  assert.match(saveFn, /action: "llm_key"/);
+  assert.match(saveFn, /action: "llm_settings"/);
+  assert.ok(
+    saveFn.indexOf('action: "llm_key"') < saveFn.indexOf('action: "llm_settings"'),
+    "the key posts before the settings",
+  );
+  assert.match(saveFn, /setKeyInput\(""\)/);
+  assert.equal(count(saveFn, "toast.success("), 1, "one toast either way");
+  assert.match(saveFn, /toast\.success\("AI analysis settings saved"\)/);
+
+  // the bottom button still reads "Save AI analysis" and drives this one mutation
+  assert.match(code, /onClick=\{\(\) => saveAiAnalysis\.mutate\(\)\}/);
+  assert.match(code, /"Save AI analysis"/);
+
+  // role hints, one per role, directly under each role's own label
+  for (const [role, hint] of [
+    ["Classifier", "Sorts each chat message: new request, correction, question or approval."],
+    ["Miner", "Turns your corrections into proposed instructions."],
+    ["Reviewer", "Judges a build or a test result."],
+    ["Proposer", "Suggests an instruction when a build fails and none covers it."],
+  ] as const) {
+    assert.ok(raw.includes(hint), `local-settings.tsx missing the ${role} hint`);
+  }
+  assert.match(code, /hint: "Sorts each chat message/);
+  assert.match(code, /hint: "Turns your corrections into proposed instructions\."/);
+  assert.match(code, /hint: "Judges a build or a test result\."/);
+  assert.match(code, /hint: "Suggests an instruction when a build fails and none covers it\."/);
+});
+
+test("local-projects.tsx: the auto-write switch and max-rules input disable while that row's save is pending", () => {
+  const code = codeOnly(readApp(LOCAL_PROJECTS));
+  const panel = code.slice(
+    code.indexOf("function ProjectSettingsPanel"),
+    code.indexOf("function lastSyncLine"),
+  );
+  // the Button already disabled on save.isPending; the Input and Switch now do too
+  assert.equal(
+    count(panel, "disabled={save.isPending}"),
+    3,
+    "Input, Switch and Button should all disable while this row's save is pending",
+  );
+});
+
+test("improvement.tsx: the no-snapshot body now points to the Instructions page, not Knowledge", () => {
+  const raw = readApp(DETAIL);
+  assert.ok(raw.includes("You can see the result on the Instructions page."));
+  assert.ok(!raw.includes("You can see the result on the Knowledge page."));
+});
+
+test("lovableStatusLine: autoWriteOff explains a pending/none write ahead of the sync sentence", () => {
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "none", written_at: null }, { autoWriteOff: true }),
+    "Waiting for you to turn on automatic writes for this project",
+  );
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "pending", written_at: null }, { autoWriteOff: true }),
+    "Waiting for you to turn on automatic writes for this project",
+  );
+  // still overridden by the more specific states
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "written", written_at: "2026-09-10T08:00:00Z" }, { autoWriteOff: true }),
+    "Added to Lovable, 10 Sep",
+  );
+  assert.equal(
+    ux.lovableStatusLine(
+      { write_status: "none", written_at: null },
+      { autoWriteOff: true, testFirst: true },
+    ),
+    "Saved for testing — nothing is written until the test runs",
+  );
+  // unaffected when off
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "none", written_at: null }, { autoWriteOff: false }),
+    "Will be written at the next sync",
+  );
+});
+
+test("improvement.tsx: DecisionCard computes autoWriteOff only for project-destination items with auto_write false", () => {
+  const detail = codeOnly(readApp(DETAIL));
+  assert.match(
+    detail,
+    /autoWriteOff: item\.destination === "project" && item\.lovable\?\.auto_write === false,/,
+  );
+});
+
+test("improvements-client.ts: LovableInfo carries auto_write, defaulting true when lovable is absent", () => {
+  const client = codeOnly(readApp(CLIENT));
+  const info = client.slice(client.indexOf("export type LovableInfo"), client.indexOf("export type Improvement"));
+  assert.match(info, /auto_write: boolean;/);
+  const lovableOf = client.slice(client.indexOf("export function lovableOf"), client.indexOf("export function groupOf"));
+  assert.match(lovableOf, /auto_write: true,/);
 });
