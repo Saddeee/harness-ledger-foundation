@@ -89,8 +89,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
   const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
   const order = [
     "{backLabel}",
-    "<DecisionCard item={item}",
-    "Edit instruction",
+    "<DecisionCard",
     "{whyFor(item.classification)}",
     "What happened",
     'title="Details"',
@@ -104,14 +103,14 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
     assert.ok(at > last, `expected "${marker}" after the previous marker (at ${at}, previous ${last})`);
     last = at;
   }
-  assert.match(body, /<DecisionCard item=\{item\}[^>]*busy=\{busy\}[^>]*run=\{run\}[^>]*titleAs="h1"/);
+  assert.match(body, /<DecisionCard\s+item=\{item\}[^>]*busy=\{busy\}[^>]*run=\{run\}[^>]*titleAs="h1"/);
   const raw = readApp(DETAIL);
   assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="Details"'));
   // proof is hidden until it can run
   assert.ok(!/Run proof|Prove it first|How Harness would prove this|PROVE_INTRO|proveCostLine/.test(body));
 });
 
-test("decision card: three buttons for pending items, Change decision for decided ones, no Skill, no Decide later", () => {
+test("decision card: three buttons for pending items, decision buttons shown inline for decided ones, no Skill, no Decide later", () => {
   const detail = codeOnly(readApp(DETAIL));
   const card = detail.slice(detail.indexOf("export function DecisionCard"), detail.indexOf("export function ImprovementDetail"));
   assert.match(detail, /const ADD_LABELS: Record<Destination, string> = \{\s*project: "Add to this project",\s*workspace: "Add to all my projects",\s*\};/);
@@ -123,7 +122,7 @@ test("decision card: three buttons for pending items, Change decision for decide
   assert.ok(!/>\s*Details\s*<\/button>/.test(card), "no separate Details link; the card opens the item");
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
   const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
-  assert.match(decided, />\s*Change decision\s*<\/summary>/);
+  assert.ok(!/Change decision/.test(decided), "the collapsed wrapper is gone; buttons show directly");
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
   assert.match(decided, /trigger="Try adding again"/);
   assert.match(decided, /trigger="Restore previous version"/);

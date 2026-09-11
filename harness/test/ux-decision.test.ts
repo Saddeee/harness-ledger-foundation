@@ -119,13 +119,15 @@ test("ConfirmAction accepts an optional onOpenChange and forwards it to AlertDia
   assert.match(layout, /<AlertDialog \{\.\.\.\(onOpenChange \? \{ onOpenChange \} : \{\}\)\}>/);
 });
 
-test("Detail: 'Edit instruction' / 'Cancel', no 'Change the wording' left anywhere", () => {
+// Round 3 Task 3a moves editing inside the card (a small "Edit" button on
+// the instruction blockquote); the separate below-card "Edit instruction"
+// link is gone. See harness/test/ux-round3-decision.test.ts for the new
+// in-card editor assertions.
+test("Detail: editing is in-card now, no 'Edit instruction' link, no 'Change the wording' left anywhere", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(detail, /Edit instruction/);
+  assert.ok(!/Edit instruction/.test(detail));
   assert.ok(!/Change the wording/.test(detail));
   assert.ok(!/Cancel wording change/.test(detail));
-  // the toggle button reads "Edit instruction" / "Cancel"
-  assert.match(detail, /\{editing \? "Cancel" : "Edit instruction"\}/);
 });
 
 test("Inbox: decided-this-session cards stay put, 'Hide decided' clears them, count line counts pending only", () => {

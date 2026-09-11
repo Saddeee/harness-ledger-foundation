@@ -69,19 +69,6 @@ function Page() {
   }
 
   const all = query.data?.improvements ?? [];
-  const selected =
-    search.improvement != null ? all.find((i) => i.id === search.improvement) : undefined;
-  if (selected) {
-    return (
-      <ImprovementDetail
-        item={selected}
-        onBack={back}
-        onChanged={refresh}
-        backLabel="← Improvements"
-      />
-    );
-  }
-
   // Pending items live in Inbox, not here.
   const grouped = new Map<ImprovementGroup, Improvement[]>();
   for (const item of all) {
@@ -89,6 +76,26 @@ function Page() {
     if (!g) continue;
     grouped.set(g, [...(grouped.get(g) ?? []), item]);
   }
+  // Previous/Next browse the grouped order -- the list the user came from.
+  const order = IMPROVEMENT_GROUPS.flatMap((g) => grouped.get(g) ?? []).map((i) => i.id);
+
+  const selected =
+    search.improvement != null ? all.find((i) => i.id === search.improvement) : undefined;
+  if (selected) {
+    const idx = order.indexOf(selected.id);
+    return (
+      <ImprovementDetail
+        item={selected}
+        onBack={back}
+        onChanged={refresh}
+        backLabel="← Improvements"
+        position={idx >= 0 ? { index: idx + 1, total: order.length } : undefined}
+        onPrev={idx > 0 ? () => open(order[idx - 1]!) : undefined}
+        onNext={idx >= 0 && idx < order.length - 1 ? () => open(order[idx + 1]!) : undefined}
+      />
+    );
+  }
+
   const listed = [...grouped.values()].reduce((n, arr) => n + arr.length, 0);
   const showFilters = listed > 5;
   const groups = IMPROVEMENT_GROUPS.filter(

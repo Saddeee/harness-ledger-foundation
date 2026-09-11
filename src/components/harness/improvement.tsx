@@ -3,7 +3,7 @@
 // buttons are the decision. Simple by default, complete on demand. Only
 // fetches the local Harness routes; never talks to Lovable itself -- adding
 // to Lovable is recorded here and executed by Harness afterwards.
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -113,7 +113,7 @@ function AddConfirm({
   // A radiogroup is one tab stop: arrows move between the options and only
   // the selected one (or the first, before anything is chosen) is tabbable.
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const onOptionKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+  const onOptionKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
     const step =
       e.key === "ArrowDown" || e.key === "ArrowRight"
         ? 1
@@ -284,88 +284,99 @@ function DecidedStatus({
           or skip it.
         </p>
       ) : null}
-      <details>
-        <summary className="cursor-pointer text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          Change decision
-        </summary>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {accepted &&
-          item.decision.test_first &&
-          lovable.write_status === "none" &&
-          (item.destination === "project" || item.destination === "workspace") ? (
-            <AddConfirm
-              item={item}
-              destination={item.destination}
-              busy={busy}
-              run={run}
-              trigger="Add it now instead"
-            />
-          ) : null}
-          {accepted && !written ? (
-            <>
-              {(["project", "workspace"] as Destination[])
-                .filter((d) => d !== item.destination)
-                .map((d) => (
-                  <AddConfirm
-                    key={d}
-                    item={item}
-                    destination={d}
-                    busy={busy}
-                    run={run}
-                    variant="outline"
-                    trigger={`${ADD_LABELS[d]} instead`}
-                  />
-                ))}
-              <SkipConfirm item={item} busy={busy} run={run} />
-            </>
-          ) : null}
-          {accepted &&
-          lovable.write_status === "failed" &&
-          (item.destination === "project" || item.destination === "workspace") ? (
-            <AddConfirm
-              item={item}
-              destination={item.destination}
-              busy={busy}
-              run={run}
-              trigger="Try adding again"
-            />
-          ) : null}
-          {accepted && written && latestWritten ? (
-            <ConfirmAction
-              trigger="Restore previous version"
-              variant="outline"
-              title={RESTORE_TITLE}
-              body={RESTORE_BODY}
-              consequences={[]}
-              confirmLabel="Restore"
-              disabled={busy}
-              onConfirm={() =>
-                void run(
-                  { action: "restore", id: item.id, version_id: latestWritten.id },
-                  "Restore requested — Harness will write the earlier text back",
-                )
-              }
-            />
-          ) : null}
-          {skipped ? (
-            <Button
-              variant="outline"
-              className="w-full sm:w-auto"
-              disabled={busy}
-              onClick={() =>
-                void run({ action: "reopen", id: item.id }, "Reopened — waiting for your decision")
-              }
-            >
-              Reopen
-            </Button>
-          ) : null}
-        </div>
-      </details>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        {accepted &&
+        item.decision.test_first &&
+        lovable.write_status === "none" &&
+        (item.destination === "project" || item.destination === "workspace") ? (
+          <AddConfirm
+            item={item}
+            destination={item.destination}
+            busy={busy}
+            run={run}
+            variant="outline"
+            trigger="Add it now instead"
+          />
+        ) : null}
+        {accepted && !written ? (
+          <>
+            {(["project", "workspace"] as Destination[])
+              .filter((d) => d !== item.destination)
+              .map((d) => (
+                <AddConfirm
+                  key={d}
+                  item={item}
+                  destination={d}
+                  busy={busy}
+                  run={run}
+                  variant="outline"
+                  trigger={`${ADD_LABELS[d]} instead`}
+                />
+              ))}
+            <SkipConfirm item={item} busy={busy} run={run} />
+          </>
+        ) : null}
+        {accepted &&
+        lovable.write_status === "failed" &&
+        (item.destination === "project" || item.destination === "workspace") ? (
+          <AddConfirm
+            item={item}
+            destination={item.destination}
+            busy={busy}
+            run={run}
+            variant="outline"
+            trigger="Try adding again"
+          />
+        ) : null}
+        {accepted && written && latestWritten ? (
+          <ConfirmAction
+            trigger="Restore previous version"
+            variant="outline"
+            title={RESTORE_TITLE}
+            body={RESTORE_BODY}
+            consequences={[]}
+            confirmLabel="Restore"
+            disabled={busy}
+            onConfirm={() =>
+              void run(
+                { action: "restore", id: item.id, version_id: latestWritten.id },
+                "Restore requested — Harness will write the earlier text back",
+              )
+            }
+          />
+        ) : null}
+        {skipped ? (
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto"
+            disabled={busy}
+            onClick={() =>
+              void run({ action: "reopen", id: item.id }, "Reopened — waiting for your decision")
+            }
+          >
+            Reopen
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 // ---- The card: the decision itself (Inbox, Improvements, detail) ----
+
+// The detail view owns the editing state; DecisionCard only renders it. When
+// omitted (lists), the blockquote shows no Edit button at all.
+type EditableState = {
+  editing: boolean;
+  draft: string;
+  reason: string;
+  busy: boolean;
+  onStart: () => void;
+  onChangeDraft: (v: string) => void;
+  onChangeReason: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+};
 
 export function DecisionCard({
   item,
@@ -374,6 +385,7 @@ export function DecisionCard({
   titleAs = "h2",
   busy: busyProp,
   run: runProp,
+  editable,
 }: {
   item: Improvement;
   onChanged: () => void;
@@ -381,6 +393,7 @@ export function DecisionCard({
   titleAs?: "h1" | "h2";
   busy?: boolean;
   run?: Run;
+  editable?: EditableState;
 }) {
   const own = useRun(onChanged);
   const busy = busyProp ?? own.busy;
@@ -436,9 +449,57 @@ export function DecisionCard({
             )}
           </Title>
           {item.proposed_instruction ? (
-            <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-              {item.proposed_instruction}
-            </blockquote>
+            editable && editable.editing ? (
+              <div className="space-y-2 rounded-md border p-3">
+                <label htmlFor={`wording-${item.id}`} className="text-xs font-medium">
+                  Instruction
+                </label>
+                <Textarea
+                  id={`wording-${item.id}`}
+                  value={editable.draft}
+                  onChange={(e) => editable.onChangeDraft(e.target.value)}
+                  rows={3}
+                />
+                <label htmlFor={`wording-reason-${item.id}`} className="text-xs font-medium">
+                  Why you changed it (optional)
+                </label>
+                <input
+                  id={`wording-reason-${item.id}`}
+                  className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                  value={editable.reason}
+                  onChange={(e) => editable.onChangeReason(e.target.value)}
+                />
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    size="sm"
+                    disabled={editable.busy || editable.draft.trim().length === 0}
+                    onClick={editable.onSave}
+                  >
+                    Save wording
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={editable.onCancel}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="relative">
+                <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+                  {item.proposed_instruction}
+                </blockquote>
+                {editable ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1"
+                    onClick={editable.onStart}
+                  >
+                    Edit
+                  </Button>
+                ) : null}
+              </div>
+            )
           ) : (
             <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
           )}
@@ -498,11 +559,17 @@ export function ImprovementDetail({
   onBack,
   onChanged,
   backLabel = "← Back",
+  position,
+  onPrev,
+  onNext,
 }: {
   item: Improvement;
   onBack: () => void;
   onChanged: () => void;
   backLabel?: string;
+  position?: { index: number; total: number } | undefined;
+  onPrev?: (() => void) | undefined;
+  onNext?: (() => void) | undefined;
 }) {
   const { busy, run } = useRun(onChanged);
   const [editing, setEditing] = useState(false);
@@ -513,9 +580,42 @@ export function ImprovementDetail({
   const accepted = item.decision.status === "accepted";
   const skipped = item.decision.status === "skipped";
 
+  // Arrows move between improvements unless focus is in a text field or a
+  // confirmation dialog is open.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) {
+        return;
+      }
+      if (document.querySelector('[role="alertdialog"]')) return;
+      if (e.key === "ArrowLeft") onPrev?.();
+      else if (e.key === "ArrowRight") onNext?.();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onPrev, onNext]);
+
+  const editable = {
+    editing,
+    draft,
+    reason,
+    busy,
+    onStart: () => setEditing(true),
+    onChangeDraft: setDraft,
+    onChangeReason: setReason,
+    onSave: () =>
+      void run(
+        { action: "change_wording", id: item.id, instruction: draft, reason },
+        "Wording updated",
+      ).then((ok) => ok && setEditing(false)),
+    onCancel: () => setEditing(false),
+  };
+
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
           className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -523,9 +623,34 @@ export function ImprovementDetail({
         >
           {backLabel}
         </button>
+        {position ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {position.index} of {position.total}
+            </span>
+            <Button variant="outline" size="sm" onClick={onPrev} disabled={position.index <= 1}>
+              ← Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onNext}
+              disabled={position.index >= position.total}
+            >
+              Next →
+            </Button>
+          </div>
+        ) : null}
       </div>
 
-      <DecisionCard item={item} onChanged={onChanged} busy={busy} run={run} titleAs="h1" />
+      <DecisionCard
+        item={item}
+        onChanged={onChanged}
+        busy={busy}
+        run={run}
+        titleAs="h1"
+        editable={editable}
+      />
 
       {item.decision.divergence ? (
         <p role="status" className="rounded-md border p-3 text-sm">
@@ -534,55 +659,6 @@ export function ImprovementDetail({
       ) : null}
 
       <div className="space-y-2">
-        {item.proposed_instruction ? (
-          <button
-            type="button"
-            className="text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-expanded={editing}
-            onClick={() => setEditing((v) => !v)}
-          >
-            {editing ? "Cancel" : "Edit instruction"}
-          </button>
-        ) : null}
-        {editing ? (
-          <div className="space-y-2 rounded-md border p-3">
-            <label htmlFor={`wording-${item.id}`} className="text-xs font-medium">
-              Instruction
-            </label>
-            <Textarea
-              id={`wording-${item.id}`}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={3}
-            />
-            <label htmlFor={`wording-reason-${item.id}`} className="text-xs font-medium">
-              Why you changed it (optional)
-            </label>
-            <input
-              id={`wording-reason-${item.id}`}
-              className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                size="sm"
-                disabled={busy || draft.trim().length === 0}
-                onClick={() =>
-                  void run(
-                    { action: "change_wording", id: item.id, instruction: draft, reason },
-                    "Wording updated",
-                  ).then((ok) => ok && setEditing(false))
-                }
-              >
-                Save wording
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        ) : null}
         <p className="text-sm text-muted-foreground">{whyFor(item.classification)}</p>
       </div>
 

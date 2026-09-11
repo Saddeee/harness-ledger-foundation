@@ -27,7 +27,7 @@ function Page() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const search = Route.useSearch();
-  // Items decided this visit stay visible (chip + status + "Change decision")
+  // Items decided this visit stay visible (chip, status, decision buttons)
   // instead of vanishing from the list; cleared by "Hide decided" or by
   // leaving the page.
   const [decidedIds, setDecidedIds] = useState<Set<number>>(new Set());
@@ -74,23 +74,29 @@ function Page() {
   }
 
   const all = query.data?.improvements ?? [];
+  // Still needs a decision, plus anything decided this visit (so the card
+  // stays in place instead of vanishing) -- in their original order.
+  const pending = all.filter((i) => i.decision.status === "pending");
+  const list = all.filter((i) => i.decision.status === "pending" || decidedIds.has(i.id));
+  // Previous/Next browse the pending order -- the list the user came from.
+  const order = pending.map((i) => i.id);
+
   const selected =
     search.improvement != null ? all.find((i) => i.id === search.improvement) : undefined;
   if (selected) {
+    const idx = order.indexOf(selected.id);
     return (
       <ImprovementDetail
         item={selected}
         onBack={back}
         onChanged={() => markDecided(selected.id)}
         backLabel="← Inbox"
+        position={idx >= 0 ? { index: idx + 1, total: order.length } : undefined}
+        onPrev={idx > 0 ? () => open(order[idx - 1]!) : undefined}
+        onNext={idx >= 0 && idx < order.length - 1 ? () => open(order[idx + 1]!) : undefined}
       />
     );
   }
-
-  // Still needs a decision, plus anything decided this visit (so the card
-  // stays in place instead of vanishing) -- in their original order.
-  const pending = all.filter((i) => i.decision.status === "pending");
-  const list = all.filter((i) => i.decision.status === "pending" || decidedIds.has(i.id));
 
   return (
     <div className="space-y-4">
