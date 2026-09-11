@@ -321,13 +321,27 @@ test("Settings: hosted usage cards live under Advanced, gated to the hosted runt
   assert.ok(!/queryKey: \["overview"\]/.test(settings));
 });
 
-test("nav: Inbox, Improvements, Projects, Settings in every runtime; How Harness works links to the landing page", () => {
+test("nav: Inbox, Improvements, Knowledge, Projects, Settings in every runtime; How Harness works links to the landing page", () => {
   const shell = codeOnly(readApp(SHELL));
   assert.match(shell, /\{ to: "\/inbox", label: "Inbox" \}/);
   assert.match(shell, /\{ to: "\/ledger", label: "Improvements" \}/);
+  assert.match(shell, /\{ to: "\/knowledge", label: "Knowledge" \}/);
   assert.match(shell, /\{ to: "\/projects", label: "Projects" \}/);
   assert.match(shell, /\{ to: "\/settings", label: "Settings" \}/);
-  assert.equal(count(shell, 'label: "'), 4, "exactly four nav items");
+  assert.equal(count(shell, 'label: "'), 5, "exactly five nav items");
+  const navOrder = [
+    'label: "Inbox"',
+    'label: "Improvements"',
+    'label: "Knowledge"',
+    'label: "Projects"',
+    'label: "Settings"',
+  ];
+  let lastAt = -1;
+  for (const marker of navOrder) {
+    const at = shell.indexOf(marker);
+    assert.ok(at > lastAt, `expected ${marker} after the previous nav item`);
+    lastAt = at;
+  }
   assert.ok(!/LOCAL_NAV|runtimeQueryOptions|mode === "local"/.test(shell), "nav never depends on the runtime");
   assert.ok(!/label: "Ledger"|label: "Overview"/.test(shell));
   assert.match(shell, /<Link to="\/"[^>]*>\s*How Harness works\s*<\/Link>/);
@@ -481,4 +495,68 @@ test("improvements-client.ts fetches exactly the five local harness routes", () 
       "/api/public/harness/runtime",
     ],
   );
+});
+
+// ---- Task 6: Knowledge page and navigation ----
+
+const KNOWLEDGE_PAGE = "routes/_authenticated/knowledge.tsx";
+const VERSIONS_PAGE = "routes/_authenticated/versions.tsx";
+
+test("Knowledge page: current text, rules, history and restore render the required copy and use only the knowledge/executor client helpers", () => {
+  const page = readApp(KNOWLEDGE_PAGE);
+  const code = codeOnly(page);
+
+  for (const text of [
+    "Rules Harness added",
+    "Show all",
+    "Restore this version?",
+    "Your workspace has no Skills yet",
+    "does not write Skills yet",
+    "waiting for analysis",
+  ]) {
+    assert.ok(page.includes(text), `Knowledge page missing "${text}"`);
+  }
+
+  assert.match(code, /<ConfirmAction/);
+  for (const tag of code.match(/<details[^>]*>/g) ?? []) {
+    assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
+  }
+
+  assert.match(code, /fetchKnowledge/);
+  assert.match(code, /postKnowledge\(/);
+  assert.match(code, /postExecutor\(/);
+  assert.ok(!/\bfetch\(/.test(code), "the Knowledge page must not call fetch directly");
+  assert.ok(
+    !/fetchImprovements|postImprovementAction|fetchProjects\(|postProjects\(|fetchExecutor\(/.test(
+      code,
+    ),
+    "the Knowledge page only uses fetchKnowledge/postKnowledge/postExecutor",
+  );
+
+  // version-history copy never implies more happened than the record shows
+  assert.match(code, /Written to Lovable/);
+  assert.match(code, /"Staged — will be written at the next sync"/);
+  assert.match(
+    code,
+    /"Needs attention — Knowledge changed in Lovable before this could be written"/,
+  );
+  assert.match(code, /"Adding failed"/);
+  assert.match(code, /"Cancelled — you changed your decision"/);
+  assert.match(code, /restored from #/);
+
+  // pending banner and its Sync now action
+  assert.match(code, /One change is staged\. It will be written at the next sync/);
+  assert.match(code, /action: "sync_now" \}/);
+  assert.match(code, /action: "restore", version_id: versionId \}/);
+
+  // no internal vocabulary leaks onto this page
+  for (const word of ["checkpoint", "message_id", "provenance", "confidence", "classifier"]) {
+    assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into the Knowledge page`);
+  }
+});
+
+test("Versions redirects to Knowledge, same shape as the Overview redirect", () => {
+  const versions = codeOnly(readApp(VERSIONS_PAGE));
+  assert.match(versions, /throw redirect\(\{ to: "\/knowledge", replace: true \}\)/);
+  assert.ok(!/component:/.test(versions), "no component; it is a pure redirect");
 });

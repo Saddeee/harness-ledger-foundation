@@ -16,6 +16,7 @@ import { Route as LovableClientDotjsonRouteImport } from './routes/lovable-clien
 import { Route as AuthenticatedDemoRouteImport } from './routes/_authenticated/demo'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedJobsRouteImport } from './routes/_authenticated/jobs'
+import { Route as AuthenticatedKnowledgeRouteImport } from './routes/_authenticated/knowledge'
 import { Route as AuthenticatedLedgerRouteImport } from './routes/_authenticated/ledger'
 import { Route as AuthenticatedOverviewRouteImport } from './routes/_authenticated/overview'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
@@ -69,6 +70,11 @@ const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
 const AuthenticatedJobsRoute = AuthenticatedJobsRouteImport.update({
   id: '/jobs',
   path: '/jobs',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedKnowledgeRoute = AuthenticatedKnowledgeRouteImport.update({
+  id: '/knowledge',
+  path: '/knowledge',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedLedgerRoute = AuthenticatedLedgerRouteImport.update({
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/demo': typeof AuthenticatedDemoRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/jobs': typeof AuthenticatedJobsRoute
+  '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/ledger': typeof AuthenticatedLedgerRoute
   '/overview': typeof AuthenticatedOverviewRoute
   '/projects': typeof AuthenticatedProjectsRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/demo': typeof AuthenticatedDemoRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/jobs': typeof AuthenticatedJobsRoute
+  '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/ledger': typeof AuthenticatedLedgerRoute
   '/overview': typeof AuthenticatedOverviewRoute
   '/projects': typeof AuthenticatedProjectsRoute
@@ -248,6 +256,7 @@ export interface FileRoutesById {
   '/_authenticated/demo': typeof AuthenticatedDemoRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
   '/_authenticated/jobs': typeof AuthenticatedJobsRoute
+  '/_authenticated/knowledge': typeof AuthenticatedKnowledgeRoute
   '/_authenticated/ledger': typeof AuthenticatedLedgerRoute
   '/_authenticated/overview': typeof AuthenticatedOverviewRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
@@ -278,6 +287,7 @@ export interface FileRouteTypes {
     | '/demo'
     | '/inbox'
     | '/jobs'
+    | '/knowledge'
     | '/ledger'
     | '/overview'
     | '/projects'
@@ -306,6 +316,7 @@ export interface FileRouteTypes {
     | '/demo'
     | '/inbox'
     | '/jobs'
+    | '/knowledge'
     | '/ledger'
     | '/overview'
     | '/projects'
@@ -335,6 +346,7 @@ export interface FileRouteTypes {
     | '/_authenticated/demo'
     | '/_authenticated/inbox'
     | '/_authenticated/jobs'
+    | '/_authenticated/knowledge'
     | '/_authenticated/ledger'
     | '/_authenticated/overview'
     | '/_authenticated/projects'
@@ -427,6 +439,13 @@ declare module '@tanstack/react-router' {
       path: '/jobs'
       fullPath: '/jobs'
       preLoaderRoute: typeof AuthenticatedJobsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/knowledge': {
+      id: '/_authenticated/knowledge'
+      path: '/knowledge'
+      fullPath: '/knowledge'
+      preLoaderRoute: typeof AuthenticatedKnowledgeRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/ledger': {
@@ -576,6 +595,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDemoRoute: typeof AuthenticatedDemoRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
   AuthenticatedJobsRoute: typeof AuthenticatedJobsRoute
+  AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
   AuthenticatedLedgerRoute: typeof AuthenticatedLedgerRoute
   AuthenticatedOverviewRoute: typeof AuthenticatedOverviewRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
@@ -588,6 +608,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDemoRoute: AuthenticatedDemoRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
   AuthenticatedJobsRoute: AuthenticatedJobsRoute,
+  AuthenticatedKnowledgeRoute: AuthenticatedKnowledgeRoute,
   AuthenticatedLedgerRoute: AuthenticatedLedgerRoute,
   AuthenticatedOverviewRoute: AuthenticatedOverviewRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,

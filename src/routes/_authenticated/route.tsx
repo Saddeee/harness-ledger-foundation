@@ -14,12 +14,13 @@ export const Route = createFileRoute("/_authenticated")({
   component: AuthedLayout,
 });
 
-// The same four pages in every runtime. Scoreboard, Versions, Demo and Jobs
+// The same five pages in every runtime. Scoreboard, Versions, Demo and Jobs
 // stay routable (Jobs is linked from Settings › Advanced) but are not in the
 // sidebar until they have content.
 const NAV = [
   { to: "/inbox", label: "Inbox" },
   { to: "/ledger", label: "Improvements" },
+  { to: "/knowledge", label: "Knowledge" },
   { to: "/projects", label: "Projects" },
   { to: "/settings", label: "Settings" },
 ] as const;
