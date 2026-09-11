@@ -26,6 +26,8 @@ import {
   type LlmModels,
   type LlmProvider,
   type LlmRole,
+  isNotifyEnabled,
+  setNotifyEnabled,
 } from "@/lib/improvements-client";
 
 const DEFAULT_SCHEDULE: ExecutorSchedule = {
@@ -99,6 +101,8 @@ export function LocalSettings() {
   const [budget, setBudget] = useState(DEFAULT_BUDGET_USD);
   const [keyInput, setKeyInput] = useState("");
   const [maxActiveRules, setMaxActiveRules] = useState(DEFAULT_MAX_ACTIVE_RULES);
+  const [notifyEnabled, setNotifyEnabled] = useState(isNotifyEnabled());
+  const [notifyBlocked, setNotifyBlocked] = useState(false);
 
   useEffect(() => {
     if (executor.data?.schedule) setSchedule(executor.data.schedule);
@@ -219,6 +223,34 @@ export function LocalSettings() {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save the defaults"),
   });
+
+  async function handleNotifyToggle(enabled: boolean) {
+    if (!enabled) {
+      setNotifyEnabled(false);
+      setNotifyBlocked(false);
+      return;
+    }
+
+    if (typeof Notification === "undefined") {
+      setNotifyBlocked(true);
+      setNotifyEnabled(false);
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        setNotifyEnabled(true);
+        setNotifyBlocked(false);
+      } else {
+        setNotifyEnabled(false);
+        setNotifyBlocked(true);
+      }
+    } catch {
+      setNotifyEnabled(false);
+      setNotifyBlocked(true);
+    }
+  }
 
   return (
     <div className="max-w-xl space-y-8">
@@ -446,6 +478,31 @@ export function LocalSettings() {
         <Button onClick={() => saveDefaults.mutate()} disabled={saveDefaults.isPending}>
           {saveDefaults.isPending ? "Saving…" : "Save defaults"}
         </Button>
+      </section>
+
+      <section className="space-y-4 rounded-md border p-4">
+        <h2 className="text-lg font-medium">Notifications</h2>
+
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <Label htmlFor="notify-enabled">
+              Notify me in this browser when a new proposal arrives
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Only while Harness is open in a tab. Uses your browser's notification permission.
+            </p>
+          </div>
+          <Switch
+            id="notify-enabled"
+            checked={notifyEnabled && !notifyBlocked}
+            disabled={notifyBlocked}
+            onCheckedChange={(checked) => void handleNotifyToggle(checked)}
+          />
+        </div>
+
+        {notifyBlocked && (
+          <p className="text-xs text-muted-foreground">Your browser blocked notifications.</p>
+        )}
       </section>
 
       <section className="space-y-2 rounded-md border p-4">

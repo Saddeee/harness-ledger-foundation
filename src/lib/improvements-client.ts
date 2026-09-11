@@ -404,3 +404,32 @@ export function groupOf(item: Improvement): ImprovementGroup | null {
     testFirst: item.decision.test_first,
   });
 }
+
+// ---- Browser notifications (Task D2) ----
+
+export const NOTIFY_KEY = "harness.notifyInBrowser";
+
+export function isNotifyEnabled(): boolean {
+  try {
+    const value = localStorage.getItem(NOTIFY_KEY);
+    return value === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function setNotifyEnabled(on: boolean): void {
+  try {
+    if (on) {
+      localStorage.setItem(NOTIFY_KEY, "true");
+    } else {
+      localStorage.removeItem(NOTIFY_KEY);
+    }
+  } catch {
+    // Silently fail if localStorage is unavailable (private browsing, etc.)
+  }
+}
+
+export function pendingCount(items: Improvement[]): number {
+  return items.filter((item) => item.decision.status === "pending").length;
+}
