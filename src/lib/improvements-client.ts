@@ -235,6 +235,7 @@ export type ExecutorResponse = {
   reason?: string;
   connection?: ExecutorConnection;
   schedule?: ExecutorSchedule;
+  settings?: { knowledge_char_cap: number };
   last_run?: ExecutorLastRun;
   next_run_at?: string | null;
   running?: boolean;

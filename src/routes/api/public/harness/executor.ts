@@ -129,6 +129,7 @@ async function handleGet({ request }: { request: Request }) {
       available: true,
       connection,
       schedule,
+      settings: { knowledge_char_cap: Number(settings.knowledge_char_cap) },
       last_run,
       next_run_at,
       running: adapter.runningSyncRun() != null,

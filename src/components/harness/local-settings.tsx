@@ -22,9 +22,8 @@ const DEFAULT_SCHEDULE: ExecutorSchedule = {
   window_start_hour: 10,
   window_end_hour: 22,
 };
-// The store's own default (harness/src/store.ts SETTING_DEFAULTS); GET
-// executor doesn't echo the current cap back today, so the input starts
-// here and reflects whatever this session has saved.
+// The store's own default (harness/src/store.ts SETTING_DEFAULTS), used only
+// until GET executor answers with the cap actually in force.
 const DEFAULT_CAP = 9000;
 
 const SCHEDULE_LINE =
@@ -42,6 +41,11 @@ export function LocalSettings() {
   useEffect(() => {
     if (executor.data?.schedule) setSchedule(executor.data.schedule);
   }, [executor.data?.schedule]);
+
+  useEffect(() => {
+    const saved = executor.data?.settings?.knowledge_char_cap;
+    if (saved != null) setCap(saved);
+  }, [executor.data?.settings?.knowledge_char_cap]);
 
   const saveSchedule = useMutation({
     mutationFn: () =>
@@ -61,7 +65,10 @@ export function LocalSettings() {
 
   const saveCap = useMutation({
     mutationFn: () => postExecutor({ action: "settings", knowledge_char_cap: cap }),
-    onSuccess: () => toast.success("Knowledge limit saved"),
+    onSuccess: () => {
+      toast.success("Knowledge limit saved");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save the limit"),
   });
 
