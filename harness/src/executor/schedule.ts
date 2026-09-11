@@ -36,25 +36,41 @@ export function scheduleFromSettings(s: Record<string, string>): ScheduleSetting
   };
 }
 
+// `setSettings` already rejects start >= end, so an overnight window cannot be
+// reached through the API; the guard below turns a hand-edited settings row
+// into a loud error rather than a scheduler that silently never runs.
+function assertWindow(s: ScheduleSettings): void {
+  if (s.windowStartHour >= s.windowEndHour) {
+    throw new Error(
+      `sync window ${s.windowStartHour}-${s.windowEndHour} is empty or overnight; start must be before end`,
+    );
+  }
+}
+
 export function shouldRunAt(
   now: Date,
   lastRunStartedAt: Date | null,
   s: ScheduleSettings,
 ): boolean {
   if (!s.enabled) return false;
+  assertWindow(s);
   const hour = now.getHours();
   if (hour < s.windowStartHour || hour >= s.windowEndHour) return false;
   if (!lastRunStartedAt) return true;
   return now.getTime() - lastRunStartedAt.getTime() >= s.intervalMinutes * 60_000;
 }
 
-/** The earliest instant at or after `now` that `shouldRunAt` accepts. */
+/**
+ * The earliest instant at or after `now` that `shouldRunAt` accepts. `null`
+ * means one thing only — syncing is switched off — so `--status` can say so.
+ */
 export function nextRunAt(
   now: Date,
   lastRunStartedAt: Date | null,
   s: ScheduleSettings,
 ): Date | null {
   if (!s.enabled) return null;
+  assertWindow(s);
   const cursor = new Date(now.getTime());
   cursor.setSeconds(0, 0);
   for (let i = 0; i <= NEXT_RUN_SEARCH_MINUTES; i += 1) {
@@ -150,6 +166,11 @@ export async function runOnce(): Promise<{ ok: boolean; ran: boolean; error?: st
   if (!status().connected) {
     console.log("Not connected — run `npm run harness:executor -- --connect`");
     return { ok: false, ran: false, error: "not connected" };
+  }
+  const running = store.runningSyncRun();
+  if (running) {
+    console.log(`A sync is already running (run ${running.id}, started ${running.started_at}).`);
+    return { ok: true, ran: false, error: "already running" };
   }
   const client = await openLovableClient();
   try {

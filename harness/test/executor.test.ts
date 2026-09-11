@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -146,6 +146,35 @@ test("syncHistory redacts secrets in message content and backfills the project w
   assert.equal(store.getProjectMeta(PROJECT)?.workspace_id, WORKSPACE);
 });
 
+test("syncHistory parks a cursor when the page budget runs out and resumes it next pass", async () => {
+  const BIG = "exec-big-project";
+  store.allowProject(BIG, "Paging test project");
+  const fake = new FakeLovable();
+  fake.pages[BIG] = [
+    { messages: [msg("p9", "user", "nine")], next_cursor: "1", has_more: true },
+    { messages: [msg("p8", "user", "eight")], next_cursor: "2", has_more: true },
+    { messages: [msg("p7", "user", "seven")], next_cursor: null, has_more: false },
+  ];
+
+  const first = await beats.syncHistory(fake, { maxPages: 2 });
+  assert.equal(first.truncated, 1);
+  assert.equal(store.getSyncCursor(BIG), "2", "the unread cursor is parked, not dropped");
+  const afterFirst = db
+    .prepare(`SELECT external_id FROM history_items WHERE project_id = ? ORDER BY id`)
+    .all(BIG) as { external_id: string }[];
+  assert.deepEqual(afterFirst.map((r) => r.external_id), ["p9", "p8"]);
+
+  const second = await beats.syncHistory(fake, { maxPages: 2 });
+  assert.equal(second.truncated, 0);
+  assert.equal(store.getSyncCursor(BIG), null, "the cursor is cleared once history is read out");
+  const afterSecond = db
+    .prepare(`SELECT external_id FROM history_items WHERE project_id = ? ORDER BY id`)
+    .all(BIG) as { external_id: string }[];
+  assert.deepEqual(afterSecond.map((r) => r.external_id), ["p9", "p8", "p7"]);
+
+  store.disallowProject(BIG);
+});
+
 // ------------------------------------------------------------- knowledge
 
 test("snapshotKnowledge records once per distinct content", async () => {
@@ -261,6 +290,31 @@ test("nextRunAt walks forward to the next in-window minute, and is null when dis
   assert.equal(next.getMinutes(), 0);
   // Already runnable: the answer is now.
   assert.equal(schedule.nextRunAt(at(11), at(10), DEFAULTS)!.getTime(), at(11).getTime());
+});
+
+test("nextRunAt rejects an overnight window rather than returning null", () => {
+  const now = new Date(2026, 8, 11, 11, 0, 0, 0);
+  assert.throws(
+    () => schedule.nextRunAt(now, null, { ...DEFAULTS, windowStartHour: 22, windowEndHour: 10 }),
+    /start must be before end/,
+  );
+});
+
+test("runOnce refuses to start while another run is in flight", async () => {
+  // A token file only so status().connected is true: the single-run guard must
+  // be what stops this, and no Lovable client is ever opened.
+  writeFileSync(
+    process.env.HARNESS_AUTH_PATH!,
+    JSON.stringify({ tokens: { access_token: "not-a-real-token", token_type: "bearer" } }),
+  );
+  const inFlight = store.startSyncRun("scheduled");
+  try {
+    const result = await schedule.runOnce();
+    assert.deepEqual(result, { ok: true, ran: false, error: "already running" });
+  } finally {
+    store.finishSyncRun(inFlight, { ok: true });
+    rmSync(process.env.HARNESS_AUTH_PATH!, { force: true });
+  }
 });
 
 // ----------------------------------------------------------------- runAll

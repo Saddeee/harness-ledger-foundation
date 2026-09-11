@@ -16,7 +16,11 @@ const FETCHED_BY = "executor";
 /** Enough recent ids that a page of history cannot step over the known window. */
 const KNOWN_ID_WINDOW = 200;
 const DEFAULT_PAGE_LIMIT = 50;
-/** A project's history is finite, but a broken cursor must not loop forever. */
+/**
+ * Page budget for one project in one pass. A project with more history than
+ * this is not truncated: the pass parks its `next_cursor` in `sync_cursors`
+ * and the following pass resumes older history from there.
+ */
 const MAX_PAGES_PER_PROJECT = 40;
 
 function allowedProjectIds(): string[] {
@@ -51,12 +55,14 @@ export async function resolveWorkspaceId(lovable: LovableReader): Promise<string
  */
 export async function syncHistory(
   lovable: LovableReader,
-  opts: { pageLimit?: number } = {},
-): Promise<{ messages: number; projects: number }> {
+  opts: { pageLimit?: number; maxPages?: number } = {},
+): Promise<{ messages: number; projects: number; truncated: number }> {
   const pageLimit = opts.pageLimit ?? DEFAULT_PAGE_LIMIT;
+  const maxPages = opts.maxPages ?? MAX_PAGES_PER_PROJECT;
   const projects = allowedProjectIds();
   const workspaceId = await resolveWorkspaceId(lovable);
   let messages = 0;
+  let truncated = 0;
 
   for (const projectId of projects) {
     if (workspaceId && !store.getProjectMeta(projectId)?.workspace_id) {
@@ -64,40 +70,78 @@ export async function syncHistory(
     }
 
     const known = store.latestHistoryExternalIds(projectId, KNOWN_ID_WINDOW);
-    let cursor: string | undefined;
 
-    for (let page = 0; page < MAX_PAGES_PER_PROJECT; page += 1) {
-      const result = await lovable.listMessages(projectId, cursor, pageLimit);
-      let reachedKnown = false;
+    /**
+     * Pages from `startCursor` until the caller's stop condition, the end of
+     * history, or the page budget. Returns the cursor to resume from when the
+     * budget ran out, `null` when history was read to the end.
+     */
+    const page = async (
+      startCursor: string | undefined,
+      stopAtKnown: boolean,
+    ): Promise<{ parked: string | null }> => {
+      let cursor = startCursor;
+      for (let i = 0; i < maxPages; i += 1) {
+        const result = await lovable.listMessages(projectId, cursor, pageLimit);
+        let reachedKnown = false;
 
-      for (const message of result.messages) {
-        if (!message.message_id) continue;
-        if (known.has(message.message_id)) {
-          reachedKnown = true;
-          continue;
+        for (const message of result.messages) {
+          if (!message.message_id) continue;
+          if (known.has(message.message_id)) {
+            reachedKnown = true;
+            continue;
+          }
+          store.upsertHistoryItem({
+            project_id: projectId,
+            kind: "message",
+            external_id: message.message_id,
+            role: message.role,
+            content: redact(message.content).text,
+            occurred_at: message.created_at,
+            // The ledger's provenance vocabulary is fixed; "executor sync" is
+            // the source_ref-level detail, the provenance is still Lovable MCP.
+            provenance: "lovable_mcp",
+            source_ref: message.edit_id ?? undefined,
+          });
+          known.add(message.message_id);
+          messages += 1;
         }
-        store.upsertHistoryItem({
-          project_id: projectId,
-          kind: "message",
-          external_id: message.message_id,
-          role: message.role,
-          content: redact(message.content).text,
-          occurred_at: message.created_at,
-          // The ledger's provenance vocabulary is fixed; "executor sync" is the
-          // source_ref-level detail, the provenance is still the Lovable MCP.
-          provenance: "lovable_mcp",
-          source_ref: message.edit_id ?? undefined,
-        });
-        known.add(message.message_id);
-        messages += 1;
-      }
 
-      if (reachedKnown || !result.has_more || !result.next_cursor) break;
-      cursor = result.next_cursor;
+        if ((stopAtKnown && reachedKnown) || !result.has_more || !result.next_cursor) {
+          return { parked: null };
+        }
+        cursor = result.next_cursor;
+      }
+      // Budget exhausted with history still to read.
+      return { parked: cursor ?? null };
+    };
+
+    // Newest-first pass: stops as soon as a page contains something we know.
+    const forward = await page(undefined, true);
+    if (forward.parked) {
+      store.setSyncCursor(projectId, forward.parked);
+      store.insertEvent("executor.sync.truncated", projectId, { cursor_parked: true });
+      truncated += 1;
+      continue;
+    }
+
+    // Backfill: resume older history parked by an earlier pass. It runs past
+    // known ids by design — everything below the cursor is older than the
+    // window the forward pass covers.
+    const parked = store.getSyncCursor(projectId);
+    if (parked) {
+      const back = await page(parked, false);
+      if (back.parked) {
+        store.setSyncCursor(projectId, back.parked);
+        store.insertEvent("executor.sync.truncated", projectId, { cursor_parked: true });
+        truncated += 1;
+      } else {
+        store.clearSyncCursor(projectId);
+      }
     }
   }
 
-  return { messages, projects: projects.length };
+  return { messages, projects: projects.length, truncated };
 }
 
 /**
@@ -249,6 +293,7 @@ export async function runAll(
     const history = await syncHistory(lovable);
     counts.messages = history.messages;
     counts.projects = history.projects;
+    counts.truncated = history.truncated;
     store.insertEvent("executor.sync.history", null, history);
 
     const workspaceId = (await resolveWorkspaceId(lovable)) ?? "";

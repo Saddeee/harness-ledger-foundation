@@ -1532,6 +1532,27 @@ export function completeSyncRequest(id: number): void {
   insertEvent("sync_request.completed", null, { id });
 }
 
+// A history sync that hit its per-pass page budget parks its next_cursor
+// here; the next pass resumes older history from it and clears it when the
+// project's history has been read to the end.
+export function getSyncCursor(projectId: string): string | null {
+  const row = db.prepare(`SELECT cursor FROM sync_cursors WHERE project_id = ?`).get(projectId) as
+    | { cursor: string }
+    | undefined;
+  return row?.cursor ?? null;
+}
+
+export function setSyncCursor(projectId: string, cursor: string): void {
+  db.prepare(
+    `INSERT INTO sync_cursors (project_id, cursor, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(project_id) DO UPDATE SET cursor = excluded.cursor, updated_at = excluded.updated_at`,
+  ).run(projectId, cursor);
+}
+
+export function clearSyncCursor(projectId: string): void {
+  db.prepare(`DELETE FROM sync_cursors WHERE project_id = ?`).run(projectId);
+}
+
 export function countHistoryItemsAwaitingAnalysis(): number {
   const row = db
     .prepare(

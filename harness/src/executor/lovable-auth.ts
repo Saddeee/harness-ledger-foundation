@@ -279,8 +279,8 @@ function beginFlow(opts: { timeoutMs?: number } = {}): Flow {
           respond(400, "Authorization failed. Return to the terminal for details.");
           failCode(new Error(message));
         };
-        if (error) return fail(`Authorization failed: ${escapeForLog(error)}`);
-        if (!code) return fail("Authorization failed: no code returned.");
+        // State first: an unauthenticated caller must not be able to end an
+        // in-flight flow by hitting the loopback with ?error=.
         if (!provider.currentState || state !== provider.currentState) {
           // A stray or forged callback must not kill a flow the user may still
           // be completing in the browser: answer 400 and keep listening until
@@ -288,6 +288,8 @@ function beginFlow(opts: { timeoutMs?: number } = {}): Flow {
           respond(400, "Unexpected callback. Ignoring it.");
           return;
         }
+        if (error) return fail(`Authorization failed: ${escapeForLog(error)}`);
+        if (!code) return fail("Authorization failed: no code returned.");
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(
           "<!doctype html><meta charset=utf-8><title>Connected</title>" +

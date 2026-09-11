@@ -392,4 +392,16 @@ export const MIGRATIONS: Migration[] = [
       CREATE TABLE IF NOT EXISTS sync_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, requested_at TEXT NOT NULL DEFAULT (datetime('now')), status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','running','done')), run_id INTEGER REFERENCES sync_runs(id));
     `,
   },
+  {
+    version: 6,
+    name: "checkpoint_e_sync_cursors",
+    sql: `
+      -- Where a history sync ran out of its per-pass page budget. The next
+      -- pass resumes paging into older history from this cursor, and the row
+      -- is deleted once that project's history is fully read, so a project
+      -- with more messages than one pass can carry is never silently
+      -- truncated.
+      CREATE TABLE IF NOT EXISTS sync_cursors (project_id TEXT PRIMARY KEY, cursor TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+    `,
+  },
 ];

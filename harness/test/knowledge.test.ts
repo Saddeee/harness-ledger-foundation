@@ -55,8 +55,8 @@ test("composer flags the 9,000-character cap", () => {
 
 // ---- migration ----
 
-test("migrations through v5 applied once; earlier tables and rows intact", () => {
-  assert.equal(schemaVersion(), 5);
+test("migrations through v6 applied once; earlier tables and rows intact", () => {
+  assert.equal(schemaVersion(), 6);
   const names = new Set((db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map((r) => r.name));
   for (const t of ["knowledge_snapshots", "knowledge_versions", "rules", "correction_candidates", "allowed_projects", "settings"]) assert.ok(names.has(t), t);
   const cols = (db.prepare(`PRAGMA table_info(projects)`).all() as { name: string }[]).map((c) => c.name);

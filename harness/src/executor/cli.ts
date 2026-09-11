@@ -35,7 +35,15 @@ if (command === "" || command === "loop") {
 } else if (command === "status") {
   printStatus();
 } else if (command === "once") {
-  const result = await runOnce();
+  // A connection that cannot be opened (expired grant, network) is an operator
+  // problem, not a crash: one line and a non-zero exit for cron to notice.
+  let result;
+  try {
+    result = await runOnce();
+  } catch (err) {
+    console.error(`Could not reach Lovable: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
   if (!result.ran) process.exit(0);
   if (!result.ok) process.exit(1);
 } else if (command === "connect") {
