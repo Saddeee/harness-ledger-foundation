@@ -3,7 +3,7 @@
 // buttons are the decision. Simple by default, complete on demand. Only
 // fetches the local Harness routes; never talks to Lovable itself -- adding
 // to Lovable is recorded here and executed by Harness afterwards.
-import { useState } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,21 @@ function AddConfirm({
 }) {
   const [choice, setChoice] = useState<"now" | "test" | null>(null);
   const wantsTest = choice === "test";
+  // A radiogroup is one tab stop: arrows move between the options and only
+  // the selected one (or the first, before anything is chosen) is tabbable.
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const onOptionKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1
+      : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1
+      : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    const order = ["now", "test"] as const;
+    const from = choice == null ? 0 : order.indexOf(choice);
+    const next = order[(from + step + order.length) % order.length]!;
+    setChoice(next);
+    optionRefs.current[order.indexOf(next)]?.focus();
+  };
   const preview = lovableOf(item).previews[destination];
   const targetLabel = preview?.target_label ?? label(DESTINATION_LABELS, destination);
   const overCap = preview?.over_cap === true;
@@ -144,6 +159,11 @@ function AddConfirm({
             type="button"
             role="radio"
             aria-checked={choice === "now"}
+            tabIndex={choice === "test" ? -1 : 0}
+            ref={(el) => {
+              optionRefs.current[0] = el;
+            }}
+            onKeyDown={onOptionKeyDown}
             variant={choice === "now" ? "default" : "outline"}
             className="w-full sm:w-auto"
             onClick={() => setChoice("now")}
@@ -157,6 +177,11 @@ function AddConfirm({
             type="button"
             role="radio"
             aria-checked={choice === "test"}
+            tabIndex={choice === "test" ? 0 : -1}
+            ref={(el) => {
+              optionRefs.current[1] = el;
+            }}
+            onKeyDown={onOptionKeyDown}
             variant={choice === "test" ? "default" : "outline"}
             className="w-full sm:w-auto"
             onClick={() => setChoice("test")}

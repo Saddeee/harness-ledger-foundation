@@ -105,7 +105,9 @@ function Page() {
         <>
           <p className="text-sm text-muted-foreground">
             {pending.length === 0
-              ? "Nothing needs your decision. Everything you've decided on is under Improvements."
+              ? // Cards are still on screen (just decided), so pointing at
+                // another page would be wrong -- they are right here.
+                "Nothing left to decide."
               : pending.length === 1
                 ? "One improvement is waiting for your decision."
                 : `${pending.length} improvements are waiting for your decision.`}
