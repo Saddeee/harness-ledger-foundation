@@ -1982,3 +1982,36 @@ export function listLlmCalls(limit = 50) {
   return db.prepare(`SELECT * FROM llm_calls ORDER BY id DESC LIMIT ?`).all(limit);
 }
 // ---- end round 3 LLM calls ----
+
+// ---- Round 3 Task 2 ----
+// Every skill_snapshots row for one (workspace_id, name), oldest first, so
+// the Skills route can compute an added/removed line diff between each
+// consecutive pair (skills.ts, mirroring the knowledge route's per-version
+// diff). latestSkillSnapshots above only ever returns the newest row per
+// name; this returns the whole history for one name.
+export function listSkillSnapshots(
+  workspaceId: string,
+  name: string,
+): {
+  id: number;
+  content: string;
+  sha256: string;
+  updated_at_remote: string | null;
+  fetched_at: string;
+}[] {
+  return db
+    .prepare(
+      `SELECT id, content, sha256, updated_at_remote, fetched_at
+       FROM skill_snapshots
+       WHERE workspace_id = ? AND name = ?
+       ORDER BY id ASC`,
+    )
+    .all(workspaceId, name) as {
+    id: number;
+    content: string;
+    sha256: string;
+    updated_at_remote: string | null;
+    fetched_at: string;
+  }[];
+}
+// ---- end round 3 Task 2 ----

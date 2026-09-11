@@ -152,6 +152,17 @@ export const runtimeQueryOptions = {
 
 export type KnowledgeCurrent = { content: string; sha256: string; fetched_at: string } | null;
 
+// Server-computed line diff (harness/src/diff.ts) between a version's
+// previous_content and new_content, capped at 400 lines -- see spec
+// section 2's "What changed" view.
+export type DiffLine = { kind: "+" | "-" | " "; text: string };
+export type KnowledgeChanges = {
+  added: number;
+  removed: number;
+  lines: DiffLine[];
+  truncated: boolean;
+};
+
 export type KnowledgeVersionSummary = {
   id: number;
   status: string;
@@ -161,6 +172,7 @@ export type KnowledgeVersionSummary = {
   reason: string | null;
   restored_from_version_id: number | null;
   char_count: number;
+  changes: KnowledgeChanges;
 };
 
 export type KnowledgeActiveRule = { id: number; text: string; improvement_id: number | null };
@@ -176,16 +188,11 @@ export type KnowledgeTargetView = {
   pending_write: { version_id: number; created_at: string } | null;
 };
 
-export type KnowledgeSkills = {
-  fetched_at: string;
-  items: { name: string; description: string | null; updated_at: string | null; content: string }[];
-} | null;
-
 export type KnowledgeResponse = {
   available: boolean;
   reason?: string;
   targets?: KnowledgeTargetView[];
-  skills?: KnowledgeSkills;
+  demo_loaded?: boolean;
   awaiting_analysis?: number;
 };
 
@@ -206,6 +213,45 @@ export async function postKnowledge(body: Record<string, unknown>) {
   if (json.available === false) throw new Error(json.reason ?? "local runtime unavailable");
   return json;
 }
+
+// ---- Contract (matches GET /api/public/harness/skills) ----
+
+export type SkillHistoryEntry = {
+  sha256: string;
+  fetched_at: string;
+  added: number;
+  removed: number;
+};
+
+export type Skill = {
+  name: string;
+  description: string | null;
+  content: string;
+  sha256: string;
+  updated_at_remote: string | null;
+  fetched_at: string;
+  history: SkillHistoryEntry[];
+};
+
+export type SkillsResponse = {
+  available: boolean;
+  reason?: string;
+  workspace_id?: string | null;
+  fetched_at?: string | null;
+  skills?: Skill[];
+};
+
+export async function fetchSkills(): Promise<SkillsResponse> {
+  const res = await fetch("/api/public/harness/skills", { headers: await authHeaders() });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as SkillsResponse;
+}
+
+export const skillsQueryOptions = {
+  queryKey: ["harness-skills"],
+  queryFn: fetchSkills,
+  staleTime: 30_000,
+} as const;
 
 // ---- Contract (matches GET/POST /api/public/harness/executor) ----
 
@@ -230,6 +276,23 @@ export type ExecutorLastRun = {
   counts: Record<string, number>;
 } | null;
 
+// Spec section 4 (Settings > AI analysis). A key is never sent to the
+// client in full -- only has_key/last4 (harness/src/llm-keys.ts).
+export type LlmProvider = "openai" | "anthropic" | "google";
+export type LlmRole = "classifier" | "miner" | "reviewer" | "proposer";
+export type LlmModelChoice = { provider: LlmProvider; model: string };
+export type LlmModels = Record<LlmRole, LlmModelChoice>;
+export type LlmKeyStatus = { has_key: boolean; last4: string | null };
+export type ExecutorLlm = {
+  provider: LlmProvider;
+  models: LlmModels;
+  monthly_budget_usd: number;
+  spent_usd: number;
+  keys: Record<LlmProvider, LlmKeyStatus>;
+};
+
+export type ExecutorDefaults = { max_active_rules: number };
+
 export type ExecutorResponse = {
   available: boolean;
   reason?: string;
@@ -239,6 +302,8 @@ export type ExecutorResponse = {
   last_run?: ExecutorLastRun;
   next_run_at?: string | null;
   running?: boolean;
+  llm?: ExecutorLlm;
+  defaults?: ExecutorDefaults;
 };
 
 export async function fetchExecutor(): Promise<ExecutorResponse> {
@@ -267,11 +332,14 @@ export const executorQueryOptions = {
 
 // ---- Contract (matches GET/POST /api/public/harness/projects) ----
 
+export type ProjectSettings = { max_active_rules: number | null; auto_write: boolean };
+
 export type AllowedProject = {
   id: string;
   name: string;
   last_synced_at: string | null;
   history_count: number;
+  settings: ProjectSettings;
 };
 export type LovableProjectListing = { id: string; name: string; allowed: boolean };
 

@@ -40,6 +40,7 @@ export {
   setProjectSettings,
   effectiveMaxActiveRules,
   sumLlmCostThisMonth,
+  listSkillSnapshots,
 } from "./store.js";
 
 // Round 3: per-provider LLM API keys, stored in their own 0600 file, never in

@@ -1,10 +1,12 @@
 // Server-only bridge for the Projects page: the allow-list (with sync
-// stats) plus, when Lovable is connected, the workspace's full project list
-// so the owner can pick which ones to allow. The allow-list write itself
-// never touches Lovable -- it only curates allowed_projects, exactly like
-// `npm run seed` does out of band. Listing Lovable's projects is the one
-// other place (besides "connect") the web server is allowed to reach the
-// executor's Lovable client, and only through a 10-minute cache.
+// stats and each project's own max-active-rules/auto-write settings) plus,
+// when Lovable is connected, the workspace's full project list so the owner
+// can pick which ones to allow. The allow-list write itself never touches
+// Lovable -- it only curates allowed_projects, exactly like `npm run seed`
+// does out of band, and "project_settings" only curates project_settings.
+// Listing Lovable's projects is the one other place (besides "connect") the
+// web server is allowed to reach the executor's Lovable client, and only
+// through a 10-minute cache.
 import { createFileRoute } from "@tanstack/react-router";
 import {
   hostedPreviewBody,
@@ -86,6 +88,7 @@ async function handleGet({ request }: { request: Request }) {
         name: meta?.name ?? row.label ?? row.lovable_project_id,
         last_synced_at: s?.last_synced_at ?? null,
         history_count: s?.history_count ?? 0,
+        settings: adapter.getProjectSettings(row.lovable_project_id),
       };
     });
 
@@ -146,6 +149,16 @@ async function handlePost({ request }: { request: Request }) {
     if (body["action"] === "disallow") {
       adapter.disallowProject(id);
       return Response.json({ available: true });
+    }
+
+    if (body["action"] === "project_settings") {
+      const patch: { max_active_rules?: number | null; auto_write?: boolean } = {};
+      if (body["max_active_rules"] !== undefined)
+        patch.max_active_rules =
+          body["max_active_rules"] === null ? null : Number(body["max_active_rules"]);
+      if (body["auto_write"] !== undefined) patch.auto_write = Boolean(body["auto_write"]);
+      const settings = adapter.setProjectSettings(id, patch);
+      return Response.json({ available: true, settings });
     }
 
     throw new Error(`unknown action: ${String(body["action"])}`);

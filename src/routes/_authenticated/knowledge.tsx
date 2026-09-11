@@ -1,8 +1,9 @@
 // The Knowledge page: what Harness currently sees in each Lovable
-// project's/workspace's Knowledge, the rules it added, the version history
-// of every write, and any Skills it has read. Only talks to the local
-// Harness routes (fetchKnowledge/postKnowledge/postExecutor) -- writing to
-// Lovable itself happens in the executor process, never from this page.
+// project's/workspace's Knowledge, the rules it added, and the version
+// history of every write. Skills moved to their own route/page (Round 3
+// Task 2). Only talks to the local Harness routes
+// (fetchKnowledge/postKnowledge/postExecutor) -- writing to Lovable itself
+// happens in the executor process, never from this page.
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -16,7 +17,6 @@ import {
   postExecutor,
   postKnowledge,
   type KnowledgeActiveRule,
-  type KnowledgeSkills,
   type KnowledgeTargetView,
   type KnowledgeVersionSummary,
 } from "@/lib/improvements-client";
@@ -270,34 +270,6 @@ function TargetSection({
   );
 }
 
-function SkillsSection({ skills }: { skills: KnowledgeSkills }) {
-  return (
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold">Skills in your workspace</h2>
-      {!skills || skills.items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Your workspace has no Skills yet. Harness will show them here as soon as it reads one; it
-          does not write Skills yet.
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {skills.items.map((s) => (
-            <li key={s.name}>
-              <DetailSection title={s.name}>
-                {s.description ? <p>{s.description}</p> : null}
-                {s.updated_at ? (
-                  <p className="text-muted-foreground">Last changed {formatDate(s.updated_at)}</p>
-                ) : null}
-                <pre className="whitespace-pre-wrap break-words">{s.content}</pre>
-              </DetailSection>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 function Page() {
   const qc = useQueryClient();
   const query = useQuery({ queryKey: ["harness-knowledge"], queryFn: fetchKnowledge });
@@ -356,7 +328,6 @@ function Page() {
 
   const data = query.data;
   const targets = data?.targets ?? [];
-  const skills = data?.skills ?? null;
   const awaiting = data?.awaiting_analysis ?? 0;
 
   return (
@@ -405,8 +376,6 @@ function Page() {
           />
         ))
       )}
-
-      <SkillsSection skills={skills} />
     </div>
   );
 }

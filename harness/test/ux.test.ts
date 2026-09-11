@@ -442,12 +442,12 @@ test("no internal vocabulary in user-facing JSX outside the Developer view", () 
   }
 });
 
-test("pages only fetch local harness routes: improvements, runtime, knowledge, executor, projects -- nothing else", () => {
+test("pages only fetch local harness routes: improvements, runtime, knowledge, executor, projects, skills -- nothing else", () => {
   for (const page of [INBOX, LEDGER, SHELL, CLIENT, DETAIL]) {
     const code = codeOnly(readApp(page));
     const targets = [...code.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]);
     for (const t of targets)
-      assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects)$/, `${page} fetches ${t}`);
+      assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects|skills)$/, `${page} fetches ${t}`);
     assert.ok(!/lovable\.dev|set_project_knowledge|setProjectKnowledge|createWorkspaceSkill/i.test(code), page);
   }
   const client = codeOnly(readApp(CLIENT));
@@ -525,7 +525,7 @@ test("harness-runtime.ts never mentions a spec document, and every new route enf
   }
 });
 
-test("improvements-client.ts fetches exactly the five local harness routes", () => {
+test("improvements-client.ts fetches exactly the six local harness routes", () => {
   const client = codeOnly(readApp(CLIENT));
   const targets = new Set([...client.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]));
   assert.deepEqual(
@@ -536,6 +536,7 @@ test("improvements-client.ts fetches exactly the five local harness routes", () 
       "/api/public/harness/knowledge",
       "/api/public/harness/projects",
       "/api/public/harness/runtime",
+      "/api/public/harness/skills",
     ],
   );
 });
@@ -549,16 +550,11 @@ test("Knowledge page: current text, rules, history and restore render the requir
   const page = readApp(KNOWLEDGE_PAGE);
   const code = codeOnly(page);
 
-  for (const text of [
-    "Rules Harness added",
-    "Show all",
-    "Restore this version?",
-    "Your workspace has no Skills yet",
-    "does not write Skills yet",
-    "waiting for analysis",
-  ]) {
+  for (const text of ["Rules Harness added", "Show all", "Restore this version?", "waiting for analysis"]) {
     assert.ok(page.includes(text), `Knowledge page missing "${text}"`);
   }
+  // Skills moved off this page onto its own route/page (Round 3 Task 2/3).
+  assert.ok(!code.includes("Skills"), "Skills UI must not live on the Knowledge page any more");
 
   assert.match(code, /<ConfirmAction/);
   for (const tag of code.match(/<details[^>]*>/g) ?? []) {

@@ -31,6 +31,7 @@ import { Route as ApiPublicHarnessKnowledgeRouteImport } from './routes/api/publ
 import { Route as ApiPublicHarnessProjectsRouteImport } from './routes/api/public/harness/projects'
 import { Route as ApiPublicHarnessRulesRouteImport } from './routes/api/public/harness/rules'
 import { Route as ApiPublicHarnessRuntimeRouteImport } from './routes/api/public/harness/runtime'
+import { Route as ApiPublicHarnessSkillsRouteImport } from './routes/api/public/harness/skills'
 import { Route as ApiPublicHooksQueueWorkerRouteImport } from './routes/api/public/hooks/queue-worker'
 import { Route as ApiPublicLovableConnectionRouteImport } from './routes/api/public/lovable/connection'
 import { Route as ApiPublicLovableOauthCallbackRouteImport } from './routes/api/public/lovable/oauth-callback'
@@ -152,6 +153,11 @@ const ApiPublicHarnessRuntimeRoute = ApiPublicHarnessRuntimeRouteImport.update({
   path: '/api/public/harness/runtime',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHarnessSkillsRoute = ApiPublicHarnessSkillsRouteImport.update({
+  id: '/api/public/harness/skills',
+  path: '/api/public/harness/skills',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicHooksQueueWorkerRoute =
   ApiPublicHooksQueueWorkerRouteImport.update({
     id: '/api/public/hooks/queue-worker',
@@ -211,6 +217,7 @@ export interface FileRoutesByFullPath {
   '/api/public/harness/projects': typeof ApiPublicHarnessProjectsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
   '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
+  '/api/public/harness/skills': typeof ApiPublicHarnessSkillsRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
   '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
   '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
@@ -240,6 +247,7 @@ export interface FileRoutesByTo {
   '/api/public/harness/projects': typeof ApiPublicHarnessProjectsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
   '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
+  '/api/public/harness/skills': typeof ApiPublicHarnessSkillsRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
   '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
   '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
@@ -271,6 +279,7 @@ export interface FileRoutesById {
   '/api/public/harness/projects': typeof ApiPublicHarnessProjectsRoute
   '/api/public/harness/rules': typeof ApiPublicHarnessRulesRoute
   '/api/public/harness/runtime': typeof ApiPublicHarnessRuntimeRoute
+  '/api/public/harness/skills': typeof ApiPublicHarnessSkillsRoute
   '/api/public/hooks/queue-worker': typeof ApiPublicHooksQueueWorkerRoute
   '/api/public/lovable/connection': typeof ApiPublicLovableConnectionRoute
   '/api/public/lovable/oauth-callback': typeof ApiPublicLovableOauthCallbackRoute
@@ -302,6 +311,7 @@ export interface FileRouteTypes {
     | '/api/public/harness/projects'
     | '/api/public/harness/rules'
     | '/api/public/harness/runtime'
+    | '/api/public/harness/skills'
     | '/api/public/hooks/queue-worker'
     | '/api/public/lovable/connection'
     | '/api/public/lovable/oauth-callback'
@@ -331,6 +341,7 @@ export interface FileRouteTypes {
     | '/api/public/harness/projects'
     | '/api/public/harness/rules'
     | '/api/public/harness/runtime'
+    | '/api/public/harness/skills'
     | '/api/public/hooks/queue-worker'
     | '/api/public/lovable/connection'
     | '/api/public/lovable/oauth-callback'
@@ -361,6 +372,7 @@ export interface FileRouteTypes {
     | '/api/public/harness/projects'
     | '/api/public/harness/rules'
     | '/api/public/harness/runtime'
+    | '/api/public/harness/skills'
     | '/api/public/hooks/queue-worker'
     | '/api/public/lovable/connection'
     | '/api/public/lovable/oauth-callback'
@@ -382,6 +394,7 @@ export interface RootRouteChildren {
   ApiPublicHarnessProjectsRoute: typeof ApiPublicHarnessProjectsRoute
   ApiPublicHarnessRulesRoute: typeof ApiPublicHarnessRulesRoute
   ApiPublicHarnessRuntimeRoute: typeof ApiPublicHarnessRuntimeRoute
+  ApiPublicHarnessSkillsRoute: typeof ApiPublicHarnessSkillsRoute
   ApiPublicHooksQueueWorkerRoute: typeof ApiPublicHooksQueueWorkerRoute
   ApiPublicLovableConnectionRoute: typeof ApiPublicLovableConnectionRoute
   ApiPublicLovableOauthCallbackRoute: typeof ApiPublicLovableOauthCallbackRoute
@@ -546,6 +559,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHarnessRuntimeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/harness/skills': {
+      id: '/api/public/harness/skills'
+      path: '/api/public/harness/skills'
+      fullPath: '/api/public/harness/skills'
+      preLoaderRoute: typeof ApiPublicHarnessSkillsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/queue-worker': {
       id: '/api/public/hooks/queue-worker'
       path: '/api/public/hooks/queue-worker'
@@ -633,6 +653,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHarnessProjectsRoute: ApiPublicHarnessProjectsRoute,
   ApiPublicHarnessRulesRoute: ApiPublicHarnessRulesRoute,
   ApiPublicHarnessRuntimeRoute: ApiPublicHarnessRuntimeRoute,
+  ApiPublicHarnessSkillsRoute: ApiPublicHarnessSkillsRoute,
   ApiPublicHooksQueueWorkerRoute: ApiPublicHooksQueueWorkerRoute,
   ApiPublicLovableConnectionRoute: ApiPublicLovableConnectionRoute,
   ApiPublicLovableOauthCallbackRoute: ApiPublicLovableOauthCallbackRoute,

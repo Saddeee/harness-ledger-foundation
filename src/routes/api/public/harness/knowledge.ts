@@ -1,7 +1,8 @@
 // Server-only bridge to the local Harness SQLite adapter for the Knowledge
 // page: what Lovable Knowledge currently looks like per project/workspace,
-// which rules are active in each, the version history of writes Harness has
-// made, and any Skills the executor last read. Nothing here writes to
+// which rules are active in each, and the version history of writes Harness
+// has made (each version carries a server-computed "What changed" line
+// diff). Skills moved to skills.ts (Round 3 Task 2). Nothing here writes to
 // Lovable directly -- "restore" only stages a new pending version; the
 // executor process performs the actual write.
 import { createFileRoute } from "@tanstack/react-router";
@@ -12,6 +13,11 @@ import {
 } from "@/lib/server/harness-runtime";
 
 const HARNESS_START_MARKER = "<!-- harness:start -->";
+
+// Spec section 2: "What changed" is capped so a huge rewrite still renders
+// quickly; the UI is told when it was cut so it can offer "Show full change"
+// against the raw content instead.
+const MAX_DIFF_LINES = 400;
 
 async function requireAuth(request: Request): Promise<Response | null> {
   const { requireCronOrUser, UnauthorizedError } = await import("@/lib/server/auth");
@@ -76,6 +82,7 @@ async function buildKnowledgeResponse(adapter: Adapter) {
     actor: string;
     reason: string | null;
     restored_from_version_id: number | null;
+    previous_content: string;
     new_content: string;
   }[];
   const pendingWrites = adapter.listPendingKnowledgeWrites() as {
@@ -94,16 +101,26 @@ async function buildKnowledgeResponse(adapter: Adapter) {
     }[];
     const versions = allVersions
       .filter((v) => versionMatchesTarget(v, t))
-      .map((v) => ({
-        id: v.id,
-        status: v.status,
-        created_at: v.created_at,
-        written_at: v.written_at,
-        actor: v.actor,
-        reason: v.reason,
-        restored_from_version_id: v.restored_from_version_id,
-        char_count: v.new_content.length,
-      }));
+      .map((v) => {
+        const diff = adapter.lineDiff(v.previous_content, v.new_content);
+        const truncated = diff.lines.length > MAX_DIFF_LINES;
+        return {
+          id: v.id,
+          status: v.status,
+          created_at: v.created_at,
+          written_at: v.written_at,
+          actor: v.actor,
+          reason: v.reason,
+          restored_from_version_id: v.restored_from_version_id,
+          char_count: v.new_content.length,
+          changes: {
+            added: diff.added,
+            removed: diff.removed,
+            lines: truncated ? diff.lines.slice(0, MAX_DIFF_LINES) : diff.lines,
+            truncated,
+          },
+        };
+      });
     const pendingForTarget = pendingWrites
       .filter((p) => versionMatchesTarget(p, t))
       .sort((a, b) => b.id - a.id)[0];
@@ -128,38 +145,10 @@ async function buildKnowledgeResponse(adapter: Adapter) {
     };
   });
 
-  let skills: {
-    fetched_at: string;
-    items: {
-      name: string;
-      description: string | null;
-      updated_at: string | null;
-      content: string;
-    }[];
-  } | null = null;
-  if (workspaceId) {
-    const snapshots = adapter.latestSkillSnapshots(workspaceId);
-    if (snapshots.length > 0) {
-      const fetched_at = snapshots.reduce(
-        (max, s) => (s.fetched_at > max ? s.fetched_at : max),
-        snapshots[0]!.fetched_at,
-      );
-      skills = {
-        fetched_at,
-        items: snapshots.map((s) => ({
-          name: s.name,
-          description: s.description,
-          updated_at: s.updated_at_remote,
-          content: s.content,
-        })),
-      };
-    }
-  }
-
   return {
     available: true as const,
     targets: targetsOut,
-    skills,
+    demo_loaded: adapter.demoLoaded(),
     awaiting_analysis: adapter.countHistoryItemsAwaitingAnalysis(),
   };
 }
