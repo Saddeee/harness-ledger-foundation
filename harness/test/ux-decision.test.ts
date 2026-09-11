@@ -131,15 +131,13 @@ test("Detail: editing is in-card now, no 'Edit instruction' link, no 'Change the
   assert.ok(!/Cancel wording change/.test(detail));
 });
 
-test("Inbox: decided-this-session cards stay put, 'Hide decided' clears them, count line counts pending only", () => {
+test("Inbox: decided-this-visit items become a confirmation row in place, count line counts pending only", () => {
   const inbox = codeOnly(readApp(INBOX));
-  assert.match(inbox, /useState<Set<number>>/);
-  assert.match(inbox, /Hide decided/);
-  assert.match(inbox, /decidedIds\.size > 0/);
-  assert.match(inbox, /setDecidedIds\(new Set\(\)\)/);
-  // list = pending plus decided-this-session, taken from `all` (original order)
-  assert.match(inbox, /all\.filter\(\(i\) => i\.decision\.status === "pending" \|\| decidedIds\.has\(i\.id\)\)/);
-  // the count line still counts pending only
+  assert.match(inbox, /useState<Map<number, string>>/);
+  // list = pending plus decided-this-visit (confirmed), taken from `all` (original order)
+  assert.match(inbox, /all\.filter\(\(i\) => i\.decision\.status === "pending" \|\| confirmed\.has\(i\.id\)\)/);
+  // the count line still counts pending only, and only appears when there's something pending
+  assert.match(inbox, /pending\.length > 0/);
   assert.match(inbox, /"One improvement is waiting for your decision\."/);
   assert.match(inbox, /`\$\{pending\.length\} improvements are waiting for your decision\.`/);
 });

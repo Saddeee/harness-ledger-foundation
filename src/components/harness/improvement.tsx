@@ -13,7 +13,6 @@ import {
   AdvancedDetails,
   ConfirmAction,
   DetailSection,
-  ProcessProgress,
 } from "@/components/harness/decision-layout";
 import {
   CLASSIFICATION_LABELS,
@@ -72,14 +71,16 @@ const ADD_LABELS: Record<Destination, string> = {
 type Run = (body: Record<string, unknown>, msg: string) => Promise<boolean>;
 
 // One busy flag and one toast pattern per card (or per wording editor).
-function useRun(onChanged: () => void): { busy: boolean; run: Run } {
+// onChanged also receives the exact toast text, so a caller (the Inbox) can
+// show that same sentence in a confirmation row instead of just refetching.
+function useRun(onChanged: (msg: string) => void): { busy: boolean; run: Run } {
   const [busy, setBusy] = useState(false);
   const run: Run = async (body, msg) => {
     setBusy(true);
     try {
       await post(body);
       toast.success(msg);
-      onChanged();
+      onChanged(msg);
       return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "action failed");
@@ -397,7 +398,7 @@ export function DecisionCard({
   editable,
 }: {
   item: Improvement;
-  onChanged: () => void;
+  onChanged: (msg: string) => void;
   onOpen?: (id: number) => void;
   titleAs?: "h1" | "h2";
   busy?: boolean;
@@ -577,7 +578,7 @@ export function ImprovementDetail({
 }: {
   item: Improvement;
   onBack: () => void;
-  onChanged: () => void;
+  onChanged: (msg: string) => void;
   backLabel?: string;
   position?: { index: number; total: number } | undefined;
   onPrev?: (() => void) | undefined;
@@ -692,8 +693,6 @@ export function ImprovementDetail({
       </section>
 
       <AdvancedDetails title="Details">
-        <ProcessProgress stages={item.stages} />
-
         <DetailSection title="How Harness read this">
           <p>Harness read this as: {label(CLASSIFICATION_LABELS, item.classification)}.</p>
           {item.decision.decided_at ? (

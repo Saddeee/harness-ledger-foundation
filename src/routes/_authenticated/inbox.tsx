@@ -1,8 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { DecisionCard, ImprovementDetail } from "@/components/harness/improvement";
-import { fetchImprovements } from "@/lib/improvements-client";
+import { toast } from "sonner";
+import {
+  DecisionCard,
+  ImprovementDetail,
+  type Improvement,
+} from "@/components/harness/improvement";
+import { fetchImprovements, postImprovementAction } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   validateSearch: (search: Record<string, unknown>): { improvement?: number } => {
@@ -23,22 +28,100 @@ export const Route = createFileRoute("/_authenticated/inbox")({
   component: Page,
 });
 
+// A just-decided item stays where it was, but as a compact one-line
+// confirmation instead of a full card: the Inbox holds only what still needs
+// a decision, so once it's decided it isn't "in the Inbox" any more -- it
+// just hasn't left the screen yet. Kept in component state only, so a reload
+// shows a clean Inbox (the item is simply gone -- it lives under
+// Improvements now).
+function ConfirmationRow({
+  item,
+  message,
+  busy,
+  onUndo,
+  onView,
+}: {
+  item: Improvement;
+  message: string;
+  busy: boolean;
+  onUndo: () => void;
+  onView: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-4">
+      <p className="min-w-0 flex-1 text-sm">
+        <span className="font-medium">{item.title}</span>
+        {" — "}
+        {message}
+      </p>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={busy}
+          className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          onClick={onUndo}
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={onView}
+        >
+          View in Improvements
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Page() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const search = Route.useSearch();
-  // Items decided this visit stay visible (chip, status, decision buttons)
-  // instead of vanishing from the list; cleared by "Hide decided" or by
-  // leaving the page.
-  const [decidedIds, setDecidedIds] = useState<Set<number>>(new Set());
+  // Items decided this visit: id -> the exact toast text, so the
+  // confirmation row says the same thing the toast said. Cleared by "Undo"
+  // or by leaving the page (component state only -- a reload starts clean).
+  const [confirmed, setConfirmed] = useState<Map<number, string>>(new Map());
+  const [undoing, setUndoing] = useState<Set<number>>(new Set());
 
   const query = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
   const refresh = () => qc.invalidateQueries({ queryKey: ["harness-improvements"] });
   const open = (id: number) => navigate({ to: "/inbox", search: { improvement: id } });
   const back = () => navigate({ to: "/inbox", search: {} });
-  const markDecided = (id: number) => {
+  const viewInImprovements = (id: number) =>
+    navigate({ to: "/ledger", search: { improvement: id } });
+  const confirmDecision = (id: number, msg: string) => {
     refresh();
-    setDecidedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    setConfirmed((prev) => {
+      const next = new Map(prev);
+      next.set(id, msg);
+      return next;
+    });
+  };
+  // Reopens the item through the shared action helper, then waits for the
+  // refetch to land before dropping the confirmation row -- so the item
+  // turns straight into a pending card instead of briefly disappearing.
+  const undo = async (id: number) => {
+    setUndoing((prev) => new Set(prev).add(id));
+    try {
+      await postImprovementAction({ action: "reopen", id });
+      await refresh();
+      setConfirmed((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "action failed");
+    } finally {
+      setUndoing((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   if (query.isLoading) {
@@ -74,10 +157,11 @@ function Page() {
   }
 
   const all = query.data?.improvements ?? [];
-  // Still needs a decision, plus anything decided this visit (so the card
-  // stays in place instead of vanishing) -- in their original order.
+  // Still needs a decision, plus anything decided this visit (shown as a
+  // confirmation row instead of a card) -- in their original order, so
+  // nothing jumps around on screen.
   const pending = all.filter((i) => i.decision.status === "pending");
-  const list = all.filter((i) => i.decision.status === "pending" || decidedIds.has(i.id));
+  const list = all.filter((i) => i.decision.status === "pending" || confirmed.has(i.id));
   // Previous/Next browse the pending order -- the list the user came from.
   const order = pending.map((i) => i.id);
 
@@ -89,7 +173,7 @@ function Page() {
       <ImprovementDetail
         item={selected}
         onBack={back}
-        onChanged={() => markDecided(selected.id)}
+        onChanged={(msg) => confirmDecision(selected.id, msg)}
         backLabel="← Inbox"
         position={idx >= 0 ? { index: idx + 1, total: order.length } : undefined}
         onPrev={idx > 0 ? () => open(order[idx - 1]!) : undefined}
@@ -109,28 +193,31 @@ function Page() {
         </div>
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">
-            {pending.length === 0
-              ? // Cards are still on screen (just decided), so pointing at
-                // another page would be wrong -- they are right here.
-                "Nothing left to decide."
-              : pending.length === 1
+          {pending.length > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {pending.length === 1
                 ? "One improvement is waiting for your decision."
                 : `${pending.length} improvements are waiting for your decision.`}
-          </p>
-          {decidedIds.size > 0 ? (
-            <button
-              type="button"
-              className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setDecidedIds(new Set())}
-            >
-              Hide decided
-            </button>
+            </p>
           ) : null}
           <ul className="space-y-3">
             {list.map((i) => (
               <li key={i.id}>
-                <DecisionCard item={i} onChanged={() => markDecided(i.id)} onOpen={open} />
+                {confirmed.has(i.id) ? (
+                  <ConfirmationRow
+                    item={i}
+                    message={confirmed.get(i.id)!}
+                    busy={undoing.has(i.id)}
+                    onUndo={() => void undo(i.id)}
+                    onView={() => viewInImprovements(i.id)}
+                  />
+                ) : (
+                  <DecisionCard
+                    item={i}
+                    onChanged={(msg) => confirmDecision(i.id, msg)}
+                    onOpen={open}
+                  />
+                )}
               </li>
             ))}
           </ul>

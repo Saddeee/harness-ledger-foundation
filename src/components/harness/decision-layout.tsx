@@ -2,7 +2,6 @@
 // simple by default, complete on demand. Composed only from the app's
 // existing shadcn primitives -- no new visual system.
 import type { ReactNode } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -16,7 +15,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { STAGE_LABELS, type Stage } from "@/lib/harness-ux";
 
 export function RecommendationCallout({
   title,
@@ -205,48 +203,6 @@ export function DetailSection({ title, children }: { title: string; children: Re
       </summary>
       <div className="space-y-2 border-t px-3 py-3 text-xs">{children}</div>
     </details>
-  );
-}
-
-const STAGE_STATE_SR: Record<Stage["state"], string> = {
-  complete: "done",
-  current: "current step",
-  future: "not yet",
-  blocked: "blocked",
-};
-
-// The Found -> Your review -> Proof -> In Lovable journey. Each stage shows
-// its human note (e.g. "You decided on 9 Sep") so state never relies on
-// color alone; the state word itself is available to assistive tech.
-export function ProcessProgress({ stages }: { stages: Stage[] }) {
-  return (
-    <ol aria-label="Progress" className="flex flex-wrap gap-x-4 gap-y-2">
-      {stages.map((s, i) => (
-        <li
-          key={s.key}
-          className="flex min-w-0 flex-col gap-1 text-sm"
-          aria-current={s.state === "current" ? "step" : undefined}
-        >
-          <div className="flex items-center gap-2">
-            <Badge
-              variant={
-                s.state === "complete" ? "secondary" : s.state === "current" ? "default" : "outline"
-              }
-              className={s.state === "blocked" ? "line-through" : undefined}
-            >
-              {i + 1}. {STAGE_LABELS[s.key] ?? s.key}
-              <span className="sr-only"> ({STAGE_STATE_SR[s.state]})</span>
-            </Badge>
-            {i < stages.length - 1 ? (
-              <span aria-hidden="true" className="text-muted-foreground">
-                →
-              </span>
-            ) : null}
-          </div>
-          {s.note ? <span className="text-xs text-muted-foreground">{s.note}</span> : null}
-        </li>
-      ))}
-    </ol>
   );
 }
 

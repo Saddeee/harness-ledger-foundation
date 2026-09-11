@@ -84,7 +84,7 @@ test("default technical sections are collapsed and the detail page wraps them in
   assert.ok(detail.indexOf("developer-view:end") < detail.lastIndexOf("</AdvancedDetails>"));
 });
 
-test("detail page order: back, decision card, wording, why, What happened, Details (stage bar inside), developer view last", () => {
+test("detail page order: back, decision card, wording, why, What happened, Details, developer view last", () => {
   const detail = codeOnly(readApp(DETAIL));
   const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
   const order = [
@@ -93,7 +93,6 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
     "{whyFor(item.classification)}",
     "What happened",
     'title="Details"',
-    "<ProcessProgress",
     "How Harness read this",
     "Wording history",
   ];
@@ -204,11 +203,9 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   assert.match(layout, /<AlertDialogAction onClick=\{onConfirm\} disabled=\{confirmDisabled\}>/);
 });
 
-test("stage rendering uses the human note, never a state word alone; decided cards show the group chip", () => {
+test("no per-stage progress bar in the layout (decisionSentence + the group chip are the only two places that say where an item stands); decided cards show the group chip", () => {
   const layout = readApp(LAYOUT);
-  assert.match(layout, /\{s\.note\}/);
-  assert.match(layout, /STAGE_LABELS\[s\.key\]/);
-  assert.match(layout, /aria-current=\{s\.state === "current" \? "step" : undefined\}/);
+  assert.ok(!/ProcessProgress/.test(layout), "the stage bar is gone -- see ux-inbox-logic.test.ts");
   assert.ok(!/you are here/.test(codeOnly(layout)));
   assert.ok(!/ClickableCard/.test(layout), "whole-card buttons are gone; the buttons are the decision");
   const detail = codeOnly(readApp(DETAIL));
@@ -467,9 +464,12 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
 
 test("Inbox: a count line, then decision cards you can act on without opening them", () => {
   const inbox = codeOnly(readApp(INBOX));
-  // Task 8: onChanged also marks the item decided-this-session (see the
-  // "decided cards stay put" test), so it's no longer bare `refresh`.
-  assert.match(inbox, /<DecisionCard item=\{i\} onChanged=\{\(\) => markDecided\(i\.id\)\} onOpen=\{open\} \/>/);
+  // onChanged also turns the item into a confirmation row (see
+  // ux-inbox-logic.test.ts), so it's no longer bare `refresh`.
+  assert.match(
+    inbox,
+    /<DecisionCard\s+item=\{i\}\s+onChanged=\{\(msg\)\s*=>\s*confirmDecision\(i\.id,\s*msg\)\}\s+onOpen=\{open\}\s*\/>/,
+  );
   assert.match(inbox, /"One improvement is waiting for your decision\."/);
   assert.match(inbox, /`\$\{pending\.length\} improvements are waiting for your decision\.`/);
   assert.ok(!/ImprovementCard|ClickableCard|isDeferred/.test(inbox));
