@@ -373,3 +373,84 @@ test("v7 migration (checkpoint_g_cancelled_writes) rebuilds knowledge_versions w
 
   tmpDb.close();
 });
+
+// Regression: an improvement accepted before Harness ever read the live
+// Knowledge could not be composed at accept time, so nothing was staged and
+// the item sat in "Waiting to be written" forever. The executor now stages it
+// once a snapshot exists.
+test("stageApprovedWrites stages accepted writes that had no snapshot at accept time, once", () => {
+  const PROJECT2 = "improvements-test-project-2";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT2, "test2");
+  store.upsertProject({ lovable_project_id: PROJECT2, name: "Late Snapshot Project" });
+
+  const msg = store.upsertHistoryItem({
+    project_id: PROJECT2,
+    kind: "message",
+    external_id: "m-late-1",
+    role: "user",
+    content: "never touch the migrations folder",
+    occurred_at: "2026-09-09T10:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const ep2 = store.createTaskEpisode({
+    project_id: PROJECT2,
+    title: "late snapshot episode",
+    provenance: "llm_derived",
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const cc2 = store.createCorrectionCandidate({
+    task_episode_id: ep2.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "Migrations were edited without approval. More words here.",
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const l2 = store.createLearning({
+    correction_candidate_id: cc2.id,
+    observed_problem: "p",
+    desired_behavior: "Do not edit migrations without approval.",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "llm_derived",
+    created_by: "test",
+  }) as { id: number };
+  const rule2 = store.createRule({
+    learning_id: l2.id,
+    correction_candidate_id: cc2.id,
+    instruction: "Never edit the migrations folder without asking first.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "silent migration edits",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+
+  // Accepted with no snapshot of PROJECT2's Knowledge anywhere: nothing staged.
+  const accepted = imp.improvementAction({ action: "accept", id: cc2.id, destination: "project" });
+  assert.equal(accepted.decision.status, "accepted");
+  assert.deepEqual(
+    (store.listPendingKnowledgeWrites() as { rule_id: number }[]).filter((w) => w.rule_id === rule2.id),
+    [],
+    "no snapshot means no staged write at accept time",
+  );
+
+  // The executor reads Knowledge for the first time, then stages.
+  store.recordKnowledgeSnapshot({ target: "project", project_id: PROJECT2, content: "# Knowledge\n\nProject two.", fetched_by: "test" });
+  const first = imp.stageApprovedWrites();
+  assert.equal(first.staged, 1);
+  const staged = (store.listPendingKnowledgeWrites() as { rule_id: number; new_content: string; reason: string | null }[]).filter(
+    (w) => w.rule_id === rule2.id,
+  );
+  assert.equal(staged.length, 1);
+  assert.match(staged[0]!.new_content, /Never edit the migrations folder without asking first\./);
+  assert.equal(staged[0]!.reason, "staged by the executor after Knowledge was read");
+
+  // Idempotent: the pending write it just made stops it staging a second one.
+  assert.equal(imp.stageApprovedWrites().staged, 0);
+  assert.equal(
+    (store.listPendingKnowledgeWrites() as { rule_id: number }[]).filter((w) => w.rule_id === rule2.id).length,
+    1,
+  );
+});

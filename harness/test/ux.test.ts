@@ -172,16 +172,16 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   // Task 8: the Add-it-now/Test-it-first choice text now says "Uses no
   // credits" itself, so this line was dropped from PREVIEW_CONSEQUENCES.
   assert.ok(!/"Uses no Lovable credits\.",/.test(detail));
-  assert.match(detail, /"You can restore the previous version at any time\."/);
+  assert.match(detail, /\[\s*"You can restore the previous version at any time\.",?\s*\]/);
   assert.match(confirm, /consequences=\{preview \? PREVIEW_CONSEQUENCES : \[\]\}/);
   // no snapshot yet -> save the choice, say so, and promise the read-back
   assert.match(
     detail,
-    /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; Harness will show you the exact text before writing\.";/,
+    /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; at the next sync Harness reads it, then writes this exact text\. You can see the result on the Knowledge page\.";/,
   );
   // Task 8: confirm label now reflects the two-choice selection, not
   // whether a preview is available.
-  assert.match(confirm, /confirmLabel=\{wantsTest \? "Save for testing" : "Add"\}/);
+  assert.match(confirm, /confirmLabel=\{wantsTest \? "Save for testing" : preview \? "Add" : "Save choice"\}/);
   // over the cap -> the confirm button is disabled and the reason is shown
   assert.match(
     detail,

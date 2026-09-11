@@ -46,7 +46,7 @@ export type { Improvement, Message };
 // ---- Shared copy (kept in one place so the tests can count it) ----
 
 const NO_SNAPSHOT_BODY =
-  "Harness hasn't read your current Knowledge yet. Your choice is saved; Harness will show you the exact text before writing.";
+  "Harness hasn't read your current Knowledge yet. Your choice is saved; at the next sync Harness reads it, then writes this exact text. You can see the result on the Knowledge page.";
 const PREVIEW_BODY = "This is the exact text Harness will write to your Lovable Knowledge.";
 const PREVIEW_CONSEQUENCES = ["You can restore the previous version at any time."];
 const OVER_CAP_LINE =
@@ -119,7 +119,7 @@ function AddConfirm({
       title={`Add to ${targetLabel}?`}
       body={preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
       consequences={preview ? PREVIEW_CONSEQUENCES : []}
-      confirmLabel={wantsTest ? "Save for testing" : "Add"}
+      confirmLabel={wantsTest ? "Save for testing" : preview ? "Add" : "Save choice"}
       confirmDisabled={overCap || choice == null}
       disabled={busy}
       onOpenChange={(open) => {

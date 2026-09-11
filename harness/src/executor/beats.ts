@@ -8,6 +8,7 @@
  * `LovableWriter`.
  */
 import * as store from "../store.js";
+import { stageApprovedWrites } from "../improvements.js";
 import { sha256 } from "../knowledge.js";
 import { redact } from "./redact.js";
 import type { LovableClient, LovableReader, LovableWriter } from "./lovable-mcp.js";
@@ -306,6 +307,13 @@ export async function runAll(
     counts.skills = skills.skills;
     counts.skills_changed = skills.changed;
     store.insertEvent("executor.sync.skills", null, skills);
+
+    // Anything the user accepted before Harness had ever read the live
+    // Knowledge could not be composed at accept time; now that the snapshots
+    // above exist, stage those writes so this same pass can apply them.
+    const stage = stageApprovedWrites();
+    counts.staged = stage.staged;
+    if (stage.staged > 0) store.insertEvent("executor.stage.staged", null, stage);
 
     const writes = await executeWrites(lovable);
     counts.written = writes.written;

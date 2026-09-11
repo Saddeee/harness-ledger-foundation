@@ -5,7 +5,7 @@
 // scratchpad/improvement-contract.md and scratchpad/checkpoint-d-contract.md.
 import { z } from "zod";
 import * as store from "./store.js";
-import { KNOWLEDGE_CAP, composeManagedKnowledge } from "./knowledge.js";
+import { composeManagedKnowledge } from "./knowledge.js";
 
 export type StageKey = "found" | "review" | "proof" | "in_lovable";
 export type StageState = "complete" | "current" | "future" | "blocked";
@@ -152,7 +152,7 @@ function buildPreview(target: "project" | "workspace", targetId: string | null, 
     managed_block: composed.managed_block,
     final_content: composed.final_content,
     char_count: composed.char_count,
-    cap: KNOWLEDGE_CAP,
+    cap: Number(store.getSetting("knowledge_char_cap")),
     over_cap: composed.over_cap,
   };
 }
@@ -376,7 +376,12 @@ const actionInput = z.discriminatedUnion("action", [
 
 // After the user approves "Add", stage the exact write for the executor --
 // only when a snapshot of the live Knowledge exists to compose from.
-function stagePendingWrite(improvement: Improvement, rule: RuleRow, target: "project" | "workspace") {
+function stagePendingWrite(
+  improvement: Improvement,
+  rule: RuleRow,
+  target: "project" | "workspace",
+  reason?: string,
+) {
   const preview = improvement.lovable.previews[target];
   if (!preview) return;
   if (preview.over_cap) throw new Error("This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first");
@@ -395,7 +400,7 @@ function stagePendingWrite(improvement: Improvement, rule: RuleRow, target: "pro
     new_content: preview.final_content,
     rule_ids: ruleIds,
     actor: ACTOR,
-    reason: `user chose "${preview.target_label}" in the Inbox`,
+    reason: reason ?? `user chose "${preview.target_label}" in the Inbox`,
   });
 }
 
@@ -434,6 +439,37 @@ function ensureApprovedExperimentPlan(rule: RuleRow, improvement: Improvement) {
     verification_definition_ids: [],
   }) as { id: number };
   store.setExperimentPlanStatus(created.id, "approved", ACTOR);
+}
+
+// Writes accepted before Harness had ever read the live Knowledge: at accept
+// time `stagePendingWrite` had no snapshot to compose against and returned
+// without staging anything, so the improvement sat in "Waiting to be written"
+// with no pending version. The executor calls this after the snapshot beats,
+// when a snapshot does exist, and stages exactly what accept would have.
+export function stageApprovedWrites(): { staged: number; skipped: number } {
+  let staged = 0;
+  let skipped = 0;
+  for (const improvement of listImprovements()) {
+    if (improvement.decision.status !== "accepted") continue;
+    if (improvement.decision.test_first) continue;
+    const target = improvement.destination;
+    if (target !== "project" && target !== "workspace") continue;
+    const rule = store.getRuleForCorrection(improvement.id) as RuleRow | null;
+    if (!rule || rule.state !== "approved") continue;
+    // Cancelled/stale/failed versions do not count as "already handled" --
+    // only a live pending write or a completed one does.
+    const versions = store.listKnowledgeVersions(rule.id);
+    if (versions.some((v) => v.status === "pending" || v.status === "written")) continue;
+
+    const preview = improvement.lovable.previews[target];
+    if (!preview || preview.over_cap) {
+      skipped += 1;
+      continue;
+    }
+    stagePendingWrite(improvement, rule, target, "staged by the executor after Knowledge was read");
+    staged += 1;
+  }
+  return { staged, skipped };
 }
 
 export function improvementAction(input: unknown): Improvement {

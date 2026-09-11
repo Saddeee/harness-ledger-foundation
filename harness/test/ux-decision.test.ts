@@ -49,7 +49,7 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
   assert.match(confirm, /useState<"now" \| "test" \| null>\(null\)/);
   // confirm disabled until a choice is made
   assert.match(confirm, /confirmDisabled=\{overCap \|\| choice == null\}/);
-  assert.match(confirm, /confirmLabel=\{wantsTest \? "Save for testing" : "Add"\}/);
+  assert.match(confirm, /confirmLabel=\{wantsTest \? "Save for testing" : preview \? "Add" : "Save choice"\}/);
   // the choice resets when the dialog closes
   assert.match(confirm, /onOpenChange=\{/);
   assert.match(confirm, /setChoice\(null\)/);
