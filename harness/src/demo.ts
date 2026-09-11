@@ -26,8 +26,10 @@ const EPISODE_TITLE_PENDING = "Demo: keep the sidebar order stable";
 const EPISODE_TITLE_WRITTEN = "Demo: never add a cron job without asking";
 const RULE_INSTRUCTION_PENDING = "Demo: keep the sidebar order stable.";
 const RULE_INSTRUCTION_WRITTEN = "Demo: never add a cron job without asking.";
-const RULE_INSTRUCTION_WRITTEN_REWORDED =
+const RULE_INSTRUCTION_WRITTEN_V2 =
   "Demo: never add a cron job without asking. Always confirm the schedule and frequency with the user first.";
+const RULE_INSTRUCTION_WRITTEN_V3 =
+  "Demo: never add a cron job without asking. Always confirm the schedule, frequency, and estimated resource cost with the user first.";
 const SKILL_NAME = "deploy-checklist";
 const BASE_KNOWLEDGE_DOC =
   "# Project Knowledge\n\nThis project was built with Lovable. Add your own notes above this line.\n";
@@ -159,9 +161,12 @@ export function addDemoData(): AddDemoResult {
     ownership: "harness",
     created_by: "demo",
   }) as { id: number };
-  // Left as-is: the correction candidate is never reviewed, so this stays a
-  // pending decision in the Inbox regardless of what later happens to its
-  // rule's Knowledge content (see the second knowledge version below).
+  // Left as-is: the correction candidate is never reviewed, and pendingRule
+  // is never passed into composeManagedKnowledge or writeDemoVersion below
+  // -- nothing here ever touches Knowledge for it, so it stays a genuine
+  // pending decision in the Inbox (decision.status "pending",
+  // lovable.write_status "none", zero knowledge_versions). Only the written
+  // (cron) rule below ever gets composed or written.
 
   // ---- Improvement 2: written (cron job) -- decided and its rule active ----
   const cronUser = store.upsertHistoryItem({
@@ -241,8 +246,14 @@ export function addDemoData(): AddDemoResult {
   });
 
   // ---- Three knowledge versions for the project target, all written ----
-  // v1: the first Knowledge write, adding a managed block with one rule
-  // (the cron rule -- this is what makes improvement 2 "written").
+  // All three are built from writtenRule (the cron rule) ONLY -- pendingRule
+  // is never passed into composeManagedKnowledge or writeDemoVersion, so its
+  // correction candidate staying unreviewed is never contradicted by a
+  // Knowledge write that would otherwise flip it to 'active' (see
+  // recordKnowledgeReadback). v1 adds the managed block with the rule; v2
+  // and v3 each reword it, growing its instruction by one clarifying
+  // sentence while keeping the first sentence -- and so the improvement's
+  // title -- exactly the same throughout.
   const v1 = composeManagedKnowledge(BASE_KNOWLEDGE_DOC, [
     { id: writtenRule.id, instruction: RULE_INSTRUCTION_WRITTEN },
   ]);
@@ -256,41 +267,41 @@ export function addDemoData(): AddDemoResult {
     hoursAgo: 2,
   });
 
-  // v2: adds the second rule (the sidebar rule) to the managed block.
-  const v2 = composeManagedKnowledge(v1.final_content, [
-    { id: writtenRule.id, instruction: RULE_INSTRUCTION_WRITTEN },
-    { id: pendingRule.id, instruction: RULE_INSTRUCTION_PENDING },
-  ]);
-  writeDemoVersion({
-    projectId,
-    ruleId: pendingRule.id,
-    ruleIds: [writtenRule.id, pendingRule.id],
-    previous: v1.final_content,
-    next: v2.final_content,
-    reason: "demo: added the sidebar-order rule",
-    hoursAgo: 1,
-  });
-
-  // v3: rewords the first rule (the cron rule's instruction gains a second,
-  // clarifying sentence; its short first sentence -- and so the
-  // improvement's title -- stays exactly the same).
   store.updateRule({
     id: writtenRule.id,
-    instruction: RULE_INSTRUCTION_WRITTEN_REWORDED,
+    instruction: RULE_INSTRUCTION_WRITTEN_V2,
     actor: "demo",
-    reason: "demo: reworded for a clearer, single-sentence rule",
+    reason: "demo: reworded to also mention the schedule and frequency",
   });
-  const v3 = composeManagedKnowledge(v2.final_content, [
-    { id: writtenRule.id, instruction: RULE_INSTRUCTION_WRITTEN_REWORDED },
-    { id: pendingRule.id, instruction: RULE_INSTRUCTION_PENDING },
+  const v2 = composeManagedKnowledge(v1.final_content, [
+    { id: writtenRule.id, instruction: RULE_INSTRUCTION_WRITTEN_V2 },
   ]);
   writeDemoVersion({
     projectId,
     ruleId: writtenRule.id,
-    ruleIds: [writtenRule.id, pendingRule.id],
+    ruleIds: [writtenRule.id],
+    previous: v1.final_content,
+    next: v2.final_content,
+    reason: "demo: reworded the cron-job rule",
+    hoursAgo: 1,
+  });
+
+  store.updateRule({
+    id: writtenRule.id,
+    instruction: RULE_INSTRUCTION_WRITTEN_V3,
+    actor: "demo",
+    reason: "demo: reworded again to also mention estimated resource cost",
+  });
+  const v3 = composeManagedKnowledge(v2.final_content, [
+    { id: writtenRule.id, instruction: RULE_INSTRUCTION_WRITTEN_V3 },
+  ]);
+  writeDemoVersion({
+    projectId,
+    ruleId: writtenRule.id,
+    ruleIds: [writtenRule.id],
     previous: v2.final_content,
     next: v3.final_content,
-    reason: "demo: reworded the cron-job rule",
+    reason: "demo: reworded the cron-job rule again",
     hoursAgo: 0,
   });
 
@@ -391,23 +402,48 @@ export function removeDemoData(): RemoveDemoResult {
       historyIds.add(row.history_item_id);
     }
   }
+  const historyIdList = [...historyIds];
+
+  // Gathered up front (not just counted) because events.ts's cleanup below
+  // needs the actual ids, not just how many rows matched.
+  const versionIds = ruleIds.length
+    ? (
+        db
+          .prepare(`SELECT id FROM knowledge_versions WHERE rule_id IN (${placeholders(ruleIds)})`)
+          .all(...ruleIds) as { id: number }[]
+      ).map((r) => r.id)
+    : [];
+  const knowledgeSnapshotIds = projectId
+    ? (
+        db
+          .prepare(
+            `SELECT id FROM knowledge_snapshots WHERE fetched_by = 'demo' AND target = 'project' AND project_id = ?`,
+          )
+          .all(projectId) as { id: number }[]
+      ).map((r) => r.id)
+    : [];
+  const skillSnapshotIds = (
+    db
+      .prepare(`SELECT id FROM skill_snapshots WHERE name = ? AND fetched_by = 'demo'`)
+      .all(SKILL_NAME) as { id: number }[]
+  ).map((r) => r.id);
 
   const counts: Record<string, number> = {};
   const run = db.transaction(() => {
     // 1. knowledge_versions
-    counts.knowledge_versions = ruleIds.length
+    counts.knowledge_versions = versionIds.length
       ? db
-          .prepare(`DELETE FROM knowledge_versions WHERE rule_id IN (${placeholders(ruleIds)})`)
-          .run(...ruleIds).changes
+          .prepare(`DELETE FROM knowledge_versions WHERE id IN (${placeholders(versionIds)})`)
+          .run(...versionIds).changes
       : 0;
 
     // 2. knowledge_snapshots (only the ones this seed fetched, for this project)
-    counts.knowledge_snapshots = projectId
+    counts.knowledge_snapshots = knowledgeSnapshotIds.length
       ? db
           .prepare(
-            `DELETE FROM knowledge_snapshots WHERE fetched_by = 'demo' AND target = 'project' AND project_id = ?`,
+            `DELETE FROM knowledge_snapshots WHERE id IN (${placeholders(knowledgeSnapshotIds)})`,
           )
-          .run(projectId).changes
+          .run(...knowledgeSnapshotIds).changes
       : 0;
 
     // agent_actions created by recordHumanCorrectionDecision (no FK, but still a demo-created row)
@@ -463,7 +499,6 @@ export function removeDemoData(): RemoveDemoResult {
     }
 
     // 7. history items
-    const historyIdList = [...historyIds];
     counts.history_items = historyIdList.length
       ? db
           .prepare(`DELETE FROM history_items WHERE id IN (${placeholders(historyIdList)})`)
@@ -471,13 +506,75 @@ export function removeDemoData(): RemoveDemoResult {
       : 0;
 
     // 8. skill snapshots
-    counts.skill_snapshots = db
-      .prepare(`DELETE FROM skill_snapshots WHERE name = ? AND fetched_by = 'demo'`)
-      .run(SKILL_NAME).changes;
+    counts.skill_snapshots = skillSnapshotIds.length
+      ? db
+          .prepare(`DELETE FROM skill_snapshots WHERE id IN (${placeholders(skillSnapshotIds)})`)
+          .run(...skillSnapshotIds).changes
+      : 0;
+
+    // 9. events -- every insertEvent() row the pipeline above created. Each
+    // event's payload is JSON with an "id" field naming the row it's about
+    // (see store.ts's insertEvent callers); matched by kind prefix + exact
+    // numeric payload.id, never a LIKE substring match, so a demo id can
+    // never accidentally sweep up an unrelated real event whose payload.id
+    // happens to share a numeric substring.
+    const eventIds = eventIdsReferencing([
+      { prefixes: ["history_item."], ids: historyIdList },
+      { prefixes: ["task_episode."], ids: episodeIds },
+      { prefixes: ["correction_candidate."], ids: ccIds },
+      { prefixes: ["learning."], ids: learningIds },
+      { prefixes: ["rule."], ids: ruleIds },
+      { prefixes: ["knowledge_version."], ids: versionIds },
+      { prefixes: ["knowledge_snapshot."], ids: knowledgeSnapshotIds },
+      { prefixes: ["skill_snapshot."], ids: skillSnapshotIds },
+    ]);
+    counts.events = eventIds.length
+      ? db.prepare(`DELETE FROM events WHERE id IN (${placeholders(eventIds)})`).run(...eventIds)
+          .changes
+      : 0;
   });
   run();
 
   return { removed: true, counts };
+}
+
+// Finds every `events` row whose kind starts with one of a group's prefixes
+// and whose JSON payload's top-level "id" field exactly equals one of that
+// group's ids. Reads the whole (small, append-only) table once rather than
+// building fragile LIKE patterns -- an exact numeric comparison after
+// JSON.parse can't be fooled by a numeric substring the way
+// `payload LIKE '%"id":<n>%'` can (e.g. id 12 inside "id":123).
+function eventIdsReferencing(groups: { prefixes: string[]; ids: number[] }[]): number[] {
+  const active = groups.filter((g) => g.ids.length > 0);
+  if (!active.length) return [];
+  const idSets = active.map((g) => new Set(g.ids));
+
+  const rows = db.prepare(`SELECT id, kind, payload FROM events`).all() as {
+    id: number;
+    kind: string;
+    payload: string | null;
+  }[];
+
+  const matched: number[] = [];
+  for (const row of rows) {
+    if (!row.payload) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.payload);
+    } catch {
+      continue;
+    }
+    const payloadId = (parsed as { id?: unknown } | null)?.id;
+    if (typeof payloadId !== "number") continue;
+    for (let i = 0; i < active.length; i += 1) {
+      const group = active[i]!;
+      if (idSets[i]!.has(payloadId) && group.prefixes.some((p) => row.kind.startsWith(p))) {
+        matched.push(row.id);
+        break;
+      }
+    }
+  }
+  return matched;
 }
 
 export function demoStatus(): { loaded: boolean; message: string } {

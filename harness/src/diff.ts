@@ -13,8 +13,20 @@ export type LineDiff = { added: number; removed: number; lines: DiffLine[] };
 
 // A string with no content has no lines at all (rather than one empty
 // line), so two identical inputs -- "" included -- diff to zero lines.
+//
+// A trailing "\n" is the line terminator of the last line, not a blank line
+// of its own: split("\n") turns it into a phantom trailing "" element
+// (e.g. "a\nb\n" -> ["a","b",""]), so drop exactly that one element when the
+// input ends with "\n". Without this, two documents whose real content is
+// identical but one has a trailing newline and the other doesn't would diff
+// with a spurious "-"/"+" empty line, and composeManagedKnowledge's output
+// commonly differs from its input in exactly that way (the managed block
+// itself never ends in "\n").
 function splitLines(text: string): string[] {
-  return text === "" ? [] : text.split("\n");
+  if (text === "") return [];
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 // Standard LCS-over-lines edit script: O(n*m) DP table, then a deterministic

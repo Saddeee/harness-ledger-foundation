@@ -42,7 +42,18 @@ function readKeysFile(file: string): KeysFile {
 }
 
 function writeKeysFile(file: string, data: KeysFile): void {
-  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  const dir = dirname(file);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // `mkdirSync`'s `mode` only applies when it creates the directory -- if the
+  // data directory already existed (e.g. db.ts created it first, with no
+  // mode of its own), this is the only thing that actually tightens it.
+  // Wrapped in try/catch: chmod semantics aren't guaranteed on non-POSIX
+  // platforms, and this is defense in depth, not the primary guarantee.
+  try {
+    chmodSync(dir, 0o700);
+  } catch {
+    /* best effort */
+  }
   writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 });
   // writeFileSync only applies `mode` when it creates the file.
   chmodSync(file, 0o600);

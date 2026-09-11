@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { lineDiff } from "../src/diff.js";
+
+// knowledge.js pulls in store.js/db.js (for the char-cap setting), so give it
+// an isolated temp DB before importing it, same as every other test file
+// that touches the knowledge composer -- diff.ts itself has no such
+// dependency and stays a plain static import above.
+process.env.HARNESS_DB_PATH = join(mkdtempSync(join(tmpdir(), "harness-diff-test-")), "harness.db");
+const { composeManagedKnowledge } = await import("../src/knowledge.js");
 
 test("identical documents diff to zero added/removed and no lines, including both empty", () => {
   assert.deepEqual(lineDiff("a\nb\nc", "a\nb\nc"), { added: 0, removed: 0, lines: [] });
@@ -88,6 +98,41 @@ test("context collapsing on a 50-line document with two distant single-line edit
 
   // The default context is 2.
   assert.deepEqual(lineDiff(before, after).lines, out.lines);
+});
+
+test("a trailing newline alone never produces a spurious line delta", () => {
+  // Same two lines of real content; only one side is newline-terminated.
+  assert.deepEqual(lineDiff("a\nb\n", "a\nb"), { added: 0, removed: 0, lines: [] });
+  assert.deepEqual(lineDiff("a\nb", "a\nb\n"), { added: 0, removed: 0, lines: [] });
+  assert.deepEqual(lineDiff("a\nb\n", "a\nb\n"), { added: 0, removed: 0, lines: [] });
+
+  // A genuinely blank last line (two trailing newlines, not one) still counts.
+  const withBlankLine = lineDiff("a\nb", "a\nb\n\n");
+  assert.equal(withBlankLine.added, 1);
+  assert.equal(withBlankLine.removed, 0);
+  assert.deepEqual(withBlankLine.lines, [
+    { kind: " ", text: "a" },
+    { kind: " ", text: "b" },
+    { kind: "+", text: "" },
+  ]);
+});
+
+test("composeManagedKnowledge's output diffs cleanly against input that ends in a newline: no spurious blank-line delta", () => {
+  const base =
+    "# Project Knowledge\n\nThis project was built with Lovable. Add your own notes above this line.\n";
+  const composed = composeManagedKnowledge(base, [
+    { id: 1, instruction: "Demo: never add a cron job without asking." },
+  ]);
+  assert.ok(base.endsWith("\n"), "precondition: the input ends with a newline");
+  assert.ok(!composed.final_content.endsWith("\n"), "precondition: the managed block adds no trailing newline");
+
+  const out = lineDiff(base, composed.final_content);
+  // Nothing is ever removed here -- composing only appends. If the trailing
+  // newline weren't normalized away, `base`'s phantom last line would show
+  // up as a spurious "-" with no corresponding "+" on the other side.
+  assert.equal(out.removed, 0);
+  assert.ok(out.added > 0);
+  assert.ok(!out.lines.some((l) => l.kind === "-"));
 });
 
 test("lineDiff is deterministic: repeated calls on the same input produce identical output", () => {

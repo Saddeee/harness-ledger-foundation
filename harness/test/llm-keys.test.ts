@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, statSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -81,4 +81,23 @@ test("setKey rejects an unknown provider and an empty key", () => {
 test("removeKey on a provider with no key is a harmless no-op", () => {
   llmKeys.removeKey("google");
   assert.deepEqual(llmKeys.keyStatus().google, { has_key: false, last4: null });
+});
+
+test("setKey tightens a pre-existing, more permissive data directory to 0700 (e.g. one db.ts created without a mode)", () => {
+  const preexisting = join(tmp, "preexisting-dir");
+  // Simulates db.ts's `mkdirSync(dir, { recursive: true })` with no mode:
+  // mkdirSync's own `mode` option is a no-op on a directory that already
+  // exists, so this is the case the fix actually has to handle.
+  mkdirSync(preexisting, { recursive: true, mode: 0o755 });
+  assert.equal(statSync(preexisting).mode & 0o777, 0o755, "precondition: dir starts loose");
+
+  const keysPath = join(preexisting, "llm-keys.json");
+  process.env.HARNESS_LLM_KEYS_PATH = keysPath;
+  try {
+    llmKeys.setKey("openai", "sk-tighten-dir-test-1234");
+    const dirMode = statSync(preexisting).mode & 0o777;
+    assert.equal(dirMode, 0o700, `expected the pre-existing dir to be tightened to 0700, got ${dirMode.toString(8)}`);
+  } finally {
+    delete process.env.HARNESS_LLM_KEYS_PATH;
+  }
 });

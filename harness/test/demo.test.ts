@@ -69,6 +69,11 @@ function tableCount(table: string): number {
   return (db.prepare(`SELECT COUNT(*) as n FROM ${table}`).get() as { n: number }).n;
 }
 
+// Every table any insertEvent()-calling function addDemoData reaches can
+// touch: history_items, task_episodes, correction_candidates, learnings,
+// rules (+ rule_revisions via updateRule), knowledge_versions,
+// knowledge_snapshots, skill_snapshots, the two evidence link tables,
+// agent_actions (via recordHumanCorrectionDecision), and events itself.
 const TABLES = [
   "task_episodes",
   "task_episode_evidence",
@@ -82,6 +87,7 @@ const TABLES = [
   "history_items",
   "skill_snapshots",
   "agent_actions",
+  "events",
 ];
 
 test("demoLoaded is false before --add", () => {
@@ -117,11 +123,16 @@ test("addDemoData: counts rise by exactly the expected amounts, uses the first a
   assert.equal(after.task_episode_evidence! - before.task_episode_evidence!, 4);
   // correction_candidate_evidence: same shape as episode evidence.
   assert.equal(after.correction_candidate_evidence! - before.correction_candidate_evidence!, 4);
-  // rule_revisions: two automatic (proposed->active) from the write pipeline
-  // plus one explicit reword, all created by store.ts's own pipeline.
+  // rule_revisions: one automatic (proposed->active, from v1's write) plus
+  // two explicit rewords (before v2 and before v3), all on writtenRule only
+  // -- pendingRule is never written, so it never revises.
   assert.equal(after.rule_revisions! - before.rule_revisions!, 3);
   // agent_actions: one human_review_decision for the "written" improvement.
   assert.equal(after.agent_actions! - before.agent_actions!, 1);
+  // events: at least one insertEvent() per row created above; removeDemoData
+  // must delete every one of them (asserted precisely in the remove test
+  // below via the full pre-add/post-remove table comparison).
+  assert.ok(after.events! - before.events! > 0, "adding demo data must record events");
 
   // All three knowledge versions are written, spaced an hour apart.
   const versions = db
@@ -155,9 +166,25 @@ test("addDemoData: counts rise by exactly the expected amounts, uses the first a
     .find((i) => i.title.startsWith("Demo: never add a cron job without asking"));
   assert.ok(pending, "pending demo improvement should exist");
   assert.ok(written, "written demo improvement should exist");
+
+  // The pending (sidebar) improvement is untouched by any Knowledge write:
+  // its rule is never passed into composeManagedKnowledge or
+  // writeDemoVersion, so it stays exactly "awaiting a decision" on every
+  // axis -- not just decision.status, but also lovable.write_status and its
+  // version history, which is what an Inbox card and its detail panel both
+  // actually render.
   assert.equal(pending!.decision.status, "pending");
+  assert.equal(pending!.lovable.write_status, "none");
+  assert.equal(pending!.lovable.versions.length, 0);
+  const pendingRuleRow = pending!.developer.rule as { state: string } | null;
+  assert.equal(pendingRuleRow?.state, "proposed", "never written, so never activated either");
+
+  // The written (cron) improvement is the one that actually went through
+  // Knowledge, across all three versions.
   assert.equal(written!.decision.status, "accepted");
   assert.equal(written!.lovable.write_status, "written");
+  assert.equal(written!.lovable.versions.length, 3);
+  assert.ok(written!.lovable.versions.every((v) => v.status === "written"));
 
   // The real project's own rows are untouched.
   assert.ok(db.prepare(`SELECT 1 FROM rules WHERE id = ?`).get(realRule.id));
@@ -193,6 +220,13 @@ test("removeDemoData: every table returns to its pre-add count; real rows untouc
     db.prepare(`SELECT 1 FROM skill_snapshots WHERE name = 'a-real-skill'`).get(),
     "the real, non-demo skill snapshot must survive",
   );
+  // The real rule's own events (created alongside it, well before any demo
+  // row existed) must survive too -- proves the events cleanup matched by
+  // exact numeric payload.id, not a substring that could have swept these up.
+  const realRuleEvents = db
+    .prepare(`SELECT COUNT(*) as n FROM events WHERE kind = 'rule.created' AND payload LIKE ?`)
+    .get(`%"id":${realRule.id}%`) as { n: number };
+  assert.ok(realRuleEvents.n >= 1, "the real rule's own event must survive removal");
 });
 
 test("removeDemoData with nothing loaded is a harmless no-op", () => {
