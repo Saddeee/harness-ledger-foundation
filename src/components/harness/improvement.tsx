@@ -4,6 +4,7 @@
 // fetches the local Harness routes; never talks to Lovable itself -- adding
 // to Lovable is recorded here and executed by Harness afterwards.
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,11 +25,14 @@ import {
   label,
   lovableReplyText,
   lovableStatusLine,
+  proveCostLine,
+  type StatusCtx,
   whyFor,
   wordingChangeLine,
 } from "@/lib/harness-ux";
 
 import {
+  executorQueryOptions,
   groupOf,
   lovableOf,
   postImprovementAction as post,
@@ -44,16 +48,14 @@ export type { Improvement, Message };
 const NO_SNAPSHOT_BODY =
   "Harness hasn't read your current Knowledge yet. Your choice is saved; Harness will show you the exact text before writing.";
 const PREVIEW_BODY = "This is the exact text Harness will write to your Lovable Knowledge.";
-const PREVIEW_CONSEQUENCES = [
-  "Uses no Lovable credits.",
-  "You can restore the previous version at any time.",
-];
+const PREVIEW_CONSEQUENCES = ["You can restore the previous version at any time."];
 const OVER_CAP_LINE =
   "This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first.";
-const SAVED_LINE = "Saved — now under Improvements › Waiting to be added.";
+const SAVED_LINE = "Added — will be written at the next sync.";
 const RESTORE_TITLE = "Restore the previous Knowledge?";
 const RESTORE_BODY = "Harness will write the earlier text back, as a new version.";
 const NO_INSTRUCTION = "Harness hasn't drafted an instruction yet.";
+const ADD_NOW_HELP = "Harness writes this exact text at the next sync. Uses no credits.";
 
 const LONG_TEXT = 600;
 
@@ -106,6 +108,8 @@ function AddConfirm({
   trigger?: string;
   variant?: "default" | "outline";
 }) {
+  const [choice, setChoice] = useState<"now" | "test" | null>(null);
+  const wantsTest = choice === "test";
   const preview = lovableOf(item).previews[destination];
   const targetLabel = preview?.target_label ?? label(DESTINATION_LABELS, destination);
   const overCap = preview?.over_cap === true;
@@ -115,12 +119,55 @@ function AddConfirm({
       title={`Add to ${targetLabel}?`}
       body={preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
       consequences={preview ? PREVIEW_CONSEQUENCES : []}
-      confirmLabel={preview ? "Add" : "Save choice"}
-      confirmDisabled={overCap}
+      confirmLabel={wantsTest ? "Save for testing" : "Add"}
+      confirmDisabled={overCap || choice == null}
       disabled={busy}
+      onOpenChange={(open) => {
+        if (!open) setChoice(null);
+      }}
       {...(variant ? { variant } : {})}
-      onConfirm={() => void run({ action: "accept", id: item.id, destination }, SAVED_LINE)}
+      onConfirm={() =>
+        void run(
+          {
+            action: "accept",
+            id: item.id,
+            destination,
+            ...(wantsTest ? { test_first: true } : {}),
+          },
+          wantsTest ? "Saved for testing." : SAVED_LINE,
+        )
+      }
     >
+      <div role="radiogroup" aria-label="How to add it" className="space-y-3">
+        <div className="space-y-1">
+          <Button
+            type="button"
+            role="radio"
+            aria-checked={choice === "now"}
+            variant={choice === "now" ? "default" : "outline"}
+            className="w-full sm:w-auto"
+            onClick={() => setChoice("now")}
+          >
+            Add it now
+          </Button>
+          <p className="text-xs text-muted-foreground">{ADD_NOW_HELP}</p>
+        </div>
+        <div className="space-y-1">
+          <Button
+            type="button"
+            role="radio"
+            aria-checked={choice === "test"}
+            variant={choice === "test" ? "default" : "outline"}
+            className="w-full sm:w-auto"
+            onClick={() => setChoice("test")}
+          >
+            Test it first
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            {`Harness runs the same request with and without this instruction in a temporary copy of the project and shows you the difference before anything is written. ${proveCostLine(item.proof?.lovable_credits_max)} Testing is not switched on yet; your choice is saved and runs when it is.`}
+          </p>
+        </div>
+      </div>
       {preview ? (
         <div className="space-y-2">
           <details className="rounded-md border">
@@ -165,7 +212,17 @@ function SkipConfirm({ item, busy, run }: { item: Improvement; busy: boolean; ru
 
 // ---- Decided items: where it stands, and how to change your mind ----
 
-function DecidedStatus({ item, busy, run }: { item: Improvement; busy: boolean; run: Run }) {
+function DecidedStatus({
+  item,
+  busy,
+  run,
+  ctx,
+}: {
+  item: Improvement;
+  busy: boolean;
+  run: Run;
+  ctx?: StatusCtx | undefined;
+}) {
   const lovable = lovableOf(item);
   const accepted = item.decision.status === "accepted";
   const skipped = item.decision.status === "skipped";
@@ -177,7 +234,12 @@ function DecidedStatus({ item, busy, run }: { item: Improvement; busy: boolean; 
   return (
     <div className="space-y-2">
       <p className="text-sm">
-        {decisionSentence({ decision: item.decision, destination: item.destination, lovable })}
+        {decisionSentence({
+          decision: item.decision,
+          destination: item.destination,
+          lovable,
+          ctx,
+        })}
       </p>
       {accepted && lovable.write_status === "none" ? (
         <p className="text-xs text-muted-foreground">
@@ -199,6 +261,18 @@ function DecidedStatus({ item, busy, run }: { item: Improvement; busy: boolean; 
           Change decision
         </summary>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          {accepted &&
+          item.decision.test_first &&
+          lovable.write_status === "none" &&
+          (item.destination === "project" || item.destination === "workspace") ? (
+            <AddConfirm
+              item={item}
+              destination={item.destination}
+              busy={busy}
+              run={run}
+              trigger="Add it now instead"
+            />
+          ) : null}
           {accepted && !written ? (
             <>
               {(["project", "workspace"] as Destination[])
@@ -283,6 +357,12 @@ export function DecisionCard({
   const own = useRun(onChanged);
   const busy = busyProp ?? own.busy;
   const run = runProp ?? own.run;
+  const executor = useQuery(executorQueryOptions);
+  const ctx = {
+    nextSyncAt: executor.data?.next_run_at ?? null,
+    connected: executor.data?.connection?.connected,
+    testFirst: item.decision.test_first,
+  };
   const pending = item.decision.status === "pending";
   const Title = titleAs;
   const titleId = `improvement-${item.id}`;
@@ -345,7 +425,7 @@ export function DecisionCard({
           <SkipConfirm item={item} busy={busy} run={run} />
         </div>
       ) : (
-        <DecidedStatus item={item} busy={busy} run={run} />
+        <DecidedStatus item={item} busy={busy} run={run} ctx={ctx} />
       )}
     </article>
   );
@@ -433,7 +513,7 @@ export function ImprovementDetail({
             aria-expanded={editing}
             onClick={() => setEditing((v) => !v)}
           >
-            {editing ? "Cancel wording change" : "Change the wording"}
+            {editing ? "Cancel" : "Edit instruction"}
           </button>
         ) : null}
         {editing ? (

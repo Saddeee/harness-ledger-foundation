@@ -90,7 +90,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
   const order = [
     "{backLabel}",
     "<DecisionCard item={item}",
-    "Change the wording",
+    "Edit instruction",
     "{whyFor(item.classification)}",
     "What happened",
     'title="Details"',
@@ -121,7 +121,7 @@ test("decision card: three buttons for pending items, Change decision for decide
   assert.match(card, /\{onOpen \? \(/);
   assert.match(card, /onClick=\{\(\) => onOpen\(item\.id\)\}/);
   assert.ok(!/>\s*Details\s*<\/button>/.test(card), "no separate Details link; the card opens the item");
-  assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} \/>/);
+  assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
   const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
   assert.match(decided, />\s*Change decision\s*<\/summary>/);
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
@@ -130,7 +130,10 @@ test("decision card: three buttons for pending items, Change decision for decide
   assert.match(decided, /\{ action: "restore", id: item\.id, version_id: latestWritten\.id \}/);
   assert.match(decided, /\{ action: "reopen", id: item\.id \}/);
   assert.match(decided, /\{decisionSentence\(/);
-  for (const gone of ["Skill", "SKILL_NOT_ON", "Decide later", "Decide now", "isDeferred", "setDeferred", "DecisionPanel", "role=\"radio\"", "justAccepted", "PENDING_CHIP"]) {
+  // "role=\"radio\"" used to be forbidden here (an earlier deferred-decision
+  // design); Task 8 reintroduces it deliberately for the Add-confirmation
+  // choice, tested separately in ux-decision.test.ts.
+  for (const gone of ["Skill", "SKILL_NOT_ON", "Decide later", "Decide now", "isDeferred", "setDeferred", "DecisionPanel", "justAccepted", "PENDING_CHIP"]) {
     assert.ok(!detail.includes(gone), `${gone} should be gone from the detail component`);
   }
   const client = codeOnly(readApp(CLIENT));
@@ -150,7 +153,11 @@ test("proof copy stays defined for later but nothing on screen runs or mentions 
   for (const page of PAGES) {
     const code = codeOnly(readApp(page));
     assert.ok(!/run_experiment|execute_experiment|remix_project|send_message|"run_proof"|action: "run"|action: "prove"/.test(code), page);
-    assert.ok(!/Run proof|PROVE_INTRO|proveCostLine/.test(code), `${page} still shows proof UI`);
+    // Task 8: the Add confirmation's "Test it first" choice legitimately
+    // states its cost via proveCostLine -- everything else still shows no
+    // proof-running UI.
+    const forbidden = page === DETAIL ? /Run proof|PROVE_INTRO/ : /Run proof|PROVE_INTRO|proveCostLine/;
+    assert.ok(!forbidden.test(code), `${page} still shows proof UI`);
   }
 });
 
@@ -162,26 +169,32 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   assert.match(confirm, /\{preview\.managed_block\}/);
   assert.match(confirm, /\{preview\.char_count\} of \{KNOWLEDGE_CHAR_LIMIT\.toLocaleString\("en-US"\)\} characters/);
   assert.equal(ux.KNOWLEDGE_CHAR_LIMIT, 10000);
-  assert.match(detail, /"Uses no Lovable credits\.",/);
-  assert.match(detail, /"You can restore the previous version at any time\.",/);
+  // Task 8: the Add-it-now/Test-it-first choice text now says "Uses no
+  // credits" itself, so this line was dropped from PREVIEW_CONSEQUENCES.
+  assert.ok(!/"Uses no Lovable credits\.",/.test(detail));
+  assert.match(detail, /"You can restore the previous version at any time\."/);
   assert.match(confirm, /consequences=\{preview \? PREVIEW_CONSEQUENCES : \[\]\}/);
   // no snapshot yet -> save the choice, say so, and promise the read-back
   assert.match(
     detail,
     /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; Harness will show you the exact text before writing\.";/,
   );
-  assert.match(confirm, /confirmLabel=\{preview \? "Add" : "Save choice"\}/);
+  // Task 8: confirm label now reflects the two-choice selection, not
+  // whether a preview is available.
+  assert.match(confirm, /confirmLabel=\{wantsTest \? "Save for testing" : "Add"\}/);
   // over the cap -> the confirm button is disabled and the reason is shown
   assert.match(
     detail,
     /const OVER_CAP_LINE =\s*"This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first\.";/,
   );
-  assert.match(confirm, /confirmDisabled=\{overCap\}/);
+  // ... and so is an unmade choice
+  assert.match(confirm, /confirmDisabled=\{overCap \|\| choice == null\}/);
   assert.match(confirm, /\{overCap \? \(/);
   // the confirmation posts the contract action, nothing else
-  assert.match(confirm, /\{ action: "accept", id: item\.id, destination \}, SAVED_LINE/);
+  assert.match(confirm, /action: "accept",\s*id: item\.id,\s*destination,/);
+  assert.match(confirm, /wantsTest \? "Saved for testing\." : SAVED_LINE/);
   // afterwards: a toast says where it went; the card re-renders as decided
-  assert.match(detail, /const SAVED_LINE = "Saved — now under Improvements › Waiting to be added\.";/);
+  assert.match(detail, /const SAVED_LINE = "Added — will be written at the next sync\.";/);
   assert.ok(!/useNavigate/.test(detail), "the component never navigates");
   // the layout supports the preview slot and a disabled confirm
   const layout = codeOnly(readApp(LAYOUT));
@@ -375,15 +388,21 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   const detail = detailCopy();
   assert.ok(count(detail, "Lovable credits") <= 2, `Lovable credits x${count(detail, "Lovable credits")}`);
   assert.equal(count(detail, "Harness analysis"), 1);
-  assert.equal(count(codeOnly(readApp(DETAIL)), "credit"), count(codeOnly(readApp(DETAIL)), "Lovable credits") + count(codeOnly(readApp(DETAIL)), "lovable_credits_max"));
+  // Task 8 adds one more bare "credit" mention: "Uses no credits." in the
+  // Add-it-now choice text (not "Lovable credits", so it isn't counted by
+  // either of the other two terms).
+  assert.equal(count(codeOnly(readApp(DETAIL)), "credit"), count(codeOnly(readApp(DETAIL)), "Lovable credits") + count(codeOnly(readApp(DETAIL)), "lovable_credits_max") + 1);
   for (const page of [INBOX, LEDGER, LAYOUT]) {
     assert.equal(count(codeOnly(readApp(page)), "credit"), 0, `${page} mentions credits`);
   }
   // the client lib carries the contract field name lovable_credits_max, but no user-facing credit copy
   assert.equal(count(codeOnly(readApp(CLIENT)), "Lovable credits"), 0);
-  // harness-ux.ts carries exactly the two approved lines (proof cost, onboarding step 3)
+  // harness-ux.ts (Task 8): "Lovable credits" appears once, in
+  // proveCostLine. "credit" appears twice in total: that same occurrence,
+  // plus step 1's "No credits, no AI." -- bare "credits", not "Lovable
+  // credits", since syncing never touches Lovable's credit-metered agent.
   const uxSource = codeOnly(readApp("lib/harness-ux.ts"));
-  assert.equal(count(uxSource, "Lovable credits"), 2);
+  assert.equal(count(uxSource, "Lovable credits"), 1);
   assert.equal(count(uxSource, "credit"), 2);
 });
 
@@ -424,7 +443,9 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
 
 test("Inbox: a count line, then decision cards you can act on without opening them", () => {
   const inbox = codeOnly(readApp(INBOX));
-  assert.match(inbox, /<DecisionCard item=\{i\} onChanged=\{refresh\} onOpen=\{open\} \/>/);
+  // Task 8: onChanged also marks the item decided-this-session (see the
+  // "decided cards stay put" test), so it's no longer bare `refresh`.
+  assert.match(inbox, /<DecisionCard item=\{i\} onChanged=\{\(\) => markDecided\(i\.id\)\} onOpen=\{open\} \/>/);
   assert.match(inbox, /"One improvement is waiting for your decision\."/);
   assert.match(inbox, /`\$\{pending\.length\} improvements are waiting for your decision\.`/);
   assert.ok(!/ImprovementCard|ClickableCard|isDeferred/.test(inbox));
@@ -438,22 +459,25 @@ test("evidence rendering only knows two authors and labels them for a person", (
   assert.match(detail, /lovableReplyText\(m\.text\)/);
 });
 
-test("landing page: public, three steps from HOW_IT_WORKS_STEPS, one button, never redirects", () => {
+test("landing page: public, four steps from HOW_IT_WORKS_STEPS (spec 6.5), one button, never redirects", () => {
+  // Task 8: the three onboarding steps become the four steps from spec
+  // §6.5, and the landing intro becomes LANDING_INTRO.
   assert.deepEqual(
     ux.HOW_IT_WORKS_STEPS.map((s) => s.title),
-    ["Found", "Add or skip", "Nothing changes until you say so"],
+    ["Synced", "Proposed", "Approved by you", "Written and versioned"],
   );
   assert.deepEqual(
     ux.HOW_IT_WORKS_STEPS.map((s) => s.text),
     [
-      "Harness reads your Lovable chats and spots where you corrected Lovable.",
-      "It proposes one instruction per correction. You add it to this project, to all your projects, or skip it.",
-      "You see the exact text before it is written, and you can restore the previous version. Reviewing never uses Lovable credits.",
+      "Harness reads your Lovable chats and Knowledge every hour. No credits, no AI.",
+      "Where you corrected Lovable, Harness proposes one instruction, with the exact messages as evidence.",
+      "Add it now, test it first in a temporary copy, or skip. Nothing changes until you say so.",
+      "Harness writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
     ],
   );
   const landing = codeOnly(readApp("routes/index.tsx"));
   assert.match(landing, /HOW_IT_WORKS_STEPS\.map/);
-  assert.match(landing, /Harness turns the corrections you give Lovable into standing instructions/);
+  assert.match(landing, /\{LANDING_INTRO\}/);
   assert.match(landing, /signedIn \? "\/inbox" : "\/login"/);
   assert.match(landing, /signedIn \? "Open Inbox" : "Sign in"/);
   assert.ok(!/navigate\(|redirect\(/.test(landing), "the landing page never redirects");

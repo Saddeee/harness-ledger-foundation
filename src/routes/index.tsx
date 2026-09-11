@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { HOW_IT_WORKS_STEPS } from "@/lib/harness-ux";
+import { HOW_IT_WORKS_STEPS, LANDING_INTRO } from "@/lib/harness-ux";
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -43,10 +43,7 @@ function Landing() {
       <div className="mx-auto max-w-2xl space-y-10">
         <header className="space-y-3">
           <h1 className="text-3xl font-semibold">Harness Ledger</h1>
-          <p className="text-lg text-muted-foreground">
-            Harness turns the corrections you give Lovable into standing instructions, so Lovable
-            stops making the same mistake.
-          </p>
+          <p className="text-lg text-muted-foreground">{LANDING_INTRO}</p>
         </header>
 
         <ol className="space-y-6">

@@ -233,6 +233,18 @@ export type LovableStatusLike = {
   stale_reason?: string | null;
 };
 
+// What the local executor knows, for the status line and decision sentence:
+// when it next runs, whether Lovable is connected, and whether the user
+// chose to test the instruction first. Every field (and the object itself)
+// is allowed to be `undefined` explicitly, not just absent -- callers build
+// this from optional-chained query data (e.g. `executor.data?.connection`),
+// so the value itself, not just the key, is routinely undefined.
+export type StatusCtx = {
+  nextSyncAt?: string | null | undefined;
+  connected?: boolean | undefined;
+  testFirst?: boolean | undefined;
+};
+
 // One line describing where the instruction stands in Lovable. Never claims
 // it was added unless a verified write exists. `ctx` carries what the local
 // executor knows (when it next runs, whether Lovable is connected) and
@@ -240,7 +252,7 @@ export type LovableStatusLike = {
 // existing single-argument callers keep working unchanged.
 export function lovableStatusLine(
   input: LovableStatusLike | null | undefined,
-  ctx?: { nextSyncAt?: string | null; connected?: boolean; testFirst?: boolean },
+  ctx?: StatusCtx | undefined,
 ): string {
   switch (input?.write_status) {
     case "written":
@@ -263,7 +275,7 @@ export function decisionSentence(input: {
   decision: DecisionLike;
   destination: string | null;
   lovable?: LovableStatusLike | null;
-  ctx?: { nextSyncAt?: string | null; connected?: boolean; testFirst?: boolean };
+  ctx?: StatusCtx | undefined;
 }): string {
   const when = input.decision.decided_at ? `, on ${formatDay(input.decision.decided_at)}` : "";
   if (input.decision.status === "accepted") {
@@ -309,18 +321,25 @@ export function proveCostLine(maxCredits: number | null | undefined): string {
 
 // ---- Onboarding: the only place the product explains itself ----
 
+export const LANDING_INTRO =
+  "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a standing instruction. You approve; Harness writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.";
+
 export const HOW_IT_WORKS_STEPS = [
   {
-    title: "Found",
-    text: "Harness reads your Lovable chats and spots where you corrected Lovable.",
+    title: "Synced",
+    text: "Harness reads your Lovable chats and Knowledge every hour. No credits, no AI.",
   },
   {
-    title: "Add or skip",
-    text: "It proposes one instruction per correction. You add it to this project, to all your projects, or skip it.",
+    title: "Proposed",
+    text: "Where you corrected Lovable, Harness proposes one instruction, with the exact messages as evidence.",
   },
   {
-    title: "Nothing changes until you say so",
-    text: "You see the exact text before it is written, and you can restore the previous version. Reviewing never uses Lovable credits.",
+    title: "Approved by you",
+    text: "Add it now, test it first in a temporary copy, or skip. Nothing changes until you say so.",
+  },
+  {
+    title: "Written and versioned",
+    text: "Harness writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
   },
 ] as const;
 

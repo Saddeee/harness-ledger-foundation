@@ -67,7 +67,7 @@ function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Harness Ledger</CardTitle>
-          <CardDescription>Internal tool — sign in to continue.</CardDescription>
+          <CardDescription>Sign in to continue.</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin">

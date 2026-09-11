@@ -131,6 +131,7 @@ export function ConfirmAction({
   confirmDisabled,
   variant,
   children,
+  onOpenChange,
 }: {
   trigger: string;
   title: string;
@@ -144,9 +145,12 @@ export function ConfirmAction({
   // Extra content shown between the body and the consequences, e.g. an
   // exact preview of what will be written.
   children?: ReactNode;
+  // Called when the dialog opens or closes, e.g. to reset in-dialog choice
+  // state so the next open starts fresh.
+  onOpenChange?: (open: boolean) => void;
 }) {
   return (
-    <AlertDialog>
+    <AlertDialog {...(onOpenChange ? { onOpenChange } : {})}>
       <AlertDialogTrigger asChild>
         <Button disabled={disabled} variant={variant ?? "default"} className="w-full sm:w-auto">
           {trigger}
