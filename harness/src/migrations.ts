@@ -489,4 +489,98 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_llm_calls_created_at ON llm_calls(created_at);
     `,
   },
+  {
+    version: 9,
+    name: "round4_analysis_and_health",
+    sql: `
+      -- The analysis pipeline (Round 4 Task A0) needs a per-call token
+      -- estimate (the pre-call budget-guard number, kept alongside the
+      -- post-call real tokens_in/tokens_out for audit) and, once analysis
+      -- runs exist (Task A3), which run produced a given call.
+      ALTER TABLE llm_calls ADD COLUMN estimated_tokens INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE llm_calls ADD COLUMN run_id INTEGER;
+
+      -- One row per classified user history_item (Task A1): the pipeline's
+      -- own classification, distinct from correction_candidates.classification
+      -- (a human-reviewed judgment on a whole task episode, not a single
+      -- message) -- see the round-4 spec/exploration for why these are two
+      -- different enums answering two different questions.
+      CREATE TABLE IF NOT EXISTS message_classifications (
+        history_item_id INTEGER PRIMARY KEY REFERENCES history_items(id),
+        classification TEXT NOT NULL CHECK (classification IN ('new_task','correction','question','approval','other')),
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        summary TEXT NOT NULL DEFAULT '',
+        run_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      -- "Analyse now" mirrors sync_requests/sync_runs exactly (Task A3):
+      -- analysis_runs first (the table analysis_requests.run_id points into),
+      -- then the coalesced request row.
+      CREATE TABLE IF NOT EXISTS analysis_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL DEFAULT 'manual',
+        started_at TEXT NOT NULL DEFAULT (datetime('now')),
+        finished_at TEXT,
+        ok INTEGER,
+        error TEXT,
+        counts_json TEXT NOT NULL DEFAULT '{}',
+        tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL
+      );
+      CREATE TABLE IF NOT EXISTS analysis_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+        status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','running','done')),
+        run_id INTEGER
+      );
+
+      -- Per-rule outcome tracking (Task C1/4b): applicable/helped/hurt counts
+      -- and the retirement signal, recomputed after every sync/analysis run.
+      CREATE TABLE IF NOT EXISTS rule_health (
+        rule_id INTEGER PRIMARY KEY REFERENCES rules(id),
+        applicable_tasks INTEGER NOT NULL DEFAULT 0,
+        helped INTEGER NOT NULL DEFAULT 0,
+        hurt INTEGER NOT NULL DEFAULT 0,
+        last_applicable_at TEXT,
+        contradicted_by_rule_id INTEGER,
+        unused_since TEXT,
+        status TEXT NOT NULL DEFAULT 'healthy' CHECK (status IN ('healthy','watch','retire_suggested','snoozed')),
+        snoozed_until TEXT,
+        computed_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_rule_health_status ON rule_health(status);
+
+      -- The miner (Task A2) and health computation (Task C1) tag rules by
+      -- scope so applicability can be checked without an LLM call; a rule
+      -- with no more specific tag applies everywhere ("general").
+      ALTER TABLE rules ADD COLUMN scope_tags_json TEXT NOT NULL DEFAULT '["general"]';
+
+      -- Retirement proposals (Task C2): a human-reviewed Inbox item kind,
+      -- separate from correction_candidates because it proposes retiring an
+      -- existing rule rather than adding a new one.
+      CREATE TABLE IF NOT EXISTS retire_proposals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        reason TEXT NOT NULL CHECK (reason IN ('hurt','contradiction','unused')),
+        evidence_json TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','retired','kept')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        decided_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_retire_proposals_status ON retire_proposals(status);
+
+      -- Note: task_episode_evidence (checkpoint B, v2) already carries
+      -- history_item_id -- no separate task-episode <-> history-item link
+      -- table is needed for segmentation (Task A1) to reuse.
+
+      -- Budget moves from a USD estimate to a token count (a Claude Code
+      -- subscription has no per-call price) -- see store.ts's SettingKey.
+      -- llm_monthly_token_budget / rule_unused_after_days are added to
+      -- SETTING_DEFAULTS in application code; missing settings rows already
+      -- fall back to SETTING_DEFAULTS there, so no INSERT is needed here,
+      -- only removing the row this replaces.
+      DELETE FROM settings WHERE key = 'llm_monthly_budget_usd';
+    `,
+  },
 ];

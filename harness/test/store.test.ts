@@ -13,13 +13,13 @@ const store = await import("../src/store.js");
 const PROJECT = "test-project-id";
 
 test("schema migration: applies all migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 8);
+  assert.equal(schemaVersion(), 9);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2, 3, 4, 5, 6, 7, 8],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9],
   );
   const tableNames = new Set(
     (db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map(
@@ -33,6 +33,8 @@ test("schema migration: applies all migrations exactly once, expected tables exi
     "learnings", "rules", "rule_revisions", // checkpoint B
     "settings", "skill_snapshots", "sync_runs", "sync_requests", // checkpoint E (v5)
     "project_settings", "llm_calls", // round 3 (v8)
+    "message_classifications", "analysis_requests", "analysis_runs",
+    "rule_health", "retire_proposals", // round 4 (v9)
   ]) {
     assert.ok(tableNames.has(t), `expected table ${t} to exist`);
   }
@@ -307,22 +309,36 @@ test("v5 allow/disallow project and history stats", () => {
 
 // ---- Round 3 (v8): AI-analysis settings, per-project settings, llm_calls ----
 
-test("v8 settings: llm_provider/llm_models/llm_monthly_budget_usd/max_active_rules defaults and validation", () => {
+test("v9 settings: llm_provider/llm_models/llm_monthly_token_budget/rule_unused_after_days/max_active_rules defaults and validation", () => {
   assert.equal(store.getSetting("llm_provider"), "openai");
-  assert.equal(store.getSetting("llm_monthly_budget_usd"), "10");
+  assert.equal(store.getSetting("llm_monthly_token_budget"), "2000000");
+  assert.equal(store.getSetting("rule_unused_after_days"), "60");
   assert.equal(store.getSetting("max_active_rules"), "12");
   const defaultModels = JSON.parse(store.getSetting("llm_models"));
   assert.deepEqual(Object.keys(defaultModels).sort(), ["classifier", "miner", "proposer", "reviewer"]);
   assert.deepEqual(defaultModels.classifier, { provider: "openai", model: "gpt-5.4-mini" });
   assert.deepEqual(defaultModels.miner, { provider: "openai", model: "gpt-5.5" });
 
-  assert.throws(() => store.setSettings({ llm_provider: "cohere" }), /openai|anthropic|google/);
+  assert.throws(() => store.setSettings({ llm_provider: "cohere" }), /openai|anthropic|google|claude_code/);
   const okProvider = store.setSettings({ llm_provider: "anthropic" });
   assert.equal(okProvider.llm_provider, "anthropic");
+  // claude_code (the local CLI / subscription provider) is an allowed value too.
+  assert.equal(store.setSettings({ llm_provider: "claude_code" }).llm_provider, "claude_code");
+  store.setSettings({ llm_provider: "openai" });
 
-  assert.throws(() => store.setSettings({ llm_monthly_budget_usd: "0" }), /1.*1000|between/);
-  assert.throws(() => store.setSettings({ llm_monthly_budget_usd: "1001" }), /1.*1000|between/);
-  assert.equal(store.setSettings({ llm_monthly_budget_usd: "25" }).llm_monthly_budget_usd, "25");
+  assert.throws(() => store.setSettings({ llm_monthly_token_budget: "99999" }), /100000.*50000000|between/);
+  assert.throws(() => store.setSettings({ llm_monthly_token_budget: "50000001" }), /100000.*50000000|between/);
+  assert.equal(
+    store.setSettings({ llm_monthly_token_budget: "3000000" }).llm_monthly_token_budget,
+    "3000000",
+  );
+
+  assert.throws(() => store.setSettings({ rule_unused_after_days: "6" }), /7.*365|between/);
+  assert.throws(() => store.setSettings({ rule_unused_after_days: "366" }), /7.*365|between/);
+  assert.equal(store.setSettings({ rule_unused_after_days: "90" }).rule_unused_after_days, "90");
+
+  // llm_monthly_budget_usd no longer exists as a setting at all.
+  assert.ok(!("llm_monthly_budget_usd" in store.getSettings()));
 
   assert.throws(() => store.setSettings({ max_active_rules: "0" }), /1.*50|between/);
   assert.throws(() => store.setSettings({ max_active_rules: "51" }), /1.*50|between/);
@@ -366,6 +382,15 @@ test("v8 settings: llm_provider/llm_models/llm_monthly_budget_usd/max_active_rul
   const updated = store.setSettings({ llm_models: JSON.stringify(goodModels) });
   assert.deepEqual(JSON.parse(updated.llm_models), goodModels);
 
+  // A role's provider may be claude_code (no API key needed).
+  const withClaudeCode = {
+    ...goodModels,
+    classifier: { provider: "claude_code", model: "haiku" },
+  };
+  const updated2 = store.setSettings({ llm_models: JSON.stringify(withClaudeCode) });
+  assert.deepEqual(JSON.parse(updated2.llm_models), withClaudeCode);
+  store.setSettings({ llm_models: JSON.stringify(goodModels) });
+
   // A rejected patch leaves every existing setting untouched.
   const before = store.getSettings();
   assert.throws(() => store.setSettings({ max_active_rules: "999", llm_provider: "openai" }));
@@ -404,4 +429,93 @@ test("v8 llm_calls: insert, sum this month, list", () => {
   const calls = store.listLlmCalls(10) as { role: string; provider: string; model: string }[];
   assert.equal(calls.length, 2);
   assert.equal(calls[0]!.role, "miner"); // most recent first
+});
+
+// ---- Round 4 (v9): estimated_tokens/run_id on llm_calls, token-budget sum ----
+
+test("v9 llm_calls: estimated_tokens/run_id columns, sumLlmTokensThisMonth", () => {
+  const before = store.sumLlmTokensThisMonth();
+  store.insertLlmCall({
+    role: "classifier",
+    provider: "claude_code",
+    model: "sonnet",
+    tokens_in: 300,
+    tokens_out: 40,
+    estimated_tokens: 1800,
+    run_id: 7,
+  });
+  store.insertLlmCall({
+    role: "miner",
+    provider: "openai",
+    model: "gpt-5.5",
+    tokens_in: 900,
+    tokens_out: 150,
+    cost_usd: 0.01,
+  });
+  assert.equal(store.sumLlmTokensThisMonth() - before, 300 + 40 + 900 + 150);
+  const calls = store.listLlmCalls(10) as {
+    role: string;
+    estimated_tokens: number;
+    run_id: number | null;
+    cost_usd: number;
+  }[];
+  const claudeCodeCall = calls.find((c) => c.role === "classifier")!;
+  assert.equal(claudeCodeCall.estimated_tokens, 1800);
+  assert.equal(claudeCodeCall.run_id, 7);
+  assert.equal(claudeCodeCall.cost_usd, 0); // no cost_usd given -> defaults to 0, not null (column is NOT NULL)
+  const minerCall = calls.find((c) => c.role === "miner")!;
+  assert.equal(minerCall.estimated_tokens, 0); // defaults to 0 when omitted
+  assert.equal(minerCall.run_id, null);
+});
+
+test("v9 rules.scope_tags_json: defaults to general, existing rows backfilled", () => {
+  const cols = (db.prepare(`PRAGMA table_info(rules)`).all() as { name: string }[]).map((c) => c.name);
+  assert.ok(cols.includes("scope_tags_json"));
+  const row = db.prepare(`SELECT scope_tags_json FROM rules WHERE id = ?`).get(ruleId) as {
+    scope_tags_json: string;
+  };
+  assert.deepEqual(JSON.parse(row.scope_tags_json), ["general"]);
+});
+
+test("v9 new tables: message_classifications, analysis_requests/runs, rule_health, retire_proposals enforce their CHECK constraints", () => {
+  db.prepare(
+    `INSERT INTO history_items (project_id, external_id, kind, role, content, occurred_at, provenance)
+     VALUES (?, ?, 'message', 'user', 'hi', datetime('now'), 'manual')`,
+  ).run(PROJECT, `mc-${ruleId}`);
+  const hi = db.prepare(`SELECT id FROM history_items WHERE external_id = ?`).get(`mc-${ruleId}`) as {
+    id: number;
+  };
+
+  db.prepare(
+    `INSERT INTO message_classifications (history_item_id, classification) VALUES (?, 'correction')`,
+  ).run(hi.id);
+  assert.throws(() =>
+    db
+      .prepare(`INSERT INTO message_classifications (history_item_id, classification) VALUES (?, 'bogus')`)
+      .run(hi.id),
+  );
+
+  const run = db
+    .prepare(`INSERT INTO analysis_runs (kind) VALUES ('manual') RETURNING id`)
+    .get() as { id: number };
+  db.prepare(`INSERT INTO analysis_requests (run_id) VALUES (?)`).run(run.id);
+  assert.throws(() =>
+    db.prepare(`INSERT INTO analysis_requests (status) VALUES ('bogus')`).run(),
+  );
+
+  db.prepare(`INSERT INTO rule_health (rule_id) VALUES (?)`).run(ruleId);
+  const health = db.prepare(`SELECT * FROM rule_health WHERE rule_id = ?`).get(ruleId) as {
+    status: string;
+    applicable_tasks: number;
+  };
+  assert.equal(health.status, "healthy");
+  assert.equal(health.applicable_tasks, 0);
+  assert.throws(() =>
+    db.prepare(`INSERT INTO rule_health (rule_id, status) VALUES (999999, 'bogus')`).run(),
+  );
+
+  db.prepare(`INSERT INTO retire_proposals (rule_id, reason) VALUES (?, 'unused')`).run(ruleId);
+  assert.throws(() =>
+    db.prepare(`INSERT INTO retire_proposals (rule_id, reason) VALUES (?, 'bogus')`).run(ruleId),
+  );
 });

@@ -81,6 +81,23 @@ export function removeKey(provider: string): void {
 }
 
 /**
+ * Returns the raw key for in-process use only (an outbound HTTP call to the
+ * provider) -- never log it, never put it in a response body or a thrown
+ * error message. `null` for a provider with no stored key and for any
+ * provider this file doesn't manage keys for (e.g. `claude_code`, which
+ * authenticates via the locally installed CLI's own subscription login,
+ * not an API key) -- both are "no key", not an error, since the caller
+ * (harness/src/llm/index.ts) only needs a key for the API providers.
+ */
+export function getKey(provider: string): string | null {
+  if (!isLlmProvider(provider)) return null;
+  const file = keysFilePath();
+  if (!existsSync(file)) return null;
+  const data = readKeysFile(file);
+  return data[provider] ?? null;
+}
+
+/**
  * Never returns the raw key -- only whether one is stored and its last four
  * characters, which is all any route or UI may show.
  */

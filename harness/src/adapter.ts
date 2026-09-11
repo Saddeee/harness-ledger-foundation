@@ -40,6 +40,7 @@ export {
   setProjectSettings,
   effectiveMaxActiveRules,
   sumLlmCostThisMonth,
+  sumLlmTokensThisMonth,
   listSkillSnapshots,
 } from "./store.js";
 

@@ -1396,13 +1396,15 @@ export type SettingKey =
   | "require_approval_before_write"
   | "llm_provider"
   | "llm_models"
-  | "llm_monthly_budget_usd"
+  | "llm_monthly_token_budget"
+  | "rule_unused_after_days"
   | "max_active_rules";
 
-// AI analysis is not switched on anywhere yet (see the spec's "still out of
-// scope" section) -- these four keys only give the Settings page and the
-// Knowledge composer something to read and validate ahead of that.
-export const LLM_PROVIDERS = ["openai", "anthropic", "google"] as const;
+// AI analysis (Round 4): these keys give the Settings page and the analysis
+// pipeline (harness/src/llm/) something to read and validate. Budget is in
+// tokens, not USD -- a Claude Code subscription call has no per-call price
+// (see llm_monthly_token_budget below and harness/src/llm/budget.ts).
+export const LLM_PROVIDERS = ["openai", "anthropic", "google", "claude_code"] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
 export type LlmRole = "classifier" | "miner" | "reviewer" | "proposer";
@@ -1426,7 +1428,8 @@ export const SETTING_DEFAULTS: Record<SettingKey, string> = {
   require_approval_before_write: "true",
   llm_provider: "openai",
   llm_models: JSON.stringify(DEFAULT_LLM_MODELS),
-  llm_monthly_budget_usd: "10",
+  llm_monthly_token_budget: "2000000",
+  rule_unused_after_days: "60",
   max_active_rules: "12",
 };
 
@@ -1518,8 +1521,10 @@ export function setSettings(
       assertLlmProvider(value);
     } else if (key === "llm_models") {
       assertLlmModels(value);
-    } else if (key === "llm_monthly_budget_usd") {
-      assertIntInRange(key, value, 1, 1000);
+    } else if (key === "llm_monthly_token_budget") {
+      assertIntInRange(key, value, 100_000, 50_000_000);
+    } else if (key === "rule_unused_after_days") {
+      assertIntInRange(key, value, 7, 365);
     } else if (key === "max_active_rules") {
       assertIntInRange(key, value, 1, 50);
     } else {
@@ -1943,11 +1948,13 @@ export function insertLlmCall(input: {
   tokens_in?: number;
   tokens_out?: number;
   cost_usd?: number;
+  estimated_tokens?: number;
+  run_id?: number | null;
 }) {
   const row = db
     .prepare(
-      `INSERT INTO llm_calls (role, provider, model, tokens_in, tokens_out, cost_usd)
-       VALUES (@role, @provider, @model, @tokens_in, @tokens_out, @cost_usd) RETURNING *`,
+      `INSERT INTO llm_calls (role, provider, model, tokens_in, tokens_out, cost_usd, estimated_tokens, run_id)
+       VALUES (@role, @provider, @model, @tokens_in, @tokens_out, @cost_usd, @estimated_tokens, @run_id) RETURNING *`,
     )
     .get({
       role: input.role,
@@ -1956,6 +1963,8 @@ export function insertLlmCall(input: {
       tokens_in: input.tokens_in ?? 0,
       tokens_out: input.tokens_out ?? 0,
       cost_usd: input.cost_usd ?? 0,
+      estimated_tokens: input.estimated_tokens ?? 0,
+      run_id: input.run_id ?? null,
     }) as { id: number };
   insertEvent("llm_call.recorded", null, {
     id: row.id,
@@ -1972,6 +1981,19 @@ export function sumLlmCostThisMonth(): number {
   const row = db
     .prepare(
       `SELECT COALESCE(SUM(cost_usd), 0) as total FROM llm_calls
+       WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`,
+    )
+    .get() as { total: number };
+  return row.total;
+}
+
+// Round 4 (v9): the analysis budget guard is token-based (harness/src/llm/
+// budget.ts) -- a Claude Code subscription call has no per-call USD price,
+// so tokens are the one number every provider can be metered by.
+export function sumLlmTokensThisMonth(): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(tokens_in + tokens_out), 0) as total FROM llm_calls
        WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`,
     )
     .get() as { total: number };

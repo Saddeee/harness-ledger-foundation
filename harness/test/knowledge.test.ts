@@ -72,7 +72,7 @@ test("composer flags over_rules when maxActiveRules is exceeded, and always repo
 // ---- migration ----
 
 test("migrations through v7 applied once; earlier tables and rows intact", () => {
-  assert.equal(schemaVersion(), 8);
+  assert.equal(schemaVersion(), 9);
   const names = new Set((db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map((r) => r.name));
   for (const t of ["knowledge_snapshots", "knowledge_versions", "rules", "correction_candidates", "allowed_projects", "settings"]) assert.ok(names.has(t), t);
   const cols = (db.prepare(`PRAGMA table_info(projects)`).all() as { name: string }[]).map((c) => c.name);
