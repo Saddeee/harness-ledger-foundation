@@ -32,8 +32,7 @@ function LoginPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session)
-        navigate({ to: "/inbox", search: { improvement: undefined }, replace: true });
+      if (data.session) navigate({ to: "/inbox", replace: true });
     });
   }, [navigate]);
 
@@ -44,7 +43,7 @@ function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) setError(error.message);
-    else navigate({ to: "/inbox", search: { improvement: undefined }, replace: true });
+    else navigate({ to: "/inbox", replace: true });
   }
 
   async function signUp(e: React.FormEvent) {
@@ -59,8 +58,7 @@ function LoginPage() {
     });
     setBusy(false);
     if (error) setError(error.message);
-    else if (data.session)
-      navigate({ to: "/inbox", search: { improvement: undefined }, replace: true });
+    else if (data.session) navigate({ to: "/inbox", replace: true });
     else setNotice("Check your email to confirm your account, then sign in.");
   }
 

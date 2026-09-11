@@ -1,17 +1,15 @@
 // One "Improvement" per piece of feedback the user gave Lovable: the
-// correction, its proposed instruction and its proof, presented as a single
-// item with stages. Simple by default, complete on demand. Only fetches the
-// local Harness routes; never talks to Lovable itself -- adding to Lovable is
-// recorded here and executed by Harness afterwards.
+// correction and its proposed instruction, presented as one card whose
+// buttons are the decision. Simple by default, complete on demand. Only
+// fetches the local Harness routes; never talks to Lovable itself -- adding
+// to Lovable is recorded here and executed by Harness afterwards.
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   AdvancedDetails,
-  ClickableCard,
   ConfirmAction,
   DetailSection,
   ProcessProgress,
@@ -20,26 +18,21 @@ import {
   CLASSIFICATION_LABELS,
   DESTINATION_LABELS,
   KNOWLEDGE_CHAR_LIMIT,
-  PENDING_CHIP,
-  PROVE_INTRO,
   decisionSentence,
   formatDate,
   formatDay,
   label,
   lovableReplyText,
   lovableStatusLine,
-  proveCostLine,
   whyFor,
   wordingChangeLine,
 } from "@/lib/harness-ux";
 
 import {
   groupOf,
-  isDeferred,
   lovableOf,
   postImprovementAction as post,
   projectName,
-  setDeferred,
   type Improvement,
   type Message,
 } from "@/lib/improvements-client";
@@ -58,82 +51,42 @@ const PREVIEW_CONSEQUENCES = [
 const OVER_CAP_LINE =
   "This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first.";
 const SAVED_LINE = "Saved — now under Improvements › Waiting to be added.";
-const PROOF_NOT_ON = "Proof isn't switched on yet.";
-const SKILL_NOT_ON = "Not available yet";
 const RESTORE_TITLE = "Restore the previous Knowledge?";
 const RESTORE_BODY = "Harness will write the earlier text back, as a new version.";
+const NO_INSTRUCTION = "Harness hasn't drafted an instruction yet.";
 
 const LONG_TEXT = 600;
 
 type Destination = "project" | "workspace";
-type Choice = Destination | "skill";
 
-// ---- Card (Inbox / Improvements lists) ----
-
-export function ImprovementCard({
-  item,
-  onOpen,
-  deferred = false,
-}: {
-  item: Improvement;
-  onOpen: (id: number) => void;
-  deferred?: boolean;
-}) {
-  const pending = item.decision.status === "pending";
-  const chip = pending
-    ? deferred
-      ? "Decide later"
-      : PENDING_CHIP
-    : (groupOf(item, deferred) ?? "");
-  return (
-    <ClickableCard onClick={() => onOpen(item.id)} ariaLabel={`Open improvement: ${item.title}`}>
-      <p className="text-sm font-semibold">{projectName(item)}</p>
-      <p className="mt-1 text-base font-medium">{item.title}</p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {pending ? whyFor(item.classification) : lovableStatusLine(lovableOf(item))}
-      </p>
-      <div className="mt-2">
-        <Badge variant={pending && !deferred ? "default" : "secondary"}>{chip}</Badge>
-      </div>
-    </ClickableCard>
-  );
-}
-
-// ---- Detail pieces ----
-
-function MessageBlock({ m }: { m: Message }) {
-  const isLovable = m.author === "lovable";
-  const readable = isLovable ? lovableReplyText(m.text) : m.text;
-  const tooLong = !isLovable && readable.length > LONG_TEXT;
-  return (
-    <li className="rounded-md border bg-muted/30 p-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {isLovable ? "Lovable replied" : "You asked Lovable"}
-        {m.sent_at ? ` · ${formatDate(m.sent_at)}` : ""}
-      </p>
-      <p className="mt-1 whitespace-pre-wrap text-sm">
-        {tooLong ? `${readable.slice(0, LONG_TEXT)}…` : readable}
-      </p>
-      {isLovable ? (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Show full response
-          </summary>
-          <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{m.text}</pre>
-        </details>
-      ) : tooLong ? (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Show more
-          </summary>
-          <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{m.text}</pre>
-        </details>
-      ) : null}
-    </li>
-  );
-}
+const ADD_LABELS: Record<Destination, string> = {
+  project: "Add to this project",
+  workspace: "Add to all my projects",
+};
 
 type Run = (body: Record<string, unknown>, msg: string) => Promise<boolean>;
+
+// One busy flag and one toast pattern per card (or per wording editor).
+function useRun(onChanged: () => void): { busy: boolean; run: Run } {
+  const [busy, setBusy] = useState(false);
+  const run: Run = async (body, msg) => {
+    setBusy(true);
+    try {
+      await post(body);
+      toast.success(msg);
+      onChanged();
+      return true;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "action failed");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { busy, run };
+}
+
+// ---- Confirmations ----
 
 // The "Add" confirmation: shows the exact text that would be written when
 // Harness has a snapshot of the current Knowledge; otherwise records the
@@ -145,38 +98,28 @@ function AddConfirm({
   run,
   trigger,
   variant,
-  disabled,
-  onDone,
 }: {
   item: Improvement;
-  destination: Destination | null;
+  destination: Destination;
   busy: boolean;
   run: Run;
-  trigger: string;
+  trigger?: string;
   variant?: "default" | "outline";
-  disabled?: boolean;
-  onDone?: () => void;
 }) {
-  const preview = destination ? lovableOf(item).previews[destination] : null;
-  const targetLabel =
-    preview?.target_label ?? (destination ? label(DESTINATION_LABELS, destination) : "Lovable");
+  const preview = lovableOf(item).previews[destination];
+  const targetLabel = preview?.target_label ?? label(DESTINATION_LABELS, destination);
   const overCap = preview?.over_cap === true;
   return (
     <ConfirmAction
-      trigger={trigger}
+      trigger={trigger ?? ADD_LABELS[destination]}
       title={`Add to ${targetLabel}?`}
       body={preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
       consequences={preview ? PREVIEW_CONSEQUENCES : []}
       confirmLabel={preview ? "Add" : "Save choice"}
       confirmDisabled={overCap}
-      disabled={disabled === true || busy || destination == null}
+      disabled={busy}
       {...(variant ? { variant } : {})}
-      onConfirm={() => {
-        if (!destination) return;
-        void run({ action: "accept", id: item.id, destination }, "Saved").then((ok) => {
-          if (ok) onDone?.();
-        });
-      }}
+      onConfirm={() => void run({ action: "accept", id: item.id, destination }, SAVED_LINE)}
     >
       {preview ? (
         <div className="space-y-2">
@@ -220,97 +163,195 @@ function SkipConfirm({ item, busy, run }: { item: Improvement; busy: boolean; ru
   );
 }
 
-// The one decision panel. Nothing is pre-selected: the user always chooses.
-function DecisionPanel({
-  item,
-  busy,
-  run,
-  deferred,
-  onDeferredChange,
-  onAccepted,
-}: {
-  item: Improvement;
-  busy: boolean;
-  run: Run;
-  deferred: boolean;
-  onDeferredChange: (on: boolean) => void;
-  onAccepted: () => void;
-}) {
-  const [choice, setChoice] = useState<Choice | null>(null);
-  const choices: { key: Choice; disabled?: boolean; note?: string }[] = [
-    { key: "project" },
-    { key: "workspace" },
-    { key: "skill", disabled: true, note: SKILL_NOT_ON },
-  ];
-  const destination: Destination | null =
-    choice === "project" || choice === "workspace" ? choice : null;
+// ---- Decided items: where it stands, and how to change your mind ----
+
+function DecidedStatus({ item, busy, run }: { item: Improvement; busy: boolean; run: Run }) {
+  const lovable = lovableOf(item);
+  const accepted = item.decision.status === "accepted";
+  const skipped = item.decision.status === "skipped";
+  const written = lovable.write_status === "written";
+  const latestWritten = lovable.versions
+    .filter((v) => v.status === "written")
+    .sort((a, b) => b.id - a.id)[0];
 
   return (
-    <section aria-labelledby={`decide-${item.id}`} className="space-y-5 rounded-md border p-4">
-      <h2 id={`decide-${item.id}`} className="text-base font-semibold">
-        What do you want to do with this?
-      </h2>
-
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">Add it to Lovable now</legend>
-        <div
-          role="radiogroup"
-          aria-label="Where to add it"
-          className="flex flex-col gap-2 sm:flex-row sm:flex-wrap"
-        >
-          {choices.map((c) => (
-            <Button
-              key={c.key}
-              type="button"
-              role="radio"
-              aria-checked={choice === c.key}
-              variant={choice === c.key ? "default" : "outline"}
-              disabled={c.disabled === true}
-              aria-disabled={c.disabled === true}
-              className="w-full sm:w-auto"
-              onClick={() => setChoice(c.key)}
-            >
-              {label(DESTINATION_LABELS, c.key)}
-              {c.note ? <span className="ml-2 text-xs opacity-70">— {c.note}</span> : null}
-            </Button>
-          ))}
-        </div>
-        <AddConfirm
-          item={item}
-          destination={destination}
-          busy={busy}
-          run={run}
-          trigger="Add"
-          disabled={destination == null}
-          onDone={onAccepted}
-        />
-      </fieldset>
-
-      <div className="space-y-2">
-        <p className="text-sm font-medium">Prove it first</p>
-        <p className="text-sm text-muted-foreground">
-          {PROVE_INTRO} {proveCostLine(item.proof?.lovable_credits_max)}
+    <div className="space-y-2">
+      <p className="text-sm">
+        {decisionSentence({ decision: item.decision, destination: item.destination, lovable })}
+      </p>
+      {accepted && lovable.write_status === "none" ? (
+        <p className="text-xs text-muted-foreground">
+          Waiting for Harness to read your current Knowledge. You'll see the exact text before
+          anything is written.
         </p>
-        <div className="flex flex-col gap-1">
-          <Button disabled aria-disabled className="w-full sm:w-auto">
-            Run proof
-          </Button>
-          <p className="text-xs text-muted-foreground">{PROOF_NOT_ON}</p>
+      ) : null}
+      {accepted && lovable.write_status === "stale" && lovable.stale_reason ? (
+        <p className="text-xs text-muted-foreground">{lovable.stale_reason}</p>
+      ) : null}
+      <details>
+        <summary className="cursor-pointer text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Change decision
+        </summary>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          {accepted && !written ? (
+            <>
+              {(["project", "workspace"] as Destination[])
+                .filter((d) => d !== item.destination)
+                .map((d) => (
+                  <AddConfirm
+                    key={d}
+                    item={item}
+                    destination={d}
+                    busy={busy}
+                    run={run}
+                    variant="outline"
+                    trigger={`Add to ${label(DESTINATION_LABELS, d)} instead`}
+                  />
+                ))}
+              <SkipConfirm item={item} busy={busy} run={run} />
+            </>
+          ) : null}
+          {accepted && written ? (
+            <ConfirmAction
+              trigger="Restore previous version"
+              variant="outline"
+              title={RESTORE_TITLE}
+              body={RESTORE_BODY}
+              consequences={[]}
+              confirmLabel="Restore"
+              disabled={busy || !latestWritten}
+              onConfirm={() => {
+                if (!latestWritten) return;
+                void run(
+                  { action: "restore", id: item.id, version_id: latestWritten.id },
+                  "Restore requested — Harness will write the earlier text back",
+                );
+              }}
+            />
+          ) : null}
+          {skipped ? (
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              disabled={busy}
+              onClick={() =>
+                void run({ action: "reopen", id: item.id }, "Reopened — waiting for your decision")
+              }
+            >
+              Reopen
+            </Button>
+          ) : null}
         </div>
-      </div>
+      </details>
+    </div>
+  );
+}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <Button
-          type="button"
-          variant="ghost"
-          className="w-full sm:w-auto"
-          onClick={() => onDeferredChange(!deferred)}
-        >
-          {deferred ? "Decide now" : "Decide later"}
-        </Button>
-        <SkipConfirm item={item} busy={busy} run={run} />
+// ---- The card: the decision itself (Inbox, Improvements, detail) ----
+
+export function DecisionCard({
+  item,
+  onChanged,
+  onOpen,
+  titleAs = "h2",
+}: {
+  item: Improvement;
+  onChanged: () => void;
+  onOpen?: (id: number) => void;
+  titleAs?: "h1" | "h2";
+}) {
+  const { busy, run } = useRun(onChanged);
+  const pending = item.decision.status === "pending";
+  const Title = titleAs;
+  const titleId = `improvement-${item.id}`;
+
+  return (
+    <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <p className="text-sm font-semibold">{projectName(item)}</p>
+        {pending ? null : <Badge variant="secondary">{groupOf(item)}</Badge>}
       </div>
-    </section>
+      <Title
+        id={titleId}
+        className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
+      >
+        {item.title}
+      </Title>
+      {item.proposed_instruction ? (
+        <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+          {item.proposed_instruction}
+        </blockquote>
+      ) : (
+        <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
+      )}
+
+      {pending ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <AddConfirm item={item} destination="project" busy={busy} run={run} />
+          <AddConfirm item={item} destination="workspace" busy={busy} run={run} variant="outline" />
+          <SkipConfirm item={item} busy={busy} run={run} />
+        </div>
+      ) : (
+        <DecidedStatus item={item} busy={busy} run={run} />
+      )}
+
+      {onOpen ? (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => onOpen(item.id)}
+          >
+            Details
+          </button>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+// Kept only until the Improvements page moves to DecisionCard (next task).
+export function ImprovementCard({
+  item,
+  onOpen,
+}: {
+  item: Improvement;
+  onOpen: (id: number) => void;
+}) {
+  return <DecisionCard item={item} onChanged={() => {}} onOpen={onOpen} />;
+}
+
+// ---- Detail pieces ----
+
+function MessageBlock({ m }: { m: Message }) {
+  const isLovable = m.author === "lovable";
+  const readable = isLovable ? lovableReplyText(m.text) : m.text;
+  const tooLong = !isLovable && readable.length > LONG_TEXT;
+  return (
+    <li className="rounded-md border bg-muted/30 p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {isLovable ? "Lovable replied" : "You asked Lovable"}
+        {m.sent_at ? ` · ${formatDate(m.sent_at)}` : ""}
+      </p>
+      <p className="mt-1 whitespace-pre-wrap text-sm">
+        {tooLong ? `${readable.slice(0, LONG_TEXT)}…` : readable}
+      </p>
+      {isLovable ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Show full response
+          </summary>
+          <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{m.text}</pre>
+        </details>
+      ) : tooLong ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Show more
+          </summary>
+          <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{m.text}</pre>
+        </details>
+      ) : null}
+    </li>
   );
 }
 
@@ -325,42 +366,14 @@ export function ImprovementDetail({
   onChanged: () => void;
   backLabel?: string;
 }) {
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useRun(onChanged);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.proposed_instruction ?? "");
   const [reason, setReason] = useState("");
-  const [deferred, setDeferredState] = useState(() => isDeferred(item.id));
-  const [justAccepted, setJustAccepted] = useState(false);
-
-  const run: Run = async (body, msg) => {
-    setBusy(true);
-    try {
-      await post(body);
-      toast.success(msg);
-      onChanged();
-      return true;
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "action failed");
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const lovable = lovableOf(item);
-  const pending = item.decision.status === "pending";
   const accepted = item.decision.status === "accepted";
   const skipped = item.decision.status === "skipped";
-  const written = lovable.write_status === "written";
-  const latestWritten = lovable.versions
-    .filter((v) => v.status === "written")
-    .sort((a, b) => b.id - a.id)[0];
-  const statusLine = decisionSentence({
-    decision: item.decision,
-    destination: item.destination,
-    lovable,
-  });
 
   return (
     <div className="space-y-6">
@@ -374,22 +387,9 @@ export function ImprovementDetail({
         </button>
       </div>
 
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Project</p>
-        <p className="text-lg font-semibold">{projectName(item)}</p>
-      </div>
+      <DecisionCard item={item} onChanged={onChanged} titleAs="h1" />
 
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold">{item.title}</h1>
-        {item.proposed_instruction ? (
-          <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-            {item.proposed_instruction}
-          </blockquote>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Harness hasn't drafted an instruction yet.
-          </p>
-        )}
         {item.proposed_instruction ? (
           <button
             type="button"
@@ -448,109 +448,6 @@ export function ImprovementDetail({
         </p>
       ) : null}
 
-      {justAccepted && accepted ? (
-        <div role="status" className="space-y-2 rounded-md border p-4">
-          <p className="text-sm font-medium">{SAVED_LINE}</p>
-          <Button
-            size="sm"
-            onClick={() => navigate({ to: "/ledger", search: { improvement: item.id } })}
-          >
-            Open
-          </Button>
-        </div>
-      ) : pending ? (
-        <DecisionPanel
-          item={item}
-          busy={busy}
-          run={run}
-          deferred={deferred}
-          onDeferredChange={(on) => {
-            setDeferred(item.id, on);
-            setDeferredState(on);
-          }}
-          onAccepted={() => {
-            setDeferred(item.id, false);
-            setJustAccepted(true);
-          }}
-        />
-      ) : (
-        <section aria-labelledby={`decided-${item.id}`} className="space-y-3 rounded-md border p-4">
-          <h2 id={`decided-${item.id}`} className="text-sm font-medium">
-            Your decision so far
-          </h2>
-          <p className="text-sm">{statusLine}</p>
-          {accepted && lovable.write_status === "none" ? (
-            <p className="text-xs text-muted-foreground">
-              Waiting for Harness to read your current Knowledge. You'll see the exact text before
-              anything is written.
-            </p>
-          ) : null}
-          {accepted && lovable.write_status === "stale" && lovable.stale_reason ? (
-            <p className="text-xs text-muted-foreground">{lovable.stale_reason}</p>
-          ) : null}
-          <details>
-            <summary className="cursor-pointer text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Change my decision
-            </summary>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              {accepted && !written ? (
-                <>
-                  {(["project", "workspace"] as Destination[])
-                    .filter((d) => d !== item.destination)
-                    .map((d) => (
-                      <AddConfirm
-                        key={d}
-                        item={item}
-                        destination={d}
-                        busy={busy}
-                        run={run}
-                        trigger={`Add to ${label(DESTINATION_LABELS, d)} instead`}
-                        variant="outline"
-                      />
-                    ))}
-                  <SkipConfirm item={item} busy={busy} run={run} />
-                </>
-              ) : null}
-              {accepted && written ? (
-                <ConfirmAction
-                  trigger="Restore previous version"
-                  variant="outline"
-                  title={RESTORE_TITLE}
-                  body={RESTORE_BODY}
-                  consequences={[]}
-                  confirmLabel="Restore"
-                  disabled={busy || !latestWritten}
-                  onConfirm={() => {
-                    if (!latestWritten) return;
-                    void run(
-                      { action: "restore", id: item.id, version_id: latestWritten.id },
-                      "Restore requested — Harness will write the earlier text back",
-                    );
-                  }}
-                />
-              ) : null}
-              {skipped ? (
-                <Button
-                  variant="outline"
-                  className="w-full sm:w-auto"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(
-                      { action: "reopen", id: item.id },
-                      "Reopened — waiting for your decision",
-                    )
-                  }
-                >
-                  Reopen
-                </Button>
-              ) : null}
-            </div>
-          </details>
-        </section>
-      )}
-
-      <ProcessProgress stages={item.stages} />
-
       <section aria-labelledby={`story-${item.id}`} className="space-y-3">
         <h2 id={`story-${item.id}`} className="text-lg font-semibold">
           What happened
@@ -568,32 +465,9 @@ export function ImprovementDetail({
         )}
       </section>
 
-      {item.proof?.exists ? (
-        <section aria-labelledby={`proof-${item.id}`} className="space-y-3">
-          <h2 id={`proof-${item.id}`} className="text-lg font-semibold">
-            How Harness would prove this
-          </h2>
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            <li>
-              <span className="font-medium">Without the rule:</span> Lovable gets the same request
-              as before.
-            </li>
-            <li>
-              <span className="font-medium">With the rule:</span> Lovable gets the same request plus
-              this instruction.
-            </li>
-            <li>
-              <span className="font-medium">Harness checks:</span> whether Lovable sets up recurring
-              work without asking you first.
-            </li>
-            {item.proof.manual_cleanup ? (
-              <li>Temporary copies of your project must be deleted by hand afterwards.</li>
-            ) : null}
-          </ul>
-        </section>
-      ) : null}
+      <AdvancedDetails title="Details">
+        <ProcessProgress stages={item.stages} />
 
-      <AdvancedDetails title="More detail">
         <DetailSection title="How Harness read this">
           <p>Harness read this as: {label(CLASSIFICATION_LABELS, item.classification)}.</p>
           {item.decision.decided_at ? (

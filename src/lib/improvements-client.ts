@@ -168,32 +168,10 @@ export function lovableOf(item: Improvement): LovableInfo {
   );
 }
 
-export function groupOf(item: Improvement, deferred: boolean): ImprovementGroup | null {
+export function groupOf(item: Improvement): ImprovementGroup | null {
   return improvementGroup({
     status: item.decision.status,
-    deferred,
     writeStatus: lovableOf(item).write_status,
     proofOutcome: item.proof?.outcome ?? null,
   });
-}
-
-// ---- Per-browser conveniences (never product state) ----
-
-const DEFERRED_PREFIX = "harness.deferred:";
-
-export function isDeferred(id: number): boolean {
-  try {
-    return localStorage.getItem(DEFERRED_PREFIX + id) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function setDeferred(id: number, on: boolean): void {
-  try {
-    if (on) localStorage.setItem(DEFERRED_PREFIX + id, "1");
-    else localStorage.removeItem(DEFERRED_PREFIX + id);
-  } catch {
-    // storage unavailable: the item simply stays "Needs your decision"
-  }
 }

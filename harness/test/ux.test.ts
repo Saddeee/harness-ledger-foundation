@@ -35,7 +35,7 @@ const PAGES = [INBOX, LEDGER, DETAIL, LAYOUT];
 // Everything a person can read on the detail page: the component plus the
 // copy constants it pulls from harness-ux.ts (rendered through helpers).
 function detailCopy(): string {
-  return codeOnly(readApp(DETAIL)) + "\n" + ux.PROVE_INTRO + " " + ux.proveCostLine(6);
+  return codeOnly(readApp(DETAIL));
 }
 
 test("enum-to-label mappings: every spec'd example maps to the required plain-language label", () => {
@@ -72,31 +72,31 @@ test("lay 'why' templates never invent specifics and always fall back", () => {
   for (const t of Object.values(ux.WHY_TEMPLATES)) assert.ok(!/cron|pg_cron|queue|credit/i.test(t), t);
 });
 
-test("default technical sections are collapsed and the detail page wraps them in More detail + Developer view", () => {
+test("default technical sections are collapsed and the detail page wraps them in Details + Developer view", () => {
   const layout = codeOnly(readApp(LAYOUT));
   for (const tag of layout.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
   const detail = readApp(DETAIL);
   for (const tag of codeOnly(detail).match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
-  assert.match(detail, /<AdvancedDetails title="More detail">/);
+  assert.match(detail, /<AdvancedDetails title="Details">/);
+  assert.ok(!/title="More detail"/.test(detail));
   assert.match(detail, /Developer view/);
-  // the developer view is the last thing inside More detail
-  assert.ok(detail.indexOf("developer-view:start") > detail.indexOf('title="More detail"'));
+  assert.ok(detail.indexOf("developer-view:start") > detail.indexOf('title="Details"'));
   assert.ok(detail.indexOf("developer-view:end") < detail.lastIndexOf("</AdvancedDetails>"));
 });
 
-test("detail page order: project, instruction, why, decision panel, stage bar, What happened, proof, More detail", () => {
+test("detail page order: back, decision card, wording, why, What happened, Details (stage bar inside), developer view last", () => {
   const detail = codeOnly(readApp(DETAIL));
   const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
   const order = [
-    ">Project<",
-    "{item.proposed_instruction}",
+    "{backLabel}",
+    '<DecisionCard item={item} onChanged={onChanged} titleAs="h1" />',
     "Change the wording",
     "{whyFor(item.classification)}",
-    "<DecisionPanel",
-    "<ProcessProgress",
     "What happened",
-    "How Harness would prove this",
-    'title="More detail"',
+    'title="Details"',
+    "<ProcessProgress",
+    "How Harness read this",
+    "Wording history",
   ];
   let last = -1;
   for (const marker of order) {
@@ -104,50 +104,50 @@ test("detail page order: project, instruction, why, decision panel, stage bar, W
     assert.ok(at > last, `expected "${marker}" after the previous marker (at ${at}, previous ${last})`);
     last = at;
   }
-  // the developer view is the last thing on the page (marker lives in a JSX comment)
   const raw = readApp(DETAIL);
-  assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="More detail"'));
+  assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="Details"'));
+  // proof is hidden until it can run
+  assert.ok(!/Run proof|Prove it first|How Harness would prove this|PROVE_INTRO|proveCostLine/.test(body));
 });
 
-test("decision panel: heading, three destinations with Skill disabled, nothing pre-selected, Add gated on a choice", () => {
+test("decision card: three buttons for pending items, Change decision for decided ones, no Skill, no Decide later", () => {
   const detail = codeOnly(readApp(DETAIL));
-  const panel = detail.slice(detail.indexOf("function DecisionPanel"), detail.indexOf("export function ImprovementDetail"));
-  assert.match(panel, /What do you want to do with this\?/);
-  assert.match(panel, /Add it to Lovable now/);
-  assert.match(panel, /useState<Choice \| null>\(null\)/, "no destination is pre-selected");
-  assert.ok(!/item\.destination/.test(panel), "the stale stored destination must not seed the panel");
-  assert.match(panel, /\{ key: "project" \}/);
-  assert.match(panel, /\{ key: "workspace" \}/);
-  assert.match(panel, /\{ key: "skill", disabled: true, note: SKILL_NOT_ON \}/);
-  assert.match(detail, /const SKILL_NOT_ON = "Not available yet";/);
-  assert.match(panel, /role="radio"/);
-  assert.match(panel, /aria-checked=\{choice === c\.key\}/);
-  assert.match(panel, /trigger="Add"/);
-  assert.match(panel, /disabled=\{destination == null\}/);
-  // Decide later / Skip are ghost buttons; Decide later has no dialog and is per-browser only
-  assert.match(panel, /"Decide now" : "Decide later"/);
-  assert.match(panel, /onDeferredChange\(!deferred\)/);
-  assert.match(detail, /const DEFERRED_PREFIX = "harness\.deferred:";|setDeferred\(item\.id, on\)/);
-  assert.match(codeOnly(readApp(CLIENT)), /const DEFERRED_PREFIX = "harness\.deferred:";/);
-  assert.match(panel, /<SkipConfirm/);
+  const card = detail.slice(detail.indexOf("export function DecisionCard"), detail.indexOf("export function ImprovementDetail"));
+  assert.match(detail, /const ADD_LABELS: Record<Destination, string> = \{\s*project: "Add to this project",\s*workspace: "Add to all my projects",\s*\};/);
+  assert.match(card, /<AddConfirm item=\{item\} destination="project" busy=\{busy\} run=\{run\} \/>/);
+  assert.match(card, /<AddConfirm item=\{item\} destination="workspace" busy=\{busy\} run=\{run\} variant="outline" \/>/);
+  assert.match(card, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
+  assert.match(card, /\{onOpen \? \(/);
+  assert.match(card, />\s*Details\s*<\/button>/);
+  assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} \/>/);
+  const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
+  assert.match(decided, />\s*Change decision\s*<\/summary>/);
+  assert.match(decided, /trigger=\{`Add to \$\{label\(DESTINATION_LABELS, d\)\} instead`\}/);
+  assert.match(decided, /trigger="Restore previous version"/);
+  assert.match(decided, /\{ action: "restore", id: item\.id, version_id: latestWritten\.id \}/);
+  assert.match(decided, /\{ action: "reopen", id: item\.id \}/);
+  assert.match(decided, /\{decisionSentence\(/);
+  for (const gone of ["Skill", "SKILL_NOT_ON", "Decide later", "Decide now", "isDeferred", "setDeferred", "DecisionPanel", "role=\"radio\"", "justAccepted", "PENDING_CHIP"]) {
+    assert.ok(!detail.includes(gone), `${gone} should be gone from the detail component`);
+  }
+  const client = codeOnly(readApp(CLIENT));
+  assert.ok(!/DEFERRED_PREFIX|isDeferred|setDeferred|localStorage/.test(client), "no per-browser state left");
+  assert.match(client, /export function groupOf\(item: Improvement\): ImprovementGroup \| null/);
   assert.match(detail, /trigger="Skip"\s+variant="ghost"/);
   assert.match(detail, /title="Skip this improvement\?"/);
 });
 
-test("Prove it first: exact copy with the cost inline, Run proof disabled, no proof POST", () => {
-  const detail = codeOnly(readApp(DETAIL));
+test("proof copy stays defined for later but nothing on screen runs or mentions a proof", () => {
   assert.equal(
     ux.PROVE_INTRO,
     "Harness runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.",
   );
   assert.equal(ux.proveCostLine(6), "Uses up to 6 Lovable credits.");
   assert.equal(ux.proveCostLine(null), "Uses up to 6 Lovable credits.");
-  assert.match(detail, /\{PROVE_INTRO\} \{proveCostLine\(item\.proof\?\.lovable_credits_max\)\}/);
-  assert.match(detail, /<Button disabled aria-disabled className="w-full sm:w-auto">\s*Run proof/);
-  assert.match(detail, /const PROOF_NOT_ON = "Proof isn't switched on yet\.";/);
   for (const page of PAGES) {
     const code = codeOnly(readApp(page));
     assert.ok(!/run_experiment|execute_experiment|remix_project|send_message|"run_proof"|action: "run"|action: "prove"/.test(code), page);
+    assert.ok(!/Run proof|PROVE_INTRO|proveCostLine/.test(code), `${page} still shows proof UI`);
   }
 });
 
@@ -176,26 +176,25 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   assert.match(confirm, /confirmDisabled=\{overCap\}/);
   assert.match(confirm, /\{overCap \? \(/);
   // the confirmation posts the contract action, nothing else
-  assert.match(confirm, /\{ action: "accept", id: item\.id, destination \}/);
-  // afterwards: inline line + Open to the Improvements detail
+  assert.match(confirm, /\{ action: "accept", id: item\.id, destination \}, SAVED_LINE/);
+  // afterwards: a toast says where it went; the card re-renders as decided
   assert.match(detail, /const SAVED_LINE = "Saved — now under Improvements › Waiting to be added\.";/);
-  assert.match(detail, /\{justAccepted && accepted \? \(/);
-  assert.match(detail, /navigate\(\{ to: "\/ledger", search: \{ improvement: item\.id \} \}\)/);
+  assert.ok(!/useNavigate/.test(detail), "the component never navigates");
   // the layout supports the preview slot and a disabled confirm
   const layout = codeOnly(readApp(LAYOUT));
   assert.match(layout, /children\?: ReactNode;/);
   assert.match(layout, /<AlertDialogAction onClick=\{onConfirm\} disabled=\{confirmDisabled\}>/);
 });
 
-test("stage rendering uses the human note, never a state word alone; chip reads 'Needs your decision'", () => {
+test("stage rendering uses the human note, never a state word alone; decided cards show the group chip", () => {
   const layout = readApp(LAYOUT);
   assert.match(layout, /\{s\.note\}/);
   assert.match(layout, /STAGE_LABELS\[s\.key\]/);
   assert.match(layout, /aria-current=\{s\.state === "current" \? "step" : undefined\}/);
   assert.ok(!/you are here/.test(codeOnly(layout)));
-  assert.equal(ux.PENDING_CHIP, "Needs your decision");
+  assert.ok(!/ClickableCard/.test(layout), "whole-card buttons are gone; the buttons are the decision");
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(detail, /deferred\s*\?\s*"Decide later"\s*:\s*PENDING_CHIP/);
+  assert.match(detail, /\{pending \? null : <Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>\}/);
 });
 
 test("lovableStatusLine / decisionSentence / improvementGroup follow the write lifecycle without implying Lovable changed", () => {
@@ -207,7 +206,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
     ux.lovableStatusLine({ write_status: "stale", written_at: null, stale_reason: null }),
     "Needs attention: Knowledge changed in Lovable — review the text again",
   );
-  assert.equal(ux.lovableStatusLine({ write_status: "failed", written_at: null }), "Needs attention: adding failed — see More detail");
+  assert.equal(ux.lovableStatusLine({ write_status: "failed", written_at: null }), "Needs attention: adding failed — see Details");
 
   const pending = ux.decisionSentence({ decision: { status: "pending", decided_at: null }, destination: null });
   assert.equal(pending, "Waiting for your decision.");
@@ -227,12 +226,11 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   assert.equal(added, "You chose: add to this project only. Added to Lovable, 10 Sep.");
 
   assert.deepEqual([...ux.IMPROVEMENT_GROUPS], [
-    "Waiting to be added", "Proof in progress", "Proof done", "In Lovable", "Needs attention", "Decide later", "Skipped",
+    "Waiting to be added", "Proof in progress", "Proof done", "In Lovable", "Needs attention", "Skipped",
   ]);
-  const g = (status: "pending" | "accepted" | "skipped", writeStatus: ux.LovableWriteStatus | null, proofOutcome: string | null = null, deferred = false) =>
-    ux.improvementGroup({ status, deferred, writeStatus, proofOutcome });
+  const g = (status: "pending" | "accepted" | "skipped", writeStatus: ux.LovableWriteStatus | null, proofOutcome: string | null = null) =>
+    ux.improvementGroup({ status, writeStatus, proofOutcome });
   assert.equal(g("pending", null), null, "pending items belong in Inbox, not Improvements");
-  assert.equal(g("pending", null, null, true), "Decide later");
   assert.equal(g("skipped", null), "Skipped");
   assert.equal(g("accepted", "none"), "Waiting to be added");
   assert.equal(g("accepted", "pending"), "Waiting to be added");
@@ -255,8 +253,7 @@ test("Improvements page: contract groups only, non-empty only, no subtitle, rest
   assert.match(ledger, /const RESTORE_BODY = "Harness will write the earlier text back, as a new version\.";/);
   assert.match(ledger, /\{ action: "restore", id: item\.id, version_id: versionId \}/);
   const inbox = codeOnly(readApp(INBOX));
-  assert.ok(!/is waiting for your decision/.test(inbox), "no subtitle on Inbox");
-  assert.match(inbox, /i\.decision\.status === "pending"/, "Decide-later items stay in Inbox");
+  assert.match(inbox, /i\.decision\.status === "pending"/, "only pending items are in Inbox");
 });
 
 test("wording history: reasons only for changes made in this UI; anything else is 'Updated by Harness'", () => {
@@ -388,14 +385,13 @@ test("pages only fetch local harness routes: improvements and runtime, nothing e
   assert.deepEqual([...new Set(actions)].sort(), ["accept", "change_wording", "reopen", "restore", "skip"]);
 });
 
-test("Inbox cards are whole-card buttons with no separate Review button; nav says Improvements", () => {
-  const layout = readApp(LAYOUT);
-  assert.match(layout, /export function ClickableCard/);
-  assert.match(layout, /<button\s+type="button"/);
-  const detail = readApp(DETAIL);
-  assert.match(detail, /<ClickableCard onClick=/);
-  assert.ok(!/>\s*Review\s*<\/Button>/.test(detail));
-  assert.ok(!/>\s*Review\s*<\/Button>/.test(readApp(INBOX)));
+test("Inbox: a count line, then decision cards you can act on without opening them", () => {
+  const inbox = codeOnly(readApp(INBOX));
+  assert.match(inbox, /<DecisionCard item=\{i\} onChanged=\{refresh\} onOpen=\{open\} \/>/);
+  assert.match(inbox, /"One improvement is waiting for your decision\."/);
+  assert.match(inbox, /`\$\{pending\.length\} improvements are waiting for your decision\.`/);
+  assert.ok(!/ImprovementCard|ClickableCard|isDeferred/.test(inbox));
+  assert.ok(!/>\s*Review\s*<\/Button>/.test(inbox));
 });
 
 test("evidence rendering only knows two authors and labels them for a person", () => {

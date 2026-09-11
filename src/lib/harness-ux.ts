@@ -237,7 +237,7 @@ export function lovableStatusLine(input: LovableStatusLike | null | undefined): 
     case "stale":
       return `Needs attention: ${input.stale_reason ?? "Knowledge changed in Lovable — review the text again"}`;
     case "failed":
-      return "Needs attention: adding failed — see More detail";
+      return "Needs attention: adding failed — see Details";
     default:
       return "Waiting for Harness to add it";
   }
@@ -265,21 +265,17 @@ export const IMPROVEMENT_GROUPS = [
   "Proof done",
   "In Lovable",
   "Needs attention",
-  "Decide later",
   "Skipped",
 ] as const;
 export type ImprovementGroup = (typeof IMPROVEMENT_GROUPS)[number];
 
-export const PENDING_CHIP = "Needs your decision";
-
 export function improvementGroup(input: {
   status: "pending" | "accepted" | "skipped";
-  deferred: boolean;
   writeStatus: LovableWriteStatus | null | undefined;
   proofOutcome: string | null | undefined;
 }): ImprovementGroup | null {
   if (input.status === "skipped") return "Skipped";
-  if (input.status === "pending") return input.deferred ? "Decide later" : null;
+  if (input.status === "pending") return null;
   if (input.writeStatus === "stale" || input.writeStatus === "failed") return "Needs attention";
   if (input.writeStatus === "written") return "In Lovable";
   if (input.proofOutcome === "running") return "Proof in progress";

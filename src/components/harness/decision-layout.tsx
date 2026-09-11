@@ -246,29 +246,6 @@ export function ProcessProgress({ stages }: { stages: Stage[] }) {
   );
 }
 
-// A whole-card click target: a real button, so it is keyboard focusable and
-// announced as one control, styled like the app's bordered cards.
-export function ClickableCard({
-  onClick,
-  ariaLabel,
-  children,
-}: {
-  onClick: () => void;
-  ariaLabel: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={ariaLabel}
-      className="w-full rounded-md border bg-card p-4 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {children}
-    </button>
-  );
-}
-
 export function KeyValue({
   items,
 }: {

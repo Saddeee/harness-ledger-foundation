@@ -9,7 +9,6 @@ import { IMPROVEMENT_GROUPS, type ImprovementGroup } from "@/lib/harness-ux";
 import {
   fetchImprovements,
   groupOf,
-  isDeferred,
   lovableOf,
   postImprovementAction,
   type Improvement,
@@ -119,10 +118,10 @@ function Page() {
     );
   }
 
-  // Pending items that aren't deferred live in Inbox, not here.
+  // Pending items live in Inbox, not here.
   const grouped = new Map<ImprovementGroup, Improvement[]>();
   for (const item of all) {
-    const g = groupOf(item, isDeferred(item.id));
+    const g = groupOf(item);
     if (!g) continue;
     grouped.set(g, [...(grouped.get(g) ?? []), item]);
   }
@@ -174,7 +173,7 @@ function Page() {
               <ul className="space-y-3">
                 {items.map((i) => (
                   <li key={i.id} className="space-y-2">
-                    <ImprovementCard item={i} onOpen={open} deferred={isDeferred(i.id)} />
+                    <ImprovementCard item={i} onOpen={open} />
                     {g === "In Lovable" ? (
                       <div className="flex justify-end">
                         <ConfirmAction
