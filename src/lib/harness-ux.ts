@@ -304,9 +304,18 @@ export function proveCostLine(maxCredits: number | null | undefined): string {
 // ---- Onboarding: the only place the product explains itself ----
 
 export const HOW_IT_WORKS_STEPS = [
-  "Harness reads your Lovable chats and spots where you corrected Lovable.",
-  "It proposes one instruction per correction. You add it to Lovable, prove it first, or skip.",
-  "Nothing changes in Lovable until you say so. Proofs use Lovable credits; reviewing never does.",
+  {
+    title: "Found",
+    text: "Harness reads your Lovable chats and spots where you corrected Lovable.",
+  },
+  {
+    title: "Add or skip",
+    text: "It proposes one instruction per correction. You add it to this project, to all your projects, or skip it.",
+  },
+  {
+    title: "Nothing changes until you say so",
+    text: "You see the exact text before it is written, and you can restore the previous version. Reviewing never uses Lovable credits.",
+  },
 ] as const;
 
 // Wording-history attribution: a stored reason is shown only when it was

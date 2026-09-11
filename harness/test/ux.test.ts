@@ -404,3 +404,29 @@ test("evidence rendering only knows two authors and labels them for a person", (
   assert.match(detail, /Show full response/);
   assert.match(detail, /lovableReplyText\(m\.text\)/);
 });
+
+test("landing page: public, three steps from HOW_IT_WORKS_STEPS, one button, never redirects", () => {
+  assert.deepEqual(
+    ux.HOW_IT_WORKS_STEPS.map((s) => s.title),
+    ["Found", "Add or skip", "Nothing changes until you say so"],
+  );
+  assert.deepEqual(
+    ux.HOW_IT_WORKS_STEPS.map((s) => s.text),
+    [
+      "Harness reads your Lovable chats and spots where you corrected Lovable.",
+      "It proposes one instruction per correction. You add it to this project, to all your projects, or skip it.",
+      "You see the exact text before it is written, and you can restore the previous version. Reviewing never uses Lovable credits.",
+    ],
+  );
+  const landing = codeOnly(readApp("routes/index.tsx"));
+  assert.match(landing, /HOW_IT_WORKS_STEPS\.map/);
+  assert.match(landing, /Harness turns the corrections you give Lovable into standing instructions/);
+  assert.match(landing, /signedIn \? "\/inbox" : "\/login"/);
+  assert.match(landing, /signedIn \? "Open Inbox" : "Sign in"/);
+  assert.ok(!/navigate\(|redirect\(/.test(landing), "the landing page never redirects");
+  assert.equal(count(landing, "<Button"), 1, "one button");
+  assert.ok(!/fetch\(/.test(landing), "the landing page fetches nothing");
+  const login = codeOnly(readApp("routes/login.tsx"));
+  assert.equal(count(login, 'to: "/inbox"'), 3);
+  assert.match(login, /emailRedirectTo: `\$\{window\.location\.origin\}\/inbox`/);
+});
