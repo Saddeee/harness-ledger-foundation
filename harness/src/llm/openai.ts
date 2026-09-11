@@ -40,9 +40,18 @@ export async function callOpenAi(params: ProviderCallParams): Promise<ProviderCa
   if (!res.ok) {
     // Never include headers/request body in the thrown message -- the key
     // lives only in the Authorization header, never echoed by the provider,
-    // but this keeps that guarantee obviously true by construction.
+    // but this keeps that guarantee obviously true by construction. `status`
+    // is attached (not just embedded in the message) so index.ts's transport
+    // retry can tell a 429/5xx apart from any other failure without parsing
+    // the message text.
     const bodyText = await res.text().catch(() => "");
-    throw new Error(`OpenAI request failed: ${res.status} ${bodyText}`.slice(0, 500));
+    const error = new Error(
+      `OpenAI request failed: ${res.status} ${bodyText}`.slice(0, 500),
+    ) as Error & {
+      status?: number;
+    };
+    error.status = res.status;
+    throw error;
   }
 
   const data = (await res.json()) as OpenAiResponse;

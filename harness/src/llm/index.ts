@@ -21,6 +21,25 @@ export { defaultExec, type Exec } from "./claude-code.js";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 1500;
 const RETRY_SUFFIX = "\n\nReturn only JSON matching the schema.";
+const TRANSPORT_RETRY_DELAY_MS = 2000;
+
+/** Real default: a plain timer-based sleep. Tests inject their own to assert on the delay without actually waiting. */
+function realSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Reads the `status` an API adapter (openai.ts/anthropic.ts/google.ts) attaches to its thrown Error on a non-2xx response. Undefined for a claude_code failure (no HTTP status) or a network-level throw (no response at all) -- neither is transport-retryable. */
+function httpStatusOf(err: unknown): number | undefined {
+  if (err && typeof err === "object" && "status" in err) {
+    const status = (err as { status?: unknown }).status;
+    return typeof status === "number" ? status : undefined;
+  }
+  return undefined;
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
 
 // setSettings validates llm_models to always define all four roles, so in
 // practice `choice` below is always present and the llm_provider fallback
@@ -50,9 +69,14 @@ function parseJsonResult<T>(raw: unknown): T {
   return raw as T;
 }
 
-export function createCallLlm(deps?: { fetchFn?: typeof fetch; exec?: Exec }): CallLlm {
+export function createCallLlm(deps?: {
+  fetchFn?: typeof fetch;
+  exec?: Exec;
+  sleep?: (ms: number) => Promise<void>;
+}): CallLlm {
   const fetchFn = deps?.fetchFn ?? fetch;
   const exec = deps?.exec ?? defaultExec;
+  const sleep = deps?.sleep ?? realSleep;
 
   return async function callLlm<T>(req: LlmRequest): Promise<LlmResult<T>> {
     const { provider, model } = resolveRoleModel(req.role);
@@ -65,76 +89,110 @@ export function createCallLlm(deps?: { fetchFn?: typeof fetch; exec?: Exec }): C
     }
 
     const maxOutputTokens = req.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
-    const estimate = estimateTokens(req.system, req.user, maxOutputTokens);
-    assertWithinBudget(estimate);
-
     const jsonSchema = { name: req.schemaName, schema: req.schema };
 
-    // One attempt at the provider: dispatch, log to llm_calls (every
-    // attempt is logged, success or JSON-parse failure alike -- tokens were
-    // spent either way), and return the raw result for the caller to try
-    // to parse.
-    async function dispatchOnce(userText: string) {
+    // Exactly one physical call to the resolved provider. ALWAYS logs to
+    // llm_calls, success or failure alike: on success with the real
+    // tokens/cost, on failure with tokens 0 (a failed call still consumed a
+    // request against the provider -- or, for claude_code, an actual `claude`
+    // invocation -- and must never look like it never happened; the analysis
+    // run's own `error` field is what records *why* it failed, not this
+    // table). Always rethrows on failure so the caller (the transport retry
+    // below, or callLlm's own JSON-parse retry) decides what to do next.
+    async function attemptOnce(userText: string, estimate: number) {
       const t0 = Date.now();
-      let raw: unknown;
-      let tokensIn: number;
-      let tokensOut: number;
+      try {
+        let raw: unknown;
+        let tokensIn: number;
+        let tokensOut: number;
 
-      if (provider === "openai") {
-        ({ raw, tokensIn, tokensOut } = await callOpenAi({
-          apiKey,
+        if (provider === "openai") {
+          ({ raw, tokensIn, tokensOut } = await callOpenAi({
+            apiKey,
+            model,
+            system: req.system,
+            user: userText,
+            maxOutputTokens,
+            jsonSchema,
+            fetchFn,
+          }));
+        } else if (provider === "anthropic") {
+          ({ raw, tokensIn, tokensOut } = await callAnthropic({
+            apiKey,
+            model,
+            system: req.system,
+            user: userText,
+            maxOutputTokens,
+            jsonSchema,
+            fetchFn,
+          }));
+        } else if (provider === "google") {
+          ({ raw, tokensIn, tokensOut } = await callGoogle({
+            apiKey,
+            model,
+            system: req.system,
+            user: userText,
+            maxOutputTokens,
+            jsonSchema,
+            fetchFn,
+          }));
+        } else {
+          ({ raw, tokensIn, tokensOut } = await callClaudeCode({
+            model,
+            system: req.system,
+            user: userText,
+            exec,
+          }));
+        }
+
+        const latencyMs = Date.now() - t0;
+        const cost = costUsd(provider, model, tokensIn, tokensOut);
+        store.insertLlmCall({
+          role: req.role,
+          provider,
           model,
-          system: req.system,
-          user: userText,
-          maxOutputTokens,
-          jsonSchema,
-          fetchFn,
-        }));
-      } else if (provider === "anthropic") {
-        ({ raw, tokensIn, tokensOut } = await callAnthropic({
-          apiKey,
+          tokens_in: tokensIn,
+          tokens_out: tokensOut,
+          cost_usd: cost ?? 0,
+          estimated_tokens: estimate,
+          run_id: req.runId ?? null,
+        });
+        return { raw, tokensIn, tokensOut, latencyMs, costUsd: cost };
+      } catch (err) {
+        store.insertLlmCall({
+          role: req.role,
+          provider,
           model,
-          system: req.system,
-          user: userText,
-          maxOutputTokens,
-          jsonSchema,
-          fetchFn,
-        }));
-      } else if (provider === "google") {
-        ({ raw, tokensIn, tokensOut } = await callGoogle({
-          apiKey,
-          model,
-          system: req.system,
-          user: userText,
-          maxOutputTokens,
-          jsonSchema,
-          fetchFn,
-        }));
-      } else {
-        ({ raw, tokensIn, tokensOut } = await callClaudeCode({
-          model,
-          system: req.system,
-          user: userText,
-          exec,
-        }));
+          tokens_in: 0,
+          tokens_out: 0,
+          cost_usd: 0,
+          estimated_tokens: estimate,
+          run_id: req.runId ?? null,
+        });
+        throw err;
       }
-
-      const latencyMs = Date.now() - t0;
-      const cost = costUsd(provider, model, tokensIn, tokensOut);
-      store.insertLlmCall({
-        role: req.role,
-        provider,
-        model,
-        tokens_in: tokensIn,
-        tokens_out: tokensOut,
-        cost_usd: cost ?? 0,
-        estimated_tokens: estimate,
-        run_id: req.runId ?? null,
-      });
-      return { raw, tokensIn, tokensOut, latencyMs, costUsd: cost };
     }
 
-    function toResult(attempt: Awaited<ReturnType<typeof dispatchOnce>>): LlmResult<T> {
+    // Transport retry (API providers only -- claude_code has no HTTP status
+    // to key off): a 429/5xx is usually transient. One retry, after a fixed
+    // delay -- not exponential backoff, this isn't an agentic loop, just a
+    // short classification/extraction call. Both the failed and the
+    // retried physical attempt are logged by attemptOnce above; a second
+    // failure propagates as-is (no third try).
+    async function dispatchWithTransportRetry(userText: string, estimate: number) {
+      try {
+        return await attemptOnce(userText, estimate);
+      } catch (err) {
+        const status = provider === "claude_code" ? undefined : httpStatusOf(err);
+        if (status !== undefined && isRetryableStatus(status)) {
+          await sleep(TRANSPORT_RETRY_DELAY_MS);
+          return await attemptOnce(userText, estimate);
+        }
+        throw err;
+      }
+    }
+
+    function toResult(attempt: Awaited<ReturnType<typeof attemptOnce>>): LlmResult<T> {
       const json = parseJsonResult<T>(attempt.raw);
       return {
         json,
@@ -147,15 +205,22 @@ export function createCallLlm(deps?: { fetchFn?: typeof fetch; exec?: Exec }): C
       };
     }
 
-    const first = await dispatchOnce(req.user);
+    const firstEstimate = estimateTokens(req.system, req.user, maxOutputTokens);
+    assertWithinBudget(firstEstimate);
+    const first = await dispatchWithTransportRetry(req.user, firstEstimate);
     try {
       return toResult(first);
     } catch {
       // Strict JSON parse failed -- retry once with a stricter instruction.
-      // Logged again above (a call that burned tokens but returned garbage
-      // still cost money). If this second attempt also fails to parse, the
-      // error propagates to the caller uncaught.
-      const retried = await dispatchOnce(req.user + RETRY_SUFFIX);
+      // Re-guard the budget before this second dispatch: the first attempt
+      // already logged its real tokens above, so a budget that had room for
+      // exactly one call must refuse the retry rather than push the month
+      // over. A refusal here throws LlmBudgetExceeded and dispatches
+      // nothing -- the retry is never logged.
+      const retryUserText = req.user + RETRY_SUFFIX;
+      const retryEstimate = estimateTokens(req.system, retryUserText, maxOutputTokens);
+      assertWithinBudget(retryEstimate);
+      const retried = await dispatchWithTransportRetry(retryUserText, retryEstimate);
       return toResult(retried);
     }
   };

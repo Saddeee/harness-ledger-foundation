@@ -254,7 +254,9 @@ test("anthropic: auth header value never appears in a thrown error message", asy
   llmKeys.setKey("anthropic", "ant-must-never-leak");
   setRoleModel("anthropic", "claude-haiku-4-5");
   const { fetchFn } = makeFakeFetch(() => ({ status: 500, body: "internal error" }));
-  const callLlm = llm.createCallLlm({ fetchFn });
+  // 500 is transport-retryable (see the "transport retry" tests below) --
+  // inject a no-op sleep so this unrelated test doesn't eat a real 2s delay.
+  const callLlm = llm.createCallLlm({ fetchFn, sleep: async () => {} });
   await assert.rejects(
     () => callLlm({ role: "classifier", system: "s", user: "u", schema: SCHEMA, schemaName: "X" }),
     (err: unknown) => {
@@ -404,14 +406,133 @@ test("claude_code: defensive fallback to 0 tokens when usage is missing from the
   assert.equal(result.tokensOut, 0);
 });
 
-test("claude_code: LlmProviderUnavailable when `claude --version` fails", async () => {
+test("claude_code: LlmProviderUnavailable when `claude --version` fails; the failed attempt is still logged", async () => {
   setRoleModel("claude_code", "sonnet");
   const { exec } = makeClaudeExec({ versionOk: false, runResponses: [] });
   const callLlm = llm.createCallLlm({ exec });
+  const before = llmCallCount();
   await assert.rejects(
     () => callLlm({ role: "classifier", system: "s", user: "u", schema: SCHEMA, schemaName: "X" }),
     LlmProviderUnavailable,
   );
+  assert.equal(llmCallCount(), before + 1, "a CLI failure is a failed attempt, not a no-op -- it must still be logged");
+  const row = store.listLlmCalls(1)[0] as { tokens_in: number; tokens_out: number; cost_usd: number };
+  assert.equal(row.tokens_in, 0);
+  assert.equal(row.tokens_out, 0);
+  assert.equal(row.cost_usd, 0);
+});
+
+// ---- Failed calls are still logged (fix round 1, item 1) ----
+
+test("failed provider calls are logged: a non-retryable HTTP error (400) logs exactly one row with tokens 0, then throws", async () => {
+  llmKeys.setKey("openai", "sk-fail-log-test");
+  setRoleModel("openai", "gpt-5.4-mini");
+  const { fetchFn } = makeFakeFetch(() => ({ status: 400, body: "bad request" }));
+  const callLlm = llm.createCallLlm({ fetchFn });
+  const before = llmCallCount();
+  await assert.rejects(() =>
+    callLlm({ role: "classifier", system: "s", user: "u", schema: SCHEMA, schemaName: "X" }),
+  );
+  assert.equal(llmCallCount(), before + 1, "exactly one row -- 400 is not transport-retryable");
+  const row = store.listLlmCalls(1)[0] as {
+    tokens_in: number;
+    tokens_out: number;
+    cost_usd: number;
+    estimated_tokens: number;
+    provider: string;
+  };
+  assert.equal(row.tokens_in, 0);
+  assert.equal(row.tokens_out, 0);
+  assert.equal(row.cost_usd, 0);
+  assert.ok(row.estimated_tokens > 0);
+  assert.equal(row.provider, "openai");
+});
+
+// ---- Transport retry on 429/5xx (fix round 1, item 3) ----
+
+test("transport retry: a 503 then a 200 succeeds after one 2s-delayed retry; both physical attempts are logged", async () => {
+  llmKeys.setKey("openai", "sk-transport-retry-key");
+  setRoleModel("openai", "gpt-5.4-mini");
+  let call = 0;
+  const { fetchFn } = makeFakeFetch(() => {
+    call += 1;
+    if (call === 1) return { status: 503, body: "service unavailable" };
+    return {
+      status: 200,
+      body: {
+        choices: [{ message: { content: JSON.stringify({ classification: "other", confidence: 0.3 }) } }],
+        usage: { prompt_tokens: 20, completion_tokens: 4 },
+      },
+    };
+  });
+  const sleeps: number[] = [];
+  const callLlm = llm.createCallLlm({
+    fetchFn,
+    sleep: async (ms: number) => {
+      sleeps.push(ms);
+    },
+  });
+  const before = llmCallCount();
+  const result = await callLlm<{ classification: string; confidence: number }>({
+    role: "classifier",
+    system: "s",
+    user: "u",
+    schema: SCHEMA,
+    schemaName: "X",
+  });
+  assert.equal(call, 2, "exactly one transport retry -- not a loop");
+  assert.deepEqual(sleeps, [2000]);
+  assert.deepEqual(result.json, { classification: "other", confidence: 0.3 });
+  assert.equal(llmCallCount(), before + 2, "both the failed 503 attempt and the retried 200 attempt are logged");
+  const rows = store.listLlmCalls(2) as { tokens_in: number; tokens_out: number }[];
+  assert.equal(rows[0]!.tokens_in, 20, "most recent row is the successful retry");
+  assert.equal(rows[1]!.tokens_in, 0, "earlier row is the failed 503 attempt");
+});
+
+test("transport retry: a second failure (429 again) throws; both attempts logged with tokens 0, no third try", async () => {
+  llmKeys.setKey("openai", "sk-transport-retry-fail-key");
+  setRoleModel("openai", "gpt-5.4-mini");
+  let call = 0;
+  const { fetchFn } = makeFakeFetch(() => {
+    call += 1;
+    return { status: 429, body: "rate limited" };
+  });
+  const sleeps: number[] = [];
+  const callLlm = llm.createCallLlm({
+    fetchFn,
+    sleep: async (ms: number) => {
+      sleeps.push(ms);
+    },
+  });
+  const before = llmCallCount();
+  await assert.rejects(() =>
+    callLlm({ role: "classifier", system: "s", user: "u", schema: SCHEMA, schemaName: "X" }),
+  );
+  assert.equal(call, 2, "one retry, then give up -- never a third attempt");
+  assert.deepEqual(sleeps, [2000]);
+  assert.equal(llmCallCount(), before + 2);
+  const rows = store.listLlmCalls(2) as { tokens_in: number; tokens_out: number }[];
+  assert.equal(rows[0]!.tokens_in, 0);
+  assert.equal(rows[1]!.tokens_in, 0);
+});
+
+test("transport retry: claude_code failures are never transport-retried (no HTTP status to key off)", async () => {
+  setRoleModel("claude_code", "sonnet");
+  const { exec, calls } = makeClaudeExec({ versionOk: false, runResponses: [] });
+  const sleeps: number[] = [];
+  const callLlm = llm.createCallLlm({
+    exec,
+    sleep: async (ms: number) => {
+      sleeps.push(ms);
+    },
+  });
+  const before = llmCallCount();
+  await assert.rejects(
+    () => callLlm({ role: "classifier", system: "s", user: "u", schema: SCHEMA, schemaName: "X" }),
+    LlmProviderUnavailable,
+  );
+  assert.equal(sleeps.length, 0, "no transport retry/sleep for claude_code");
+  assert.equal(llmCallCount(), before + 1, "exactly one failed attempt logged, not retried");
 });
 
 // ---- Budget guard ----
@@ -443,6 +564,58 @@ test("budget guard: refuses over budget before calling the provider, and logs no
     },
   );
   assert.equal(llmCallCount(), before, "a refused call is never logged to llm_calls");
+  store.setSettings({ llm_monthly_token_budget: "2000000" });
+});
+
+test("budget guard: the JSON-parse retry is re-guarded -- budget left for exactly one call blocks the retry (fix round 1, item 2)", async () => {
+  llmKeys.setKey("openai", "sk-budget-retry-test");
+  setRoleModel("openai", "gpt-5.4-mini");
+
+  const system = "s";
+  const user = "u";
+  // Large enough that est1 alone clears the setting's 100,000 floor
+  // regardless of how much this test file has already logged this month.
+  const maxOutputTokens = 150_000;
+  const est1 = llm.estimateTokens(system, user, maxOutputTokens);
+
+  const usedBefore = store.sumLlmTokensThisMonth();
+  // Budget has room for exactly the first attempt's pre-call estimate, and
+  // no more -- whether or not the retry needs only one extra token.
+  store.setSettings({ llm_monthly_token_budget: String(usedBefore + est1) });
+
+  const { fetchFn } = makeFakeFetch(() => ({
+    status: 200,
+    body: {
+      // Garbage content -> the JSON parse fails and callLlm tries the retry
+      // path. Real usage is set to add up to exactly est1, so after this
+      // attempt is logged the month total exactly equals the (now tighter)
+      // budget, leaving zero room for the retry's own (necessarily > 0)
+      // estimate.
+      choices: [{ message: { content: "not valid json" } }],
+      usage: { prompt_tokens: Math.ceil(est1 / 2), completion_tokens: est1 - Math.ceil(est1 / 2) },
+    },
+  }));
+
+  const beforeRows = llmCallCount();
+  const callLlm = llm.createCallLlm({ fetchFn });
+  await assert.rejects(
+    () =>
+      callLlm({
+        role: "classifier",
+        system,
+        user,
+        schema: SCHEMA,
+        schemaName: "X",
+        maxOutputTokens,
+      }),
+    LlmBudgetExceeded,
+  );
+  assert.equal(
+    llmCallCount(),
+    beforeRows + 1,
+    "only the first (parse-failed) attempt is logged -- the retry is refused before it ever dispatches",
+  );
+
   store.setSettings({ llm_monthly_token_budget: "2000000" });
 });
 

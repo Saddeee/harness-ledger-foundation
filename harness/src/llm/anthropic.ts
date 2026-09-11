@@ -44,9 +44,17 @@ export async function callAnthropic(params: ProviderCallParams): Promise<Provide
 
   if (!res.ok) {
     // Never include headers/request body -- the key lives only in the
-    // x-api-key header, never echoed by the provider.
+    // x-api-key header, never echoed by the provider. `status` is attached
+    // (not just embedded in the message) so index.ts's transport retry can
+    // tell a 429/5xx apart from any other failure without parsing text.
     const bodyText = await res.text().catch(() => "");
-    throw new Error(`Anthropic request failed: ${res.status} ${bodyText}`.slice(0, 500));
+    const error = new Error(
+      `Anthropic request failed: ${res.status} ${bodyText}`.slice(0, 500),
+    ) as Error & {
+      status?: number;
+    };
+    error.status = res.status;
+    throw error;
   }
 
   const data = (await res.json()) as AnthropicResponse;
