@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { runtimeQueryOptions } from "@/lib/improvements-client";
+import { LocalSettings } from "@/components/harness/local-settings";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
@@ -32,12 +32,25 @@ export const Route = createFileRoute("/_authenticated/settings")({
 
 type Values = Record<string, unknown>;
 
+// The hosted form only shows the two keys that still have a consumer in the
+// hosted runtime: kill_switch (the hosted worker's autonomy guard) and
+// monthly_credit_budget (shown under Advanced below). Every other legacy
+// key (drift/rule/replay/LLM settings) has no reader left and is gone from
+// this page.
+const HOSTED_NUMBER_KEYS = ["monthly_credit_budget"];
+const HOSTED_BOOL_KEYS = ["kill_switch"];
+
+// While the runtime is still loading, `mode` is undefined -- not "local" --
+// so the hosted form renders by default, same as Projects.
 function SettingsPage() {
+  const runtime = useQuery(runtimeQueryOptions);
+  const mode = runtime.data?.mode;
+  return mode === "local" ? <LocalSettings /> : <HostedSettings />;
+}
+
+function HostedSettings() {
   const qc = useQueryClient();
   const [values, setValues] = useState<Values>({ ...SETTINGS_DEFAULTS });
-  const [modelsText, setModelsText] = useState(
-    JSON.stringify(SETTINGS_DEFAULTS["llm_models"], null, 2),
-  );
   const [saving, setSaving] = useState(false);
 
   const { data } = useQuery({
@@ -54,24 +67,16 @@ function SettingsPage() {
     const next: Values = { ...SETTINGS_DEFAULTS };
     for (const row of data) next[row.key as string] = row.value;
     setValues(next);
-    setModelsText(JSON.stringify(next["llm_models"] ?? {}, null, 2));
   }, [data]);
 
   async function save() {
-    let models: unknown;
-    try {
-      models = JSON.parse(modelsText);
-    } catch {
-      toast.error("Model list is not valid JSON");
-      return;
-    }
     setSaving(true);
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData.user?.id;
-    const rows = Object.keys(SETTINGS_DEFAULTS).map((key) => ({
+    const rows = [...HOSTED_NUMBER_KEYS, ...HOSTED_BOOL_KEYS].map((key) => ({
       owner_user_id: userId!,
       key,
-      value: (key === "llm_models" ? models : values[key]) as never,
+      value: values[key] as never,
     }));
     const { error } = await supabase.from("settings").upsert(rows, {
       onConflict: "owner_user_id,key",
@@ -85,20 +90,12 @@ function SettingsPage() {
     }
   }
 
-  const numberKeys = [
-    "monthly_credit_budget",
-    "drift_check_every_n",
-    "max_active_rules",
-    "knowledge_char_cap",
-  ];
-  const boolKeys = ["require_replay_approval", "keep_forks", "one_change_per_day", "kill_switch"];
-
   return (
     <div className="max-w-xl space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
       <div className="space-y-4">
-        {numberKeys.map((key) => (
+        {HOSTED_NUMBER_KEYS.map((key) => (
           <div key={key} className="space-y-2">
             <Label htmlFor={key}>{key.replace(/_/g, " ")}</Label>
             <Input
@@ -110,7 +107,7 @@ function SettingsPage() {
           </div>
         ))}
 
-        {boolKeys.map((key) => (
+        {HOSTED_BOOL_KEYS.map((key) => (
           <div key={key} className="flex items-center justify-between rounded-md border p-3">
             <Label htmlFor={key}>{key.replace(/_/g, " ")}</Label>
             <Switch
@@ -120,26 +117,6 @@ function SettingsPage() {
             />
           </div>
         ))}
-
-        <div className="space-y-2">
-          <Label htmlFor="llm_provider">llm provider</Label>
-          <Input
-            id="llm_provider"
-            value={String(values["llm_provider"] ?? "")}
-            onChange={(e) => setValues((v) => ({ ...v, llm_provider: e.target.value }))}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="llm_models">llm models (JSON)</Label>
-          <Textarea
-            id="llm_models"
-            rows={7}
-            className="font-mono text-xs"
-            value={modelsText}
-            onChange={(e) => setModelsText(e.target.value)}
-          />
-        </div>
 
         <Button onClick={save} disabled={saving}>
           Save settings
