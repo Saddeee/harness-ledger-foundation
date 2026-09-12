@@ -156,9 +156,10 @@ next sync (`--once` or the loop):**
 
 The executor is the only process that talks to Lovable. It holds the OAuth
 connection, reads chats and Knowledge, and performs beat 2 above. It spends no
-credits, runs no AI, and may call only eight Lovable tools (`get_me`,
-`list_projects`, `list_messages`, get/set project knowledge, get/set workspace
-knowledge, `list_workspace_skills`).
+credits; runs an AI analysis only when you press Analyse now (or `--analyse`),
+and may call only eight Lovable tools (`get_me`, `list_projects`,
+`list_messages`, get/set project knowledge, get/set workspace knowledge,
+`list_workspace_skills`).
 
 ```
 npm run harness:executor -- --connect      # once: browser consent, tokens to data/lovable-auth.json (0600)
@@ -166,6 +167,7 @@ npm run harness:executor -- --status       # connection, schedule, last run, nex
 npm run harness:executor -- --once         # one full pass, then exit (crontab-friendly)
 npm run harness:executor                   # the scheduler loop; Ctrl-C to stop
 npm run harness:executor -- --disconnect   # revoke and delete the local credentials
+npm run harness:executor -- --analyse      # one AI analysis pass, then exit -- see "AI analysis" below
 ```
 
 One pass runs four beats, each idempotent: sync history (newest-first per
@@ -186,7 +188,34 @@ A restore ("Restore previous version" in the UI) is just another pending
 row whose `new_content` is the earlier version's `previous_content`; it goes
 through the same beat 2. History is append-only.
 
-This is deliberately the smallest possible slice -- correction mining
-(reading real Lovable history to generate candidates automatically),
-Skills, verification, and experiments are later checkpoints (see
-`../SPEC.md`).
+## AI analysis
+
+Analysis (classifying messages, mining corrected task episodes into rule
+proposals) never runs on its own -- only when you press "Analyse now" in the
+UI or run `--analyse` above. It's independent of the executor's sync loop and
+never touches Lovable itself.
+
+**Providers.** Configured per role (classifier/miner/reviewer/proposer) in
+Settings, one of:
+- **OpenAI, Anthropic, or Google** -- paste an API key in Settings; it's
+  saved to `data/llm-keys.json` (mode 0600, gitignored, next to the database
+  -- path overridable via `HARNESS_LLM_KEYS_PATH`, see `.env.example`), never
+  into SQLite, never logged.
+- **Claude Code** -- runs the `claude` CLI already on your machine, on your
+  existing Claude Code subscription. No key to store; requires `claude` on
+  `PATH`.
+
+**Budget.** A monthly token cap (`llm_monthly_token_budget` in Settings, a
+token count since a Claude Code subscription call has no per-call USD price)
+is checked *before* every call; a call that would exceed it is refused
+(`LlmBudgetExceeded`) rather than dispatched.
+
+**Where runs are recorded.** Every analysis pass writes one `analysis_runs`
+row (ok/error, counts, tokens, cost) and every individual model call writes
+one `llm_calls` row (provider, model, tokens in/out, cost) -- both in the
+same SQLite database as everything else, and both surfaced in the product UI
+(provider status, token budget, last run) alongside the Inbox/Instructions
+pages.
+
+This is deliberately the smallest possible slice -- Skills, verification, and
+experiments are later checkpoints (see `../SPEC.md`).
