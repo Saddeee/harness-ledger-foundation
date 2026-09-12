@@ -189,12 +189,14 @@ test("local-settings.tsx: five sections with the exact sentences, schedule and c
   for (const tag of code.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag));
   // "classifier" is dropped from this page's ban: Round 3 §4 makes it a
   // legitimate user-facing AI-analysis role label ("Classifier"), not a
-  // leaked implementation term.
+  // leaked implementation term. "Claude Code" is dropped too: Round 4 Task
+  // A4 / spec §2 adds it as a real provider choice ("Claude Code (your
+  // subscription)"), the one sanctioned exception to the no-Claude-Code-
+  // mentions rule, since it's the provider's own name.
   for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
     assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into local-settings.tsx`);
   }
   assert.ok(!/\bspec\b/i.test(code));
-  assert.ok(!/claude code/i.test(code));
 });
 
 test("local pages fetch only the harness client helpers, not raw routes", () => {

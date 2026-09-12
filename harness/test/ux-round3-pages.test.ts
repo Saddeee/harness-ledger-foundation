@@ -107,8 +107,10 @@ test("instructions.tsx: What changed toggle, per-version diff summary, demo noti
   assert.match(code, /whitespace-pre-wrap break-words/);
 
   // everything else on the page stays (Round 3 §1: body headings keep
-  // Lovable's own term)
-  for (const text of ["Rules Harness added", "Show all", "Restore this version?", "waiting for analysis"]) {
+  // Lovable's own term). The "waiting for analysis" notice itself moved into
+  // the shared <AnalyseNotice /> component in Round 4 Task A4 -- see
+  // ux-round4.test.ts and analyse-notice.tsx for that copy now.
+  for (const text of ["Rules Harness added", "Show all", "Restore this version?"]) {
     assert.ok(raw.includes(text), `instructions.tsx missing "${text}"`);
   }
   assert.ok(!code.includes("Skills"), "Skills UI must not live on the Instructions page");
@@ -180,11 +182,15 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
   for (const text of [
     "AI analysis",
     "Defaults for projects",
-    "Analysis is not switched on yet. Your key and choices are stored for when it is; nothing is sent to any provider today.",
+    "Analysis runs only when you press Analyse now. Chat text is sent to the provider you chose.",
     "Key saved, ends in",
   ]) {
     assert.ok(raw.includes(text), `local-settings.tsx missing "${text}"`);
   }
+  assert.ok(
+    !raw.includes("nothing is sent to any provider today"),
+    "local-settings.tsx still has the round-3 honest line, obsoleted by Round 4 Task A4",
+  );
   assert.match(raw, /type="password"/);
 
   // four role rows
@@ -192,11 +198,13 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
     assert.ok(raw.includes(roleLabel), `local-settings.tsx missing role label "${roleLabel}"`);
   }
 
-  // budget: 1-1000, spent this month from spent_usd
-  assert.match(code, /Monthly budget \(USD, 1–1000\)/);
-  assert.match(code, /min=\{1\}/);
-  assert.match(code, /max=\{1000\}/);
-  assert.match(code, /Spent this month: \$\{spentUsd\.toFixed\(2\)\}/);
+  // Round 4 Task A4 / spec §2: budget is in tokens (100,000-50,000,000), not
+  // dollars -- "used this month" from tokens_this_month, with the dollar
+  // estimate only for API providers.
+  assert.match(code, /Monthly token budget/);
+  assert.match(code, /id="llm-budget"[\s\S]*?min=\{100000\}[\s\S]*?max=\{50000000\}/);
+  assert.match(code, /Used this month: \{tokensThisMonth\.toLocaleString\(\)\} tokens/);
+  assert.match(code, /isApiProvider\(llmProvider\)[\s\S]*?spentUsd\.toFixed\(2\)/);
 
   // posts
   assert.match(code, /action: "llm_settings"/);
@@ -356,13 +364,16 @@ test("no internal vocabulary or spec/Claude Code mentions in the Round 3 Task 3b
     assert.ok(!/claude code/i.test(code), `${page} mentions Claude Code`);
   }
   // local-settings.tsx keeps the same ban minus "classifier" (a legitimate
-  // AI-analysis role label there -- see the local-pages test file)
+  // AI-analysis role label there -- see the local-pages test file) and minus
+  // "Claude Code" (Round 4 Task A4 / spec §2 adds it as a real provider
+  // choice -- "Claude Code" is the one sanctioned exception to the
+  // no-spec/no-Claude-Code-mentions rule, since it's the provider's own
+  // name, same as "OpenAI"/"Anthropic"/"Google" above it).
   const settingsCode = codeOnly(readApp(LOCAL_SETTINGS));
   for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
     assert.ok(!new RegExp(word, "i").test(settingsCode), `${word} leaks into local-settings.tsx`);
   }
   assert.ok(!/\bspec\b/i.test(settingsCode));
-  assert.ok(!/claude code/i.test(settingsCode));
 });
 
 // ---- 11. KnowledgePreview client type carries over_rules/active_rules_count ----
@@ -385,10 +396,15 @@ test("instructions.tsx: the page's own title is 'Instructions' in every state, n
   assert.ok(!/<h1[^>]*>Knowledge<\/h1>/.test(code), "no <h1> should still read Knowledge");
 });
 
-test("instructions.tsx: the awaiting-analysis note agrees with Settings -- analysis is not switched on yet", () => {
+test("instructions.tsx: the awaiting-analysis note is now the shared AnalyseNotice (Round 4 Task A4)", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
-  assert.ok(raw.includes("Analysis is not switched on yet."));
+  // Superseded: analysis now genuinely runs when the user presses "Analyse
+  // now" (see analyse-notice.tsx / ux-round4.test.ts), so the old
+  // not-switched-on placeholder note is gone from this page, replaced by
+  // the shared notice component.
+  assert.ok(!raw.includes("Analysis is not switched on yet."));
   assert.ok(!raw.includes("Analysis uses Harness's own AI and runs when you ask for it."));
+  assert.match(codeOnly(raw), /<AnalyseNotice/);
 });
 
 test("local-settings.tsx: one AI-analysis save action (settings + key when typed), no separate Save key button", () => {

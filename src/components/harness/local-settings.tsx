@@ -1,10 +1,12 @@
 // Settings page for the local runtime: the sync schedule, the Knowledge
-// character cap, AI analysis (provider/key/per-role models/budget -- stored
-// only, analysis itself is not switched on), the defaults new projects get,
-// and a read-only note about approval. Only talks to the executor route
-// (fetchExecutor/postExecutor) -- nothing on this page ever writes to
-// Lovable itself; it only changes what the executor does on its own
-// schedule, and what Harness stores for when analysis ships.
+// character cap, AI analysis (provider/key or Claude Code/per-role
+// models/monthly token budget -- Round 4 Task A4, spec §2: analysis itself
+// only runs when the user presses "Analyse now", from the Inbox or
+// Instructions page), the defaults new projects get, and a read-only note
+// about approval. Only talks to the executor route (fetchExecutor/
+// postExecutor) -- nothing on this page ever writes to Lovable itself; it
+// only changes what the executor does on its own schedule, and what an
+// analysis run (once triggered elsewhere) uses.
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -22,6 +24,7 @@ import {
 import {
   executorQueryOptions,
   postExecutor,
+  type ApiLlmProvider,
   type ExecutorSchedule,
   type LlmModels,
   type LlmProvider,
@@ -44,13 +47,18 @@ const SCHEDULE_LINE =
 const CAP_LINE = "Lovable allows 10,000 characters; Harness keeps a margin.";
 const APPROVAL_LINE = "Nothing is written to Lovable until you approve it here.";
 
-// ---- AI analysis (Round 3 §4). Stored only -- analysis itself doesn't run
-// yet, so nothing here ever calls a provider. ----
+// ---- AI analysis (Round 3 §4, Round 4 Task A4 / spec §2). Analysis only
+// ever runs when the user presses "Analyse now" (see analyse-notice.tsx); it
+// never runs on a schedule. ----
 const LLM_PROVIDERS: { value: LlmProvider; label: string }[] = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "google", label: "Google" },
+  { value: "claude_code", label: "Claude Code (your subscription)" },
 ];
+function isApiProvider(p: LlmProvider): p is ApiLlmProvider {
+  return p !== "claude_code";
+}
 const LLM_ROLES: { key: LlmRole; label: string; hint: string }[] = [
   {
     key: "classifier",
@@ -80,9 +88,11 @@ const DEFAULT_LLM_MODELS: LlmModels = {
   reviewer: { provider: "openai", model: "" },
   proposer: { provider: "openai", model: "" },
 };
-const DEFAULT_BUDGET_USD = 10;
+// harness/src/store.ts SETTING_DEFAULTS' llm_monthly_token_budget default,
+// used only until GET executor answers with the budget actually in force.
+const DEFAULT_TOKEN_BUDGET = 2_000_000;
 const AI_ANALYSIS_LINE =
-  "Analysis is not switched on yet. Your key and choices are stored for when it is; nothing is sent to any provider today.";
+  "Analysis runs only when you press Analyse now. Chat text is sent to the provider you chose.";
 
 // The store's own default (harness/src/store.ts SETTING_DEFAULTS), used only
 // until GET executor answers with the default actually in force.
@@ -97,7 +107,7 @@ export function LocalSettings() {
 
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(DEFAULT_LLM_PROVIDER);
   const [llmModels, setLlmModels] = useState<LlmModels>(DEFAULT_LLM_MODELS);
-  const [budget, setBudget] = useState(DEFAULT_BUDGET_USD);
+  const [budget, setBudget] = useState(DEFAULT_TOKEN_BUDGET);
   const [keyInput, setKeyInput] = useState("");
   const [maxActiveRules, setMaxActiveRules] = useState(DEFAULT_MAX_ACTIVE_RULES);
   const [notifyEnabled, setNotifyEnabled] = useState(isNotifyEnabled());
@@ -125,8 +135,15 @@ export function LocalSettings() {
     if (saved != null) setMaxActiveRules(saved);
   }, [executor.data?.defaults?.max_active_rules]);
 
-  const keyStatus = executor.data?.llm?.keys?.[llmProvider] ?? { has_key: false, last4: null };
+  const keyStatus = (isApiProvider(llmProvider)
+    ? executor.data?.llm?.keys?.[llmProvider]
+    : undefined) ?? {
+    has_key: false,
+    last4: null,
+  };
   const spentUsd = executor.data?.llm?.spent_usd ?? 0;
+  const tokensThisMonth = executor.data?.llm?.tokens_this_month ?? 0;
+  const providerReady = executor.data?.analysis?.provider_ready;
 
   const saveSchedule = useMutation({
     mutationFn: () =>
@@ -356,38 +373,51 @@ export function LocalSettings() {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">Which provider the key below belongs to.</p>
+          <p className="text-xs text-muted-foreground">
+            {llmProvider === "claude_code"
+              ? "Claude Code uses the subscription already signed in on this machine -- no key needed."
+              : "Which provider the key below belongs to."}
+          </p>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="llm-key">API key</Label>
-          {keyStatus.has_key ? (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm">Key saved, ends in …{keyStatus.last4}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => removeLlmKey.mutate()}
-                disabled={removeLlmKey.isPending}
-              >
-                {removeLlmKey.isPending ? "Removing…" : "Remove key"}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <Input
-                id="llm-key"
-                type="password"
-                autoComplete="off"
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Saved when you press Save AI analysis below.
-              </p>
-            </div>
-          )}
-        </div>
+        {llmProvider === "claude_code" ? (
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Claude Code</p>
+            <p className="text-sm">
+              {providerReady?.ok ? "Claude Code found" : "Claude Code not found on this machine"}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="llm-key">API key</Label>
+            {keyStatus.has_key ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm">Key saved, ends in …{keyStatus.last4}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeLlmKey.mutate()}
+                  disabled={removeLlmKey.isPending}
+                >
+                  {removeLlmKey.isPending ? "Removing…" : "Remove key"}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Input
+                  id="llm-key"
+                  type="password"
+                  autoComplete="off"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Saved when you press Save AI analysis below.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="space-y-3">
           <p className="text-sm font-medium">Model per role</p>
@@ -425,6 +455,7 @@ export function LocalSettings() {
                   <Label htmlFor={`llm-role-model-${key}`}>{roleLabel} model</Label>
                   <Input
                     id={`llm-role-model-${key}`}
+                    placeholder={llmModels[key].provider === "claude_code" ? "sonnet" : undefined}
                     value={llmModels[key].model}
                     onChange={(e) =>
                       setLlmModels((m) => ({
@@ -444,12 +475,15 @@ export function LocalSettings() {
           <Input
             id="llm-budget"
             type="number"
-            min={1}
-            max={1000}
+            min={100000}
+            max={50000000}
             value={budget}
             onChange={(e) => setBudget(Number(e.target.value))}
           />
-          <p className="text-sm text-muted-foreground">Spent this month: ${spentUsd.toFixed(2)}</p>
+          <p className="text-sm text-muted-foreground">
+            Used this month: {tokensThisMonth.toLocaleString()} tokens
+            {isApiProvider(llmProvider) ? ` (≈ $${spentUsd.toFixed(2)})` : ""}
+          </p>
         </div>
 
         <p className="text-sm text-muted-foreground">{AI_ANALYSIS_LINE}</p>

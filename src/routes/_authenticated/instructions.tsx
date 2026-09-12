@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import { ConfirmAction, DetailSection } from "@/components/harness/decision-layout";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/harness-ux";
@@ -478,7 +479,6 @@ function Page() {
 
   const data = query.data;
   const targets = data?.targets ?? [];
-  const awaiting = data?.awaiting_analysis ?? 0;
 
   return (
     <div className="space-y-8">
@@ -504,16 +504,7 @@ function Page() {
         </div>
       ) : null}
 
-      {awaiting > 0 ? (
-        <div className="rounded-md border bg-muted/30 p-3 text-sm">
-          <p>
-            {awaiting === 1
-              ? "1 synced message is waiting for analysis."
-              : `${awaiting} synced messages are waiting for analysis.`}
-          </p>
-          <p className="text-xs text-muted-foreground">Analysis is not switched on yet.</p>
-        </div>
-      ) : null}
+      <AnalyseNotice />
 
       {targets.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">

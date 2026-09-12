@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -89,6 +89,30 @@ function Page() {
 
   const query = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
   const refresh = () => qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+
+  // Task C3 / spec §5 "new since your last visit": read the *previous*
+  // last_seen_at from the first successful load of this visit, before
+  // marking the Inbox seen (which updates that same setting to now) --
+  // frozen in a ref for the rest of this visit, so later refetches (the
+  // sidebar's 60s poll shares this query) don't move the goalposts while
+  // the page stays open. "" (never visited) reads as the beginning of time,
+  // so a first-ever visit marks everything new.
+  const previousLastSeenAt = useRef<string | null>(null);
+  const markedSeen = useRef(false);
+  useEffect(() => {
+    if (markedSeen.current) return;
+    if (!query.data || query.data.available === false) return;
+    previousLastSeenAt.current = query.data.last_seen_at ?? null;
+    markedSeen.current = true;
+    void postImprovementAction({ action: "mark_seen" });
+  }, [query.data]);
+  const isNew = (item: Improvement): boolean => {
+    const previous = previousLastSeenAt.current;
+    if (!previous) return true;
+    const createdAt = new Date(item.created_at).getTime();
+    const previousAt = new Date(previous).getTime();
+    return !Number.isNaN(createdAt) && !Number.isNaN(previousAt) && createdAt > previousAt;
+  };
   const open = (id: number) => navigate({ to: "/inbox", search: { improvement: id } });
   const back = () => navigate({ to: "/inbox", search: {} });
   const viewInImprovements = (id: number) =>
@@ -218,6 +242,7 @@ function Page() {
                     item={i}
                     onChanged={(msg) => confirmDecision(i.id, msg)}
                     onOpen={open}
+                    isNew={isNew(i)}
                   />
                 )}
               </li>

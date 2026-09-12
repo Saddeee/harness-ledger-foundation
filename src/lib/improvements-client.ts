@@ -308,7 +308,11 @@ export type ExecutorLastRun = {
 
 // Spec section 4 (Settings > AI analysis). A key is never sent to the
 // client in full -- only has_key/last4 (harness/src/llm-keys.ts).
-export type LlmProvider = "openai" | "anthropic" | "google";
+// Round 4 Task A4 / spec §2: "claude_code" runs the user's own Claude Code
+// subscription (no key -- readiness comes from provider_ready, not `keys`,
+// so it's kept out of ApiLlmProvider below).
+export type ApiLlmProvider = "openai" | "anthropic" | "google";
+export type LlmProvider = ApiLlmProvider | "claude_code";
 export type LlmRole = "classifier" | "miner" | "reviewer" | "proposer";
 export type LlmModelChoice = { provider: LlmProvider; model: string };
 export type LlmModels = Record<LlmRole, LlmModelChoice>;
@@ -319,7 +323,7 @@ export type ExecutorLlm = {
   monthly_token_budget: number;
   tokens_this_month: number;
   spent_usd: number;
-  keys: Record<LlmProvider, LlmKeyStatus>;
+  keys: Record<ApiLlmProvider, LlmKeyStatus>;
 };
 
 export type ExecutorDefaults = { max_active_rules: number };
