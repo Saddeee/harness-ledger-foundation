@@ -10,7 +10,7 @@ import * as store from "../store.js";
 import type { CallLlm, LlmProvider } from "../llm/types.js";
 import { classifyPending } from "./classify.js";
 import { segmentAllProjects } from "./segment.js";
-import { mineEpisodes } from "./mine.js";
+import { proposeRules } from "./propose.js";
 import { keyStatus } from "../llm-keys.js";
 import { defaultExec, type Exec } from "../llm/claude-code.js";
 
@@ -20,14 +20,21 @@ const CLASSIFY_CALL_CAP = 150;
 
 export type ProviderReady = { ok: true } | { ok: false; reason: string };
 
-type LlmModelsSetting = Partial<Record<"classifier" | "miner", { provider: string }>>;
+type LlmModelsSetting = Partial<
+  Record<"classifier" | "rule_writer" | "judge", { provider: string }>
+>;
 
 /**
  * The provider(s) a real run would actually dispatch to: the classifier and
- * miner roles (segmentAllProjects makes no LLM call at all), read from the
- * llm_models setting with the same "fall back to the global llm_provider"
- * defense-in-depth harness/src/llm/index.ts's own resolveRoleModel uses if
- * llm_models fails to parse or a role entry is missing.
+ * rule_writer roles (segmentAllProjects makes no LLM call at all), plus
+ * judge only when the stored llm_models value actually has a judge entry --
+ * an upgraded DB without one falls back (at call time, in
+ * harness/src/llm/index.ts's resolveRoleModel/store.getLlmModels) to the
+ * rule_writer role's own provider, already covered by the rule_writer
+ * iteration below, so it would be misleading to require a key for it here
+ * too. Read from the llm_models setting with the same "fall back to the
+ * global llm_provider" defense-in-depth resolveRoleModel uses if llm_models
+ * fails to parse or a role entry is missing.
  */
 function providersInUse(): LlmProvider[] {
   let models: LlmModelsSetting = {};
@@ -37,8 +44,10 @@ function providersInUse(): LlmProvider[] {
     models = {};
   }
   const fallback = store.getSetting("llm_provider") as LlmProvider;
+  const roles: (keyof LlmModelsSetting)[] = ["classifier", "rule_writer"];
+  if (models.judge) roles.push("judge");
   const providers = new Set<LlmProvider>();
-  for (const role of ["classifier", "miner"] as const) {
+  for (const role of roles) {
     providers.add((models[role]?.provider as LlmProvider | undefined) ?? fallback);
   }
   return [...providers];
@@ -76,9 +85,10 @@ async function checkClaudeCode(exec: Exec, now: () => number): Promise<ProviderR
  * claude_code needs the CLI on PATH, checked via an injectable `exec` (so
  * tests never spawn the real binary) and memoized for 60 seconds (see
  * checkClaudeCode above). Returns the first reason found, in role order
- * (classifier before miner) -- there is normally only one distinct
- * provider across both roles. `deps.now` is injectable for tests to
- * control the memo window without a real 60-second wait.
+ * (classifier before rule_writer, before judge when present) -- there is
+ * normally only one distinct provider across the roles in use. `deps.now`
+ * is injectable for tests to control the memo window without a real
+ * 60-second wait.
  */
 export async function providerReady(deps?: {
   exec?: Exec;
@@ -176,7 +186,7 @@ export async function runAnalysis(
       const callsUsed = classifyResult.classified + classifyResult.failed;
       const mineLimit = Math.max(0, maxCalls - callsUsed);
       if (mineLimit > 0) {
-        const mineResult = await mineEpisodes(callLlm, { limit: mineLimit, runId });
+        const mineResult = await proposeRules(callLlm, { limit: mineLimit, runId });
         counts.proposed = mineResult.proposed;
         counts.skipped_duplicate = mineResult.skippedDuplicate;
         counts.rejected = mineResult.skippedNoProposal;

@@ -4,13 +4,19 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-process.env.HARNESS_DB_PATH = join(mkdtempSync(join(tmpdir(), "harness-verification-test-")), "harness.db");
+process.env.HARNESS_DB_PATH = join(
+  mkdtempSync(join(tmpdir(), "harness-verification-test-")),
+  "harness.db",
+);
 
 const { db, schemaVersion } = await import("../src/db.js");
 const store = await import("../src/store.js");
 
 const PROJECT = "verification-test-project";
-db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT, "test");
+db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+  PROJECT,
+  "test",
+);
 
 const episode = store.createTaskEpisode({
   project_id: PROJECT,
@@ -45,22 +51,32 @@ const rule = store.createRule({
 }) as { id: number };
 
 test("additive migration: schema version 3 applied, no data loss on existing tables", () => {
-  assert.equal(schemaVersion(), 10);
+  assert.equal(schemaVersion(), 11);
   const migrations = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
-  assert.deepEqual(migrations.map((m) => m.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(
+    migrations.map((m) => m.version),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  );
   const tableNames = new Set(
-    (db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]).map(
-      (r) => r.name,
-    ),
+    (
+      db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]
+    ).map((r) => r.name),
   );
   for (const t of [
-    "verification_definitions", "rule_verification_links", "verification_plans",
-    "verification_plan_items", "experiment_plans", "experiment_plan_verification_links",
+    "verification_definitions",
+    "rule_verification_links",
+    "verification_plans",
+    "verification_plan_items",
+    "experiment_plans",
+    "experiment_plan_verification_links",
     "experiment_resources",
     // checkpoints A/B/B.1 tables must still exist, untouched
-    "allowed_projects", "correction_candidates", "rules", "rule_revisions",
+    "allowed_projects",
+    "correction_candidates",
+    "rules",
+    "rule_revisions",
   ]) {
     assert.ok(tableNames.has(t), `expected table ${t}`);
   }
@@ -150,7 +166,9 @@ test("rule-verification linking: create_verification_plan links every definition
   const links = db.prepare(`SELECT * FROM rule_verification_links WHERE rule_id = ?`).all(rule.id);
   assert.equal(links.length, 2);
 
-  const full = store.getVerificationPlan(plan.id) as { items: { verification_definition_id: number }[] };
+  const full = store.getVerificationPlan(plan.id) as {
+    items: { verification_definition_id: number }[];
+  };
   assert.equal(full.items.length, 2);
 });
 
@@ -166,15 +184,21 @@ test("verifier status enum: only passed/failed/unclear/not_run are valid, defaul
       .run(plan.items[0].id),
   );
 
-  db.prepare(`UPDATE verification_plan_items SET status = 'passed' WHERE id = ?`).run(plan.items[0].id);
-  const updated = db.prepare(`SELECT status FROM verification_plan_items WHERE id = ?`).get(plan.items[0].id) as {
+  db.prepare(`UPDATE verification_plan_items SET status = 'passed' WHERE id = ?`).run(
+    plan.items[0].id,
+  );
+  const updated = db
+    .prepare(`SELECT status FROM verification_plan_items WHERE id = ?`)
+    .get(plan.items[0].id) as {
     status: string;
   };
   assert.equal(updated.status, "passed");
 });
 
 test("explicit authorization is required before a structural failure is concluded (documented in configuration, not silently assumed)", () => {
-  const def = db.prepare(`SELECT configuration FROM verification_definitions WHERE id = ?`).get(structuralDefId) as {
+  const def = db
+    .prepare(`SELECT configuration FROM verification_definitions WHERE id = ?`)
+    .get(structuralDefId) as {
     configuration: string;
   };
   const config = JSON.parse(def.configuration || "{}");
@@ -183,11 +207,14 @@ test("explicit authorization is required before a structural failure is conclude
   // definition that fails merely on presence of a schedule.
   db.prepare(`UPDATE verification_definitions SET configuration = ? WHERE id = ?`).run(
     JSON.stringify({
-      fail_only_if: "recurring mechanism enabled by default AND no evidence of explicit user authorization",
+      fail_only_if:
+        "recurring mechanism enabled by default AND no evidence of explicit user authorization",
     }),
     structuralDefId,
   );
-  const reread = db.prepare(`SELECT configuration FROM verification_definitions WHERE id = ?`).get(structuralDefId) as {
+  const reread = db
+    .prepare(`SELECT configuration FROM verification_definitions WHERE id = ?`)
+    .get(structuralDefId) as {
     configuration: string;
   };
   const rereadConfig = JSON.parse(reread.configuration);
@@ -252,10 +279,17 @@ test("safe_to_delete only becomes true via an explicit update_experiment_resourc
     source_project_id: PROJECT,
   }) as { id: number };
 
-  let updated = store.updateExperimentResourceStatus({ id: resource.id, creation_status: "created" }) as {
+  let updated = store.updateExperimentResourceStatus({
+    id: resource.id,
+    creation_status: "created",
+  }) as {
     safe_to_delete: number;
   };
-  assert.equal(updated.safe_to_delete, 0, "creating a resource must not implicitly make it safe to delete");
+  assert.equal(
+    updated.safe_to_delete,
+    0,
+    "creating a resource must not implicitly make it safe to delete",
+  );
 
   updated = store.updateExperimentResourceStatus({ id: resource.id, safe_to_delete: true }) as {
     safe_to_delete: number;
@@ -277,7 +311,10 @@ test("no experiment-execution tool exists: mcp-server.ts source has no tool that
 test("no arbitrary SQL / generic remote-operation tool exists in the MCP server or the adapter", () => {
   for (const file of ["../src/mcp-server.ts", "../src/adapter.ts"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    const code = source.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+    const code = source
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("//"))
+      .join("\n");
     assert.ok(!/execute_sql|run_sql|raw_query|generic_mutation/i.test(code), file);
   }
 });
@@ -285,9 +322,20 @@ test("no arbitrary SQL / generic remote-operation tool exists in the MCP server 
 test("no Knowledge write, no Skill write, no Lovable prompt is sent: store.ts and mcp-server.ts have no Lovable import and no network call", () => {
   for (const file of ["../src/store.ts", "../src/mcp-server.ts", "../src/adapter.ts"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    const code = source.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
-    assert.ok(!/^\s*import.*lovable/im.test(code), `${file} must not import anything Lovable-related`);
-    assert.ok(!/setProjectKnowledge|setWorkspaceKnowledge|createWorkspaceSkill|updateWorkspaceSkill/i.test(code), file);
+    const code = source
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("//"))
+      .join("\n");
+    assert.ok(
+      !/^\s*import.*lovable/im.test(code),
+      `${file} must not import anything Lovable-related`,
+    );
+    assert.ok(
+      !/setProjectKnowledge|setWorkspaceKnowledge|createWorkspaceSkill|updateWorkspaceSkill/i.test(
+        code,
+      ),
+      file,
+    );
     assert.ok(!/fetch\(|http\.request|https\.request/.test(code), file);
   }
 });

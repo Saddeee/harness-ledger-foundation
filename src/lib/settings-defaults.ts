@@ -10,7 +10,7 @@ export const SETTINGS_DEFAULTS: Record<string, unknown> = {
   llm_provider: "lovable",
   llm_models: {
     classifier: "google/gemini-3.1-flash-lite",
-    miner: "google/gemini-3.7-flash",
+    rule_writer: "google/gemini-3.7-flash",
     reviewer: "google/gemini-3.7-flash",
     proposer: "google/gemini-3.7-flash",
   },

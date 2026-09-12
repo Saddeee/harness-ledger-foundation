@@ -349,7 +349,10 @@ export type ExecutorLastRun = {
 // so it's kept out of ApiLlmProvider below).
 export type ApiLlmProvider = "openai" | "anthropic" | "google";
 export type LlmProvider = ApiLlmProvider | "claude_code";
-export type LlmRole = "classifier" | "miner" | "reviewer" | "proposer";
+// Round 5 Task 1: "miner" is renamed "rule_writer" (harness/src/analysis/
+// propose.ts), and "judge" is added for the adherence/verdict pipeline --
+// see harness/src/store.ts's LlmRole, which this type mirrors.
+export type LlmRole = "classifier" | "rule_writer" | "judge" | "reviewer" | "proposer";
 export type LlmModelChoice = { provider: LlmProvider; model: string };
 export type LlmModels = Record<LlmRole, LlmModelChoice>;
 export type LlmKeyStatus = { has_key: boolean; last4: string | null };

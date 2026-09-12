@@ -54,6 +54,37 @@ export {
   listLiveRulesWithTargets,
 } from "./store.js";
 
+// Round 5 Task 1: skip reasons/decided-by on a correction candidate,
+// rule-level verdicts, per-episode rule adherence, and the evidence-source
+// setting/feedback-stats read helpers later Round 5 tasks build the
+// decision-mode auto-accept path, the judge role, and the Instructions
+// page's feedback/evidence panels on top of.
+export {
+  setCandidateSkipReason,
+  setCandidateDecidedBy,
+  recordRuleVerdict,
+  latestRuleVerdict,
+  listRuleVerdicts,
+  recordRuleAdherence,
+  listRuleAdherence,
+  adherenceCounts,
+  listUnjudgedEpisodesForRule,
+  getEvidenceSources,
+  feedbackStats,
+  listAcceptedRuleTexts,
+  listSkippedSuggestions,
+  listWordingEdits,
+  tagAcceptanceRates,
+  getLlmModels,
+} from "./store.js";
+export type {
+  SkipReason,
+  RuleVerdict,
+  AdherenceVerdict,
+  EvidenceSources,
+  FeedbackStats,
+} from "./store.js";
+
 // Round 3: per-provider LLM API keys, stored in their own 0600 file, never in
 // SQLite and never returned beyond has_key/last4 (see llm-keys.ts).
 export {

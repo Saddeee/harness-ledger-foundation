@@ -1407,7 +1407,20 @@ export type SettingKey =
   // Task C3 / spec §5 "new since your last visit": when the Inbox was last
   // opened, as an ISO date string -- "" (never visited) counts as the
   // beginning of time, so a first-ever visit reads every item as new.
-  | "inbox_last_seen_at";
+  | "inbox_last_seen_at"
+  // Round 5 Task 1 / spec §4: whether a correction candidate that clears the
+  // auto-accept confidence bar is queued for the user to decide ("ask", the
+  // default) or accepted without a prompt ("automatic") -- see
+  // decision_auto_confidence below and setCandidateDecidedBy in the Round 5
+  // Task 1 block further down this file.
+  | "decision_mode"
+  // The confidence threshold decision_mode='automatic' requires before it
+  // will decide without asking -- a plain fraction in [0.5, 1], never a
+  // percentage.
+  | "decision_auto_confidence"
+  // spec §4b: which evidence sources feed a rule's health/verdict picture --
+  // a JSON object of exactly the four booleans EvidenceSources below names.
+  | "evidence_sources";
 
 // AI analysis (Round 4): these keys give the Settings page and the analysis
 // pipeline (harness/src/llm/) something to read and validate. Budget is in
@@ -1416,14 +1429,22 @@ export type SettingKey =
 export const LLM_PROVIDERS = ["openai", "anthropic", "google", "claude_code"] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
-export type LlmRole = "classifier" | "miner" | "reviewer" | "proposer";
-const LLM_ROLES: LlmRole[] = ["classifier", "miner", "reviewer", "proposer"];
+// Round 5 Task 1: "miner" is renamed "rule_writer" (harness/src/analysis/
+// propose.ts, formerly mine.ts) and a fifth role, "judge", is added for the
+// adherence/verdict pipeline later Round 5 tasks build. "judge" is the only
+// optional role in a stored llm_models value -- see REQUIRED_LLM_ROLES,
+// assertLlmModels and getLlmModels below for the fallback an upgraded DB
+// (no judge entry yet) resolves through.
+export type LlmRole = "classifier" | "rule_writer" | "judge" | "reviewer" | "proposer";
+const LLM_ROLES: LlmRole[] = ["classifier", "rule_writer", "judge", "reviewer", "proposer"];
+const REQUIRED_LLM_ROLES: LlmRole[] = ["classifier", "rule_writer", "reviewer", "proposer"];
 export type LlmModelChoice = { provider: LlmProvider; model: string };
 export type LlmModels = Record<LlmRole, LlmModelChoice>;
 
 const DEFAULT_LLM_MODELS: LlmModels = {
   classifier: { provider: "openai", model: "gpt-5.4-mini" },
-  miner: { provider: "openai", model: "gpt-5.5" },
+  rule_writer: { provider: "openai", model: "gpt-5.5" },
+  judge: { provider: "openai", model: "gpt-5.4-mini" },
   reviewer: { provider: "openai", model: "gpt-5.5" },
   proposer: { provider: "openai", model: "gpt-5.5" },
 };
@@ -1441,6 +1462,14 @@ export const SETTING_DEFAULTS: Record<SettingKey, string> = {
   rule_unused_after_days: "60",
   max_active_rules: "12",
   inbox_last_seen_at: "",
+  decision_mode: "ask",
+  decision_auto_confidence: "0.8",
+  evidence_sources: JSON.stringify({
+    observed: true,
+    adherence: true,
+    verdicts: true,
+    paired: false,
+  }),
 };
 
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
@@ -1487,6 +1516,14 @@ function assertLlmProvider(raw: string): void {
   }
 }
 
+// Round 5 Task 1: "judge" is optional -- an upgraded DB's stored llm_models
+// value (rewritten miner -> rule_writer by migration v11's UPDATE, since
+// rewriting JSON to also insert a new key in SQL is fragile) has no judge
+// entry until the user saves one, and getLlmModels/resolveRoleModel
+// (harness/src/llm/index.ts) fall back to the rule_writer entry, then the
+// global llm_provider, for it. Every other role stays required -- rejecting
+// a payload that still uses the old "miner" key (now just an unrecognized
+// role name) rather than silently accepting it half-migrated.
 function assertLlmModels(raw: string): void {
   let parsed: unknown;
   try {
@@ -1498,12 +1535,22 @@ function assertLlmModels(raw: string): void {
     throw new Error("llm_models must be a JSON object");
   }
   const obj = parsed as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  const expected = [...LLM_ROLES].sort();
-  if (keys.length !== expected.length || !keys.every((k, i) => k === expected[i])) {
-    throw new Error(`llm_models must define exactly the roles: ${LLM_ROLES.join(", ")}`);
+  const keys = Object.keys(obj);
+  for (const role of REQUIRED_LLM_ROLES) {
+    if (!(role in obj)) {
+      throw new Error(
+        `llm_models must define at least the roles: ${REQUIRED_LLM_ROLES.join(", ")} ("judge" is optional -- it falls back to rule_writer)`,
+      );
+    }
   }
-  for (const role of LLM_ROLES) {
+  for (const key of keys) {
+    if (!(LLM_ROLES as string[]).includes(key)) {
+      throw new Error(
+        `llm_models has an unknown role "${key}" -- expected one of: ${LLM_ROLES.join(", ")}`,
+      );
+    }
+  }
+  for (const role of keys as LlmRole[]) {
     const choice = obj[role];
     if (typeof choice !== "object" || choice === null || Array.isArray(choice)) {
       throw new Error(`llm_models.${role} must be an object with provider and model`);
@@ -1516,6 +1563,49 @@ function assertLlmModels(raw: string): void {
       throw new Error(
         `llm_models.${role}.model must be a non-empty string of at most 100 characters`,
       );
+    }
+  }
+}
+
+function assertDecisionMode(raw: string): void {
+  if (raw !== "ask" && raw !== "automatic") {
+    throw new Error(`decision_mode must be "ask" or "automatic"`);
+  }
+}
+
+function assertDecisionAutoConfidence(raw: string): void {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0.5 || n > 1) {
+    throw new Error("decision_auto_confidence must be a number between 0.5 and 1");
+  }
+}
+
+// The four sources a rule's health/verdict picture can draw on (spec §4b):
+// exactly these keys, all booleans -- an extra/missing key or a non-boolean
+// value is rejected rather than silently ignored.
+const EVIDENCE_SOURCE_KEYS = ["observed", "adherence", "verdicts", "paired"] as const;
+
+function assertEvidenceSources(raw: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("evidence_sources must be valid JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("evidence_sources must be a JSON object");
+  }
+  const obj = parsed as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  const expected = [...EVIDENCE_SOURCE_KEYS].sort();
+  if (keys.length !== expected.length || !keys.every((k, i) => k === expected[i])) {
+    throw new Error(
+      `evidence_sources must define exactly the keys: ${EVIDENCE_SOURCE_KEYS.join(", ")}`,
+    );
+  }
+  for (const key of EVIDENCE_SOURCE_KEYS) {
+    if (typeof obj[key] !== "boolean") {
+      throw new Error(`evidence_sources.${key} must be a boolean`);
     }
   }
 }
@@ -1549,6 +1639,12 @@ export function setSettings(
       assertIntInRange(key, value, 1, 50);
     } else if (key === "inbox_last_seen_at") {
       assertIsoDateOrEmpty(key, value);
+    } else if (key === "decision_mode") {
+      assertDecisionMode(value);
+    } else if (key === "decision_auto_confidence") {
+      assertDecisionAutoConfidence(value);
+    } else if (key === "evidence_sources") {
+      assertEvidenceSources(value);
     } else {
       // sync_window_start_hour / sync_window_end_hour
       assertIntInRange(key, value, 0, 24);
@@ -1574,6 +1670,35 @@ export function setSettings(
 
   if (toWrite.length) insertEvent("settings.updated", null, { keys: toWrite.map(([k]) => k) });
   return getSettings();
+}
+
+// Round 5 Task 1: the llm_models setting, fully resolved -- every role
+// always has a provider/model, even right after an upgrade whose stored
+// value has no "judge" entry yet (migration v11 only renames miner ->
+// rule_writer; it never invents a judge entry, since editing JSON in SQL is
+// fragile). Fallback chain per role: its own entry, else (judge only) the
+// rule_writer entry, else the global llm_provider paired with that role's
+// DEFAULT_LLM_MODELS model. harness/src/llm/index.ts's resolveRoleModel
+// calls this rather than re-parsing the setting itself, so the fallback
+// lives in exactly one place.
+export function getLlmModels(): LlmModels {
+  let raw: Partial<Record<LlmRole, LlmModelChoice>> = {};
+  try {
+    raw = JSON.parse(getSetting("llm_models")) as Partial<Record<LlmRole, LlmModelChoice>>;
+  } catch {
+    raw = {};
+  }
+  const fallbackProvider = getSetting("llm_provider") as LlmProvider;
+  const resolve = (role: LlmRole): LlmModelChoice =>
+    raw[role] ?? { provider: fallbackProvider, model: DEFAULT_LLM_MODELS[role].model };
+  const ruleWriter = resolve("rule_writer");
+  return {
+    classifier: resolve("classifier"),
+    rule_writer: ruleWriter,
+    judge: raw.judge ?? ruleWriter,
+    reviewer: resolve("reviewer"),
+    proposer: resolve("proposer"),
+  };
 }
 
 // A verbatim copy of a Lovable Skill, deduped by content hash per
@@ -2510,11 +2635,11 @@ export function addEpisodeEvidence(
 // ---- end Round 4 A1 ----
 
 // ---- Round 4 A2 ----
-// Data access for harness/src/analysis/mine.ts (Task A2): selecting
-// corrected-but-unmined task episodes for the miner LLM call, and the live
+// Data access for harness/src/analysis/propose.ts (Task A2): selecting
+// corrected-but-unmined task episodes for the rule writer LLM call, and the live
 // rule instruction texts it dedupes proposed instructions against.
 
-/** One message the miner sees, keyed by external_id (Lovable's own message
+/** One message the rule writer sees, keyed by external_id (Lovable's own message
  * id, shown in the prompt) rather than the internal numeric history_item_id
  * -- external_id is what evidence_message_ids cites back. */
 export type MinableMessage = {
@@ -2545,7 +2670,7 @@ function truncateText(text: string, max: number): string {
 /**
  * Episodes with >=1 correction-classified message and no correction_candidates
  * row yet -- Task A2's selection query, oldest-first by started_at/id, what
- * mineEpisodes works through.
+ * proposeRules works through.
  *
  * `request` is the episode's earliest evidence message (the new_task message
  * segmentEpisodes opened it with -- evidence role isn't a stored column, see
@@ -2557,7 +2682,7 @@ function truncateText(text: string, max: number): string {
  * assistant replies are never themselves task_episode_evidence rows
  * (classify.ts only classifies role='user' messages), so this is a
  * time-window read, not an evidence join -- rendered via humanVisibleText
- * and truncated to 800 chars so the miner sees what Lovable told the user,
+ * and truncated to 800 chars so the rule writer sees what Lovable told the user,
  * never raw tool-use markup.
  */
 export function listMinableEpisodes(limit: number): MinableEpisode[] {
@@ -2651,7 +2776,7 @@ export function listMinableEpisodes(limit: number): MinableEpisode[] {
   });
 }
 
-/** Rule instruction texts the miner dedupes proposed instructions against:
+/** Rule instruction texts the rule writer dedupes proposed instructions against:
  * every rule not yet retired/rejected/rolled_back. Fix wave item 3: scoped
  * per target when `target.project_id` is given -- a project-scoped rule
  * only counts when it belongs to that same project (via the same
@@ -2687,7 +2812,7 @@ export function listLiveRuleTexts(target?: {
 /** Union of message_classifications.tags_json across every evidence message
  * linked to an episode (any classification -- matches listEpisodesAfter's
  * tag-union semantics from Task C1), falling back to ["general"] when the
- * episode has no tags at all. What the miner sets a newly-created rule's
+ * episode has no tags at all. What the rule writer sets a newly-created rule's
  * scope_tags_json to, via setRuleScopeTags below. */
 export function episodeScopeTags(episodeId: number): string[] {
   const rows = db
@@ -2714,7 +2839,7 @@ export function episodeScopeTags(episodeId: number): string[] {
 
 /** createRule (Checkpoint B) has no scope_tags_json parameter -- that column
  * was added later by migration v9 with a DEFAULT of '["general"]' -- so the
- * miner sets it in a second, explicit step right after creating the rule,
+ * rule writer sets it in a second, explicit step right after creating the rule,
  * rather than this task reaching into createRule's long-shared insert. */
 export function setRuleScopeTags(ruleId: number, tags: string[]): void {
   const normalized = tags.length > 0 ? tags : ["general"];
@@ -3116,3 +3241,345 @@ export function countInboxItems(): { pending: number; retire: number } {
   return { pending, retire };
 }
 // ---- end Round 4 C3 ----
+
+// ---- Round 5 Task 1 ----
+// Schema/store foundation for round 5 (spec §1/§4/§4b/§5): a correction
+// candidate's skip reason and who decided it, rule-level verdicts, per-
+// episode rule adherence, and the read helpers later Round 5 tasks (the
+// decision-mode auto-accept path, the judge role, the Instructions page's
+// feedback/evidence panels) build on. Migration v11
+// (harness/src/migrations.ts) owns every table/column this section reads or
+// writes.
+
+export type SkipReason = "not_useful" | "wrong_wording" | "one_time" | "already_covered";
+
+/** Records (or clears, with null) why a correction candidate was skipped --
+ * spec §4b's skip reasons, shown back on the Improvement and rolled up by
+ * tagAcceptanceRates/listSkippedSuggestions below. Independent of the
+ * exclude/include review actions in reviewCorrectionCandidate above: this
+ * only sets the reason column, never excluded_from_learning itself. */
+export function setCandidateSkipReason(id: number, reason: SkipReason | null): void {
+  db.prepare(
+    `UPDATE correction_candidates SET skip_reason = ?, updated_at = datetime('now') WHERE id = ?`,
+  ).run(reason, id);
+  insertEvent("correction_candidate.skip_reason_set", null, { id, skip_reason: reason });
+}
+
+/** Records who decided a correction candidate: a human ("user") via the
+ * normal review flow, or the decision_mode='automatic' path deciding
+ * without asking. feedbackStats below counts 'automatic' decisions
+ * separately so the Settings page can show how often auto-accept fired. */
+export function setCandidateDecidedBy(id: number, by: "user" | "automatic"): void {
+  db.prepare(
+    `UPDATE correction_candidates SET decided_by = ?, updated_at = datetime('now') WHERE id = ?`,
+  ).run(by, id);
+  insertEvent("correction_candidate.decided_by_set", null, { id, decided_by: by });
+}
+
+export type RuleVerdict = "helped" | "did_not_help" | "not_sure";
+
+/** A whole-rule verdict ("did this actually help") -- many per rule, newest
+ * one wins on the Instructions page (latestRuleVerdict below). Distinct
+ * from rule_adherence, which is per-episode ("did this task follow the
+ * rule"), not a judgment on the rule overall. */
+export function recordRuleVerdict(input: {
+  rule_id: number;
+  verdict: RuleVerdict;
+  note?: string | null;
+}): { id: number } {
+  const row = db
+    .prepare(
+      `INSERT INTO rule_verdicts (rule_id, verdict, note) VALUES (@rule_id, @verdict, @note) RETURNING id`,
+    )
+    .get({ rule_id: input.rule_id, verdict: input.verdict, note: input.note ?? null }) as {
+    id: number;
+  };
+  insertEvent("rule_verdict.recorded", null, {
+    id: row.id,
+    rule_id: input.rule_id,
+    verdict: input.verdict,
+  });
+  return { id: row.id };
+}
+
+export function latestRuleVerdict(
+  ruleId: number,
+): { id: number; verdict: RuleVerdict; note: string | null; created_at: string } | null {
+  const row = db
+    .prepare(
+      `SELECT id, verdict, note, created_at FROM rule_verdicts WHERE rule_id = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(ruleId) as
+    { id: number; verdict: RuleVerdict; note: string | null; created_at: string } | undefined;
+  return row ?? null;
+}
+
+export function listRuleVerdicts(
+  ruleId: number,
+): { id: number; verdict: RuleVerdict; note: string | null; created_at: string }[] {
+  return db
+    .prepare(
+      `SELECT id, verdict, note, created_at FROM rule_verdicts WHERE rule_id = ? ORDER BY id DESC`,
+    )
+    .all(ruleId) as { id: number; verdict: RuleVerdict; note: string | null; created_at: string }[];
+}
+
+export type AdherenceVerdict = "followed" | "broke" | "not_applicable";
+
+/** One (rule, task_episode) adherence judgment -- insert-or-ignore on the
+ * migration's UNIQUE (rule_id, task_episode_id), so re-judging the same
+ * pair (a re-run of the judge role over an already-judged episode) never
+ * double-counts adherenceCounts below. Silently a no-op on the ignored
+ * duplicate, matching addEpisodeEvidence's own insert-or-ignore
+ * convention -- no event is logged for a duplicate that changed nothing. */
+export function recordRuleAdherence(input: {
+  rule_id: number;
+  task_episode_id: number;
+  verdict: AdherenceVerdict;
+  quote: string | null;
+  llm_call_id: number | null;
+  run_id: number | null;
+}): void {
+  const result = db
+    .prepare(
+      `INSERT OR IGNORE INTO rule_adherence (rule_id, task_episode_id, verdict, quote, llm_call_id, run_id)
+       VALUES (@rule_id, @task_episode_id, @verdict, @quote, @llm_call_id, @run_id)`,
+    )
+    .run(input);
+  if (result.changes > 0) {
+    insertEvent("rule_adherence.recorded", null, {
+      rule_id: input.rule_id,
+      task_episode_id: input.task_episode_id,
+      verdict: input.verdict,
+    });
+  }
+}
+
+export function listRuleAdherence(ruleId: number): {
+  task_episode_id: number;
+  verdict: AdherenceVerdict;
+  quote: string | null;
+  created_at: string;
+}[] {
+  return db
+    .prepare(
+      `SELECT task_episode_id, verdict, quote, created_at FROM rule_adherence
+       WHERE rule_id = ? ORDER BY id DESC`,
+    )
+    .all(ruleId) as {
+    task_episode_id: number;
+    verdict: AdherenceVerdict;
+    quote: string | null;
+    created_at: string;
+  }[];
+}
+
+export function adherenceCounts(ruleId: number): {
+  followed: number;
+  broke: number;
+  not_applicable: number;
+} {
+  const rows = db
+    .prepare(`SELECT verdict, COUNT(*) as n FROM rule_adherence WHERE rule_id = ? GROUP BY verdict`)
+    .all(ruleId) as { verdict: AdherenceVerdict; n: number }[];
+  const counts = { followed: 0, broke: 0, not_applicable: 0 };
+  for (const row of rows) counts[row.verdict] = row.n;
+  return counts;
+}
+
+/** Episodes started strictly after sinceIso (same started_at/project_id
+ * filter as listEpisodesAfter above) that have no rule_adherence row yet
+ * for this rule -- what the judge role works through so it never re-judges
+ * an episode it already has a verdict for. */
+export function listUnjudgedEpisodesForRule(
+  ruleId: number,
+  sinceIso: string,
+  projectId: string | null,
+  limit: number,
+): { id: number; project_id: string | null; started_at: string }[] {
+  const notYetJudged = `NOT EXISTS (
+    SELECT 1 FROM rule_adherence ra WHERE ra.rule_id = ? AND ra.task_episode_id = task_episodes.id
+  )`;
+  return (
+    projectId == null
+      ? db
+          .prepare(
+            `SELECT id, project_id, started_at FROM task_episodes
+             WHERE started_at IS NOT NULL AND started_at > ? AND ${notYetJudged}
+             ORDER BY started_at ASC
+             LIMIT ?`,
+          )
+          .all(sinceIso, ruleId, limit)
+      : db
+          .prepare(
+            `SELECT id, project_id, started_at FROM task_episodes
+             WHERE started_at IS NOT NULL AND started_at > ? AND project_id = ? AND ${notYetJudged}
+             ORDER BY started_at ASC
+             LIMIT ?`,
+          )
+          .all(sinceIso, projectId, ruleId, limit)
+  ) as { id: number; project_id: string | null; started_at: string }[];
+}
+
+export type EvidenceSources = {
+  observed: boolean;
+  adherence: boolean;
+  verdicts: boolean;
+  paired: boolean;
+};
+
+const EVIDENCE_SOURCES_DEFAULT: EvidenceSources = {
+  observed: true,
+  adherence: true,
+  verdicts: true,
+  paired: false,
+};
+
+/** The parsed evidence_sources setting -- falls back to the same default
+ * SETTING_DEFAULTS.evidence_sources encodes whenever the stored value fails
+ * to parse or is missing one of the four keys (defense in depth: setSettings
+ * already validates this shape via assertEvidenceSources above). */
+export function getEvidenceSources(): EvidenceSources {
+  try {
+    const parsed = JSON.parse(getSetting("evidence_sources")) as Record<string, unknown>;
+    if (
+      typeof parsed.observed === "boolean" &&
+      typeof parsed.adherence === "boolean" &&
+      typeof parsed.verdicts === "boolean" &&
+      typeof parsed.paired === "boolean"
+    ) {
+      return {
+        observed: parsed.observed,
+        adherence: parsed.adherence,
+        verdicts: parsed.verdicts,
+        paired: parsed.paired,
+      };
+    }
+  } catch {
+    // fall through to the default below
+  }
+  return { ...EVIDENCE_SOURCES_DEFAULT };
+}
+
+export type FeedbackStats = {
+  accepted: number;
+  skipped: number;
+  verdicts: number;
+  automatic: number;
+};
+
+/** A workspace-wide feedback summary for the Settings/Instructions pages:
+ * accepted/skipped correction candidates, total rule verdicts ever
+ * recorded, and how many candidates decision_mode='automatic' decided
+ * without asking. */
+export function feedbackStats(): FeedbackStats {
+  const accepted = (
+    db
+      .prepare(
+        `SELECT COUNT(*) as n FROM correction_candidates
+         WHERE reviewed = 1 AND reusable = 1 AND excluded_from_learning = 0`,
+      )
+      .get() as { n: number }
+  ).n;
+  const skipped = (
+    db
+      .prepare(`SELECT COUNT(*) as n FROM correction_candidates WHERE excluded_from_learning = 1`)
+      .get() as { n: number }
+  ).n;
+  const verdicts = (db.prepare(`SELECT COUNT(*) as n FROM rule_verdicts`).get() as { n: number }).n;
+  const automatic = (
+    db
+      .prepare(`SELECT COUNT(*) as n FROM correction_candidates WHERE decided_by = 'automatic'`)
+      .get() as { n: number }
+  ).n;
+  return { accepted, skipped, verdicts, automatic };
+}
+
+/** Live, accepted rule instructions (state active/approved), newest first --
+ * a compact "what's already in force" list for a prompt (e.g. the judge
+ * role's context), not the full listLiveRuleTexts audience-filtered set. */
+export function listAcceptedRuleTexts(
+  limit: number,
+): { instruction: string; scope: "project" | "workspace" }[] {
+  return db
+    .prepare(
+      `SELECT instruction, scope FROM rules WHERE state IN ('active','approved') ORDER BY id DESC LIMIT ?`,
+    )
+    .all(limit) as { instruction: string; scope: "project" | "workspace" }[];
+}
+
+/** Skipped suggestions (excluded_from_learning = 1), newest first, each
+ * carrying its own rule's instruction when one was created before the
+ * candidate was excluded (the earliest rule per candidate, matching
+ * getRuleForCorrection's own "order by rule id ASC" convention) -- null when
+ * no rule was ever created for it. */
+export function listSkippedSuggestions(
+  limit: number,
+): { instruction: string | null; summary: string; skip_reason: SkipReason | null }[] {
+  return db
+    .prepare(
+      `SELECT cc.summary as summary, cc.skip_reason as skip_reason,
+              (SELECT r.instruction FROM rules r
+               WHERE r.correction_candidate_id = cc.id ORDER BY r.id ASC LIMIT 1) as instruction
+       FROM correction_candidates cc
+       WHERE cc.excluded_from_learning = 1
+       ORDER BY cc.id DESC
+       LIMIT ?`,
+    )
+    .all(limit) as {
+    instruction: string | null;
+    summary: string;
+    skip_reason: SkipReason | null;
+  }[];
+}
+
+/** Instruction wording changes only (rule_revisions rows where the
+ * instruction actually changed, not a bare state change), newest first --
+ * the same source improvements.ts's buildImprovement reads for a single
+ * rule's wording_history, but across every rule. */
+export function listWordingEdits(limit: number): { from: string; to: string }[] {
+  const rows = db
+    .prepare(
+      `SELECT previous_instruction, new_instruction FROM rule_revisions
+       WHERE previous_instruction != new_instruction
+       ORDER BY id DESC
+       LIMIT ?`,
+    )
+    .all(limit) as { previous_instruction: string; new_instruction: string }[];
+  return rows.map((r) => ({ from: r.previous_instruction, to: r.new_instruction }));
+}
+
+/** Acceptance/skip counts per scope tag, decided candidates only (reviewed =
+ * 1): a candidate's tags are episodeScopeTags(candidate.task_episode_id)
+ * (the union of its episode's evidence messages' classification tags,
+ * falling back to ["general"] -- the same tag source setRuleScopeTags
+ * seeds a mined rule's scope_tags_json from). A candidate that is neither
+ * accepted (reusable = 1, not excluded) nor skipped (excluded_from_learning
+ * = 1) -- e.g. reviewed but marked one-time -- contributes to neither
+ * bucket. */
+export function tagAcceptanceRates(): Record<string, { accepted: number; skipped: number }> {
+  const rows = db
+    .prepare(
+      `SELECT task_episode_id, reusable, excluded_from_learning
+       FROM correction_candidates WHERE reviewed = 1`,
+    )
+    .all() as {
+    task_episode_id: number;
+    reusable: number | null;
+    excluded_from_learning: number;
+  }[];
+
+  const out: Record<string, { accepted: number; skipped: number }> = {};
+  for (const c of rows) {
+    const accepted = c.reusable === 1 && c.excluded_from_learning === 0;
+    const skipped = c.excluded_from_learning === 1;
+    if (!accepted && !skipped) continue;
+    for (const tag of episodeScopeTags(c.task_episode_id)) {
+      if (!out[tag]) out[tag] = { accepted: 0, skipped: 0 };
+      if (accepted) out[tag].accepted++;
+      if (skipped) out[tag].skipped++;
+    }
+  }
+  return out;
+}
+// ---- end Round 5 Task 1 ----

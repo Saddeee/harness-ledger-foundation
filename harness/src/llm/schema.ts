@@ -11,8 +11,9 @@
 //
 // "Optional" values under strict mode are expressed as a nullable type
 // (e.g. `{"type": ["string", "null"]}`) rather than an absent key --
-// harness/src/analysis/mine.ts's MINER_JSON_SCHEMA is the worked example
-// this validator is written against.
+// harness/src/analysis/propose.ts's RULE_WRITER_JSON_SCHEMA (formerly
+// mine.ts's MINER_JSON_SCHEMA) is the worked example this validator is
+// written against.
 
 type JsonSchemaNode = {
   type?: string | string[];

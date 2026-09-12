@@ -4,7 +4,7 @@
 // behind the single CallLlm signature (types.ts).
 import * as store from "../store.js";
 import { getKey } from "../llm-keys.js";
-import type { LlmModels, LlmRole as StoreLlmRole } from "../store.js";
+import type { LlmRole as StoreLlmRole } from "../store.js";
 import type { CallLlm, LlmProvider, LlmRequest, LlmResult, LlmRole } from "./types.js";
 import { LlmKeyMissing } from "./types.js";
 import { assertWithinBudget, estimateTokens } from "./budget.js";
@@ -43,18 +43,17 @@ function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
-// setSettings validates llm_models to always define all four roles, so in
-// practice `choice` below is always present and the llm_provider fallback
-// never fires -- it exists for defense in depth against a hand-edited
-// settings row or a JSON.parse failure, per the plan's "role -> llm_models
-// with llm_provider fallback."
+// setSettings validates llm_models to always define classifier/rule_writer/
+// reviewer/proposer, so in practice `choice` below is always present for
+// those four roles and the llm_provider fallback never fires for them -- it
+// exists for defense in depth against a hand-edited settings row or a
+// JSON.parse failure, per the plan's "role -> llm_models with llm_provider
+// fallback." "judge" is genuinely optional (an upgraded DB has no judge
+// entry until the user saves one), so its fallback -- to the rule_writer
+// entry, then llm_provider -- is the normal path, not just defense in
+// depth. store.getLlmModels() is the one place that fallback chain lives.
 function resolveRoleModel(role: LlmRole): { provider: LlmProvider; model: string } {
-  let models: Partial<LlmModels> = {};
-  try {
-    models = JSON.parse(store.getSetting("llm_models")) as Partial<LlmModels>;
-  } catch {
-    models = {};
-  }
+  const models = store.getLlmModels();
   const choice = models[role as StoreLlmRole];
   const provider = (choice?.provider ?? store.getSetting("llm_provider")) as LlmProvider;
   const model = choice?.model;

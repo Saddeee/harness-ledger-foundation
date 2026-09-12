@@ -1,8 +1,8 @@
 // Round 4 fix wave item 1: harness/src/llm/schema.ts's assertStrictCompatible,
-// plus a check that the two real production schemas (classifier, miner) are
-// themselves strict-mode compatible. classify.ts/mine.ts import store.js, so
-// this file needs an isolated temp DB set up first, same convention as
-// analysis-classify.test.ts/analysis-mine.test.ts.
+// plus a check that the two real production schemas (classifier, rule
+// writer) are themselves strict-mode compatible. classify.ts/propose.ts
+// import store.js, so this file needs an isolated temp DB set up first, same
+// convention as analysis-classify.test.ts/analysis-propose.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -16,7 +16,7 @@ process.env.HARNESS_DB_PATH = join(
 
 const { assertStrictCompatible } = await import("../src/llm/schema.js");
 const { CLASSIFIER_JSON_SCHEMA } = await import("../src/analysis/classify.js");
-const { MINER_JSON_SCHEMA } = await import("../src/analysis/mine.js");
+const { RULE_WRITER_JSON_SCHEMA } = await import("../src/analysis/propose.js");
 
 test("assertStrictCompatible: the real CLASSIFIER_JSON_SCHEMA passes", () => {
   assert.doesNotThrow(() =>
@@ -24,8 +24,8 @@ test("assertStrictCompatible: the real CLASSIFIER_JSON_SCHEMA passes", () => {
   );
 });
 
-test("assertStrictCompatible: the real MINER_JSON_SCHEMA passes", () => {
-  assert.doesNotThrow(() => assertStrictCompatible(MINER_JSON_SCHEMA, "mined_rule_proposal"));
+test("assertStrictCompatible: the real RULE_WRITER_JSON_SCHEMA passes", () => {
+  assert.doesNotThrow(() => assertStrictCompatible(RULE_WRITER_JSON_SCHEMA, "mined_rule_proposal"));
 });
 
 test("assertStrictCompatible: a schema with an optional (not-required) property fails", () => {

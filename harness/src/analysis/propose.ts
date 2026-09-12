@@ -1,4 +1,5 @@
-// Round 4 Task A2: mine proposals from corrected task episodes and dedupe
+// Round 4 Task A2 (renamed Round 5 Task 1: mine.ts -> propose.ts, "miner" ->
+// "rule writer"): propose rules from corrected task episodes and dedupe
 // against live rules (step (c)+(d) of the analysis pipeline -- see
 // docs/superpowers/plans/2026-09-11-round-4.md Task A2 and
 // explorations/analysis-pipeline.md §2(c)+(d)/§4 "Miner system prompt").
@@ -32,7 +33,7 @@ const AMBIGUOUS_DICE_THRESHOLD = 0.6;
 // exploration doc's 9-value... schema"). There is no finer-grained signal
 // this task can read to pick a more specific subtype, so every mined
 // candidate is filed as 'constraint_restatement' -- the closest generic fit
-// for "a correction restating an expectation the miner judged reusable" --
+// for "a correction restating an expectation the rule writer judged reusable" --
 // exactly as this task's brief directs ("use constraint_restatement-style
 // enum values the store expects").
 const MINED_CANDIDATE_CLASSIFICATION: store.Classification = "constraint_restatement";
@@ -47,7 +48,7 @@ function clampConfidence(value: unknown): number {
 }
 
 // Mirrors health.ts's private toKebabCase exactly (Task C1's own comment:
-// "a rule's failure_signature is written kebab-case by the miner") -- kept
+// "a rule's failure_signature is written kebab-case by the rule writer") -- kept
 // as a small local copy here rather than exported from health.ts, since
 // health.ts doesn't export it and this task shouldn't widen C1's file.
 function toKebabCase(s: string): string {
@@ -67,7 +68,7 @@ function toKebabCase(s: string): string {
 // schema keywords enforced (instruction <= 300 chars, confidence in [0,1])
 // is kept purely in this file's post-hoc validation below (clampText,
 // clampConfidence), unchanged.
-export const MINER_JSON_SCHEMA = {
+export const RULE_WRITER_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: [
@@ -94,7 +95,7 @@ export const MINER_JSON_SCHEMA = {
   },
 } as const;
 
-export function minerSystemPrompt(): string {
+export function ruleWriterSystemPrompt(): string {
   return `You write standing instructions for an AI coding assistant's project memory ("Knowledge"), based on a real correction a user made in the past. You are given one task episode: the user's original request, a summary of the assistant's build, and the user's follow-up correction(s), plus the existing live instructions for this project/workspace (to avoid proposing a near-duplicate or an unflagged contradiction).
 
 Decide whether this episode supports ONE new instruction. Propose one only if:
@@ -116,7 +117,7 @@ Guardrails:
 Respond only via the schema: { propose, instruction, scope, prediction, failure_signature, evidence_message_ids, confidence, contradicts_rule_id, duplicate_of_rule_id }.`;
 }
 
-export function minerUserPrompt(
+export function ruleWriterUserPrompt(
   episode: MinableEpisode,
   liveRules: { id: number; instruction: string }[],
 ): string {
@@ -150,7 +151,7 @@ export function minerUserPrompt(
   return parts.join("\n\n");
 }
 
-type RawMinerOutput = {
+type RawRuleWriterOutput = {
   propose?: unknown;
   instruction?: unknown;
   scope?: unknown;
@@ -188,7 +189,7 @@ function findDuplicateRuleId(
 }
 
 /**
- * Records a miner-reported contradiction against an existing live rule:
+ * Records a rule-writer-reported contradiction against an existing live rule:
  * upserts that rule's rule_health row with contradicted_by_rule_id set to
  * the newly mined rule's id, carrying every other field forward from
  * whatever rule_health already has (or zeroed defaults if C1's
@@ -216,13 +217,13 @@ function recordContradiction(contradictedRuleId: number, newRuleId: number, now:
 }
 
 /**
- * Mines up to `opts.limit` episodes (store.listMinableEpisodes -- oldest
- * corrected-but-uncandidated episodes first), one LLM call each. Stops the
- * loop (without throwing) as soon as the budget guard refuses a call,
- * returning the counts accumulated so far; any other per-episode error is
- * counted as `failed` and the loop continues to the next episode.
+ * Proposes rules from up to `opts.limit` episodes (store.listMinableEpisodes
+ * -- oldest corrected-but-uncandidated episodes first), one LLM call each.
+ * Stops the loop (without throwing) as soon as the budget guard refuses a
+ * call, returning the counts accumulated so far; any other per-episode
+ * error is counted as `failed` and the loop continues to the next episode.
  */
-export async function mineEpisodes(
+export async function proposeRules(
   callLlm: CallLlm,
   opts: { limit: number; runId?: number },
 ): Promise<{
@@ -251,11 +252,11 @@ export async function mineEpisodes(
 
     let result;
     try {
-      result = await callLlm<RawMinerOutput>({
-        role: "miner",
-        system: minerSystemPrompt(),
-        user: minerUserPrompt(episode, liveRules),
-        schema: MINER_JSON_SCHEMA,
+      result = await callLlm<RawRuleWriterOutput>({
+        role: "rule_writer",
+        system: ruleWriterSystemPrompt(),
+        user: ruleWriterUserPrompt(episode, liveRules),
+        schema: RULE_WRITER_JSON_SCHEMA,
         schemaName: "mined_rule_proposal",
         runId: opts.runId,
       });
@@ -333,7 +334,7 @@ export async function mineEpisodes(
         .filter((c) => c.external_id && evidenceIds.includes(c.external_id))
         .map((c) => c.history_item_id);
 
-      const createdBy = `${result.provider}/${result.model} (miner)`;
+      const createdBy = `${result.provider}/${result.model} (rule writer)`;
 
       const candidate = store.createCorrectionCandidate({
         task_episode_id: episode.id,
@@ -348,7 +349,7 @@ export async function mineEpisodes(
         classification_meta: {
           provider: result.provider,
           model: result.model,
-          role: "miner",
+          role: "rule_writer",
           structured_output: parsed,
         },
       }) as { id: number };
@@ -390,7 +391,7 @@ export async function mineEpisodes(
         rule_id: rule.id,
         failure_signature: failureSignature,
         failure_condition: prediction,
-        created_by: "harness miner",
+        created_by: "harness rule writer",
         verification_definition_ids: [],
       });
 

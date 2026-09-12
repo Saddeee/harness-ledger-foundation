@@ -4,8 +4,8 @@
 // CallLlm) and the internal shape (ProviderCallParams/ProviderCallResult,
 // the three thrown error classes) in one place so nothing drifts.
 
-/** The four call sites the analysis pipeline needs a model for (harness/src/analysis/*, not yet built). */
-export type LlmRole = "classifier" | "miner" | "reviewer" | "proposer";
+/** The call sites the analysis pipeline needs a model for (harness/src/analysis/*). Round 5 Task 1 renames "miner" to "rule_writer" (harness/src/analysis/propose.ts, formerly mine.ts) and adds "judge" for the adherence/verdict pipeline -- see harness/src/store.ts's LlmRole/getLlmModels, which this type must stay in sync with. */
+export type LlmRole = "classifier" | "rule_writer" | "judge" | "reviewer" | "proposer";
 
 /** The three API providers (plain `fetch`, keyed via harness/src/llm-keys.ts) plus the local CLI subscription provider (no key). */
 export type LlmProvider = "openai" | "anthropic" | "google" | "claude_code";

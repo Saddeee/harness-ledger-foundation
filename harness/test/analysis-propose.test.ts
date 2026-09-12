@@ -11,7 +11,7 @@ process.env.HARNESS_AUTH_PATH = join(tmp, "lovable-auth.json");
 
 const store = await import("../src/store.js");
 const segment = await import("../src/analysis/segment.js");
-const mine = await import("../src/analysis/mine.js");
+const propose = await import("../src/analysis/propose.js");
 const improvements = await import("../src/improvements.js");
 import type { CallLlm, LlmRequest, LlmResult } from "../src/llm/types.js";
 import { LlmBudgetExceeded } from "../src/llm/types.js";
@@ -27,17 +27,19 @@ type Canned = Record<string, unknown>;
  * unique across the whole file), so one array can key several episodes'
  * canned responses by which episode they belong to.
  */
-function fakeMinerCallLlm(entries: { match: string; json?: Canned; throw?: Error }[]): CallLlm {
+function fakeRuleWriterCallLlm(
+  entries: { match: string; json?: Canned; throw?: Error }[],
+): CallLlm {
   return async function callLlm<T>(req: LlmRequest): Promise<LlmResult<T>> {
     const entry = entries.find((e) => req.user.includes(e.match));
     if (!entry) {
-      throw new Error(`fakeMinerCallLlm: no canned response matching request:\n${req.user}`);
+      throw new Error(`fakeRuleWriterCallLlm: no canned response matching request:\n${req.user}`);
     }
     if (entry.throw) throw entry.throw;
     return {
       json: entry.json as T,
       provider: "anthropic",
-      model: "fake-miner",
+      model: "fake-rule-writer",
       tokensIn: 100,
       tokensOut: 50,
       costUsd: 0,
@@ -138,11 +140,11 @@ function seedEpisode(
 
 /**
  * store.listMinableEpisodes has no project filter (by design, matching the
- * plan's signature), so mineEpisodes sweeps every allowed project's backlog
+ * plan's signature), so proposeRules sweeps every allowed project's backlog
  * in one call -- exactly like A1's classifyPending. A test that
  * deliberately leaves an episode un-mined (skipped-duplicate, propose:false,
  * a rejected proposal, or one never reached before a budget stop) must
- * drain it explicitly, or a later test's mineEpisodes call will pick it up
+ * drain it explicitly, or a later test's proposeRules call will pick it up
  * too and skew that test's counts (see harness/.superpowers/sdd/2026-09-11-
  * round-4/task-A1-report.md's concern #2, same issue, same fix).
  */
@@ -156,9 +158,9 @@ function drainEpisode(episodeId: number): void {
   });
 }
 
-/** A live rule that exists independently of the miner (for dedupe/
+/** A live rule that exists independently of the rule writer (for dedupe/
  * contradiction fixtures) -- goes through the same createCorrectionCandidate
- * -> createLearning -> createRule chain a human or the miner would use, so
+ * -> createLearning -> createRule chain a human or the rule writer would use, so
  * it is a real, fully-formed live rule, not a shortcut insert. */
 function createManualRule(projectId: string, instruction: string): { id: number } {
   const episode = store.createTaskEpisode({
@@ -200,7 +202,7 @@ function createManualRule(projectId: string, instruction: string): { id: number 
 
 // ------------------------------------------------------------------ tests
 
-test("mineEpisodes proposes a rule from a corrected episode; it renders as a pending Improvement with its evidence and instruction; the same episode is not mined twice", async () => {
+test("proposeRules proposes a rule from a corrected episode; it renders as a pending Improvement with its evidence and instruction; the same episode is not mined twice", async () => {
   const PROJECT = "proj-mine-basic";
   store.allowProject(PROJECT, "Basic Co");
   store.upsertProject({ lovable_project_id: PROJECT, name: "Basic Co" });
@@ -215,7 +217,7 @@ test("mineEpisodes proposes a rule from a corrected episode; it renders as a pen
     assistantAfterCorrection: ["Added confirm-password.", "Added the strength hint."],
   });
 
-  const minerJson = {
+  const ruleWriterJson = {
     propose: true,
     instruction: "Always require a confirm-password field with a strength hint on signup forms.",
     scope: "project",
@@ -226,22 +228,26 @@ test("mineEpisodes proposes a rule from a corrected episode; it renders as a pen
     contradicts_rule_id: null,
     duplicate_of_rule_id: null,
   };
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: minerJson }]);
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 1, skippedDuplicate: 0, skippedNoProposal: 0, failed: 0 });
 
   const items = improvements
     .listImprovements()
-    .filter((i) => i.project.id === PROJECT && i.proposed_instruction === minerJson.instruction);
+    .filter(
+      (i) => i.project.id === PROJECT && i.proposed_instruction === ruleWriterJson.instruction,
+    );
   assert.equal(items.length, 1);
   const item = items[0];
   assert.equal(item.decision.status, "pending");
-  assert.equal(item.proposed_instruction, minerJson.instruction);
+  assert.equal(item.proposed_instruction, ruleWriterJson.instruction);
   assert.deepEqual(item.evidence.map((e) => e.text).sort(), [...seeded.correctionTexts].sort());
 
   // Addendum (C1 review): every mined rule gets a verification_plan carrying
-  // the miner's kebab-case failure_signature and its prediction, since C1's
+  // the rule writer's kebab-case failure_signature and its prediction, since C1's
   // rule-health computation reads failure_signature from there.
   const rule = item.developer.rule as { id: number };
   const plan = store.getVerificationPlanForRule(rule.id) as {
@@ -249,15 +255,15 @@ test("mineEpisodes proposes a rule from a corrected episode; it renders as a pen
   } | null;
   assert.ok(plan, "expected a verification_plan for the mined rule");
   assert.equal(plan!.plan.failure_signature, "missing-confirm-password-field");
-  assert.equal(plan!.plan.failure_condition, minerJson.prediction);
+  assert.equal(plan!.plan.failure_condition, ruleWriterJson.prediction);
 
   // Not mined twice: the episode now has a correction_candidates row, so
   // listMinableEpisodes no longer selects it and a second run proposes 0.
-  const second = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const second = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(second, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 0, failed: 0 });
 });
 
-test("mineEpisodes skips a near-duplicate of a live rule (dice >= 0.8) and writes nothing", async () => {
+test("proposeRules skips a near-duplicate of a live rule (dice >= 0.8) and writes nothing", async () => {
   const PROJECT = "proj-mine-dup";
   store.allowProject(PROJECT, "Dup Co");
 
@@ -269,7 +275,7 @@ test("mineEpisodes skips a near-duplicate of a live rule (dice >= 0.8) and write
     corrections: ["Please also require a confirm-password field on signup forms."],
   });
 
-  const minerJson = {
+  const ruleWriterJson = {
     propose: true,
     instruction: "Always require a confirm-password field on signup forms.",
     scope: "project",
@@ -280,15 +286,17 @@ test("mineEpisodes skips a near-duplicate of a live rule (dice >= 0.8) and write
     contradicts_rule_id: null,
     duplicate_of_rule_id: null,
   };
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: minerJson }]);
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 0, skippedDuplicate: 1, skippedNoProposal: 0, failed: 0 });
   assert.equal(store.listProjectRules(PROJECT).length, rulesBefore);
   drainEpisode(seeded.episodeId);
 });
 
-test("mineEpisodes counts propose:false as skippedNoProposal and writes nothing", async () => {
+test("proposeRules counts propose:false as skippedNoProposal and writes nothing", async () => {
   const PROJECT = "proj-mine-noprop";
   store.allowProject(PROJECT, "NoProp Co");
 
@@ -297,8 +305,10 @@ test("mineEpisodes counts propose:false as skippedNoProposal and writes nothing"
     corrections: ["Actually, use a different icon here, no big deal either way."],
   });
 
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: { propose: false } }]);
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: { propose: false } },
+  ]);
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 1, failed: 0 });
 
   // Nothing was written, so the episode is still minable.
@@ -306,7 +316,7 @@ test("mineEpisodes counts propose:false as skippedNoProposal and writes nothing"
   drainEpisode(seeded.episodeId);
 });
 
-test("mineEpisodes rejects and logs an evidence id outside the episode's corrections", async () => {
+test("proposeRules rejects and logs an evidence id outside the episode's corrections", async () => {
   const PROJECT = "proj-mine-badevidence";
   store.allowProject(PROJECT, "Bad Evidence Co");
 
@@ -315,7 +325,7 @@ test("mineEpisodes rejects and logs an evidence id outside the episode's correct
     corrections: ["The dashboard chart never finishes loading."],
   });
 
-  const minerJson = {
+  const ruleWriterJson = {
     propose: true,
     instruction: "Always add a loading state to charts.",
     scope: "project",
@@ -326,9 +336,11 @@ test("mineEpisodes rejects and logs an evidence id outside the episode's correct
     contradicts_rule_id: null,
     duplicate_of_rule_id: null,
   };
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: minerJson }]);
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 0, failed: 1 });
 
   const events = store.listEvents(200) as { kind: string; payload: string | null }[];
@@ -343,11 +355,11 @@ test("mineEpisodes rejects and logs an evidence id outside the episode's correct
   drainEpisode(seeded.episodeId);
 });
 
-test("mineEpisodes records a miner-reported contradiction into rule_health for the contradicted live rule", async () => {
+test("proposeRules records a rule-writer-reported contradiction into rule_health for the contradicted live rule", async () => {
   const PROJECT = "proj-mine-contradict";
   store.allowProject(PROJECT, "Contradict Co");
 
-  // Note: mineEpisodes now scopes listLiveRuleTexts to this episode's own
+  // Note: proposeRules now scopes listLiveRuleTexts to this episode's own
   // project (plus workspace-scoped rules) -- see the per-target dedupe test
   // below -- but createManualRule always creates a project-scoped rule, so
   // this fixture's wording still must not accidentally overlap (bigram
@@ -366,7 +378,7 @@ test("mineEpisodes records a miner-reported contradiction into rule_health for t
     ],
   });
 
-  const minerJson = {
+  const ruleWriterJson = {
     propose: true,
     instruction: "Always show a delete-confirmation dialog before removing any item.",
     scope: "project",
@@ -377,14 +389,16 @@ test("mineEpisodes records a miner-reported contradiction into rule_health for t
     contradicts_rule_id: contradicted.id,
     duplicate_of_rule_id: null,
   };
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: minerJson }]);
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.equal(result.proposed, 1);
 
   const minedItem = improvements
     .listImprovements()
-    .find((i) => i.project.id === PROJECT && i.proposed_instruction === minerJson.instruction);
+    .find((i) => i.project.id === PROJECT && i.proposed_instruction === ruleWriterJson.instruction);
   assert.ok(minedItem, "expected the mined rule to appear as an Improvement");
   const newRuleId = (minedItem!.developer.rule as { id: number }).id;
 
@@ -394,7 +408,7 @@ test("mineEpisodes records a miner-reported contradiction into rule_health for t
   assert.equal(health!.status, "retire_suggested");
 });
 
-test("mineEpisodes stops the loop on LlmBudgetExceeded, leaving the un-reached episode un-mined", async () => {
+test("proposeRules stops the loop on LlmBudgetExceeded, leaving the un-reached episode un-mined", async () => {
   const PROJECT = "proj-mine-budget";
   store.allowProject(PROJECT, "Budget Co");
 
@@ -407,7 +421,7 @@ test("mineEpisodes stops the loop on LlmBudgetExceeded, leaving the un-reached e
     corrections: ["Fix B: always validate output before rendering."],
   });
 
-  const callLlm = fakeMinerCallLlm([
+  const callLlm = fakeRuleWriterCallLlm([
     {
       match: first.requestExternalId,
       json: {
@@ -425,7 +439,7 @@ test("mineEpisodes stops the loop on LlmBudgetExceeded, leaving the un-reached e
     { match: second.requestExternalId, throw: new LlmBudgetExceeded(2_000_000, 2_000_000) },
   ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 1, skippedDuplicate: 0, skippedNoProposal: 0, failed: 0 });
 
   // The second episode was never reached (not even counted as `failed`) --
@@ -436,7 +450,7 @@ test("mineEpisodes stops the loop on LlmBudgetExceeded, leaving the un-reached e
 
 // ---- Fix wave item 2: reject a blank instruction/prediction ----
 
-test("mineEpisodes rejects a propose:true reply with a blank instruction, like an invalid evidence id", async () => {
+test("proposeRules rejects a propose:true reply with a blank instruction, like an invalid evidence id", async () => {
   const PROJECT = "proj-mine-blank-instruction";
   store.allowProject(PROJECT, "Blank Instruction Co");
 
@@ -445,7 +459,7 @@ test("mineEpisodes rejects a propose:true reply with a blank instruction, like a
     corrections: ["The checkout page double-charges sometimes."],
   });
 
-  const minerJson = {
+  const ruleWriterJson = {
     propose: true,
     instruction: "   ",
     scope: "project",
@@ -456,9 +470,11 @@ test("mineEpisodes rejects a propose:true reply with a blank instruction, like a
     contradicts_rule_id: null,
     duplicate_of_rule_id: null,
   };
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: minerJson }]);
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 0, failed: 1 });
 
   const events = store.listEvents(200) as { kind: string; payload: string | null }[];
@@ -475,7 +491,7 @@ test("mineEpisodes rejects a propose:true reply with a blank instruction, like a
   drainEpisode(seeded.episodeId);
 });
 
-test("mineEpisodes rejects a propose:true reply with a non-string (null) prediction, and nothing is written", async () => {
+test("proposeRules rejects a propose:true reply with a non-string (null) prediction, and nothing is written", async () => {
   const PROJECT = "proj-mine-blank-prediction";
   store.allowProject(PROJECT, "Blank Prediction Co");
   const rulesBefore = store.listProjectRules(PROJECT).length;
@@ -485,7 +501,7 @@ test("mineEpisodes rejects a propose:true reply with a non-string (null) predict
     corrections: ["Notifications never mark themselves as read."],
   });
 
-  const minerJson = {
+  const ruleWriterJson = {
     propose: true,
     instruction: "Always mark a notification read once the user opens it.",
     scope: "project",
@@ -496,9 +512,11 @@ test("mineEpisodes rejects a propose:true reply with a non-string (null) predict
     contradicts_rule_id: null,
     duplicate_of_rule_id: null,
   };
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: minerJson }]);
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 0, failed: 1 });
   assert.equal(store.listProjectRules(PROJECT).length, rulesBefore, "nothing was written");
 
@@ -507,7 +525,7 @@ test("mineEpisodes rejects a propose:true reply with a non-string (null) predict
 
 // ---- Fix wave item 3: per-target dedupe ----
 
-test("mineEpisodes dedupes only within the episode's own project (plus workspace-scoped rules) -- an identical-text rule in a different project does not suppress the proposal", async () => {
+test("proposeRules dedupes only within the episode's own project (plus workspace-scoped rules) -- an identical-text rule in a different project does not suppress the proposal", async () => {
   const PROJECT_A = "proj-mine-scope-a";
   const PROJECT_B = "proj-mine-scope-b";
   store.allowProject(PROJECT_A, "Scope A");
@@ -521,7 +539,7 @@ test("mineEpisodes dedupes only within the episode's own project (plus workspace
     corrections: ["Please show a loading spinner while data is fetching."],
   });
 
-  const minerJson = {
+  const ruleWriterJson = {
     propose: true,
     instruction: SAME_TEXT,
     scope: "project",
@@ -532,9 +550,11 @@ test("mineEpisodes dedupes only within the episode's own project (plus workspace
     contradicts_rule_id: null,
     duplicate_of_rule_id: null,
   };
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: minerJson }]);
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 1, skippedDuplicate: 0, skippedNoProposal: 0, failed: 0 });
 
   const items = improvements
@@ -547,7 +567,7 @@ test("mineEpisodes dedupes only within the episode's own project (plus workspace
   );
 });
 
-test("mineEpisodes still dedupes against a workspace-scoped live rule regardless of which project the episode is in", async () => {
+test("proposeRules still dedupes against a workspace-scoped live rule regardless of which project the episode is in", async () => {
   const PROJECT_C = "proj-mine-scope-c";
   store.allowProject(PROJECT_C, "Scope C");
 
@@ -593,7 +613,7 @@ test("mineEpisodes still dedupes against a workspace-scoped live rule regardless
     corrections: ["Please confirm before deleting everything."],
   });
 
-  const minerJson = {
+  const ruleWriterJson = {
     propose: true,
     instruction: WORKSPACE_TEXT,
     scope: "workspace",
@@ -604,9 +624,11 @@ test("mineEpisodes still dedupes against a workspace-scoped live rule regardless
     contradicts_rule_id: null,
     duplicate_of_rule_id: null,
   };
-  const callLlm = fakeMinerCallLlm([{ match: seeded.requestExternalId, json: minerJson }]);
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
 
-  const result = await mine.mineEpisodes(callLlm, { limit: 10 });
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
   assert.deepEqual(result, { proposed: 0, skippedDuplicate: 1, skippedNoProposal: 0, failed: 0 });
   drainEpisode(seeded.episodeId);
 });

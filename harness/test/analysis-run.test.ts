@@ -27,11 +27,11 @@ type ClassifierCanned = { classification: string; tags: string[]; summary: strin
 
 /**
  * A fake CallLlm covering both roles runAnalysis actually dispatches
- * (classifier, miner -- segmentAllProjects makes no LLM call at all).
+ * (classifier, rule_writer -- segmentAllProjects makes no LLM call at all).
  * Classifier responses are keyed by the message text (matching
- * analysis-classify.test.ts's own fake); miner responses are keyed by a
- * substring of the assembled miner prompt (matching
- * analysis-mine.test.ts's own fake). Every successful call logs to
+ * analysis-classify.test.ts's own fake); rule_writer responses are keyed by a
+ * substring of the assembled rule writer prompt (matching
+ * analysis-propose.test.ts's own fake). Every successful call logs to
  * llm_calls with `run_id` -- exactly the side effect the real
  * harness/src/llm/index.ts's createCallLlm always has, and the one
  * sumLlmTokensForRun/sumLlmCostForRun read back from.
@@ -49,9 +49,10 @@ function fakeCallLlm(opts: {
       const key = Object.keys(opts.classify ?? {}).find((k) => text.startsWith(k));
       if (!key) throw new Error(`fakeCallLlm: no canned classifier response for "${text}"`);
       json = (opts.classify as Record<string, ClassifierCanned>)[key];
-    } else if (req.role === "miner") {
+    } else if (req.role === "rule_writer") {
       const entry = (opts.mine ?? []).find((e) => req.user.includes(e.match));
-      if (!entry) throw new Error(`fakeCallLlm: no canned miner response matching:\n${req.user}`);
+      if (!entry)
+        throw new Error(`fakeCallLlm: no canned rule writer response matching:\n${req.user}`);
       json = entry.json;
     } else {
       throw new Error(`fakeCallLlm: unexpected role "${req.role}"`);
@@ -205,7 +206,7 @@ test("runAnalysis: main path -- consumes an open request, classifies, segments, 
     rejected: 0,
   });
 
-  // Three real calls were made (2 classify + 1 miner), each logging
+  // Three real calls were made (2 classify + 1 rule_writer), each logging
   // tokensIn:100/tokensOut:50/costUsd:0.01 -- runAnalysis's tokens/costUsd
   // must equal exactly what's in llm_calls for this run id.
   assert.equal(result.tokens, store.sumLlmTokensForRun(result.runId));
@@ -218,7 +219,7 @@ test("runAnalysis: main path -- consumes an open request, classifies, segments, 
     .all(result.runId) as { role: string }[];
   assert.deepEqual(
     loggedCalls.map((c) => c.role).sort(),
-    ["classifier", "classifier", "miner"].sort(),
+    ["classifier", "classifier", "rule_writer"].sort(),
   );
 
   assert.equal(requestStatus(requestId), "done");
@@ -302,7 +303,7 @@ test("store.runningAnalysisRun: an unfinished run blocks a second one (15-minute
 
 const DEFAULT_LLM_MODELS = {
   classifier: { provider: "openai", model: "gpt-5.4-mini" },
-  miner: { provider: "openai", model: "gpt-5.5" },
+  rule_writer: { provider: "openai", model: "gpt-5.5" },
   reviewer: { provider: "openai", model: "gpt-5.5" },
   proposer: { provider: "openai", model: "gpt-5.5" },
 };
@@ -311,7 +312,7 @@ function setClaudeCodeModels(): void {
   store.setSettings({
     llm_models: JSON.stringify({
       classifier: { provider: "claude_code", model: "sonnet" },
-      miner: { provider: "claude_code", model: "sonnet" },
+      rule_writer: { provider: "claude_code", model: "sonnet" },
       reviewer: { provider: "claude_code", model: "sonnet" },
       proposer: { provider: "claude_code", model: "sonnet" },
     }),

@@ -81,7 +81,7 @@ const LLM_ROLES: { key: LlmRole; label: string; hint: string }[] = [
     hint: "Sorts each chat message: new request, correction, question or approval.",
   },
   {
-    key: "miner",
+    key: "rule_writer",
     label: "Miner",
     hint: "Turns your corrections into proposed instructions.",
   },
@@ -99,7 +99,8 @@ const LLM_ROLES: { key: LlmRole; label: string; hint: string }[] = [
 const DEFAULT_LLM_PROVIDER: LlmProvider = "openai";
 const DEFAULT_LLM_MODELS: LlmModels = {
   classifier: { provider: "openai", model: "" },
-  miner: { provider: "openai", model: "" },
+  rule_writer: { provider: "openai", model: "" },
+  judge: { provider: "openai", model: "" },
   reviewer: { provider: "openai", model: "" },
   proposer: { provider: "openai", model: "" },
 };

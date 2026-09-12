@@ -596,4 +596,48 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE rule_health ADD COLUMN baseline_at TEXT;
     `,
   },
+  {
+    version: 11,
+    name: "round5_feedback_evidence",
+    sql: `
+      -- Round 5 Task 1: a correction_candidate's decision can now carry why
+      -- it was skipped (spec §4b) and who decided it (a human, or the
+      -- decision_mode='automatic' path store.ts's setSettings validates
+      -- below) -- both null on every pre-existing row (undecided/human by
+      -- default, matching current behavior exactly).
+      ALTER TABLE correction_candidates ADD COLUMN skip_reason TEXT CHECK (skip_reason IN ('not_useful','wrong_wording','one_time','already_covered'));
+      ALTER TABLE correction_candidates ADD COLUMN decided_by TEXT;   -- 'user' | 'automatic'; null = undecided
+
+      -- A human's (or the judge role's) verdict on a rule as a whole --
+      -- "did this actually help" -- independent of per-episode adherence
+      -- below. Many rows per rule; the latest one is what the Instructions
+      -- page shows.
+      CREATE TABLE IF NOT EXISTS rule_verdicts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        verdict TEXT NOT NULL CHECK (verdict IN ('helped','did_not_help','not_sure')),
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_rule_verdicts_rule ON rule_verdicts(rule_id, id);
+
+      -- Per-episode adherence check: did a given task_episode actually
+      -- follow this rule. One row per (rule, episode) -- the unique
+      -- constraint makes re-judging the same pair a no-op insert, so a
+      -- re-run of the judge role never double-counts adherenceCounts.
+      CREATE TABLE IF NOT EXISTS rule_adherence (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        task_episode_id INTEGER NOT NULL REFERENCES task_episodes(id),
+        verdict TEXT NOT NULL CHECK (verdict IN ('followed','broke','not_applicable')),
+        quote TEXT,
+        llm_call_id INTEGER,
+        run_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (rule_id, task_episode_id)
+      );
+      -- llm_models: rename the stored role key miner -> rule_writer and add judge, once.
+      UPDATE settings SET value = replace(value, '"miner":', '"rule_writer":') WHERE key = 'llm_models' AND value LIKE '%"miner":%';
+    `,
+  },
 ];
