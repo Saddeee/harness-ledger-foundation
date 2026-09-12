@@ -30,6 +30,18 @@ function isApplicable(episodeTags: string[], scopeTags: string[]): boolean {
   return episodeTags.some((t) => scopeTags.includes(t));
 }
 
+// Round 4 fix wave item 4: the episode window start is the later of
+// first_written_at (when the rule first landed in Knowledge) and
+// baseline_at (when it was last "Re-add"ed, store.rebaselineRuleHealth) --
+// a rule that hurt before being retired and re-added must not have those
+// old episodes counted against it again once it's live again.
+function windowStart(firstWrittenAt: string, baselineAt: string | null): string {
+  if (!baselineAt) return firstWrittenAt;
+  return new Date(baselineAt).getTime() > new Date(firstWrittenAt).getTime()
+    ? baselineAt
+    : firstWrittenAt;
+}
+
 // Spec §4b signal 1: a correction "matches" a rule's failure when its
 // summary is the same failure signature (kebab-case compare), or its slug is
 // similar enough -- by bigram Dice -- to the failure signature, or the raw
@@ -88,9 +100,14 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
   for (const rule of rules) {
     if (!rule.first_written_at) continue; // defensive; listLiveRulesWithTargets already filters these out
 
+    // Fetched before the episode window so a baseline set by a "Re-add"
+    // (store.rebaselineRuleHealth) can move where that window starts --
+    // see windowStart above.
+    const existing = store.getRuleHealth(rule.id);
+    const start = windowStart(rule.first_written_at, existing?.baseline_at ?? null);
     const episodes = store.listEpisodesAfter(
       rule.scope === "project" ? rule.project_id : null,
-      rule.first_written_at,
+      start,
     );
 
     let applicableTasks = 0;
@@ -111,11 +128,13 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
       else helped += 1;
     }
 
-    const existing = store.getRuleHealth(rule.id);
     const contradictedByRuleId = existing?.contradicted_by_rule_id ?? null;
     const snoozedUntil = existing?.snoozed_until ?? null;
 
-    const referenceDate = lastApplicableAt ?? rule.first_written_at;
+    // Falls back to `start` (not the rule's original first_written_at) so a
+    // just-re-added rule with no applicable episodes yet is measured against
+    // its new baseline, not flagged "unused" off a stale pre-retirement date.
+    const referenceDate = lastApplicableAt ?? start;
     const daysSinceReference = (now.getTime() - new Date(referenceDate).getTime()) / MS_PER_DAY;
     const unused = daysSinceReference > unusedAfterDays;
     const unusedSince = unused ? referenceDate : null;
@@ -164,9 +183,13 @@ export function hurtCorrectionHistoryItemIds(ruleId: number, limit = 5): number[
   const rule = store.listLiveRulesWithTargets().find((r) => r.id === ruleId);
   if (!rule || !rule.first_written_at) return [];
 
+  // Same windowStart as recomputeRuleHealth (item 4): a re-added rule's
+  // evidence for a NEW retirement proposal must not resurface corrections
+  // from before it was last re-added.
+  const baselineAt = store.getRuleHealth(ruleId)?.baseline_at ?? null;
   const episodes = store.listEpisodesAfter(
     rule.scope === "project" ? rule.project_id : null,
-    rule.first_written_at,
+    windowStart(rule.first_written_at, baselineAt),
   );
 
   const ids: number[] = [];

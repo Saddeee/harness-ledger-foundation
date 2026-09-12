@@ -2083,6 +2083,12 @@ export type RuleHealthRow = {
   status: RuleHealthStatus;
   snoozed_until: string | null;
   computed_at: string;
+  // Round 4 fix wave item 4 (migration v10): null until a rule is ever
+  // "Re-add"ed (improvements.ts's readd action); once set,
+  // health.ts's recomputeRuleHealth uses max(first_written_at, baseline_at)
+  // as the episode window start, so hurt/contradiction history from before
+  // a re-add never counts against the readded rule again.
+  baseline_at: string | null;
 };
 
 export function getRuleHealth(ruleId: number): RuleHealthRow | null {
@@ -2104,14 +2110,22 @@ export function upsertRuleHealth(row: {
   unused_since: string | null;
   status: RuleHealthStatus;
   snoozed_until: string | null;
+  // Optional: every existing caller (health.ts's recomputeRuleHealth,
+  // snoozeRuleHealth, mine.ts's recordContradiction) omits this and gets the
+  // row's current baseline_at carried forward unchanged (null for a
+  // brand-new row) -- only rebaselineRuleHealth below ever sets it.
+  baseline_at?: string | null;
 }): RuleHealthRow {
+  const existing = getRuleHealth(row.rule_id);
+  const baselineAt =
+    row.baseline_at !== undefined ? row.baseline_at : (existing?.baseline_at ?? null);
   const result = db
     .prepare(
       `INSERT INTO rule_health
          (rule_id, applicable_tasks, helped, hurt, last_applicable_at, contradicted_by_rule_id,
-          unused_since, status, snoozed_until, computed_at)
+          unused_since, status, snoozed_until, baseline_at, computed_at)
        VALUES (@rule_id, @applicable_tasks, @helped, @hurt, @last_applicable_at, @contradicted_by_rule_id,
-               @unused_since, @status, @snoozed_until, datetime('now'))
+               @unused_since, @status, @snoozed_until, @baseline_at, datetime('now'))
        ON CONFLICT(rule_id) DO UPDATE SET
          applicable_tasks = excluded.applicable_tasks,
          helped = excluded.helped,
@@ -2121,11 +2135,39 @@ export function upsertRuleHealth(row: {
          unused_since = excluded.unused_since,
          status = excluded.status,
          snoozed_until = excluded.snoozed_until,
+         baseline_at = excluded.baseline_at,
          computed_at = excluded.computed_at
        RETURNING *`,
     )
-    .get(row) as RuleHealthRow;
+    .get({ ...row, baseline_at: baselineAt }) as RuleHealthRow;
   insertEvent("rule_health.upserted", null, { rule_id: row.rule_id, status: row.status });
+  return result;
+}
+
+// Round 4 fix wave item 4: "Re-add" (Task C2's readd action) resets the
+// health window -- sets baseline_at to now and clears unused_since /
+// contradicted_by_rule_id immediately (rather than waiting for the next
+// recomputeRuleHealth pass to notice), so a re-added rule starts clean.
+// applicable_tasks/helped/hurt/status are left for the next
+// recomputeRuleHealth call to fill in correctly against the new window --
+// same "recomputed after every sync/analysis run" pattern every other
+// rule_health field already follows. Upserts a minimal row when the rule
+// has never been scored yet, same as snoozeRuleHealth.
+export function rebaselineRuleHealth(ruleId: number, baselineAtIso: string): RuleHealthRow {
+  const existing = getRuleHealth(ruleId);
+  const result = upsertRuleHealth({
+    rule_id: ruleId,
+    applicable_tasks: existing?.applicable_tasks ?? 0,
+    helped: existing?.helped ?? 0,
+    hurt: existing?.hurt ?? 0,
+    last_applicable_at: existing?.last_applicable_at ?? null,
+    contradicted_by_rule_id: null,
+    unused_since: null,
+    status: existing?.status ?? "healthy",
+    snoozed_until: existing?.snoozed_until ?? null,
+    baseline_at: baselineAtIso,
+  });
+  insertEvent("rule_health.rebaselined", null, { rule_id: ruleId, baseline_at: baselineAtIso });
   return result;
 }
 

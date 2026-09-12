@@ -409,3 +409,93 @@ test("proposeRetirements: reason 'unused' when neither hurt nor contradicted", (
   assert.equal(proposal.reason, "unused");
   assert.deepEqual(proposal.evidence, []);
 });
+
+// ---- Fix wave item 4: readd resets the rule_health baseline window ----
+
+const { ruleId: rebaselineRuleId, correctionId: rebaselineCorrectionId } = makeLiveRule({
+  instruction: "Always sanitize file uploads before storing them.",
+  predictedFailure: "uploaded files are stored without sanitization",
+  failureSignature: "unsanitized-file-upload",
+  writtenAt: WRITTEN_AT,
+});
+db.prepare(`UPDATE rules SET scope_tags_json = ? WHERE id = ?`).run(
+  JSON.stringify(["uploads"]),
+  rebaselineRuleId,
+);
+
+test("readd resets the rule_health baseline: hurt episodes from before the re-add no longer count, and contradicted_by_rule_id/unused_since are cleared", () => {
+  const reqX = message("Add a file upload widget.", "2026-08-05T00:00:00Z");
+  classify(reqX, "new_task", ["uploads"]);
+  const corrX = message(
+    "You stored the uploaded file without sanitizing it.",
+    "2026-08-05T01:00:00Z",
+  );
+  classify(corrX, "correction", ["uploads"], "unsanitized-file-upload");
+  episode("2026-08-05T00:00:00Z", [reqX, corrX]);
+
+  const reqY = message("Add another upload field.", "2026-08-06T00:00:00Z");
+  classify(reqY, "new_task", ["uploads"]);
+  const corrY = message("Still not sanitizing uploads.", "2026-08-06T01:00:00Z");
+  classify(corrY, "correction", ["uploads"], "unsanitized-file-upload");
+  episode("2026-08-06T00:00:00Z", [reqY, corrY]);
+
+  // A third applicable-but-not-hurting episode, so applicable_tasks reaches
+  // MIN_APPLICABLE_FOR_RETIRE (3) and hurt(2) > helped(1) actually triggers
+  // retire_suggested (same shape as the file's top hurtRuleId fixture).
+  const reqW = message("Add a settings toggle for uploads.", "2026-08-07T00:00:00Z");
+  classify(reqW, "new_task", ["uploads"]);
+  episode("2026-08-07T00:00:00Z", [reqW]);
+
+  recomputeRuleHealth(new Date("2026-08-10T00:00:00Z"));
+  const before = store.getRuleHealth(rebaselineRuleId)!;
+  assert.equal(before.hurt, 2);
+  assert.equal(before.status, "retire_suggested");
+  assert.equal(before.baseline_at, null);
+
+  // Force a contradiction signal too, so readd's reset can be observed.
+  store.upsertRuleHealth({ ...before, contradicted_by_rule_id: 999999 });
+
+  // Retire, then re-add -- readd resets the baseline to "now".
+  imp.improvementAction({ action: "retire", rule_id: rebaselineRuleId });
+  store.cancelPendingKnowledgeWrites(
+    rebaselineRuleId,
+    "test setup: clear the retire recompose write",
+  );
+  const beforeReadd = Date.now();
+  imp.improvementAction({ action: "readd", id: rebaselineCorrectionId });
+
+  const afterReadd = store.getRuleHealth(rebaselineRuleId)!;
+  assert.equal(
+    afterReadd.contradicted_by_rule_id,
+    null,
+    "contradicted_by_rule_id is cleared on readd",
+  );
+  assert.equal(afterReadd.unused_since, null, "unused_since is cleared on readd");
+  assert.ok(afterReadd.baseline_at, "baseline_at is set on readd");
+  assert.ok(new Date(afterReadd.baseline_at!).getTime() >= beforeReadd);
+
+  // readd only approves the rule -- it goes back to 'active' (and so back
+  // into recomputeRuleHealth's live-rule sweep) once the executor actually
+  // finishes writing it to Knowledge (beat 2). Simulate that completing,
+  // same as makeLiveRule's own setup, without touching first_written_at (it
+  // must stay the ORIGINAL write date -- baseline_at, not a rewritten
+  // first_written_at, is what moves the window).
+  store.updateRule({ id: rebaselineRuleId, state: "active", actor: "test" });
+
+  // A new episode dated after the re-add, applicable but not hurting -- only
+  // 1 applicable task (MIN_APPLICABLE_FOR_RETIRE is 3), so this alone proves
+  // the two pre-readd hurt episodes are excluded from the new window.
+  const reqZ = message("Add a third upload field.", "2026-09-15T00:00:00Z");
+  classify(reqZ, "new_task", ["uploads"]);
+  episode("2026-09-15T00:00:00Z", [reqZ]);
+
+  recomputeRuleHealth(new Date("2026-09-20T00:00:00Z"));
+  const afterRecompute = store.getRuleHealth(rebaselineRuleId)!;
+  assert.equal(afterRecompute.hurt, 0, "the pre-readd hurt episodes no longer count");
+  assert.equal(
+    afterRecompute.applicable_tasks,
+    1,
+    "only the post-readd episode is in the new window",
+  );
+  assert.equal(afterRecompute.status, "healthy");
+});

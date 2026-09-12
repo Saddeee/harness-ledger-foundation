@@ -583,4 +583,17 @@ export const MIGRATIONS: Migration[] = [
       DELETE FROM settings WHERE key = 'llm_monthly_budget_usd';
     `,
   },
+  {
+    version: 10,
+    name: "round4_health_baseline",
+    sql: `
+      -- Round 4 fix wave item 4: "Re-add" (Task C2, improvements.ts) resets
+      -- a rule's health window instead of leaving stale pre-retirement
+      -- hurt/contradiction signal in force forever. baseline_at is null
+      -- until the rule is ever re-added; recomputeRuleHealth
+      -- (harness/src/analysis/health.ts) then uses
+      -- max(first_written_at, baseline_at) as the episode window start.
+      ALTER TABLE rule_health ADD COLUMN baseline_at TEXT;
+    `,
+  },
 ];

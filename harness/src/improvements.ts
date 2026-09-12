@@ -1058,6 +1058,11 @@ export function improvementAction(input: unknown): Improvement {
       // the normal accept path would have staged.
       if (!rule) throw new Error("This improvement has no rule to re-add");
       store.updateRule({ id: rule.id, state: "approved", actor: ACTOR });
+      // Fix wave item 4: reset the health window -- whatever hurt/
+      // contradicted this rule before it was retired must not count against
+      // it again now that it's live again (health.ts's recomputeRuleHealth
+      // uses max(first_written_at, baseline_at) as the window start).
+      store.rebaselineRuleHealth(rule.id, new Date().toISOString());
       const refreshedForPreview = getImprovement(a.id);
       if (refreshedForPreview)
         stagePendingWrite(
