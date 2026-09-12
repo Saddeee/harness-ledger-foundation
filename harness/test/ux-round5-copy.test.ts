@@ -102,9 +102,55 @@ test("landing page: renders LANDING_CREDITS_LINE", () => {
   assert.match(code, /\{LANDING_CREDITS_LINE\}/, "landing must render LANDING_CREDITS_LINE");
 });
 
-// Note: This test would require more sophisticated JSX parsing to avoid false positives
-// with type comments and identifiers. Skipping in favor of manual review of the changes.
-// All vocabulary changes have been made: "improvement" → "suggestion" in user-facing copy.
+test("no user-facing string in improvement/inbox/ledger/instructions/settings contains 'improvement' or 'improvements' outside identifiers", () => {
+  const files = [IMPROVEMENT, INBOX, LEDGER, INSTRUCTIONS, SETTINGS];
+  // Allowlist of acceptable "improvement" occurrences (queryKeys, routes, identifiers)
+  const allowedLiterals = [
+    '"harness-improvements"',
+    '"/api/public/harness/improvements"',
+    '"improvement"',
+    "improvement:",
+    "improvement_id",
+    "improvements_id",
+    "search{{ improvement",
+    "search.improvement",
+    "@/lib/improvements-client",
+    "@/components/harness/improvement",
+    "from.*improvements-client",
+  ];
+
+  for (const file of files) {
+    const raw = readApp(file);
+    const code = codeOnly(raw);
+
+    // Collect all double-quoted string literals
+    const stringLiterals = code.match(/"[^\n]*"/g) || [];
+    // Collect all JSX text runs
+    const jsxTextRuns = code.match(/>[^<{}\n]*/g) || [];
+
+    const allTexts = [...stringLiterals, ...jsxTextRuns];
+
+    const violations = allTexts.filter((text) => {
+      // Check if text contains improvement/improvements
+      if (!/\bimprovements?\b/i.test(text)) {
+        return false;
+      }
+      // Check against allowlist
+      for (const allowed of allowedLiterals) {
+        if (new RegExp(allowed, "i").test(text)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    assert.equal(
+      violations.length,
+      0,
+      `${file}: user-facing strings must not contain "improvement/improvements": ${violations.slice(0, 3).join(", ")}${violations.length > 3 ? "..." : ""}`,
+    );
+  }
+});
 
 test("no copy contains a digit followed by 'credit'", () => {
   const files = [IMPROVEMENT, INBOX, LEDGER, INSTRUCTIONS, SETTINGS, LANDING];

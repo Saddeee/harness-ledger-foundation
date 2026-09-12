@@ -19,9 +19,9 @@ export const Route = createFileRoute("/_authenticated/inbox")({
   head: () => ({
     meta: [
       { title: "Inbox — Harness Ledger" },
-      { name: "description", content: "Improvements waiting for your decision." },
+      { name: "description", content: "Suggestions waiting for your decision." },
       { property: "og:title", content: "Inbox — Harness Ledger" },
-      { property: "og:description", content: "Improvements waiting for your decision." },
+      { property: "og:description", content: "Suggestions waiting for your decision." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],

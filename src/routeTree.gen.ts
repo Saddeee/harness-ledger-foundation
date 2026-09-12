@@ -14,6 +14,8 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LovableClientDotjsonRouteImport } from './routes/lovable-client[.]json'
 import { Route as AuthenticatedDemoRouteImport } from './routes/_authenticated/demo'
+import { Route as AuthenticatedHistoryRouteImport } from './routes/_authenticated/history'
+import { Route as AuthenticatedImprovementsRouteImport } from './routes/_authenticated/improvements'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedInstructionsRouteImport } from './routes/_authenticated/instructions'
 import { Route as AuthenticatedJobsRouteImport } from './routes/_authenticated/jobs'
@@ -24,6 +26,7 @@ import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedScoreboardRouteImport } from './routes/_authenticated/scoreboard'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSkillsRouteImport } from './routes/_authenticated/skills'
+import { Route as AuthenticatedSuggestionsRouteImport } from './routes/_authenticated/suggestions'
 import { Route as AuthenticatedVersionsRouteImport } from './routes/_authenticated/versions'
 import { Route as OauthCallbackRouteImport } from './routes/oauth/callback'
 import { Route as ApiPublicHarnessCorrectionsRouteImport } from './routes/api/public/harness/corrections'
@@ -65,6 +68,17 @@ const AuthenticatedDemoRoute = AuthenticatedDemoRouteImport.update({
   path: '/demo',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedHistoryRoute = AuthenticatedHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedImprovementsRoute =
+  AuthenticatedImprovementsRouteImport.update({
+    id: '/improvements',
+    path: '/improvements',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -116,6 +130,12 @@ const AuthenticatedSkillsRoute = AuthenticatedSkillsRouteImport.update({
   path: '/skills',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedSuggestionsRoute =
+  AuthenticatedSuggestionsRouteImport.update({
+    id: '/suggestions',
+    path: '/suggestions',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedVersionsRoute = AuthenticatedVersionsRouteImport.update({
   id: '/versions',
   path: '/versions',
@@ -213,6 +233,8 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/demo': typeof AuthenticatedDemoRoute
+  '/history': typeof AuthenticatedHistoryRoute
+  '/improvements': typeof AuthenticatedImprovementsRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/jobs': typeof AuthenticatedJobsRoute
@@ -223,6 +245,7 @@ export interface FileRoutesByFullPath {
   '/scoreboard': typeof AuthenticatedScoreboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/skills': typeof AuthenticatedSkillsRoute
+  '/suggestions': typeof AuthenticatedSuggestionsRoute
   '/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -245,6 +268,8 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/demo': typeof AuthenticatedDemoRoute
+  '/history': typeof AuthenticatedHistoryRoute
+  '/improvements': typeof AuthenticatedImprovementsRoute
   '/inbox': typeof AuthenticatedInboxRoute
   '/instructions': typeof AuthenticatedInstructionsRoute
   '/jobs': typeof AuthenticatedJobsRoute
@@ -255,6 +280,7 @@ export interface FileRoutesByTo {
   '/scoreboard': typeof AuthenticatedScoreboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/skills': typeof AuthenticatedSkillsRoute
+  '/suggestions': typeof AuthenticatedSuggestionsRoute
   '/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -279,6 +305,8 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/lovable-client.json': typeof LovableClientDotjsonRoute
   '/_authenticated/demo': typeof AuthenticatedDemoRoute
+  '/_authenticated/history': typeof AuthenticatedHistoryRoute
+  '/_authenticated/improvements': typeof AuthenticatedImprovementsRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
   '/_authenticated/instructions': typeof AuthenticatedInstructionsRoute
   '/_authenticated/jobs': typeof AuthenticatedJobsRoute
@@ -289,6 +317,7 @@ export interface FileRoutesById {
   '/_authenticated/scoreboard': typeof AuthenticatedScoreboardRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/skills': typeof AuthenticatedSkillsRoute
+  '/_authenticated/suggestions': typeof AuthenticatedSuggestionsRoute
   '/_authenticated/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -313,6 +342,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/lovable-client.json'
     | '/demo'
+    | '/history'
+    | '/improvements'
     | '/inbox'
     | '/instructions'
     | '/jobs'
@@ -323,6 +354,7 @@ export interface FileRouteTypes {
     | '/scoreboard'
     | '/settings'
     | '/skills'
+    | '/suggestions'
     | '/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -345,6 +377,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/lovable-client.json'
     | '/demo'
+    | '/history'
+    | '/improvements'
     | '/inbox'
     | '/instructions'
     | '/jobs'
@@ -355,6 +389,7 @@ export interface FileRouteTypes {
     | '/scoreboard'
     | '/settings'
     | '/skills'
+    | '/suggestions'
     | '/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -378,6 +413,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/lovable-client.json'
     | '/_authenticated/demo'
+    | '/_authenticated/history'
+    | '/_authenticated/improvements'
     | '/_authenticated/inbox'
     | '/_authenticated/instructions'
     | '/_authenticated/jobs'
@@ -388,6 +425,7 @@ export interface FileRouteTypes {
     | '/_authenticated/scoreboard'
     | '/_authenticated/settings'
     | '/_authenticated/skills'
+    | '/_authenticated/suggestions'
     | '/_authenticated/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -465,6 +503,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDemoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/history': {
+      id: '/_authenticated/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof AuthenticatedHistoryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/improvements': {
+      id: '/_authenticated/improvements'
+      path: '/improvements'
+      fullPath: '/improvements'
+      preLoaderRoute: typeof AuthenticatedImprovementsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/inbox': {
       id: '/_authenticated/inbox'
       path: '/inbox'
@@ -533,6 +585,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/skills'
       preLoaderRoute: typeof AuthenticatedSkillsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/suggestions': {
+      id: '/_authenticated/suggestions'
+      path: '/suggestions'
+      fullPath: '/suggestions'
+      preLoaderRoute: typeof AuthenticatedSuggestionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/versions': {
@@ -652,6 +711,8 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDemoRoute: typeof AuthenticatedDemoRoute
+  AuthenticatedHistoryRoute: typeof AuthenticatedHistoryRoute
+  AuthenticatedImprovementsRoute: typeof AuthenticatedImprovementsRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
   AuthenticatedInstructionsRoute: typeof AuthenticatedInstructionsRoute
   AuthenticatedJobsRoute: typeof AuthenticatedJobsRoute
@@ -662,11 +723,14 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedScoreboardRoute: typeof AuthenticatedScoreboardRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSkillsRoute: typeof AuthenticatedSkillsRoute
+  AuthenticatedSuggestionsRoute: typeof AuthenticatedSuggestionsRoute
   AuthenticatedVersionsRoute: typeof AuthenticatedVersionsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDemoRoute: AuthenticatedDemoRoute,
+  AuthenticatedHistoryRoute: AuthenticatedHistoryRoute,
+  AuthenticatedImprovementsRoute: AuthenticatedImprovementsRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
   AuthenticatedInstructionsRoute: AuthenticatedInstructionsRoute,
   AuthenticatedJobsRoute: AuthenticatedJobsRoute,
@@ -677,6 +741,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedScoreboardRoute: AuthenticatedScoreboardRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSkillsRoute: AuthenticatedSkillsRoute,
+  AuthenticatedSuggestionsRoute: AuthenticatedSuggestionsRoute,
   AuthenticatedVersionsRoute: AuthenticatedVersionsRoute,
 }
 
