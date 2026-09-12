@@ -68,13 +68,14 @@ test("instructions.tsx: renders a rules table, and the old per-version history v
   }
   assert.ok(raw.includes("No rules yet."));
 
-  // the row's trailing cell keeps Retire, and marks where Task 7 adds the
-  // verdict buttons; the Observed cell marks where Task 7's adherence line
-  // may be extended.
-  // these are JSX comment markers, stripped out of `code` by codeOnly --
-  // check the raw source instead.
-  assert.ok(raw.includes("{/* verdict-buttons */}"));
+  // Round 6 Task 4 / spec §4: the row's trailing cell no longer keeps a
+  // bare Retire button (it's now a "…" menu with Remove from Knowledge and
+  // Open suggestion) and the Observed cell's own verdict-buttons marker was
+  // replaced by an actual <VerdictControl> -- the still-live "adherence-line"
+  // marker (a JSX comment, stripped out of `code` by codeOnly -- check the
+  // raw source instead) is the one part of this row Task 4 didn't touch.
   assert.ok(raw.includes("{/* adherence-line */}"));
+  assert.ok(!raw.includes("{/* verdict-buttons */}"), "replaced by a real <VerdictControl>");
 
   // Fix round 1: the row itself keeps native <tr> semantics -- clicking
   // anywhere in the row is a mouse-only convenience navigating to the

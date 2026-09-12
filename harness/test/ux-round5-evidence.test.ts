@@ -140,37 +140,52 @@ test("evidenceSourceLines: four sentences, each ending 'has run for this rule' o
   assert.ok(all[3]!.includes("not available yet"));
 });
 
-// ---- verdict buttons: Instructions row and the Suggestions detail ----
+// ---- verdict control: Instructions row and the Suggestions detail ----
+// Round 6 Task 4 / spec §4: rewritten with intent -- the verdict control is
+// no longer a plain "row of buttons" a caller wires up itself (VerdictButtons
+// + local "You said.../Change" state duplicated in both files). It's now
+// VerdictControl, a single self-contained widget (its own network call, its
+// own "You said.../Change"/effect-line state) that both files render
+// identically -- so `action: "verdict"` and the "You said/Change" state now
+// live only in improvement.tsx, and instructions.tsx's own contribution is
+// just rendering the shared component with this rule's id and verdict.
 
-test("instructions.tsx and improvement.tsx: both post action: verdict, and both render the shared VerdictButtons group", () => {
-  for (const rel of [INSTRUCTIONS_PAGE, IMPROVEMENT]) {
-    const code = codeOnly(readApp(rel));
-    assert.match(code, /action:\s*"verdict"/, `${rel} missing action: "verdict"`);
-    assert.match(code, /<VerdictButtons\b/, `${rel} missing <VerdictButtons`);
-  }
-  // The group itself -- aria-label and the three labels, verbatim -- is
-  // defined once, in improvement.tsx; instructions.tsx imports the
-  // component rather than re-declaring it (checked separately below).
-  const buttonsSource = readApp(IMPROVEMENT);
-  assert.match(codeOnly(buttonsSource), /aria-label="Did this rule help\?"/);
-  for (const label of ["Helped", "Didn't help", "Not sure"]) {
-    assert.ok(buttonsSource.includes(label), `missing verdict button label "${label}"`);
+test("improvement.tsx: posts action: verdict from the shared VerdictControl, with the spec's exact button labels", () => {
+  const code = codeOnly(readApp(IMPROVEMENT));
+  assert.match(code, /action:\s*"verdict"/, 'improvement.tsx missing action: "verdict"');
+  assert.match(code, /aria-label="Did this rule help\?"/);
+  const raw = readApp(IMPROVEMENT);
+  for (const label of ["Yes", "No", "Not sure"]) {
+    assert.ok(raw.includes(`label: "${label}"`), `missing verdict button label "${label}"`);
   }
 });
 
-test("instructions.tsx: imports VerdictButtons from improvement.tsx rather than re-declaring it", () => {
+test("instructions.tsx and improvement.tsx: both render the shared VerdictControl -- one visible control, not two copies of the same state", () => {
+  for (const rel of [INSTRUCTIONS_PAGE, IMPROVEMENT]) {
+    const code = codeOnly(readApp(rel));
+    assert.match(code, /<VerdictControl\b/, `${rel} missing <VerdictControl`);
+  }
+});
+
+test("instructions.tsx: imports VerdictControl from improvement.tsx rather than re-declaring it", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
   assert.match(
     code,
-    /import\s*\{\s*VerdictButtons\s*\}\s*from\s*"@\/components\/harness\/improvement"/,
+    /import\s*\{\s*VerdictControl\s*\}\s*from\s*"@\/components\/harness\/improvement"/,
   );
+  // The "You said.../Change" toggle and its own network call now live only
+  // in the shared component -- instructions.tsx no longer keeps a second
+  // copy of this state.
+  assert.ok(!/setShowVerdictButtons/.test(code));
+  assert.ok(!/VerdictButtons/.test(code), "the old, renamed component must not linger");
 });
 
-test("instructions.tsx: a verdict exists -> 'You said' plus a Change link that shows the buttons again", () => {
+test("instructions.tsx: passes this row's rule id and current verdict to the shared control", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(code, /verdictLine\(rule\.verdict\)/);
-  assert.match(code, />\s*Change\s*</);
-  assert.match(code, /setShowVerdictButtons/);
+  assert.match(
+    code,
+    /<VerdictControl\s+ruleId=\{rule\.id\}\s+verdict=\{rule\.verdict\s*\?\?\s*null\}\s*\/>/,
+  );
 });
 
 test("improvement.tsx: DecidedStatus shows verdict buttons only for a live (accepted + written) rule, and the adherence line via adherenceLine", () => {

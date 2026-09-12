@@ -4,7 +4,7 @@
 // fetches the local Harness routes; never talks to Lovable itself -- adding
 // to Lovable is recorded here and executed by Harness afterwards.
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,7 @@ import {
   DetailSection,
 } from "@/components/harness/decision-layout";
 import {
+  ALREADY_RECORDED_TOAST,
   adherenceLine,
   CLASSIFICATION_LABELS,
   DESTINATION_LABELS,
@@ -34,8 +35,10 @@ import {
   retireSinceLine,
   UNDO_TOAST,
   VERDICT_TEXT,
+  verdictEffectLine,
   verdictLine,
   type StatusCtx,
+  type VerdictEffect,
   versionStatusLine,
   whyFor,
   wordingChangeLine,
@@ -63,7 +66,12 @@ export type { Improvement, Message };
 const NO_SNAPSHOT_BODY =
   "Harness hasn't read your current Knowledge yet. Your choice is saved; press Sync now on the Projects page, then Harness reads it and writes this exact text. You can see the result on the Instructions page.";
 const PREVIEW_BODY = "This is the exact text Harness will write to your Lovable Knowledge.";
-const PREVIEW_CONSEQUENCES = ["You can restore the previous version at any time."];
+// Addendum to Round 6 Task 4: "restore" alone overstated what's actually on
+// offer from this card -- Remove from Knowledge lives here (Round 6 Task 3),
+// while restoring an earlier version is a History-page-only action.
+const PREVIEW_CONSEQUENCES = [
+  "You can remove it from Knowledge or restore an earlier version from History at any time.",
+];
 const OVER_CAP_LINE =
   "This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first.";
 function overRulesLine(activeRulesCount: number): string {
@@ -89,6 +97,12 @@ const READDED_TOAST = "Re-added.";
 const REMOVED_TOAST = "Removed from Knowledge.";
 
 const LONG_TEXT = 600;
+
+// Round 6 Task 4 / spec §4: one action bar per card, all buttons the same
+// size and gap, wrapping as a row -- the exact class every card's bar uses
+// (kept as one constant so the tests can count it: exactly one per rendered
+// card, never a second bar sharing space with anything else).
+const ACTION_BAR_CLASS = "flex flex-wrap items-center gap-2";
 
 type Destination = "project" | "workspace";
 
@@ -139,6 +153,7 @@ function AddConfirm({
   run,
   trigger,
   variant,
+  size,
 }: {
   item: Improvement;
   destination: Destination;
@@ -146,6 +161,7 @@ function AddConfirm({
   run: Run;
   trigger?: string;
   variant?: "default" | "outline";
+  size?: "default" | "sm" | undefined;
 }) {
   const [choice, setChoice] = useState<"now" | "test" | null>(null);
   const wantsTest = choice === "test";
@@ -180,6 +196,7 @@ function AddConfirm({
       confirmLabel={wantsTest ? "Save for testing" : preview ? "Add" : "Save choice"}
       confirmDisabled={overCap || overRules || choice == null}
       disabled={busy}
+      size={size}
       onOpenChange={(open) => {
         if (!open) setChoice(null);
       }}
@@ -282,7 +299,17 @@ const SKIP_REASON_ORDER: SkipReasonValue[] = [
   "already_covered",
 ];
 
-function SkipConfirm({ item, busy, run }: { item: Improvement; busy: boolean; run: Run }) {
+function SkipConfirm({
+  item,
+  busy,
+  run,
+  size,
+}: {
+  item: Improvement;
+  busy: boolean;
+  run: Run;
+  size?: "default" | "sm" | undefined;
+}) {
   const [reason, setReason] = useState<SkipReasonValue | null>(null);
   // Same roving-tabindex radiogroup pattern as AddConfirm's own above:
   // arrows move between the four options, only the selected one (or the
@@ -307,6 +334,7 @@ function SkipConfirm({ item, busy, run }: { item: Improvement; busy: boolean; ru
     <ConfirmAction
       trigger="Skip"
       variant="ghost"
+      size={size}
       title="Skip this suggestion?"
       body="Harness won't suggest it again."
       consequences={["Nothing changes in Lovable."]}
@@ -405,6 +433,7 @@ function RetireConfirm({
   run,
   trigger,
   variant,
+  size,
 }: {
   proposalId?: number;
   ruleId?: number;
@@ -412,11 +441,13 @@ function RetireConfirm({
   run: Run;
   trigger?: string;
   variant?: "default" | "outline";
+  size?: "default" | "sm" | undefined;
 }) {
   return (
     <ConfirmAction
       trigger={trigger ?? "Retire"}
       {...(variant ? { variant } : {})}
+      size={size}
       title={RETIRE_TITLE}
       body={RETIRE_BODY}
       consequences={RETIRE_CONSEQUENCES}
@@ -444,15 +475,18 @@ function RemoveFromKnowledgeConfirm({
   ruleId,
   busy,
   run,
+  size,
 }: {
   ruleId: number;
   busy: boolean;
   run: Run;
+  size?: "default" | "sm" | undefined;
 }) {
   return (
     <ConfirmAction
       trigger="Remove from Knowledge"
       variant="outline"
+      size={size}
       title={REMOVE_FROM_KNOWLEDGE_TITLE}
       body={REMOVE_FROM_KNOWLEDGE_BODY}
       consequences={[]}
@@ -480,28 +514,32 @@ function RetireCard({
   const titleId = `improvement-${item.id}`;
   const retire = item.retire;
   if (!retire) return null;
+  // Round 6 Task 4 / spec §4: lists use "sm" for every button in the bar;
+  // the detail page (titleAs="h1") uses the default size.
+  const size: "default" | "sm" = titleAs === "h1" ? "default" : "sm";
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      {/* header row: project name left, status badges right */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{projectName(item)}</p>
+        {isNew ? <Badge variant="default">New</Badge> : null}
+      </div>
+      <Title
+        id={titleId}
+        className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
+      >
+        {item.title}
+      </Title>
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold">{projectName(item)}</p>
-          {isNew ? <Badge variant="default">New</Badge> : null}
-        </div>
-        <Title
-          id={titleId}
-          className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
-        >
-          {item.title}
-        </Title>
         <p className="text-sm text-muted-foreground">{retireSinceLine(retire)}</p>
         <p className="text-sm">{retireReasonSentence(retire)}</p>
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <RetireConfirm proposalId={retire.proposal_id} busy={busy} run={run} />
+      <div className={ACTION_BAR_CLASS}>
+        <RetireConfirm proposalId={retire.proposal_id} busy={busy} run={run} size={size} />
         <Button
           type="button"
           variant="ghost"
-          className="w-full sm:w-auto"
+          size={size}
           disabled={busy}
           onClick={() => void run({ action: "keep", id: -retire.proposal_id }, KEPT_TOAST)}
         >
@@ -514,37 +552,91 @@ function RetireCard({
 
 // ---- Decided items: where it stands, and how to change your mind ----
 
-// spec §5.2: "Did this rule help? Yes / No / Not sure" -- three small
-// outline buttons, one aria-labelled group. Shared by the Suggestions
-// detail (DecidedStatus below) and the Instructions row
-// (instructions.tsx imports this rather than defining its own).
+// Round 6 Task 4 / spec §4: "Did this rule help?" is now a compact, self-
+// contained control living in the observed line -- not a row of buttons in
+// the action bar. It owns its own network call and local state, so the
+// Suggestions card/detail and the Instructions row render one shared widget
+// instead of two copies of "You said.../Change" kept in sync by hand. One
+// verdict per rule: store.recordRuleVerdict's own upsert (Round 6 Task 1)
+// makes a repeat click a no-op (`changed: false`), read here as
+// ALREADY_RECORDED_TOAST instead of a fresh "You said" + effect line. Every
+// other choice's response carries `effect` (harness/src/improvements.ts's
+// recordVerdict) -- what that one click changed in this rule's health,
+// shown right underneath via verdictEffectLine.
 const VERDICT_CHOICES: { value: "helped" | "did_not_help" | "not_sure"; label: string }[] = [
-  { value: "helped", label: "Helped" },
-  { value: "did_not_help", label: "Didn't help" },
+  { value: "helped", label: "Yes" },
+  { value: "did_not_help", label: "No" },
   { value: "not_sure", label: "Not sure" },
 ];
 
-export function VerdictButtons({
-  busy,
-  onPick,
+export function VerdictControl({
+  ruleId,
+  verdict,
+  disabled,
 }: {
-  busy: boolean;
-  onPick: (verdict: "helped" | "did_not_help" | "not_sure") => void;
+  ruleId: number;
+  verdict: { verdict: "helped" | "did_not_help" | "not_sure"; created_at: string } | null;
+  disabled?: boolean;
 }) {
+  const qc = useQueryClient();
+  const [showChoices, setShowChoices] = useState(false);
+  const [effect, setEffect] = useState<VerdictEffect | null>(null);
+  const mutation = useMutation({
+    mutationFn: (v: "helped" | "did_not_help" | "not_sure") =>
+      post({ action: "verdict", rule_id: ruleId, verdict: v }),
+    onSuccess: (data, v) => {
+      if (data.improvement?.changed === false) {
+        toast.success(ALREADY_RECORDED_TOAST);
+      } else {
+        toast.success(`You said: ${VERDICT_TEXT[v]}`);
+        setEffect(data.improvement?.effect ?? "none");
+      }
+      setShowChoices(false);
+      void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save your verdict"),
+  });
+  const showButtons = !verdict || showChoices;
+
   return (
-    <div role="group" aria-label="Did this rule help?" className="flex flex-wrap gap-1">
-      {VERDICT_CHOICES.map((c) => (
-        <Button
-          key={c.value}
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={busy}
-          onClick={() => onPick(c.value)}
-        >
-          {c.label}
-        </Button>
-      ))}
+    <div className="space-y-1">
+      <div
+        role="group"
+        aria-label="Did this rule help?"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+      >
+        {verdict ? (
+          <span>
+            {verdictLine(verdict)}
+            {" · "}
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setShowChoices(true)}
+            >
+              Change
+            </button>
+          </span>
+        ) : (
+          <span>Did this rule help?</span>
+        )}
+        {showButtons
+          ? VERDICT_CHOICES.map((c) => (
+              <Button
+                key={c.value}
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={disabled || mutation.isPending}
+                onClick={() => mutation.mutate(c.value)}
+              >
+                {c.label}
+              </Button>
+            ))
+          : null}
+      </div>
+      {effect ? <p className="text-xs text-muted-foreground">{verdictEffectLine(effect)}</p> : null}
     </div>
   );
 }
@@ -564,27 +656,25 @@ function DecidedStatus({
   const accepted = item.decision.status === "accepted";
   const retired = item.decision.retired;
   const written = lovable.write_status === "written";
+  // Round 6 Task 4 / spec §4: lists use "sm" for every button in the bar;
+  // the detail page (titleAs="h1") uses the default size -- threaded
+  // through ctx so this component's own call site (DecisionCard, below)
+  // never has to change shape.
+  const size = ctx?.size ?? "sm";
   // Round 6 Task 2: "Try again" (Needs attention) re-runs executeVersionNow
   // on this exact version -- the one whose status is why the card reads
   // stale/failed in the first place.
   const retryableVersion = lovable.versions.find(
     (v) => v.status === "stale" || v.status === "failed",
   );
-  // Round 6 Task 3 / spec §3: Undo is offered on anything not yet written --
-  // for a retired rule that means its own removal rewrite (never this
-  // rule's own past write, which is what `written` above already reads),
-  // everywhere else it means this item's own write_status. "reverted" is
-  // deliberately excluded either way (out of scope for this task; Add-
-  // instead/Skip already cover it below).
-  const removalWritten = lovable.retirement_write_status === "written";
-  const canUndo = retired
-    ? !removalWritten
-    : lovable.write_status !== "written" && lovable.write_status !== "reverted";
+  // Round 6 Task 3 fix 1 / spec §3: server-computed (harness/src/
+  // improvements.ts's controlFlags -- the exact same rule the "undo" action
+  // itself enforces), never re-derived from write_status alone: a live
+  // rule's later wording-change rewrite can read pending/stale/failed while
+  // the rule itself is still exactly what's live in Lovable, which the old
+  // client-side check let Undo wrongly demote.
+  const canUndo = lovable.can_undo;
 
-  // spec §5.2: verdict buttons for a live (accepted + written) rule --
-  // replaced by "You said: ..." with a "Change" link once a verdict
-  // exists, exactly like the Instructions row's own copy of this toggle.
-  const [showVerdictButtons, setShowVerdictButtons] = useState(false);
   const ruleId = item.rule_id;
   const verdictEligible = accepted && written && ruleId != null;
 
@@ -601,33 +691,11 @@ function DecidedStatus({
       {item.health ? (
         <p className="text-xs text-muted-foreground">{healthLine(item.health)}</p>
       ) : null}
-      {item.health && verdictLine(item.health.verdict) ? (
-        <p className="text-xs text-muted-foreground">{verdictLine(item.health.verdict)}</p>
+      {verdictEligible ? (
+        <VerdictControl ruleId={ruleId} verdict={item.health?.verdict ?? null} disabled={busy} />
       ) : null}
       {item.health && adherenceLine(item.health.adherence) ? (
         <p className="text-xs text-muted-foreground">{adherenceLine(item.health.adherence)}</p>
-      ) : null}
-      {verdictEligible ? (
-        item.health?.verdict && !showVerdictButtons ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowVerdictButtons(true)}
-          >
-            Change
-          </Button>
-        ) : (
-          <VerdictButtons
-            busy={busy}
-            onPick={(verdict) =>
-              void run(
-                { action: "verdict", rule_id: ruleId, verdict },
-                `You said: ${VERDICT_TEXT[verdict]}`,
-              ).then((ok) => ok && setShowVerdictButtons(false))
-            }
-          />
-        )
       ) : null}
       {accepted && lovable.write_status === "none" ? (
         <p className="text-xs text-muted-foreground">
@@ -644,7 +712,7 @@ function DecidedStatus({
           or skip it.
         </p>
       ) : null}
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+      <div className={ACTION_BAR_CLASS}>
         {retired ? (
           canUndo ? (
             // Round 6 Task 3 / spec §3: the removal never actually reached
@@ -655,7 +723,7 @@ function DecidedStatus({
             <Button
               type="button"
               variant="ghost"
-              className="w-full sm:w-auto"
+              size={size}
               disabled={busy}
               onClick={() => void run({ action: "undo", id: item.id }, UNDO_TOAST)}
             >
@@ -665,7 +733,7 @@ function DecidedStatus({
             <Button
               type="button"
               variant="outline"
-              className="w-full sm:w-auto"
+              size={size}
               disabled={busy}
               onClick={() => void run({ action: "readd", id: item.id }, READDED_TOAST)}
             >
@@ -684,6 +752,7 @@ function DecidedStatus({
                 busy={busy}
                 run={run}
                 variant="outline"
+                size={size}
                 trigger="Add it now instead"
               />
             ) : null}
@@ -699,10 +768,11 @@ function DecidedStatus({
                       busy={busy}
                       run={run}
                       variant="outline"
+                      size={size}
                       trigger={`${ADD_LABELS[d]} instead`}
                     />
                   ))}
-                <SkipConfirm item={item} busy={busy} run={run} />
+                <SkipConfirm item={item} busy={busy} run={run} size={size} />
               </>
             ) : null}
             {accepted &&
@@ -711,7 +781,7 @@ function DecidedStatus({
               <Button
                 type="button"
                 variant="outline"
-                className="w-full sm:w-auto"
+                size={size}
                 disabled={busy}
                 onClick={() =>
                   void run(
@@ -724,7 +794,7 @@ function DecidedStatus({
               </Button>
             ) : null}
             {accepted && written && ruleId != null ? (
-              <RemoveFromKnowledgeConfirm ruleId={ruleId} busy={busy} run={run} />
+              <RemoveFromKnowledgeConfirm ruleId={ruleId} busy={busy} run={run} size={size} />
             ) : null}
             {/* Round 6 Task 3 / spec §3: a plain, no-dialog Undo -- shown for
                 every decided-but-unwritten item, accepted or skipped alike
@@ -734,7 +804,7 @@ function DecidedStatus({
               <Button
                 type="button"
                 variant="ghost"
-                className="w-full sm:w-auto"
+                size={size}
                 disabled={busy}
                 onClick={() => void run({ action: "undo", id: item.id }, UNDO_TOAST)}
               >
@@ -787,40 +857,50 @@ function CompactDecisionCard({
   isNew?: boolean | undefined;
 }) {
   const titleId = `improvement-${item.id}`;
+  // Round 6 Task 4 / spec §4: the Inbox is always a list -- every button in
+  // its bar is "sm", same as everywhere else lists render this card.
+  const size = "sm";
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 flex-1 space-y-2">
-          <p className="text-sm font-semibold">{projectName(item)}</p>
-          <h2 id={titleId} className="text-base font-medium">
-            <button
-              type="button"
-              className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => onOpen?.(item.id)}
-            >
-              {item.title}
-            </button>
-          </h2>
-          {item.proposed_instruction ? (
-            <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-              {item.proposed_instruction}
-            </blockquote>
-          ) : (
-            <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
-          )}
-          <p className="text-xs text-muted-foreground">{whyFor(item.classification)}</p>
-          {item.unsure ? (
-            <p role="status" className="text-xs text-muted-foreground">
-              {item.unsure}
-            </p>
-          ) : null}
-        </div>
+      {/* header row: project name left, status badges right */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{projectName(item)}</p>
         {isNew ? <Badge variant="default">New</Badge> : null}
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <AddConfirm item={item} destination="project" busy={busy} run={run} />
-        <AddConfirm item={item} destination="workspace" busy={busy} run={run} variant="outline" />
-        <SkipConfirm item={item} busy={busy} run={run} />
+      <h2 id={titleId} className="text-base font-medium">
+        <button
+          type="button"
+          className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onOpen?.(item.id)}
+        >
+          {item.title}
+        </button>
+      </h2>
+      {/* body: full width, a sibling of the header row above */}
+      {item.proposed_instruction ? (
+        <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+          {item.proposed_instruction}
+        </blockquote>
+      ) : (
+        <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
+      )}
+      <p className="text-xs text-muted-foreground">{whyFor(item.classification)}</p>
+      {item.unsure ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {item.unsure}
+        </p>
+      ) : null}
+      <div className={ACTION_BAR_CLASS}>
+        <AddConfirm item={item} destination="project" busy={busy} run={run} size={size} />
+        <AddConfirm
+          item={item}
+          destination="workspace"
+          busy={busy}
+          run={run}
+          variant="outline"
+          size={size}
+        />
+        <SkipConfirm item={item} busy={busy} run={run} size={size} />
       </div>
     </article>
   );
@@ -858,12 +938,16 @@ export function DecisionCard({
   const busy = busyProp ?? own.busy;
   const run = runProp ?? own.run;
   const executor = useQuery(executorQueryOptions);
+  // Round 6 Task 4 / spec §4: lists use "sm" for every button in the bar;
+  // the detail page (titleAs="h1") uses the default size.
+  const size: "default" | "sm" = titleAs === "h1" ? "default" : "sm";
   const ctx = {
     connected: executor.data?.connection?.connected,
     testFirst: item.decision.test_first,
     // A workspace write isn't gated by one project's flag, so this only
     // ever applies to project-destination items (Round 3 §5).
     autoWriteOff: item.destination === "project" && item.lovable?.auto_write === false,
+    size,
   };
   const pending = item.decision.status === "pending";
   const Title = titleAs;
@@ -879,100 +963,11 @@ export function DecisionCard({
 
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div
-          className={
-            onOpen
-              ? "min-w-0 flex-1 space-y-3 cursor-pointer rounded-md -m-1 p-1 hover:bg-accent/50"
-              : "min-w-0 flex-1 space-y-3"
-          }
-          role={onOpen ? "link" : undefined}
-          tabIndex={onOpen ? 0 : undefined}
-          onClick={onOpen ? () => onOpen(item.id) : undefined}
-          onKeyDown={
-            onOpen
-              ? (e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onOpen(item.id);
-                  }
-                }
-              : undefined
-          }
-        >
-          <p className="text-sm font-semibold">{projectName(item)}</p>
-          <Title
-            id={titleId}
-            className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
-          >
-            {onOpen ? (
-              <button
-                type="button"
-                className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => onOpen(item.id)}
-              >
-                {item.title}
-              </button>
-            ) : (
-              item.title
-            )}
-          </Title>
-          {item.proposed_instruction ? (
-            editable && editable.editing ? (
-              <div className="space-y-2 rounded-md border p-3">
-                <label htmlFor={`wording-${item.id}`} className="text-xs font-medium">
-                  Instruction
-                </label>
-                <Textarea
-                  id={`wording-${item.id}`}
-                  value={editable.draft}
-                  onChange={(e) => editable.onChangeDraft(e.target.value)}
-                  rows={3}
-                />
-                <label htmlFor={`wording-reason-${item.id}`} className="text-xs font-medium">
-                  Why you changed it (optional)
-                </label>
-                <input
-                  id={`wording-reason-${item.id}`}
-                  className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
-                  value={editable.reason}
-                  onChange={(e) => editable.onChangeReason(e.target.value)}
-                />
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button
-                    size="sm"
-                    disabled={editable.busy || editable.draft.trim().length === 0}
-                    onClick={editable.onSave}
-                  >
-                    Save wording
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={editable.onCancel}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="relative">
-                <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-                  {item.proposed_instruction}
-                </blockquote>
-                {editable ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-1 top-1"
-                    onClick={editable.onStart}
-                  >
-                    Edit
-                  </Button>
-                ) : null}
-              </div>
-            )
-          ) : (
-            <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
-          )}
-        </div>
+      {/* header row: project name left, status badges right -- the body
+          below used to share this row's left column with the badges,
+          cutting the editor short; it's a full-width sibling block now. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{projectName(item)}</p>
         {pending ? (
           isNew ? (
             <Badge variant="default">New</Badge>
@@ -988,11 +983,111 @@ export function DecisionCard({
         )}
       </div>
 
+      {/* body: title + instruction (blockquote or the editor), full width --
+          a sibling of the header row above, never sharing its left column. */}
+      <div
+        className={
+          onOpen ? "space-y-3 cursor-pointer rounded-md -m-1 p-1 hover:bg-accent/50" : "space-y-3"
+        }
+        role={onOpen ? "link" : undefined}
+        tabIndex={onOpen ? 0 : undefined}
+        onClick={onOpen ? () => onOpen(item.id) : undefined}
+        onKeyDown={
+          onOpen
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpen(item.id);
+                }
+              }
+            : undefined
+        }
+      >
+        <Title
+          id={titleId}
+          className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
+        >
+          {onOpen ? (
+            <button
+              type="button"
+              className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onOpen(item.id)}
+            >
+              {item.title}
+            </button>
+          ) : (
+            item.title
+          )}
+        </Title>
+        {item.proposed_instruction ? (
+          editable && editable.editing ? (
+            <div className="space-y-2 rounded-md border p-3">
+              <label htmlFor={`wording-${item.id}`} className="text-xs font-medium">
+                Instruction
+              </label>
+              <Textarea
+                id={`wording-${item.id}`}
+                value={editable.draft}
+                onChange={(e) => editable.onChangeDraft(e.target.value)}
+                rows={3}
+              />
+              <label htmlFor={`wording-reason-${item.id}`} className="text-xs font-medium">
+                Why you changed it (optional)
+              </label>
+              <input
+                id={`wording-reason-${item.id}`}
+                className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                value={editable.reason}
+                onChange={(e) => editable.onChangeReason(e.target.value)}
+              />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  size="sm"
+                  disabled={editable.busy || editable.draft.trim().length === 0}
+                  onClick={editable.onSave}
+                >
+                  Save wording
+                </Button>
+                <Button size="sm" variant="outline" onClick={editable.onCancel}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="relative">
+              <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+                {item.proposed_instruction}
+              </blockquote>
+              {editable ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1"
+                  onClick={editable.onStart}
+                >
+                  Edit
+                </Button>
+              ) : null}
+            </div>
+          )
+        ) : (
+          <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
+        )}
+      </div>
+
       {pending ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <AddConfirm item={item} destination="project" busy={busy} run={run} />
-          <AddConfirm item={item} destination="workspace" busy={busy} run={run} variant="outline" />
-          <SkipConfirm item={item} busy={busy} run={run} />
+        <div className={ACTION_BAR_CLASS}>
+          <AddConfirm item={item} destination="project" busy={busy} run={run} size={size} />
+          <AddConfirm
+            item={item}
+            destination="workspace"
+            busy={busy}
+            run={run}
+            variant="outline"
+            size={size}
+          />
+          <SkipConfirm item={item} busy={busy} run={run} size={size} />
         </div>
       ) : (
         <DecidedStatus item={item} busy={busy} run={run} ctx={ctx} />

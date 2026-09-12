@@ -57,13 +57,19 @@ test("Decided status: buttons render directly in a row, using outline/ghost vari
   assert.match(decided, /trigger="Add it now instead"/);
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
   assert.match(decided, /action: "retry_write", id: item\.id, version_id: retryableVersion\.id/);
+  // Round 6 Task 4 / spec §4: every button in this bar carries the same
+  // `size` variable (computed once from titleAs) -- "sm" on lists, default
+  // on the detail page.
   assert.match(
     decided,
-    /<RemoveFromKnowledgeConfirm ruleId=\{ruleId\} busy=\{busy\} run=\{run\} \/>/,
+    /<RemoveFromKnowledgeConfirm\s+ruleId=\{ruleId\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
   );
   assert.match(decided, /action: "undo", id: item\.id/);
   assert.ok(!/Restore previous version/.test(decided), "Restore moved to the History page only");
-  assert.match(decided, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
+  assert.match(
+    decided,
+    /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
+  );
 });
 
 test("Detail: no separate 'Edit instruction' link below the card", () => {

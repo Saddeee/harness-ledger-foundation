@@ -149,13 +149,23 @@ test("lib/improvements-client.ts: Improvement carries kind, decision.retired, an
   assert.match(code, /retired: item\.decision\.retired/);
 });
 
-test("instructions.tsx: a Retire button under each live rule, and retired rules collapsed under 'Retired rules (N)' with Re-add", () => {
+// Round 6 Task 4 / spec §4: rewritten with intent -- the row's own Retire
+// button is gone. Its exact action (retire, addressed by rule_id -- the
+// same "immediately retire this live rule and rewrite Knowledge" request
+// the card's own "Remove from Knowledge" already made in Round 6 Task 3)
+// now lives behind the row's "…" menu, worded the same way as the card:
+// "Remove from Knowledge" with the REMOVE_FROM_KNOWLEDGE_* copy, not
+// "Retire this rule?". Retired rules collapsed under "Retired rules (N)"
+// with Re-add is unchanged.
+test("instructions.tsx: 'Remove from Knowledge' under each live rule's '…' menu, and retired rules collapsed under 'Retired rules (N)' with Re-add", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
 
-  assert.ok(raw.includes("Retire this rule?"));
-  assert.ok(raw.includes("Harness rewrites your Knowledge without it right away."));
-  assert.ok(raw.includes("You can re-add it later from Suggestions."));
+  assert.ok(!raw.includes("Retire this rule?"), "the row no longer uses the proposal-style copy");
+  assert.ok(raw.includes("REMOVE_FROM_KNOWLEDGE_TITLE"));
+  assert.ok(raw.includes("REMOVE_FROM_KNOWLEDGE_BODY"));
+  assert.ok(raw.includes("REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL"));
+  assert.ok(raw.includes("Remove from Knowledge"));
   assert.match(code, /Retired rules \(\{rules\.length\}\)/);
   assert.match(code, /action: "retire", rule_id: ruleId/);
   assert.match(code, /action: "readd", id: improvementId/);
@@ -171,6 +181,29 @@ test("instructions.tsx: a Retire button under each live rule, and retired rules 
   for (const tag of code.match(/<details[^>]*>/g) ?? []) {
     assert.ok(!/\sopen\b/.test(tag), `details tag must not be open: ${tag}`);
   }
+});
+
+test("instructions.tsx: the row's trailing actions collapse into one DropdownMenu -- Remove from Knowledge and Open suggestion", () => {
+  const raw = readApp(INSTRUCTIONS_PAGE);
+  const code = codeOnly(raw);
+
+  assert.match(
+    code,
+    /import\s*\{[^}]*\bDropdownMenu\b[^}]*\}\s*from\s*"@\/components\/ui\/dropdown-menu"/s,
+  );
+  assert.equal(
+    (code.match(/<DropdownMenu>/g) ?? []).length,
+    1,
+    "exactly one DropdownMenu on the row",
+  );
+  assert.ok(raw.includes('aria-label="Rule actions"'));
+  assert.match(code, />\s*…\s*</, 'the trigger reads "…"');
+  assert.match(code, />\s*Open suggestion\s*</);
+  // The confirm is an AlertDialog nested inside the menu item (the standard
+  // pattern for a confirm triggered from a menu, since AlertDialogTrigger
+  // can't be the DropdownMenu's own trigger) -- never the old ConfirmAction.
+  assert.ok(!/ConfirmAction/.test(code), "the row no longer uses the shared ConfirmAction");
+  assert.match(code, /<AlertDialogTrigger asChild>[\s\S]{0,120}<DropdownMenuItem/);
 });
 
 test("inbox.tsx: Undo is not offered for a retirement confirmation, nor once the item is already written (still shows the message and Open) -- Round 6 Task 3 fix 1", () => {

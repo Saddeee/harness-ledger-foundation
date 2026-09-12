@@ -228,6 +228,13 @@ export type Improvement = {
   // has the item's health at hand. Absent from every ordinary GET.
   changed?: boolean;
   effect?: VerdictEffect;
+  // Addendum to Round 6 Task 4 (Round 6 Task 3 fix 2): present only on the
+  // "cancel_write" response, only when the rule stayed live (only a later,
+  // not-yet-written rewrite was dropped) -- harness/src/improvements.ts's
+  // own cancelPendingVersion. The exact toast text to show instead of the
+  // generic CANCEL_WRITE_TOAST, which wrongly claims the item went "back in
+  // your Inbox".
+  cancel_note?: string;
   developer: {
     correction: unknown;
     learning: unknown | null;

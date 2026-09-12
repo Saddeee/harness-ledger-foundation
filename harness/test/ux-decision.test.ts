@@ -87,7 +87,13 @@ test("SAVED_LINE and the new toasts", () => {
   assert.match(detail, /const SAVED_LINE = "Added\.";/);
   assert.match(detail, /"Skipped"/);
   assert.ok(!/Uses no Lovable credits/.test(detail), "the old consequence line is gone");
-  assert.match(detail, /"You can restore the previous version at any time\."/);
+  // Addendum to Round 6 Task 4: names both places a written rule can be
+  // undone from -- Remove from Knowledge on the card, restore an earlier
+  // version from History -- not just "restore" alone.
+  assert.match(
+    detail,
+    /"You can remove it from Knowledge or restore an earlier version from History at any time\."/,
+  );
 });
 
 test("Change decision: a test_first item with no pending write offers 'Add it now instead' via the same two-choice AddConfirm", () => {
@@ -100,7 +106,12 @@ test("Change decision: a test_first item with no pending write offers 'Add it no
   assert.match(decided, /item\.decision\.test_first/);
   // alternate-destination + Skip are still offered
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
-  assert.match(decided, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
+  // Round 6 Task 4 / spec §4: this call now also carries the shared `size`
+  // variable, same as its two sibling call sites.
+  assert.match(
+    decided,
+    /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
+  );
 });
 
 test("Status ctx: DecisionCard reads executorQueryOptions and forwards connected / test_first to decisionSentence", () => {

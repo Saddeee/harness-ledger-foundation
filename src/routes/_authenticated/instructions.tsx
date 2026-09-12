@@ -15,9 +15,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
-import { ConfirmAction, DetailSection } from "@/components/harness/decision-layout";
+import { DetailSection } from "@/components/harness/decision-layout";
 import { ManagedBlockText } from "@/components/harness/timeline";
-import { VerdictButtons } from "@/components/harness/improvement";
+import { VerdictControl } from "@/components/harness/improvement";
 import {
   Table,
   TableBody,
@@ -27,13 +27,31 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   adherenceLine,
   CANCEL_WRITE_TOAST,
   formatDate,
   formatDay,
   healthLine,
-  VERDICT_TEXT,
-  verdictLine,
+  REMOVE_FROM_KNOWLEDGE_BODY,
+  REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL,
+  REMOVE_FROM_KNOWLEDGE_TITLE,
 } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
@@ -68,12 +86,6 @@ export const Route = createFileRoute("/_authenticated/instructions")({
 
 const COLLAPSE_LINES = 12;
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
-
-// Task C2 / spec §4b-§5: manual Retire from this page uses the same confirm
-// copy as the Inbox's retirement proposal card (improvement.tsx).
-const RETIRE_TITLE = "Retire this rule?";
-const RETIRE_BODY = "Harness rewrites your Knowledge without it right away.";
-const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
 
 // Round 5 Task 3/4 / spec §3a: the rules table's Status column.
 const RULE_STATUS_LABEL: Record<NonNullable<KnowledgeActiveRule["status"]>, string> = {
@@ -128,7 +140,8 @@ function KnowledgeText({
 
 // One row per active rule: the rule text -- a keyboard-focusable Link when
 // there's a Suggestions detail to open, plain text otherwise -- status,
-// since-added date, what's been observed, and the Retire action. spec §3a.
+// since-added date, what's been observed (with the shared VerdictControl),
+// and one "…" menu with the row's trailing actions. spec §4.
 // Fix round 1: the row itself keeps its native table-row semantics (no ARIA
 // role or tab-stop override) -- clicking anywhere in the row still
 // navigates, as a mouse-only convenience, but the rule is reachable by
@@ -147,7 +160,6 @@ function RuleRow({
   onRetire: (ruleId: number) => void;
 }) {
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const improvementId = rule.improvement_id;
   const goToSuggestion = () => {
     if (improvementId != null) navigate({ to: "/ledger", search: { improvement: improvementId } });
@@ -158,21 +170,6 @@ function RuleRow({
   const status = rule.status ? RULE_STATUS_LABEL[rule.status] : "—";
   const since = rule.since ? formatDay(rule.since) : "—";
   const observed = healthLine(rule.health ?? null);
-
-  // spec §5.2: after a verdict exists, the buttons are replaced by "You
-  // said: ..." with a "Change" link that shows them again -- local state
-  // only, reset once a new verdict is saved.
-  const [showVerdictButtons, setShowVerdictButtons] = useState(false);
-  const saveVerdict = useMutation({
-    mutationFn: (verdict: "helped" | "did_not_help" | "not_sure") =>
-      postImprovementAction({ action: "verdict", rule_id: rule.id, verdict }),
-    onSuccess: (_data, verdict) => {
-      toast.success(`You said: ${VERDICT_TEXT[verdict]}`);
-      setShowVerdictButtons(false);
-      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save your verdict"),
-  });
 
   return (
     <TableRow
@@ -191,43 +188,52 @@ function RuleRow({
       <TableCell>{since}</TableCell>
       <TableCell>
         <p className="text-xs text-muted-foreground">{observed ?? "no builds yet"}</p>
-        {verdictLine(rule.verdict) ? (
-          <p className="text-xs text-muted-foreground">{verdictLine(rule.verdict)}</p>
-        ) : null}
+        {/* Round 6 Task 4 / spec §4: the same compact, inline verdict
+            control as the Suggestions card -- one visible control here,
+            instead of a separate row of "Helped/Didn't help/Not sure"
+            buttons plus its own "You said..." line. */}
+        <VerdictControl ruleId={rule.id} verdict={rule.verdict ?? null} />
         {adherenceLine(rule.adherence ?? null) ? (
           <p className="text-xs text-muted-foreground">{adherenceLine(rule.adherence ?? null)}</p>
         ) : null}
         {/* adherence-line */}
       </TableCell>
       <TableCell onClick={(e) => e.stopPropagation()}>
-        <div className="flex flex-col items-end gap-2">
-          <ConfirmAction
-            trigger="Retire"
-            variant="outline"
-            title={RETIRE_TITLE}
-            body={RETIRE_BODY}
-            consequences={RETIRE_CONSEQUENCES}
-            confirmLabel="Retire"
-            disabled={retireBusy}
-            onConfirm={() => onRetire(rule.id)}
-          />
-          {/* verdict-buttons */}
-          {rule.verdict && !showVerdictButtons ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowVerdictButtons(true)}
-            >
-              Change
+        {/* Round 6 Task 4 / spec §4: the row's trailing actions collapse
+            into one "…" menu -- Remove from Knowledge (the AlertDialog
+            confirm nested inside its own menu item, the standard pattern
+            for a confirm triggered from a menu) and Open suggestion. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" aria-label="Rule actions">
+              …
             </Button>
-          ) : (
-            <VerdictButtons
-              busy={saveVerdict.isPending}
-              onPick={(verdict) => saveVerdict.mutate(verdict)}
-            />
-          )}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                  Remove from Knowledge
+                </DropdownMenuItem>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{REMOVE_FROM_KNOWLEDGE_TITLE}</AlertDialogTitle>
+                  <AlertDialogDescription>{REMOVE_FROM_KNOWLEDGE_BODY}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction disabled={retireBusy} onClick={() => onRetire(rule.id)}>
+                    {REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            {improvementId != null ? (
+              <DropdownMenuItem onSelect={goToSuggestion}>Open suggestion</DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </TableCell>
     </TableRow>
   );
@@ -423,8 +429,13 @@ function Page() {
   const cancelWrite = useMutation({
     mutationFn: (versionId: number) =>
       postImprovementAction({ action: "cancel_write", version_id: versionId }),
-    onSuccess: () => {
-      toast.success(CANCEL_WRITE_TOAST);
+    // Addendum to Round 6 Task 4 (Round 6 Task 3 fix 2): when the rule
+    // stayed live (only a later, not-yet-written rewrite was dropped), the
+    // response carries its own exact note -- read it instead of the fixed
+    // CANCEL_WRITE_TOAST, which claims the item went "back in your Inbox"
+    // (it never left; the rule is still accepted and written).
+    onSuccess: (data) => {
+      toast.success(data.improvement?.cancel_note ?? CANCEL_WRITE_TOAST);
       void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
       void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
     },

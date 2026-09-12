@@ -98,11 +98,16 @@ test("improvement.tsx: Undo is a plain ghost button (no confirm dialog), wired t
     /variant="ghost"[\s\S]{0,120}onClick=\{\(\) => void run\(\{ action: "undo"/,
   );
 
-  // The visibility rule (spec §3 / the task brief): write_status
-  // none|pending|stale|failed, or (for a retired rule) its own removal
-  // rewrite not yet written.
-  assert.match(decided, /retirement_write_status/);
-  assert.match(decided, /canUndo/);
+  // Round 6 Task 4 / spec §4: rewritten with intent -- the visibility rule
+  // is no longer re-derived here from write_status/retirement_write_status
+  // (Round 6 Task 3 fix 1 found that this let Undo demote a rule that was
+  // still live in Lovable); it reads the server-computed
+  // lovable.can_undo flag directly, the same fix inbox.tsx's own Undo uses.
+  assert.match(decided, /const canUndo = lovable\.can_undo;/);
+  assert.ok(
+    !/retirement_write_status/.test(decided),
+    "DecidedStatus must not re-derive canUndo from write_status any more",
+  );
 });
 
 test("improvement.tsx: the old skipped-only 'Reopen' button is gone, folded into the unified Undo", () => {

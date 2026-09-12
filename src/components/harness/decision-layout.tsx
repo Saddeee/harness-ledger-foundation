@@ -128,6 +128,7 @@ export function ConfirmAction({
   disabled,
   confirmDisabled,
   variant,
+  size,
   children,
   onOpenChange,
 }: {
@@ -140,6 +141,10 @@ export function ConfirmAction({
   disabled?: boolean;
   confirmDisabled?: boolean;
   variant?: "default" | "outline" | "ghost";
+  // Round 6 Task 4 / spec §4: every button in one card's action bar is the
+  // same size -- "sm" on lists, the default on the detail page. Omitted
+  // callers (every other page using this component) keep the old default.
+  size?: "default" | "sm" | undefined;
   // Extra content shown between the body and the consequences, e.g. an
   // exact preview of what will be written.
   children?: ReactNode;
@@ -150,7 +155,12 @@ export function ConfirmAction({
   return (
     <AlertDialog {...(onOpenChange ? { onOpenChange } : {})}>
       <AlertDialogTrigger asChild>
-        <Button disabled={disabled} variant={variant ?? "default"} className="w-full sm:w-auto">
+        <Button
+          disabled={disabled}
+          variant={variant ?? "default"}
+          size={size ?? "default"}
+          className="w-full sm:w-auto"
+        >
           {trigger}
         </Button>
       </AlertDialogTrigger>

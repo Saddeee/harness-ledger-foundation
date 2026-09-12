@@ -135,6 +135,10 @@ test("no user-facing 'improvement' word survives in the guarded pages", () => {
     "{ improvement:",
     "improvement: id",
     "improvement?:",
+    // Round 6 Task 4 / spec §4: VerdictControl reads the verdict action's
+    // own response off `data.improvement?.changed`/`.effect` -- the API's
+    // own field name, never rendered to the user.
+    "improvement?.",
     "improvement:",
     "improvement }",
     "(improvement",

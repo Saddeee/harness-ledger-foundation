@@ -118,6 +118,10 @@ test("buildImprovement: a live rule with a rule_health row carries health, `sinc
     verdict: null,
     adherence: null,
     sources: { observed: true, adherence: false, verdicts: false },
+    // Round 6 Task 4 / spec §4: only recordVerdict's own direct response
+    // ever sets a real value here -- an ordinary GET (this one) always
+    // reads null.
+    verdict_effect: null,
   });
 });
 

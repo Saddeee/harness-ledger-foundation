@@ -164,15 +164,22 @@ test("decision card: three buttons for pending items, decision buttons shown inl
     detail,
     /const ADD_LABELS: Record<Destination, string> = \{\s*project: "Add to this project",\s*workspace: "Add to all my projects",\s*\};/,
   );
+  // Round 6 Task 4 / spec §4: every button in one card's bar is the same
+  // size ("sm" on lists, default on the detail page) -- these three now
+  // also carry the `size={size}` computed once at the top of DecisionCard,
+  // \s+ tolerating however Prettier wraps the extra attribute.
   assert.match(
     card,
-    /<AddConfirm item=\{item\} destination="project" busy=\{busy\} run=\{run\} \/>/,
+    /<AddConfirm\s+item=\{item\}\s+destination="project"\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
   );
   assert.match(
     card,
-    /<AddConfirm item=\{item\} destination="workspace" busy=\{busy\} run=\{run\} variant="outline" \/>/,
+    /<AddConfirm\s+item=\{item\}\s+destination="workspace"\s+busy=\{busy\}\s+run=\{run\}\s+variant="outline"\s+size=\{size\}\s*\/>/,
   );
-  assert.match(card, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
+  assert.match(
+    card,
+    /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
+  );
   assert.match(card, /\{onOpen \? \(/);
   assert.match(card, /onClick=\{\(\) => onOpen\(item\.id\)\}/);
   assert.ok(
@@ -194,9 +201,11 @@ test("decision card: three buttons for pending items, decision buttons shown inl
   // DecidedStatus -- Remove from Knowledge (still the "retire" action) took
   // its place, and Restore itself moved to the History page only.
   assert.ok(!/Restore previous version/.test(decided), "Restore moved to the History page only");
+  // Round 6 Task 4 / spec §4: same size threading as the other action-bar
+  // buttons above.
   assert.match(
     decided,
-    /<RemoveFromKnowledgeConfirm ruleId=\{ruleId\} busy=\{busy\} run=\{run\} \/>/,
+    /<RemoveFromKnowledgeConfirm\s+ruleId=\{ruleId\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
   );
   assert.match(decided, /\{ action: "undo", id: item\.id \}/);
   assert.match(decided, /\{decisionSentence\(/);
@@ -269,7 +278,13 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   // Task 8: the Add-it-now/Test-it-first choice text now says "Uses no
   // credits" itself, so this line was dropped from PREVIEW_CONSEQUENCES.
   assert.ok(!/"Uses no Lovable credits\.",/.test(detail));
-  assert.match(detail, /\[\s*"You can restore the previous version at any time\.",?\s*\]/);
+  // Addendum to Round 6 Task 4: names both places a written rule can be
+  // undone from -- Remove from Knowledge on the card, restore an earlier
+  // version from History -- not just "restore" alone.
+  assert.match(
+    detail,
+    /\[\s*"You can remove it from Knowledge or restore an earlier version from History at any time\.",?\s*\]/,
+  );
   assert.match(confirm, /consequences=\{preview \? PREVIEW_CONSEQUENCES : \[\]\}/);
   // no snapshot yet -> save the choice, say so, and promise the read-back
   assert.match(

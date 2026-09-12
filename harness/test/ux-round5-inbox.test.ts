@@ -127,7 +127,10 @@ test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title
   assert.match(compact, /whyFor\(item\.classification\)/);
   assert.match(compact, /item\.proposed_instruction/);
   assert.match(compact, /<AddConfirm item=\{item\} destination="project"/);
-  assert.match(compact, /<AddConfirm item=\{item\} destination="workspace"/);
+  // Round 6 Task 4 / spec §4: this call now also carries `size={size}`
+  // (always "sm" -- the Inbox is always a list), which pushes it onto
+  // multiple lines -- \s+ tolerates however Prettier wraps it.
+  assert.match(compact, /<AddConfirm\s+item=\{item\}\s+destination="workspace"/);
   assert.match(compact, /<SkipConfirm item=\{item\}/);
   assert.ok(!/DecidedStatus/.test(compact), "compact mode must never render DecidedStatus");
   assert.ok(!/editable/.test(compact), "compact mode must never carry editable state");
@@ -188,12 +191,21 @@ test("improvement.tsx: SkipConfirm's onConfirm sends the chosen reason to the sk
   assert.match(confirm, /reason/);
 });
 
-test("improvement.tsx: every SkipConfirm call site (DecidedStatus, the non-compact pending branch, and CompactDecisionCard) passes only item, busy, run", () => {
+// Round 6 Task 4 / spec §4: rewritten with intent -- every button in a
+// card's action bar is the same size, so all three SkipConfirm call sites
+// now also carry `size={size}` (a local variable at each site: "sm" always
+// in CompactDecisionCard, since the Inbox is always a list; computed from
+// titleAs everywhere else). The original intent -- these three call sites
+// stay identical to each other, no prop drift between them -- still holds,
+// just with `size` added to what "identical" means.
+test("improvement.tsx: every SkipConfirm call site (DecidedStatus, the non-compact pending branch, and CompactDecisionCard) passes item, busy, run and the shared size variable", () => {
   const detail = codeOnly(readApp(DETAIL));
   const matches = [
-    ...detail.matchAll(/<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s*\/>/g),
+    ...detail.matchAll(
+      /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/g,
+    ),
   ];
-  assert.equal(matches.length, 3, "expected exactly three unchanged SkipConfirm call sites");
+  assert.equal(matches.length, 3, "expected exactly three sized SkipConfirm call sites");
 });
 
 test("improvements-client.ts: Improvement gains unsure, decided_by and rank", () => {

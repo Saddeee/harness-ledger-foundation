@@ -261,7 +261,9 @@ export type WriteOutcome =
       written: false;
       version_id: number | null;
       reason: string;
-      kind: "not_connected" | "stale" | "rejected" | "no_snapshot" | "error";
+      // Round 6 Task 5: "demo" (the version's rule is demo data) added to
+      // beats.ts's own WriteOutcomeKind -- mirrored here too.
+      kind: "not_connected" | "stale" | "rejected" | "no_snapshot" | "error" | "demo";
     };
 
 // The line a toast (or a just-completed action's own status line) shows for
@@ -289,6 +291,11 @@ export type StatusCtx = {
   // off. Callers set this only for project-destination items (a workspace
   // write isn't gated by one project's flag) -- see DecisionCard/DecidedStatus.
   autoWriteOff?: boolean | undefined;
+  // Round 6 Task 4 / spec §4: the action bar's own button size -- "sm" on
+  // lists, the default on the detail page (titleAs="h1"). Carried on ctx,
+  // not a separate prop, so DecidedStatus's call site in DecisionCard never
+  // has to change shape.
+  size?: "default" | "sm" | undefined;
 };
 
 // One line describing where the instruction stands in Lovable. Never claims
@@ -552,6 +559,29 @@ export function verdictLine(verdict: VerdictLike | null | undefined): string | n
   if (!verdict) return null;
   return `You said: ${VERDICT_TEXT[verdict.verdict]}, ${formatDay(verdict.created_at)}`;
 }
+
+// ---- Round 6 Task 4 / spec §4: the verdict action's own effect line --
+// what recording that verdict actually changed, shown right under the
+// compact VerdictControl (src/components/harness/improvement.tsx) once the
+// server responds. Mirrors harness/src/improvements.ts's own
+// recordVerdict return shape (`effect`) and ImprovementHealth.verdict_effect
+// -- both carry the same three values. Pressing the same value twice is a
+// no-op (store.recordRuleVerdict's upsert reports `changed: false`), read
+// separately as the ALREADY_RECORDED_TOAST rather than one of these lines.
+export type VerdictEffect = "counted_hurt" | "snoozed" | "none";
+
+export const VERDICT_EFFECT_TEXT: Record<VerdictEffect, string> = {
+  counted_hurt: "Counted as one repeat correction in this rule's health",
+  snoozed: "Retirement snoozed for 30 days",
+  none: "Recorded; no effect on health",
+};
+
+export function verdictEffectLine(effect: VerdictEffect | null | undefined): string | null {
+  if (!effect) return null;
+  return VERDICT_EFFECT_TEXT[effect];
+}
+
+export const ALREADY_RECORDED_TOAST = "Already recorded";
 
 export type AdherenceLike = { followed: number; broke: number; not_applicable: number };
 
