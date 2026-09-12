@@ -441,8 +441,8 @@ test("getMessage: reads the nested AI `response` when present, mapping its statu
   }
 });
 
-test("getMessage: top-level status queued/accepted/running collapse to 'running' (no nested response object yet)", async () => {
-  const statuses = ["queued", "accepted", "running"];
+test("getMessage: top-level status queued/accepted/running/in_progress/pending collapse to 'running' (no nested response object yet)", async () => {
+  const statuses = ["queued", "accepted", "running", "in_progress", "pending"];
   for (const raw of statuses) {
     const fake = startFakeLovable({
       getMessage: () => ({
@@ -462,6 +462,31 @@ test("getMessage: top-level status queued/accepted/running collapse to 'running'
     } finally {
       await fake.close();
     }
+  }
+});
+
+test("getMessage: a real terminal status this client doesn't separately enumerate (e.g. Lovable's own 'timeout') passes through verbatim instead of collapsing to 'running'", async () => {
+  const fake = startFakeLovable({
+    getMessage: () => ({
+      status: 200,
+      body: {
+        message_id: "msg_1",
+        role: "user",
+        content: "x",
+        status: "timeout",
+        created_at: "2026-09-01T00:00:00.000Z",
+      },
+    }),
+  });
+  try {
+    const result = await client(fake).getMessage("prj_1", "msg_1");
+    assert.equal(
+      result.status,
+      "timeout",
+      "an unrecognized-but-real terminal status passes through instead of collapsing to running",
+    );
+  } finally {
+    await fake.close();
   }
 });
 

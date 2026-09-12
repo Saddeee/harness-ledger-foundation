@@ -107,6 +107,24 @@ export function knowledgeBaseAtOrBefore(
   return "";
 }
 
+/** A plain sentence for every non-`completed` terminal build status
+ * (fix round 1 item 1) -- `stopped`/`awaiting_input`/`error` each get their
+ * own named copy; anything else (a status this client's toRestBuildStatus
+ * passed through raw rather than recognizing) names the status itself so
+ * the owner isn't left with a generic "something went wrong". */
+function buildFailureMessage(status: string): string {
+  switch (status) {
+    case "stopped":
+      return "Lovable stopped without finishing the build in the copy.";
+    case "awaiting_input":
+      return "Lovable is waiting for more input; the test could not complete.";
+    case "error":
+      return "Lovable reported an error while building in the copy.";
+    default:
+      return `Lovable returned an unexpected build status: ${status}.`;
+  }
+}
+
 /** A plain sentence for experiment_runs.error -- LovableRestError's own
  * "reconnect" signal (a 401) gets the owner-facing copy the brief specifies
  * verbatim; anything else is the thrown error's own message, which every
@@ -154,7 +172,7 @@ export async function startExperiment(
     return { refused: NO_REQUEST_REFUSAL };
   }
 
-  if (store.runningExperimentRun(20)) {
+  if (store.activeExperimentRun(20)) {
     return { refused: ALREADY_RUNNING_REFUSAL };
   }
 
@@ -243,11 +261,7 @@ export async function runExperiment(
       if (now() - remixStart >= REMIX_TIMEOUT_MS) {
         throw new Error("Copying the project timed out.");
       }
-      // Honour a retry_after_ms the client might expose, even though
-      // today's remixProgress return shape never carries one -- a loose,
-      // optional read rather than a type change to LovableRest itself.
-      const retryAfterMs = (progress as { retry_after_ms?: number }).retry_after_ms;
-      await sleep(retryAfterMs ?? REMIX_POLL_MS);
+      await sleep(REMIX_POLL_MS);
     }
     if (!copyProjectId) {
       throw new Error("Copying the project finished without producing a copy.");
@@ -272,7 +286,10 @@ export async function runExperiment(
     // ---- 3. build in the copy (spec §6 Run 3) ----
     store.updateExperimentRun(runId, { status: "building", stage_note: "Building in the copy" });
 
-    const requestText = store.episodeTextForJudge(initial.task_episode_id).request;
+    // episodeRequestText (fix round 1), not episodeTextForJudge's own
+    // `request` -- that one is capped at 1500 chars for the judge screen;
+    // the runner replays the owner's original request in full.
+    const requestText = store.episodeRequestText(initial.task_episode_id) ?? "";
     const { message_id: copyMessageId, thread_id: copyThreadId } = await rest.chat(
       copyProjectId,
       requestText,
@@ -296,8 +313,14 @@ export async function runExperiment(
       }
       await sleep(BUILD_POLL_MS);
     }
-    if (finalMessage.status === "error") {
-      throw new Error("Lovable reported an error while building in the copy.");
+    // Fix round 1 item 1: only a `completed` build is judgeable. Every
+    // other terminal status (stopped, awaiting_input, error, or anything
+    // this client doesn't otherwise name -- toRestBuildStatus, fix round 1
+    // item 2, now passes those through instead of guessing "running") fails
+    // the run with its own distinct, plain-sentence error; cleanup still
+    // runs via the outer catch below.
+    if (finalMessage.status !== "completed") {
+      throw new Error(buildFailureMessage(finalMessage.status));
     }
 
     // ---- 4. record results (spec §6 Run 4) ----
@@ -313,30 +336,41 @@ export async function runExperiment(
       store.recordCredits(runId, finalMessage.cost_credits);
     }
 
-    // Best effort: the source project's own diff/commit for the original
-    // request -- a single failure here never fails the whole run, since the
-    // copy's own build already succeeded and is worth keeping.
+    // Best effort: the source project's own commit/diff for the original
+    // request -- neither failure here fails the whole run, since the copy's
+    // own build already succeeded and is worth keeping. Fix round 1 minor:
+    // separate try/catch per field, so a getDiff failure alone doesn't also
+    // null out a commit_sha that getMessage already successfully returned.
     let originalCommitSha: string | null = null;
-    let originalDiffJson: string | null = null;
     try {
       const originalMessage = await rest.getMessage(source, initial.request_message_external_id);
       originalCommitSha = originalMessage.commit_sha ?? null;
+    } catch {
+      originalCommitSha = null;
+    }
+    let originalDiffJson: string | null = null;
+    try {
       const originalDiffText = await rest.getDiff(source, {
         message_id: initial.request_message_external_id,
       });
       originalDiffJson = JSON.stringify(capDiff(originalDiffText));
     } catch {
-      originalCommitSha = null;
       originalDiffJson = null;
     }
 
+    // Fix round 1 item 4: also best effort -- an already-successful,
+    // already-paid build must not be failed over a secondary read.
     let editsSinceEpisode: number | null = null;
     if (episodeStartedAt) {
-      const edits = await rest.listEdits(source, { limit: EDITS_SINCE_LIMIT });
-      editsSinceEpisode = store.countEditsSince(
-        episodeStartedAt,
-        edits.edits.map((e) => e.created_at),
-      );
+      try {
+        const edits = await rest.listEdits(source, { limit: EDITS_SINCE_LIMIT });
+        editsSinceEpisode = store.countEditsSince(
+          episodeStartedAt,
+          edits.edits.map((e) => e.created_at),
+        );
+      } catch {
+        editsSinceEpisode = null;
+      }
     }
 
     store.updateExperimentRun(runId, {
@@ -360,7 +394,9 @@ export async function runExperiment(
       finished_at: new Date(now()).toISOString(),
     });
     const failed = store.getExperimentRun(runId);
-    if (failed) await cleanupCopy(failed, rest).catch(() => {});
+    // cleanupCopy never throws (its own try/catch swallows every failure
+    // mode internally), so no .catch is needed here.
+    if (failed) await cleanupCopy(failed, rest);
   }
 
   return store.getExperimentRun(runId)!;

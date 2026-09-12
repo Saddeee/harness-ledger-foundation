@@ -323,4 +323,10 @@ export function updateRuleAction(input: unknown) {
 // boundary directly. No route calls runExperiment except from the owner's
 // own button press.
 export { startExperiment, runExperiment, cleanupCopy } from "./executor/experiments.js";
+// Fix round 1: episodeRequestText (the full, untruncated request text the
+// runner replays) and activeExperimentRun (the queued-run-aware guard
+// startExperiment now uses) -- both added to store.ts's own
+// `// ---- Round 6 Task 6a ----` block, re-exported here the same way the
+// rest of this file's store.ts re-exports are.
+export { episodeRequestText, activeExperimentRun } from "./store.js";
 // ---- end Round 6 Task 6a ----

@@ -30,8 +30,15 @@ export type RestMessage = {
   created_at?: string;
 };
 
+// Round 6 Task 6a fix round 1: widened to `| (string & {})` so an
+// unrecognized-but-real status Lovable reports (its own "timeout", or
+// anything not in this client's known vocabulary) passes through toRestBuildStatus
+// verbatim instead of being silently folded into "running" -- see that
+// function's own doc comment. The `& {}` keeps the six named literals'
+// autocomplete/narrowing intact; only a value equal to one of them still
+// narrows, everything else is just `string`.
 export type RestBuildStatus =
-  "completed" | "stopped" | "awaiting_input" | "timeout" | "error" | "running";
+  "completed" | "stopped" | "awaiting_input" | "timeout" | "error" | "running" | (string & {});
 
 export interface LovableRest {
   getProject(id: string): Promise<{ id: string; name: string; workspace_id: string }>;
@@ -179,13 +186,17 @@ function serializeDiff(entries: RestDiffEntry[]): string {
 
 // ------------------------------------------------------------ status maps
 
-/** V1MessageResponse.status / V1AIResponseSummary.status enumerate more
- * non-terminal values than this client exposes (queued, accepted, running
- * all mean "not done yet") -- collapsed to RestBuildStatus's own "running".
- * Anything unrecognized also maps to "running" rather than a guess at a
- * terminal state, so a caller polling for completion never stops early on
- * an SDK value it doesn't know about yet. "timeout" is never produced here
- * -- it is for a caller's own give-up-after-N-polls decision. */
+/** V1MessageResponse.status / V1AIResponseSummary.status enumerate several
+ * spellings that all mean "not done yet" (queued, accepted, running,
+ * in_progress, pending) -- collapsed here to RestBuildStatus's own
+ * "running" so a caller polling for completion never stops early on a
+ * known non-terminal spelling. Round 6 Task 6a fix round 1: anything else
+ * -- a real terminal status this client doesn't separately enumerate, e.g.
+ * Lovable's own "timeout" -- is passed through verbatim rather than folded
+ * into "running", so a caller (the paired-test runner) can tell "still
+ * building" apart from "Lovable itself says this ended, just not with a
+ * status I have a case for" and fail loudly instead of hanging forever
+ * treating an unrecognized terminal status as perpetually in progress. */
 function toRestBuildStatus(raw: string): RestBuildStatus {
   switch (raw) {
     case "completed":
@@ -193,8 +204,14 @@ function toRestBuildStatus(raw: string): RestBuildStatus {
     case "awaiting_input":
     case "error":
       return raw;
-    default:
+    case "running":
+    case "in_progress":
+    case "queued":
+    case "accepted":
+    case "pending":
       return "running";
+    default:
+      return raw;
   }
 }
 

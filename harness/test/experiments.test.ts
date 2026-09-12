@@ -17,6 +17,8 @@ process.env.HARNESS_DB_PATH = join(tmp, "harness.db");
 process.env.HARNESS_AUTH_PATH = join(tmp, "lovable-auth.json");
 
 const store = await import("../src/store.js");
+const { db } = await import("../src/db.js");
+const { composeManagedKnowledge } = await import("../src/knowledge.js");
 const { startExperiment, runExperiment, cleanupCopy } =
   await import("../src/executor/experiments.js");
 const { createLovableRest } = await import("../src/executor/lovable-rest.js");
@@ -56,7 +58,7 @@ function restFor(fake: FakeLovableServer) {
 
 let seedSeq = 0;
 
-function seedCandidate(opts?: { instruction?: string; projectId?: string }): {
+function seedCandidate(opts?: { instruction?: string; projectId?: string; requestText?: string }): {
   candidateId: number;
   ruleId: number;
   episodeId: number;
@@ -71,7 +73,7 @@ function seedCandidate(opts?: { instruction?: string; projectId?: string }): {
     kind: "message",
     external_id: requestExternalId,
     role: "user",
-    content: "Add a contact form to the landing page.",
+    content: opts?.requestText ?? "Add a contact form to the landing page.",
     occurred_at: "2026-09-01 10:00:00",
     provenance: "lovable_mcp",
   }) as { id: number };
@@ -130,6 +132,32 @@ function seedCandidate(opts?: { instruction?: string; projectId?: string }): {
   }) as { id: number };
 
   return { candidateId: candidate.id, ruleId: rule.id, episodeId: episode.id, requestExternalId };
+}
+
+/** A second allowed project, isolated from SOURCE's own knowledge_snapshots
+ * history -- the Knowledge-content tests (fix round 1 item 5) each need a
+ * clean slate rather than accumulating snapshots on the one shared SOURCE
+ * project across sequential tests in this file. */
+function newProject(id: string): void {
+  store.allowProject(id, `Test project ${id}`);
+  store.upsertProject({ lovable_project_id: id, name: id, workspace_id: WORKSPACE });
+}
+
+/** Records a project Knowledge snapshot and backdates its fetched_at to an
+ * exact, caller-chosen timestamp -- recordKnowledgeSnapshot itself always
+ * stamps `datetime('now')`, with no way to control it through the public
+ * store API, so this reaches into the DB directly (the same direct-db
+ * convention other test files in this suite already use for fixture setup,
+ * e.g. improvements.test.ts's raw allowed_projects insert) purely to make
+ * the "at or before the episode's started_at" ordering deterministic. */
+function recordSnapshotAt(projectId: string, fetchedAt: string, content: string): void {
+  const snap = store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: projectId,
+    content,
+    fetched_by: "test",
+  }) as { id: number };
+  db.prepare(`UPDATE knowledge_snapshots SET fetched_at = ? WHERE id = ?`).run(fetchedAt, snap.id);
 }
 
 // ------------------------------------------------------------ fake script
@@ -408,6 +436,106 @@ test("build error: the run fails and the copy is still cleaned up", async () => 
   }
 });
 
+// ------------------------------------------------- non-completed terminal builds
+//
+// Fix round 1 item 1: only a `completed` build is judgeable -- every other
+// terminal status the build poll can end on (stopped, awaiting_input, or a
+// status this client doesn't otherwise name) must fail the run with its
+// own distinct sentence, not silently proceed to `judging` with empty
+// content.
+
+function nonCompletedBuildScript(copyId: string, copyStatus: string): FakeScript {
+  return {
+    ...happyPathScript(copyId),
+    getMessage: (req) => {
+      if (req.params.project_id === copyId) {
+        return { status: 200, body: { status: copyStatus, response: { status: copyStatus } } };
+      }
+      return {
+        status: 200,
+        body: {
+          status: "completed",
+          response: { status: "completed", commit_sha: "sha_original" },
+        },
+      };
+    },
+  };
+}
+
+test("build stopped: the run fails with its own sentence and the copy is still cleaned up", async () => {
+  const seed = seedCandidate();
+  const copyId = "prj_copy_stopped";
+  const fake = startFakeLovable(nonCompletedBuildScript(copyId, "stopped"));
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    const runId = (started as { run_id: number }).run_id;
+
+    const result = await runExperiment(runId, { rest, sleep: noopSleep });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.error, "Lovable stopped without finishing the build in the copy.");
+    assert.equal(result.copy_deleted, 1, "the copy is deleted even though the run failed");
+  } finally {
+    await fake.close();
+  }
+});
+
+test("build awaiting_input: the run fails with its own sentence and the copy is still cleaned up", async () => {
+  const seed = seedCandidate();
+  const copyId = "prj_copy_awaitinginput";
+  const fake = startFakeLovable(nonCompletedBuildScript(copyId, "awaiting_input"));
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    const runId = (started as { run_id: number }).run_id;
+
+    const result = await runExperiment(runId, { rest, sleep: noopSleep });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.error, "Lovable is waiting for more input; the test could not complete.");
+    assert.equal(result.copy_deleted, 1, "the copy is deleted even though the run failed");
+  } finally {
+    await fake.close();
+  }
+});
+
+test("build status the client doesn't otherwise name (Lovable's own 'timeout'): the run fails, names the status, and the copy is cleaned up", async () => {
+  const seed = seedCandidate();
+  const copyId = "prj_copy_timeoutstatus";
+  const fake = startFakeLovable({
+    ...happyPathScript(copyId),
+    getMessage: (req) => {
+      if (req.params.project_id === copyId) {
+        // No nested `response` here -- a top-level status this client's
+        // toRestBuildStatus (lovable-rest.ts, fix round 1 item 2) now
+        // passes through verbatim instead of collapsing to "running".
+        return { status: 200, body: { status: "timeout" } };
+      }
+      return {
+        status: 200,
+        body: {
+          status: "completed",
+          response: { status: "completed", commit_sha: "sha_original" },
+        },
+      };
+    },
+  });
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    const runId = (started as { run_id: number }).run_id;
+
+    const result = await runExperiment(runId, { rest, sleep: noopSleep });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.error, "Lovable returned an unexpected build status: timeout.");
+    assert.equal(result.copy_deleted, 1, "the copy is deleted even though the run failed");
+  } finally {
+    await fake.close();
+  }
+});
+
 // -------------------------------------------------------- delete fails
 
 test("delete fails: the copy is set private, a cleanup note is recorded, and it shows up in listUndeletedCopies", async () => {
@@ -439,6 +567,150 @@ test("delete fails: the copy is set private, a cleanup note is recorded, and it 
 
     const undeleted = store.listUndeletedCopies();
     assert.ok(undeleted.some((u) => u.run_id === runId && u.copy_project_id === copyId));
+  } finally {
+    await fake.close();
+  }
+});
+
+// ------------------------------------------------- listEdits best effort
+
+test("listEdits failure is best effort: an already-paid, already-completed build still reaches judging", async () => {
+  const seed = seedCandidate();
+  const copyId = "prj_copy_editsfail";
+  const fake = startFakeLovable({
+    ...happyPathScript(copyId),
+    listEdits: () => ({ status: 500, body: { status: 500, type: "internal_error" } }),
+  });
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    const runId = (started as { run_id: number }).run_id;
+
+    const result = await runExperiment(runId, { rest, sleep: noopSleep });
+
+    assert.equal(
+      result.status,
+      "judging",
+      "a listEdits failure never fails an already-successful build",
+    );
+    assert.equal(result.edits_since_episode, null);
+    assert.equal(
+      result.copy_commit_sha,
+      "sha_copy",
+      "the successful build's own fields are still recorded",
+    );
+  } finally {
+    await fake.close();
+  }
+});
+
+// ------------------------------------------------------ full request replay
+
+test("full request replay: a request longer than the judge-screen's own 1500-char cap is sent to chat in full", async () => {
+  const longText = "A".repeat(3000);
+  const seed = seedCandidate({ requestText: longText });
+  const copyId = "prj_copy_longrequest";
+  const fake = startFakeLovable(happyPathScript(copyId));
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    const runId = (started as { run_id: number }).run_id;
+
+    await runExperiment(runId, { rest, sleep: noopSleep });
+
+    const chatCall = fake.calls.find(
+      (c) => c.method === "POST" && c.path === `/v1/projects/${copyId}/messages`,
+    );
+    assert.ok(chatCall, "chat was called");
+    const sentMessage = (chatCall!.body as { message: string }).message;
+    assert.equal(sentMessage.length, 3000);
+    assert.equal(sentMessage, longText);
+  } finally {
+    await fake.close();
+  }
+});
+
+// ----------------------------------------------- Knowledge sent to the copy
+
+test("Knowledge sent to the copy: the snapshot at or before the episode's started_at wins over a newer one", async () => {
+  const PROJECT = "prj_knowledge_older";
+  newProject(PROJECT);
+  const seed = seedCandidate({ projectId: PROJECT });
+  recordSnapshotAt(PROJECT, "2026-08-01 00:00:00", "# Older\nOlder content.");
+  recordSnapshotAt(PROJECT, "2026-09-05 00:00:00", "# Newer\nNewer content, after the episode.");
+
+  const copyId = "prj_copy_knowledgeolder";
+  const fake = startFakeLovable(happyPathScript(copyId));
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    const runId = (started as { run_id: number }).run_id;
+    await runExperiment(runId, { rest, sleep: noopSleep });
+
+    const putCall = fake.calls.find(
+      (c) => c.method === "PUT" && c.path === `/v1/projects/${copyId}/knowledge`,
+    );
+    assert.ok(putCall);
+    const ruleDetail = store.getRule(seed.ruleId) as { rule: { instruction: string } };
+    const expected = composeManagedKnowledge("# Older\nOlder content.", [
+      { id: seed.ruleId, instruction: ruleDetail.rule.instruction },
+    ]).final_content;
+    assert.equal((putCall!.body as { content: string }).content, expected);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("Knowledge sent to the copy: falls back to the latest snapshot when none is at or before the episode's started_at", async () => {
+  const PROJECT = "prj_knowledge_onlynewer";
+  newProject(PROJECT);
+  const seed = seedCandidate({ projectId: PROJECT });
+  recordSnapshotAt(PROJECT, "2026-09-05 00:00:00", "# Only newer\nRecorded after the episode.");
+
+  const copyId = "prj_copy_knowledgenewer";
+  const fake = startFakeLovable(happyPathScript(copyId));
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    const runId = (started as { run_id: number }).run_id;
+    await runExperiment(runId, { rest, sleep: noopSleep });
+
+    const putCall = fake.calls.find(
+      (c) => c.method === "PUT" && c.path === `/v1/projects/${copyId}/knowledge`,
+    );
+    assert.ok(putCall);
+    const ruleDetail = store.getRule(seed.ruleId) as { rule: { instruction: string } };
+    const expected = composeManagedKnowledge("# Only newer\nRecorded after the episode.", [
+      { id: seed.ruleId, instruction: ruleDetail.rule.instruction },
+    ]).final_content;
+    assert.equal((putCall!.body as { content: string }).content, expected);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("Knowledge sent to the copy: base is empty when no snapshot has ever been recorded", async () => {
+  const PROJECT = "prj_knowledge_none";
+  newProject(PROJECT);
+  const seed = seedCandidate({ projectId: PROJECT });
+
+  const copyId = "prj_copy_knowledgenone";
+  const fake = startFakeLovable(happyPathScript(copyId));
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    const runId = (started as { run_id: number }).run_id;
+    await runExperiment(runId, { rest, sleep: noopSleep });
+
+    const putCall = fake.calls.find(
+      (c) => c.method === "PUT" && c.path === `/v1/projects/${copyId}/knowledge`,
+    );
+    assert.ok(putCall);
+    const ruleDetail = store.getRule(seed.ruleId) as { rule: { instruction: string } };
+    const expected = composeManagedKnowledge("", [
+      { id: seed.ruleId, instruction: ruleDetail.rule.instruction },
+    ]).final_content;
+    assert.equal((putCall!.body as { content: string }).content, expected);
   } finally {
     await fake.close();
   }
@@ -492,6 +764,32 @@ test("second start while one is running: refused", async () => {
     await fake.close();
     // leave the fixture run in a terminal state so it doesn't block later tests
     store.updateExperimentRun(runningId, { status: "cancelled" });
+  }
+});
+
+test("queued race: a second startExperiment call right after the first (before runExperiment ever starts) is refused", async () => {
+  const first = seedCandidate();
+  const second = seedCandidate();
+  const fake = startFakeLovable({});
+  let firstRunId: number | undefined;
+  try {
+    const rest = restFor(fake);
+    const firstResult = await startExperiment(first.candidateId, { rest, ...CONNECTED });
+    assert.ok("run_id" in firstResult, `expected a run_id, got ${JSON.stringify(firstResult)}`);
+    firstRunId = (firstResult as { run_id: number }).run_id;
+    // firstRunId is still `queued` here -- runExperiment was never called --
+    // which is exactly the gap runningExperimentRun (Task 1) alone leaves
+    // open (it only looks at copying/building); activeExperimentRun closes
+    // it by also checking recent queued rows.
+
+    const secondResult = await startExperiment(second.candidateId, { rest, ...CONNECTED });
+    assert.deepEqual(secondResult, { refused: "A test is already running; one runs at a time." });
+    assert.equal(fake.calls.length, 0, "a refused start never touches Lovable");
+  } finally {
+    await fake.close();
+    if (firstRunId !== undefined) {
+      store.updateExperimentRun(firstRunId, { status: "cancelled" });
+    }
   }
 });
 
