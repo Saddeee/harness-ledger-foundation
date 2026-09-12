@@ -2091,3 +2091,66 @@ test("skip: an optional reason is stored via setCandidateSkipReason, readable ba
   };
   assert.equal(row2.correction_candidate.skip_reason, null);
 });
+
+// ---- Fix round 1 item 1: tagAcceptanceRates() computed once per list, not
+// once per item ----
+
+// store.tagAcceptanceRates() is a full scan of every reviewed
+// correction_candidate (SELECT task_episode_id, reusable,
+// excluded_from_learning FROM correction_candidates WHERE reviewed = 1),
+// with a per-row episodeScopeTags subquery. computeRank must never call it
+// itself -- listImprovements/getImprovement compute it once and thread the
+// map down through buildImprovement/buildRetireItem instead. `store` is an
+// ES module namespace object (import * as store from "./store.js"), which
+// is read-only at runtime -- reassigning store.tagAcceptanceRates directly
+// throws ("Cannot assign to read only property"), so this spies one level
+// down, on db.prepare itself (a plain instance method, not a module
+// namespace export), counting exactly how many times the SQL text unique to
+// tagAcceptanceRates gets prepared.
+type PatchablePrepare = { prepare: (sql: string, ...rest: unknown[]) => unknown };
+
+function countTagAcceptanceRatesPrepares(run: () => void): number {
+  const patchable = db as unknown as PatchablePrepare;
+  const original = patchable.prepare.bind(db);
+  let count = 0;
+  patchable.prepare = (sql: string, ...rest: unknown[]) => {
+    if (sql.includes("task_episode_id, reusable, excluded_from_learning")) count++;
+    return original(sql, ...rest);
+  };
+  try {
+    run();
+  } finally {
+    patchable.prepare = original;
+  }
+  return count;
+}
+
+test("performance: listImprovements() calls tagAcceptanceRates exactly once, however many items are in the list", () => {
+  // The shared test DB already carries many pending + decided items from
+  // every earlier test in this file -- if tagAcceptanceRates were still
+  // called per item (the pre-fix bug), this count would be in the dozens,
+  // not 1.
+  const before = imp.listImprovements();
+  assert.ok(before.length > 5, "sanity: the shared test DB has more than a handful of items");
+
+  const count = countTagAcceptanceRatesPrepares(() => {
+    imp.listImprovements();
+  });
+  assert.equal(
+    count,
+    1,
+    "tagAcceptanceRates must be prepared exactly once per listImprovements() call",
+  );
+});
+
+test("performance: getImprovement(id) calls tagAcceptanceRates exactly once", () => {
+  const anyItem = imp.listImprovements()[0]!;
+  const count = countTagAcceptanceRatesPrepares(() => {
+    imp.getImprovement(anyItem.id);
+  });
+  assert.equal(
+    count,
+    1,
+    "tagAcceptanceRates must be prepared exactly once per getImprovement() call",
+  );
+});

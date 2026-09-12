@@ -340,7 +340,13 @@ function buildPreview(
   };
 }
 
-function buildImprovement(c: CorrectionRow): Improvement {
+// `rates` (fix round 1 item 1): tagAcceptanceRates()'s result, computed once
+// by the caller (listImprovements/getImprovement) and threaded through here
+// only to feed computeRank -- see computeRank's own doc comment.
+function buildImprovement(
+  c: CorrectionRow,
+  rates: Record<string, { accepted: number; skipped: number }>,
+): Improvement {
   const rule = store.getRuleForCorrection(c.id) as RuleRow | null;
   const learning = store.getLearningForCorrection(c.id) as LearningRow | null;
   const { visible, hidden } = store.getEvidenceForCorrection(c.id) as unknown as {
@@ -572,7 +578,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
     health,
     unsure: computeUnsure(c, rule),
     decided_by: c.decided_by ?? null,
-    rank: computeRank(c.confidence, store.episodeScopeTags(c.task_episode_id)),
+    rank: computeRank(c.confidence, store.episodeScopeTags(c.task_episode_id), rates),
     developer: {
       correction: c,
       learning,
@@ -598,7 +604,10 @@ function buildImprovement(c: CorrectionRow): Improvement {
 // for a proposal whose rule somehow isn't live any more (e.g. retired or
 // rejected by another path between the proposal being written and this
 // read) rather than throwing -- listImprovements filters these out.
-function buildRetireItem(proposal: store.RetireProposalRow): Improvement | null {
+function buildRetireItem(
+  proposal: store.RetireProposalRow,
+  rates: Record<string, { accepted: number; skipped: number }>,
+): Improvement | null {
   const live = store.listLiveRulesWithTargets().find((r) => r.id === proposal.rule_id);
   if (!live) return null;
 
@@ -678,7 +687,7 @@ function buildRetireItem(proposal: store.RetireProposalRow): Improvement | null 
     // rest of the pending items.
     unsure: null,
     decided_by: null,
-    rank: computeRank(null, ["general"]),
+    rank: computeRank(null, ["general"], rates),
     developer: {
       correction: null,
       learning: null,
@@ -694,12 +703,16 @@ function buildRetireItem(proposal: store.RetireProposalRow): Improvement | null 
 }
 
 export function listImprovements(): Improvement[] {
-  const improvements = (store.listCorrectionCandidates() as unknown as CorrectionRow[]).map(
-    buildImprovement,
+  // Fix round 1 item 1: computed ONCE for the whole list, not once per item
+  // -- see computeRank's doc comment for why a per-item call would be
+  // wasteful (tagAcceptanceRates() scans every reviewed candidate).
+  const rates = store.tagAcceptanceRates();
+  const improvements = (store.listCorrectionCandidates() as unknown as CorrectionRow[]).map((c) =>
+    buildImprovement(c, rates),
   );
   const retirements = store
     .listOpenRetireProposals()
-    .map(buildRetireItem)
+    .map((proposal) => buildRetireItem(proposal, rates))
     .filter((item): item is Improvement => item !== null);
   // Round 5 Task 5 / spec §4: pending items ranked highest-first (see
   // sortForInbox below); everything already decided keeps this same order
@@ -711,7 +724,10 @@ export function getImprovement(id: number): Improvement | null {
   const row = (store.listCorrectionCandidates() as unknown as CorrectionRow[]).find(
     (c) => c.id === id,
   );
-  return row ? buildImprovement(row) : null;
+  // Fix round 1 item 1: a single lookup, so a single tagAcceptanceRates()
+  // call here is not the loop the original per-item computeRank call was --
+  // still computed once, same as listImprovements above, for consistency.
+  return row ? buildImprovement(row, store.tagAcceptanceRates()) : null;
 }
 
 const ACTOR = "operator (local UI)";
@@ -1686,8 +1702,19 @@ function acceptanceRateFor(
 // record (e.g. hand-authored via the MCP tools, or demo data -- never a
 // rule-writer proposal, which always sets one) is treated as fully
 // confident (1) rather than penalized for a signal it was never given.
-function computeRank(confidence: number | null, tags: string[]): number {
-  const rates = store.tagAcceptanceRates();
+//
+// Fix round 1 item 1 (performance): `rates` is `tagAcceptanceRates()`'s
+// result, computed ONCE by the caller (listImprovements/getImprovement) --
+// never inside this function, and never per item. tagAcceptanceRates()
+// itself scans every reviewed correction_candidate (with a per-row
+// episodeScopeTags subquery); calling it once per item in a list would make
+// listImprovements O(n^2) against candidate history for no reason, since
+// the map is identical for every item in the same call.
+function computeRank(
+  confidence: number | null,
+  tags: string[],
+  rates: Record<string, { accepted: number; skipped: number }>,
+): number {
   const effectiveConfidence = confidence ?? 1;
   const effectiveTags = tags.length > 0 ? tags : ["general"];
   const sum = effectiveTags.reduce(
