@@ -42,7 +42,33 @@ function versionMatchesTarget(
   return t.target === "project" ? v.project_id === t.id : v.workspace_id === t.id;
 }
 
-async function buildKnowledgeResponse(adapter: Adapter) {
+type KnowledgeVersionStatus = "written" | "pending" | "stale" | "failed";
+type ActiveRuleStatus = KnowledgeVersionStatus | "testing";
+
+// Task 3 / spec §3a: the Instructions page's rules table status column --
+// the newest non-cancelled knowledge_version for the rule, or "testing"
+// when nothing has been staged yet because the rule is waiting on a
+// "Test it first" run rather than a normal write.
+function ruleStatus(
+  ruleVersions: { status: string }[],
+  improvement: { decision: { test_first: boolean }; lovable: { write_status: string } } | null,
+): ActiveRuleStatus {
+  const latest = ruleVersions.find((v) => v.status !== "cancelled");
+  if (latest) return latest.status as KnowledgeVersionStatus;
+  if (improvement?.decision.test_first && improvement.lovable.write_status === "none")
+    return "testing";
+  // No version yet and not test-first: e.g. accepted before Harness had
+  // ever read a Knowledge snapshot to compose against (stagePendingWrite /
+  // stageApprovedWrites in improvements.ts) -- a real write is expected at
+  // the next sync, so "pending" is the closest honest status.
+  return "pending";
+}
+
+// Every project/workspace target this local runtime knows about, with the
+// display name each carries on the Knowledge and History pages -- shared by
+// buildKnowledgeResponse's own targets list and the `timeline=` branch
+// below, which needs the same name resolution for one target picked by id.
+async function resolveTargets(adapter: Adapter): Promise<Target[]> {
   const executor = await loadHarnessExecutor();
 
   const allowed = adapter.getAllowedProjects() as { lovable_project_id: string }[];
@@ -71,8 +97,15 @@ async function buildKnowledgeResponse(adapter: Adapter) {
   }
   if (workspaceId) targets.push({ target: "workspace", id: workspaceId, name: "Workspace" });
 
+  return targets;
+}
+
+async function buildKnowledgeResponse(adapter: Adapter) {
+  const targets = await resolveTargets(adapter);
+
   const allVersions = adapter.listKnowledgeVersions() as {
     id: number;
+    rule_id: number | null;
     target: string;
     project_id: string | null;
     workspace_id: string | null;
@@ -154,10 +187,18 @@ async function buildKnowledgeResponse(adapter: Adapter) {
           hurt: number;
           last_applicable_at: string | null;
         } | null;
+        const improvementId = adapter.getCorrectionIdForRule(r.id);
+        const improvement = improvementId != null ? adapter.getImprovement(improvementId) : null;
+        const ruleVersions = allVersions.filter((v) => v.rule_id === r.id);
+        const latestVerdict = adapter.latestRuleVerdict(r.id) as {
+          verdict: "helped" | "did_not_help" | "not_sure";
+          created_at: string;
+        } | null;
+        const adherenceRows = adapter.listRuleAdherence(r.id) as unknown[];
         return {
           id: r.id,
           text: r.instruction,
-          improvement_id: adapter.getCorrectionIdForRule(r.id),
+          improvement_id: improvementId,
           health: health
             ? {
                 applicable_tasks: health.applicable_tasks,
@@ -167,6 +208,14 @@ async function buildKnowledgeResponse(adapter: Adapter) {
                 since: firstWrittenAtByRuleId.get(r.id) ?? null,
               }
             : null,
+          // Round 5 Task 3 / spec §3a: the rules table's Status/Since/
+          // Observed columns.
+          status: ruleStatus(ruleVersions, improvement),
+          since: firstWrittenAtByRuleId.get(r.id) ?? null,
+          verdict: latestVerdict
+            ? { verdict: latestVerdict.verdict, created_at: latestVerdict.created_at }
+            : null,
+          adherence: adherenceRows.length > 0 ? adapter.adherenceCounts(r.id) : null,
         };
       }),
       retired_rules: retiredRules.map((r) => ({
@@ -189,6 +238,32 @@ async function buildKnowledgeResponse(adapter: Adapter) {
   };
 }
 
+// Round 5 Task 3 / spec §3b: the History page's per-target timeline, at
+// GET .../knowledge?timeline=project:<id> or ?timeline=workspace:<id>. The
+// node-building itself is a pure read in harness/src/improvements.ts
+// (buildTimeline); this only resolves the target's display name, the same
+// way buildKnowledgeResponse's own targets list does.
+async function buildTimelineResponse(
+  adapter: Adapter,
+  target: "project" | "workspace",
+  id: string,
+) {
+  const targets = await resolveTargets(adapter);
+  const found = targets.find((t) => t.target === target && t.id === id);
+  const name =
+    found?.name ??
+    (target === "workspace"
+      ? "Workspace"
+      : ((adapter.getProjectMeta(id) as { name: string | null } | null)?.name ?? id));
+  return {
+    available: true as const,
+    target,
+    id,
+    name,
+    nodes: adapter.buildTimeline(target, id),
+  };
+}
+
 async function handleGet({ request }: { request: Request }) {
   const unauthorized = await requireAuth(request);
   if (unauthorized) return unauthorized;
@@ -197,6 +272,15 @@ async function handleGet({ request }: { request: Request }) {
   if (!adapter) return Response.json(hostedPreviewBody());
 
   try {
+    const timelineParam = new URL(request.url).searchParams.get("timeline");
+    if (timelineParam !== null) {
+      const sep = timelineParam.indexOf(":");
+      const target = sep === -1 ? "" : timelineParam.slice(0, sep);
+      const id = sep === -1 ? "" : timelineParam.slice(sep + 1);
+      if (target !== "project" && target !== "workspace")
+        throw new Error(`invalid timeline target: "${timelineParam}"`);
+      return Response.json(await buildTimelineResponse(adapter, target, id));
+    }
     return Response.json(await buildKnowledgeResponse(adapter));
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });

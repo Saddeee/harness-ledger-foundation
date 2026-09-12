@@ -238,6 +238,13 @@ export type KnowledgeActiveRule = {
   // absent/null on a retired rule (retired_rules never carries this) or a
   // live one rule_health hasn't scored yet.
   health?: ImprovementHealth | null;
+  // Round 5 Task 3 / spec §3a: the Instructions page's rules table columns.
+  // Present on active_rules; absent on retired_rules (same convention as
+  // `health` above).
+  status?: "written" | "pending" | "stale" | "failed" | "testing";
+  since?: string | null;
+  verdict?: { verdict: "helped" | "did_not_help" | "not_sure"; created_at: string } | null;
+  adherence?: { followed: number; broke: number; not_applicable: number } | null;
 };
 
 export type KnowledgeTargetView = {
@@ -266,6 +273,46 @@ export async function fetchKnowledge(): Promise<KnowledgeResponse> {
   const res = await fetch("/api/public/harness/knowledge", { headers: await authHeaders() });
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as KnowledgeResponse;
+}
+
+// Round 5 Task 3 / spec §3b: the History page's per-target timeline, served
+// from the same route as fetchKnowledge above (GET .../knowledge?timeline=
+// project:<id> or workspace:<id>) -- the client only ever talks to the six
+// existing harness routes, this is not a seventh.
+export type TimelineNode = {
+  id: string;
+  kind: "version" | "external_change" | "decision" | "skill" | "verdict";
+  at: string;
+  label: string;
+  actor: "you" | "harness" | "lovable";
+  summary: string | null;
+  content: string | null;
+  diff: KnowledgeChanges | null;
+  rule_ids: number[];
+  restored_from: number | null;
+  improvement_id: number | null;
+  version_id: number | null;
+  restorable: boolean;
+};
+
+export type TimelineResponse = {
+  available: boolean;
+  reason?: string;
+  target?: "project" | "workspace";
+  id?: string;
+  name?: string;
+  nodes?: TimelineNode[];
+};
+
+export async function fetchTimeline(
+  target: "project" | "workspace",
+  id: string,
+): Promise<TimelineResponse> {
+  const res = await fetch(`/api/public/harness/knowledge?timeline=${target}:${id}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as TimelineResponse;
 }
 
 export async function postKnowledge(body: Record<string, unknown>) {

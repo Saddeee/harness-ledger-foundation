@@ -5,7 +5,8 @@
 // scratchpad/improvement-contract.md and scratchpad/checkpoint-d-contract.md.
 import { z } from "zod";
 import * as store from "./store.js";
-import { composeManagedKnowledge } from "./knowledge.js";
+import { composeManagedKnowledge, sha256 } from "./knowledge.js";
+import { lineDiff, type DiffLine } from "./diff.js";
 
 export type StageKey = "found" | "review" | "proof" | "in_lovable";
 export type StageState = "complete" | "current" | "future" | "blocked";
@@ -701,6 +702,16 @@ const actionInput = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("keep"), id: z.number().int() }),
   z.object({ action: z.literal("readd"), id: z.number().int() }),
+  // Round 5 Task 3 / spec §5.2: a whole-rule verdict from the Instructions
+  // page's verdict buttons -- addressed by rule_id directly (there is no
+  // single correction_candidate id that must exist for this to make sense),
+  // the same convention as "retire"'s rule_id path above.
+  z.object({
+    action: z.literal("verdict"),
+    rule_id: z.number().int(),
+    verdict: z.enum(["helped", "did_not_help", "not_sure"]),
+    note: z.string().max(2000).optional(),
+  }),
 ]);
 
 // After the user approves "Add", stage the exact write for the executor --
@@ -941,6 +952,12 @@ export function improvementAction(input: unknown): Improvement {
   if (a.action === "keep") {
     return keepProposal(-a.id);
   }
+  // "verdict" (Round 5 Task 3) addresses a rule_id directly too, same reason
+  // as "retire"'s rule_id path -- see recordVerdict in the delimited block
+  // at the end of this file.
+  if (a.action === "verdict") {
+    return recordVerdict(a.rule_id, a.verdict, a.note);
+  }
 
   const current = getImprovement(a.id);
   if (!current) throw new Error(`improvement ${a.id} not found`);
@@ -1058,6 +1075,11 @@ export function improvementAction(input: unknown): Improvement {
       // the normal accept path would have staged.
       if (!rule) throw new Error("This improvement has no rule to re-add");
       store.updateRule({ id: rule.id, state: "approved", actor: ACTOR });
+      // Round 5 Task 3: a durable, queryable record of the re-add itself --
+      // updateRule's own "rule.updated" event only carries previous/new
+      // state, not a stable "this was a re-add" marker, and the History
+      // timeline (buildTimeline below) needs one to render "Re-added".
+      store.insertEvent("rule.readded", null, { id: rule.id });
       // Fix wave item 4: reset the health window -- whatever hurt/
       // contradicted this rule before it was retired must not count against
       // it again now that it's live again (health.ts's recomputeRuleHealth
@@ -1078,3 +1100,412 @@ export function improvementAction(input: unknown): Improvement {
   if (!refreshed) throw new Error(`improvement ${a.id} not found after update`);
   return refreshed;
 }
+
+// ---- Round 5 Task 3 ----
+// The History page's timeline (spec §3b): every Knowledge write Harness
+// made for a target, every change Lovable saw that Harness didn't make,
+// every accept/skip/retire/keep/re-add decision behind a rule that belongs
+// to the target, every Skill change (workspace targets only), and every
+// whole-rule verdict -- merged into one feed, newest first. Pure reads over
+// store.ts; nothing here writes Knowledge or talks to Lovable. Also: the
+// "verdict" improvement action (spec §5.2), which the Instructions page's
+// per-rule "did this help" buttons call.
+
+export type TimelineChanges = {
+  added: number;
+  removed: number;
+  lines: DiffLine[];
+  truncated: boolean;
+};
+
+export type TimelineNode = {
+  id: string;
+  kind: "version" | "external_change" | "decision" | "skill" | "verdict";
+  at: string;
+  label: string;
+  actor: "you" | "harness" | "lovable";
+  summary: string | null;
+  content: string | null;
+  diff: TimelineChanges | null;
+  rule_ids: number[];
+  restored_from: number | null;
+  improvement_id: number | null;
+  version_id: number | null;
+  restorable: boolean;
+};
+
+const TIMELINE_MAX_DIFF_LINES = 400;
+// The History page caps how much it ever shows at once, same spirit as the
+// Instructions page's "What changed" diff cap just below.
+const TIMELINE_MAX_NODES = 200;
+
+function timelineDiff(before: string, after: string): TimelineChanges {
+  const d = lineDiff(before, after);
+  const truncated = d.lines.length > TIMELINE_MAX_DIFF_LINES;
+  return {
+    added: d.added,
+    removed: d.removed,
+    lines: truncated ? d.lines.slice(0, TIMELINE_MAX_DIFF_LINES) : d.lines,
+    truncated,
+  };
+}
+
+// datetime('now') timestamps ("YYYY-MM-DD HH:MM:SS") and
+// correction_candidates.reviewed_at (a plain JS `new Date().toISOString()`,
+// "YYYY-MM-DDTHH:MM:SS.sssZ" -- see reviewCorrectionCandidate in store.ts)
+// are NOT the same shape, so plain string comparison sorts them wrong (a
+// space sorts before "T"). shortDate above already parses both; reuse the
+// same trick here rather than a raw string comparison.
+function timelineAtMs(at: string): number {
+  const d = new Date(at.includes("T") ? at : at.replace(" ", "T") + "Z");
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+function timelineActor(raw: string): "you" | "harness" | "lovable" {
+  return /harness/i.test(raw) ? "harness" : "you";
+}
+
+function versionLabel(v: {
+  status: store.KnowledgeWriteStatus;
+  restored_from_version_id: number | null;
+}): string {
+  switch (v.status) {
+    case "pending":
+      return "Staged";
+    case "stale":
+      return "Needs attention";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "written":
+      return v.restored_from_version_id != null
+        ? `Restored to version #${v.restored_from_version_id}`
+        : "Written to Lovable";
+  }
+}
+
+function parseRuleIds(json: string): number[] {
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed.filter((n): n is number => typeof n === "number") : [];
+  } catch {
+    return [];
+  }
+}
+
+const VERDICT_LABEL: Record<store.RuleVerdict, string> = {
+  helped: "You said this rule helped",
+  did_not_help: "You said this rule didn't help",
+  not_sure: "You said you're not sure this rule helped",
+};
+
+type CorrectionDecisionRow = {
+  id: number;
+  reviewed: number;
+  reviewed_at: string | null;
+  excluded_from_learning: number;
+  decided_by: string | null;
+  confidence: number | null;
+};
+
+// version/external_change/decision/skill/verdict nodes for one target,
+// newest first, capped at TIMELINE_MAX_NODES. See the block comment above
+// for what each source table contributes.
+export function buildTimeline(target: "project" | "workspace", targetId: string): TimelineNode[] {
+  const nodes: TimelineNode[] = [];
+  const ruleIds = new Set<number>();
+
+  // ---- version nodes: knowledge_versions for this target, oldest first so
+  // each one's diff can be computed against the immediately preceding
+  // version node (not the version's own stored previous_content, which may
+  // not be what the timeline showed as the prior version's content) ----
+  const versionsForTarget = (store.listKnowledgeVersions() as store.KnowledgeVersionRow[])
+    .filter(
+      (v) =>
+        v.target === target &&
+        (target === "project" ? v.project_id === targetId : v.workspace_id === targetId),
+    )
+    .sort((a, b) => timelineAtMs(a.created_at) - timelineAtMs(b.created_at));
+
+  const newestWrittenId = versionsForTarget
+    .filter((v) => v.status === "written")
+    .reduce<number | null>((max, v) => (max === null || v.id > max ? v.id : max), null);
+
+  let prevVersionContent: string | null = null;
+  for (const v of versionsForTarget) {
+    if (v.rule_id != null) ruleIds.add(v.rule_id);
+    const versionRuleIds = parseRuleIds(v.rule_ids_json);
+    for (const rid of versionRuleIds) ruleIds.add(rid);
+
+    let diff: TimelineChanges | null = null;
+    let summary: string | null;
+    if (prevVersionContent != null) {
+      const d = timelineDiff(prevVersionContent, v.new_content);
+      diff = d;
+      summary = `+${d.added} −${d.removed} lines`;
+    } else {
+      // The very first version this target ever had: there is no earlier
+      // version node to diff against, so describe it by what it added
+      // instead of a line count.
+      summary = `${versionRuleIds.length} rule${versionRuleIds.length === 1 ? "" : "s"} added`;
+    }
+
+    nodes.push({
+      id: `version:${v.id}`,
+      kind: "version",
+      at: v.created_at,
+      label: versionLabel(v),
+      actor: timelineActor(v.actor),
+      summary,
+      content: v.new_content,
+      diff,
+      rule_ids: versionRuleIds,
+      restored_from: v.restored_from_version_id,
+      improvement_id: null,
+      version_id: v.id,
+      restorable: v.status === "written" && v.id !== newestWrittenId,
+    });
+    prevVersionContent = v.new_content;
+  }
+
+  // ---- external_change nodes: knowledge_snapshots for this target, oldest
+  // first -- a snapshot whose content differs from both the previous
+  // snapshot's and every version's new_content was a change Lovable saw
+  // that Harness itself never wrote ----
+  const versionShas = new Set(versionsForTarget.map((v) => sha256(v.new_content)));
+  const snapshots = store.listKnowledgeSnapshots(target, targetId);
+  let prevSnapshotSha: string | null = null;
+  snapshots.forEach((s, i) => {
+    const shaNow = sha256(s.content);
+    if (i > 0 && shaNow !== prevSnapshotSha && !versionShas.has(shaNow)) {
+      nodes.push({
+        id: `external_change:${s.id}`,
+        kind: "external_change",
+        at: s.fetched_at,
+        label: "Changed in Lovable (outside Harness)",
+        actor: "lovable",
+        summary: null,
+        content: s.content,
+        diff: null,
+        rule_ids: [],
+        restored_from: null,
+        improvement_id: null,
+        version_id: null,
+        restorable: false,
+      });
+    }
+    prevSnapshotSha = shaNow;
+  });
+
+  // ---- rules for this target: activeRulesForTarget ∪ retiredRulesForTarget
+  // ∪ every rule any of the versions above belongs to (ruleIds already has
+  // that third set from the version loop) ----
+  for (const r of store.activeRulesForTarget(target, targetId) as { id: number }[])
+    ruleIds.add(r.id);
+  for (const r of store.retiredRulesForTarget(target, targetId) as { id: number }[])
+    ruleIds.add(r.id);
+
+  for (const ruleId of ruleIds) {
+    const wrapped = store.getRule(ruleId) as { rule: { instruction: string } } | null;
+    const instruction = wrapped?.rule.instruction ?? "";
+    const correctionId = store.getCorrectionIdForRule(ruleId);
+
+    // ---- decision nodes: accept/skip, from correction_candidates ----
+    if (correctionId != null) {
+      const found = store.getCorrectionCandidate(correctionId) as {
+        correction_candidate: CorrectionDecisionRow;
+      } | null;
+      const cc = found?.correction_candidate;
+      if (cc && cc.reviewed === 1 && cc.reviewed_at) {
+        const skipped = cc.excluded_from_learning === 1;
+        const label = skipped
+          ? "You skipped"
+          : cc.decided_by === "automatic"
+            ? `Accepted automatically (confidence ${(cc.confidence ?? 0).toFixed(2)})`
+            : "You accepted";
+        nodes.push({
+          id: `decision:cc-${cc.id}`,
+          kind: "decision",
+          at: cc.reviewed_at,
+          label,
+          actor: skipped || cc.decided_by !== "automatic" ? "you" : "harness",
+          summary: instruction,
+          content: instruction,
+          diff: null,
+          rule_ids: [ruleId],
+          restored_from: null,
+          improvement_id: correctionId,
+          version_id: null,
+          restorable: false,
+        });
+      }
+    }
+
+    // ---- decision nodes: retire_proposals (created, and once decided) ----
+    for (const rp of store.listRetireProposalsForRule(ruleId)) {
+      nodes.push({
+        id: `decision:rp-${rp.id}-created`,
+        kind: "decision",
+        at: rp.created_at,
+        label: "Harness suggested retiring",
+        actor: "harness",
+        summary: instruction,
+        content: instruction,
+        diff: null,
+        rule_ids: [ruleId],
+        restored_from: null,
+        improvement_id: correctionId,
+        version_id: null,
+        restorable: false,
+      });
+      if (rp.decided_at && (rp.status === "retired" || rp.status === "kept")) {
+        nodes.push({
+          id: `decision:rp-${rp.id}-decided`,
+          kind: "decision",
+          at: rp.decided_at,
+          label: rp.status === "retired" ? "You retired" : "You kept it",
+          actor: "you",
+          summary: instruction,
+          content: instruction,
+          diff: null,
+          rule_ids: [ruleId],
+          restored_from: null,
+          improvement_id: correctionId,
+          version_id: null,
+          restorable: false,
+        });
+      }
+    }
+
+    // ---- decision nodes: re-adds (the "rule.readded" event the readd
+    // action above writes) ----
+    for (const ev of store.listEventsForRecord(["rule.readded"], ruleId) as unknown as {
+      id: number;
+      created_at: string;
+    }[]) {
+      nodes.push({
+        id: `decision:readd-${ev.id}`,
+        kind: "decision",
+        at: ev.created_at,
+        label: "Re-added",
+        actor: "you",
+        summary: instruction,
+        content: instruction,
+        diff: null,
+        rule_ids: [ruleId],
+        restored_from: null,
+        improvement_id: correctionId,
+        version_id: null,
+        restorable: false,
+      });
+    }
+
+    // ---- verdict nodes ----
+    for (const v of store.listRuleVerdicts(ruleId)) {
+      nodes.push({
+        id: `verdict:${v.id}`,
+        kind: "verdict",
+        at: v.created_at,
+        label: VERDICT_LABEL[v.verdict],
+        actor: "you",
+        summary: instruction,
+        content: instruction,
+        diff: null,
+        rule_ids: [ruleId],
+        restored_from: null,
+        improvement_id: correctionId,
+        version_id: null,
+        restorable: false,
+      });
+    }
+  }
+
+  // ---- skill nodes: skill_snapshots, workspace targets only (skills have
+  // no per-project scope) -- skill_snapshots is already deduped at insert
+  // time (recordSkillSnapshot skips an unchanged sha), so every row after
+  // the first genuinely changed ----
+  if (target === "workspace") {
+    const names = (store.latestSkillSnapshots(targetId) as { name: string }[]).map((s) => s.name);
+    for (const name of names) {
+      const snaps = store.listSkillSnapshots(targetId, name);
+      let prevContent: string | null = null;
+      snaps.forEach((s, i) => {
+        let diff: TimelineChanges | null = null;
+        let summary: string | null = null;
+        if (i > 0 && prevContent != null) {
+          const d = timelineDiff(prevContent, s.content);
+          diff = d;
+          summary = `+${d.added} −${d.removed} lines`;
+        }
+        nodes.push({
+          id: `skill:${s.id}`,
+          kind: "skill",
+          at: s.fetched_at,
+          label: i === 0 ? `Skill ${name} first read` : `Skill ${name} changed`,
+          actor: "lovable",
+          summary,
+          content: s.content,
+          diff,
+          rule_ids: [],
+          restored_from: null,
+          improvement_id: null,
+          version_id: null,
+          restorable: false,
+        });
+        prevContent = s.content;
+      });
+    }
+  }
+
+  nodes.sort((a, b) => timelineAtMs(b.at) - timelineAtMs(a.at));
+  return nodes.slice(0, TIMELINE_MAX_NODES);
+}
+
+// spec §5.2: a whole-rule verdict from the Instructions page's verdict
+// buttons. did_not_help nudges rule_health.hurt up by one, but only when
+// the user's own verdicts are configured as an evidence source (spec §4b)
+// and only on a rule_health row that already exists -- a verdict alone
+// never creates one. helped snoozes a rule Harness had suggested retiring
+// (the user's word overrides the signal for 30 days, the same snooze
+// keepProposal above already uses), but leaves any other status alone.
+function recordVerdict(ruleId: number, verdict: store.RuleVerdict, note?: string): Improvement {
+  store.recordRuleVerdict({ rule_id: ruleId, verdict, note: note ?? null });
+
+  const health = store.getRuleHealth(ruleId);
+  if (health) {
+    if (verdict === "did_not_help" && store.getEvidenceSources().verdicts) {
+      store.upsertRuleHealth({
+        rule_id: health.rule_id,
+        applicable_tasks: health.applicable_tasks,
+        helped: health.helped,
+        hurt: health.hurt + 1,
+        last_applicable_at: health.last_applicable_at,
+        contradicted_by_rule_id: health.contradicted_by_rule_id,
+        unused_since: health.unused_since,
+        status: health.status,
+        snoozed_until: health.snoozed_until,
+        baseline_at: health.baseline_at,
+      });
+    } else if (verdict === "helped" && health.status === "retire_suggested") {
+      store.upsertRuleHealth({
+        rule_id: health.rule_id,
+        applicable_tasks: health.applicable_tasks,
+        helped: health.helped,
+        hurt: health.hurt,
+        last_applicable_at: health.last_applicable_at,
+        contradicted_by_rule_id: health.contradicted_by_rule_id,
+        unused_since: health.unused_since,
+        status: "snoozed",
+        snoozed_until: new Date(Date.now() + KEEP_SNOOZE_MS).toISOString(),
+        baseline_at: health.baseline_at,
+      });
+    }
+  }
+
+  const correctionId = store.getCorrectionIdForRule(ruleId);
+  const refreshed = correctionId != null ? getImprovement(correctionId) : null;
+  if (!refreshed) throw new Error(`improvement for rule ${ruleId} not found after verdict`);
+  return refreshed;
+}
+// ---- end Round 5 Task 3 ----

@@ -11,6 +11,12 @@ import * as store from "./store.js";
 export { listImprovements, getImprovement, improvementAction } from "./improvements.js";
 export type { Improvement } from "./improvements.js";
 
+// Round 5 Task 3: the History page's per-target timeline (spec §3b). The
+// "verdict" improvement action lives in the actionInput union above, via
+// improvementAction -- no separate export needed for it.
+export { buildTimeline } from "./improvements.js";
+export type { TimelineNode } from "./improvements.js";
+
 // Checkpoint E (v5): settings, skill snapshots, sync coordination, and the
 // read helpers the executor and local UI need. Plain re-exports -- store.ts
 // already validates ranges/enums itself (setSettings, allowed_projects

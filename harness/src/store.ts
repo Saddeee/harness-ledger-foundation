@@ -3583,3 +3583,47 @@ export function tagAcceptanceRates(): Record<string, { accepted: number; skipped
   return out;
 }
 // ---- end Round 5 Task 1 ----
+
+// ---- Round 5 Task 3 ----
+// Two small additional read helpers the History timeline (buildTimeline in
+// improvements.ts) needs, beyond what's already exposed above: every
+// knowledge_snapshots row for a target (not just the latest), and every
+// retire_proposals row for a rule regardless of status (not just an open
+// one -- openRetireProposalForRule/listOpenRetireProposals above only ever
+// surface open proposals).
+
+/** Every snapshot ever recorded for a target, oldest first. Unlike
+ * skill_snapshots, knowledge_snapshots rows are NOT deduped at insert time
+ * (recordKnowledgeSnapshot always inserts), so a routine re-fetch that found
+ * no change still appends an identical row here -- the History timeline
+ * compares consecutive rows' sha256 itself to detect a genuine change made
+ * directly in Lovable, outside Harness. */
+export function listKnowledgeSnapshots(
+  target: KnowledgeTarget,
+  targetId: string,
+): { id: number; content: string; sha256: string; fetched_at: string; fetched_by: string }[] {
+  return db
+    .prepare(
+      `SELECT id, content, sha256, fetched_at, fetched_by FROM knowledge_snapshots
+       WHERE target = ? AND ${targetColumn(target)} = ? ORDER BY id ASC`,
+    )
+    .all(target, targetId) as {
+    id: number;
+    content: string;
+    sha256: string;
+    fetched_at: string;
+    fetched_by: string;
+  }[];
+}
+
+/** Every retire_proposals row for a rule, any status, oldest first -- the
+ * History timeline shows both a proposal's creation ("Harness suggested
+ * retiring") and, once decided, its outcome ("You retired"/"You kept it"). */
+export function listRetireProposalsForRule(ruleId: number): RetireProposalRow[] {
+  return (
+    db
+      .prepare(`SELECT * FROM retire_proposals WHERE rule_id = ? ORDER BY id ASC`)
+      .all(ruleId) as RetireProposalDbRow[]
+  ).map(parseRetireProposal);
+}
+// ---- end Round 5 Task 3 ----
