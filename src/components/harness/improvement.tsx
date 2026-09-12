@@ -242,7 +242,41 @@ function AddConfirm({
   );
 }
 
+// Round 5 Task 5 / spec §4b: "why" toasts. WRONG_WORDING_TOAST fires only
+// when that one reason was chosen; every other case (including no reason at
+// all) gets the plain default below.
+const WRONG_WORDING_TOAST = "Skipped — reopen it from Suggestions to fix the wording.";
+const SKIPPED_TOAST = "Skipped";
+
+type SkipReasonValue = "not_useful" | "wrong_wording" | "one_time" | "already_covered";
+const SKIP_REASON_ORDER: SkipReasonValue[] = [
+  "not_useful",
+  "wrong_wording",
+  "one_time",
+  "already_covered",
+];
+
 function SkipConfirm({ item, busy, run }: { item: Improvement; busy: boolean; run: Run }) {
+  const [reason, setReason] = useState<SkipReasonValue | null>(null);
+  // Same roving-tabindex radiogroup pattern as AddConfirm's own above:
+  // arrows move between the four options, only the selected one (or the
+  // first, before anything is chosen) is tabbable.
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const onOptionKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const step =
+      e.key === "ArrowDown" || e.key === "ArrowRight"
+        ? 1
+        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+          ? -1
+          : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    const from = reason == null ? 0 : SKIP_REASON_ORDER.indexOf(reason);
+    const next =
+      SKIP_REASON_ORDER[(from + step + SKIP_REASON_ORDER.length) % SKIP_REASON_ORDER.length]!;
+    setReason(next);
+    optionRefs.current[SKIP_REASON_ORDER.indexOf(next)]?.focus();
+  };
   return (
     <ConfirmAction
       trigger="Skip"
@@ -252,8 +286,84 @@ function SkipConfirm({ item, busy, run }: { item: Improvement; busy: boolean; ru
       consequences={["Nothing changes in Lovable."]}
       confirmLabel="Skip"
       disabled={busy}
-      onConfirm={() => void run({ action: "skip", id: item.id }, "Skipped")}
-    />
+      onOpenChange={(open) => {
+        if (!open) setReason(null);
+      }}
+      onConfirm={() =>
+        void run(
+          { action: "skip", id: item.id, ...(reason ? { reason } : {}) },
+          reason === "wrong_wording" ? WRONG_WORDING_TOAST : SKIPPED_TOAST,
+        )
+      }
+    >
+      <div role="radiogroup" aria-label="Why? (optional)" className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">Why? (optional)</p>
+        <Button
+          type="button"
+          role="radio"
+          aria-checked={reason === "not_useful"}
+          tabIndex={reason == null || reason === "not_useful" ? 0 : -1}
+          ref={(el) => {
+            optionRefs.current[0] = el;
+          }}
+          onKeyDown={onOptionKeyDown}
+          variant={reason === "not_useful" ? "default" : "outline"}
+          size="sm"
+          className="mr-1 mb-1"
+          onClick={() => setReason(reason === "not_useful" ? null : "not_useful")}
+        >
+          Not useful
+        </Button>
+        <Button
+          type="button"
+          role="radio"
+          aria-checked={reason === "wrong_wording"}
+          tabIndex={reason === "wrong_wording" ? 0 : -1}
+          ref={(el) => {
+            optionRefs.current[1] = el;
+          }}
+          onKeyDown={onOptionKeyDown}
+          variant={reason === "wrong_wording" ? "default" : "outline"}
+          size="sm"
+          className="mr-1 mb-1"
+          onClick={() => setReason(reason === "wrong_wording" ? null : "wrong_wording")}
+        >
+          Wrong wording
+        </Button>
+        <Button
+          type="button"
+          role="radio"
+          aria-checked={reason === "one_time"}
+          tabIndex={reason === "one_time" ? 0 : -1}
+          ref={(el) => {
+            optionRefs.current[2] = el;
+          }}
+          onKeyDown={onOptionKeyDown}
+          variant={reason === "one_time" ? "default" : "outline"}
+          size="sm"
+          className="mr-1 mb-1"
+          onClick={() => setReason(reason === "one_time" ? null : "one_time")}
+        >
+          One-time thing
+        </Button>
+        <Button
+          type="button"
+          role="radio"
+          aria-checked={reason === "already_covered"}
+          tabIndex={reason === "already_covered" ? 0 : -1}
+          ref={(el) => {
+            optionRefs.current[3] = el;
+          }}
+          onKeyDown={onOptionKeyDown}
+          variant={reason === "already_covered" ? "default" : "outline"}
+          size="sm"
+          className="mr-1 mb-1"
+          onClick={() => setReason(reason === "already_covered" ? null : "already_covered")}
+        >
+          Already covered
+        </Button>
+      </div>
+    </ConfirmAction>
   );
 }
 
@@ -508,6 +618,68 @@ type EditableState = {
   onCancel: () => void;
 };
 
+// Round 5 Task 5 / spec §2: the Inbox's own lean rendering -- project name,
+// the title as a button to Suggestions (the Inbox has no detail view of its
+// own any more), the instruction blockquote, one muted line for why Harness
+// read it this way, the "wasn't sure" line when decision_mode='automatic'
+// flagged one, and the three decision buttons. No group Badge (the "New"
+// badge is the one exception), no DecidedStatus, no editable state -- kept
+// as its own function, never entangled with DecisionCard's own (unchanged)
+// full rendering below, since it always receives a pending item (the Inbox
+// turns a decided one into a ConfirmationRow instead of a card).
+function CompactDecisionCard({
+  item,
+  onOpen,
+  busy,
+  run,
+  isNew,
+}: {
+  item: Improvement;
+  onOpen?: ((id: number) => void) | undefined;
+  busy: boolean;
+  run: Run;
+  isNew?: boolean | undefined;
+}) {
+  const titleId = `improvement-${item.id}`;
+  return (
+    <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="text-sm font-semibold">{projectName(item)}</p>
+          <h2 id={titleId} className="text-base font-medium">
+            <button
+              type="button"
+              className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onOpen?.(item.id)}
+            >
+              {item.title}
+            </button>
+          </h2>
+          {item.proposed_instruction ? (
+            <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+              {item.proposed_instruction}
+            </blockquote>
+          ) : (
+            <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
+          )}
+          <p className="text-xs text-muted-foreground">{whyFor(item.classification)}</p>
+          {item.unsure ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              {item.unsure}
+            </p>
+          ) : null}
+        </div>
+        {isNew ? <Badge variant="default">New</Badge> : null}
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <AddConfirm item={item} destination="project" busy={busy} run={run} />
+        <AddConfirm item={item} destination="workspace" busy={busy} run={run} variant="outline" />
+        <SkipConfirm item={item} busy={busy} run={run} />
+      </div>
+    </article>
+  );
+}
+
 export function DecisionCard({
   item,
   onChanged,
@@ -517,6 +689,7 @@ export function DecisionCard({
   run: runProp,
   editable,
   isNew,
+  compact,
 }: {
   item: Improvement;
   onChanged: (msg: string) => void;
@@ -530,6 +703,10 @@ export function DecisionCard({
   // visit's "mark_seen" updated it) -- Inbox-only; the ledger and detail
   // pages never pass it.
   isNew?: boolean;
+  // Round 5 Task 5 / spec §2: Inbox-only lean rendering -- delegates to
+  // CompactDecisionCard above. Ledger and the detail page never pass it, so
+  // their own rendering below is unchanged.
+  compact?: boolean;
 }) {
   const own = useRun(onChanged);
   const busy = busyProp ?? own.busy;
@@ -549,6 +726,10 @@ export function DecisionCard({
 
   if (item.kind === "retire") {
     return <RetireCard item={item} busy={busy} run={run} titleAs={titleAs} isNew={isNew} />;
+  }
+
+  if (compact) {
+    return <CompactDecisionCard item={item} onOpen={onOpen} busy={busy} run={run} isNew={isNew} />;
   }
 
   return (

@@ -707,15 +707,17 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
   ]);
 });
 
-test("Inbox: a count line, then decision cards you can act on without opening them", () => {
+test("Inbox: a count line, then compact decision cards you can act on without opening them", () => {
   const inbox = codeOnly(readApp(INBOX));
   // onChanged also turns the item into a confirmation row (see
   // ux-inbox-logic.test.ts), so it's no longer bare `refresh`. Round 4 Task
   // C3 adds an `isNew` prop after onOpen (see ux-round4-health.test.ts), so
-  // this no longer requires the tag to close right after onOpen.
+  // this no longer requires the tag to close right after onOpen. Round 5
+  // Task 5 / spec §2: the card is `compact` now, and `onOpen` (no longer
+  // named `open`) navigates to Suggestions rather than an in-page detail.
   assert.match(
     inbox,
-    /<DecisionCard\s+item=\{i\}\s+onChanged=\{\(msg\)\s*=>\s*confirmDecision\(i\.id,\s*msg\)\}\s+onOpen=\{open\}/,
+    /<DecisionCard\s+compact\s+item=\{i\}\s+onChanged=\{\(msg\)\s*=>\s*confirmDecision\(i\.id,\s*msg\)\}\s+onOpen=\{onOpen\}/,
   );
   assert.match(inbox, /"One suggestion is waiting for your decision\."/);
   assert.match(inbox, /`\$\{pending\.length\} suggestions are waiting for your decision\.`/);

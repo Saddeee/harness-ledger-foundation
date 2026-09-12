@@ -38,9 +38,13 @@ test("Decided status: no collapsed 'Change decision' wrapper anywhere in improve
 
 test("Decided status: buttons render directly in a row, using outline/ghost variants", () => {
   const detail = codeOnly(readApp(DETAIL));
+  // Round 5 Task 5 inserted CompactDecisionCard between DecidedStatus and
+  // DecisionCard (the Inbox's own lean rendering, with its own outline
+  // AddConfirm) -- stop the slice there, not at DecisionCard itself, so this
+  // stays scoped to DecidedStatus's own buttons only.
   const decided = detail.slice(
     detail.indexOf("function DecidedStatus"),
-    detail.indexOf("export function DecisionCard"),
+    detail.indexOf("function CompactDecisionCard"),
   );
   assert.ok(!/<details/.test(decided), "no <details> wrapper left in DecidedStatus");
   assert.ok(!/<summary/.test(decided), "no <summary> wrapper left in DecidedStatus");
@@ -121,18 +125,17 @@ test("Detail: ArrowLeft/ArrowRight navigate, ignored in text fields, contentedit
   assert.match(detail, /window\.removeEventListener\("keydown", onKeyDown\)/);
 });
 
-test("Inbox: passes the pending list's order to Previous/Next", () => {
+// Round 5 Task 5 / spec §2: the Inbox lost its own detail view (and with it,
+// this Previous/Next browser -- clicking a card now goes straight to
+// Suggestions instead of paging through pending items in place). Browsing
+// still exists, just one level up: ImprovementDetail's own Previous/Next
+// still works from the Suggestions page (see "Improvements: passes the
+// grouped order..." right below), which is where every click now lands.
+test("Inbox: no Previous/Next browser of its own -- that only ever lived in the (now removed) same-page detail view", () => {
   const inbox = codeOnly(readApp(INBOX));
-  assert.match(inbox, /const order = pending\.map\(\(i\) => i\.id\);/);
-  assert.match(
-    inbox,
-    /position=\{idx >= 0 \? \{ index: idx \+ 1, total: order\.length \} : undefined\}/,
-  );
-  assert.match(inbox, /onPrev=\{idx > 0 \? \(\) => open\(order\[idx - 1\]!\) : undefined\}/);
-  assert.match(
-    inbox,
-    /onNext=\{idx >= 0 && idx < order\.length - 1 \? \(\) => open\(order\[idx \+ 1\]!\) : undefined\}/,
-  );
+  for (const gone of ["position=", "onPrev=", "onNext=", "const order ="]) {
+    assert.ok(!inbox.includes(gone), `${gone} should be gone from inbox.tsx`);
+  }
 });
 
 test("Improvements: passes the grouped order (IMPROVEMENT_GROUPS order) to Previous/Next", () => {
@@ -152,9 +155,9 @@ test("Improvements: passes the grouped order (IMPROVEMENT_GROUPS order) to Previ
   );
 });
 
-test('role="radio" count is untouched by Round 3 (still exactly two, from AddConfirm)', () => {
+test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 Task 5 "Why?" radiogroup, six total', () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.equal(count(detail, 'role="radio"'), 2);
+  assert.equal(count(detail, 'role="radio"'), 6);
 });
 
 test("cost wording stays honest: 'Lovable credits' <= 2 and 'Harness analysis' == 1 on improvement.tsx", () => {

@@ -146,6 +146,23 @@ export type Improvement = {
   // have one until the next one). Null otherwise, including for every
   // "retire" item (which carries the equivalent counts under retire.health).
   health: ImprovementHealth | null;
+  // Round 5 Task 5 / spec §4: why decision_mode='automatic' didn't accept
+  // this one without asking -- only ever set for a pending "improvement"
+  // item whose rule was created by the analysis (see computeUnsure below).
+  // Always null in decision_mode='ask' (the user decides everything, so
+  // nothing is presented as "not sure"), and always null for "retire" items.
+  unsure: string | null;
+  // Who decided this item: 'user' via the normal review flow, 'automatic'
+  // once Round 5 Task 6's auto-accept path decides it without asking, null
+  // while still pending. Read straight from correction_candidates.decided_by
+  // (Round 5 Task 1's column) -- this task only reads it, Task 6 sets it.
+  // Always null for "retire" items (there is no correction_candidate).
+  decided_by: "user" | "automatic" | null;
+  // Round 5 Task 5 / spec §4: confidence x tag acceptance rate (see
+  // computeRank below) -- used only to order pending items in the Inbox
+  // (listImprovements sorts by this, descending); every other view keeps
+  // whatever order it already had.
+  rank: number;
   developer: {
     correction: unknown;
     learning: unknown | null;
@@ -170,8 +187,24 @@ type CorrectionRow = {
   excluded_from_learning: number;
   summary: string;
   created_at: string;
+  // Round 5 Task 5: task_episode_id (a plain column of correction_candidates,
+  // already present on every row cc.* returns) drives computeRank's tag
+  // lookup; confidence and decided_by (Round 5 Task 1's own columns) drive
+  // computeRank and the decided_by passthrough respectively.
+  task_episode_id: number;
+  confidence: number | null;
+  decided_by: "user" | "automatic" | null;
 };
-type RuleRow = { id: number; instruction: string; state: string; scope: "workspace" | "project" };
+type RuleRow = {
+  id: number;
+  instruction: string;
+  state: string;
+  scope: "workspace" | "project";
+  // Round 5 Task 5: the analysis's own actor string ends "(rule writer)"
+  // (see propose.ts's createdBy) -- computeUnsure's isAnalysisCreated below
+  // checks this to gate "unsure" to analysis-created items only.
+  created_by: string;
+};
 type LearningRow = { id: number; desired_behavior: string };
 type EvidenceRow = { id: number; role: string | null; content: string; occurred_at: string | null };
 type RevisionRow = {
@@ -537,6 +570,9 @@ function buildImprovement(c: CorrectionRow): Improvement {
     },
     retire: null,
     health,
+    unsure: computeUnsure(c, rule),
+    decided_by: c.decided_by ?? null,
+    rank: computeRank(c.confidence, store.episodeScopeTags(c.task_episode_id)),
     developer: {
       correction: c,
       learning,
@@ -635,6 +671,14 @@ function buildRetireItem(proposal: store.RetireProposalRow): Improvement | null 
       contradicts_instruction: contradictsInstruction,
     },
     health: null,
+    // Round 5 Task 5: a retire proposal has no correction_candidate -- never
+    // "unsure" (that's an analysis-mined-improvement concept only) and never
+    // decided_by a candidate that doesn't exist. Ranked with computeRank's
+    // own neutral defaults (see its doc comment) so it still sorts among the
+    // rest of the pending items.
+    unsure: null,
+    decided_by: null,
+    rank: computeRank(null, ["general"]),
     developer: {
       correction: null,
       learning: null,
@@ -657,7 +701,10 @@ export function listImprovements(): Improvement[] {
     .listOpenRetireProposals()
     .map(buildRetireItem)
     .filter((item): item is Improvement => item !== null);
-  return [...improvements, ...retirements];
+  // Round 5 Task 5 / spec §4: pending items ranked highest-first (see
+  // sortForInbox below); everything already decided keeps this same order
+  // it always had.
+  return sortForInbox([...improvements, ...retirements]);
 }
 
 export function getImprovement(id: number): Improvement | null {
@@ -675,7 +722,13 @@ const actionInput = z.discriminatedUnion("action", [
     destination: z.enum(["workspace", "project", "skill"]),
     test_first: z.boolean().optional(),
   }),
-  z.object({ action: z.literal("skip"), id: z.number().int() }),
+  z.object({
+    action: z.literal("skip"),
+    id: z.number().int(),
+    // Round 5 Task 5 / spec §4b: the optional "why" from SkipConfirm's "Why?
+    // (optional)" radiogroup -- mirrors store.SkipReason exactly.
+    reason: z.enum(["not_useful", "wrong_wording", "one_time", "already_covered"]).optional(),
+  }),
   z.object({ action: z.literal("reopen"), id: z.number().int() }),
   z.object({
     action: z.literal("change_wording"),
@@ -1026,6 +1079,10 @@ export function improvementAction(input: unknown): Improvement {
     }
     case "skip":
       store.reviewCorrectionCandidate({ id: a.id, action: "exclude", reviewer: ACTOR });
+      // Round 5 Task 5 / spec §4b: independent of the exclude review action
+      // above (setCandidateSkipReason's own doc comment) -- always called,
+      // clearing any earlier reason when none was chosen this time.
+      store.setCandidateSkipReason(a.id, a.reason ?? null);
       if (rule) {
         store.cancelPendingKnowledgeWrites(rule.id, "cancelled: improvement skipped");
         store.updateRule({ id: rule.id, state: "rejected", actor: ACTOR });
@@ -1509,3 +1566,145 @@ function recordVerdict(ruleId: number, verdict: store.RuleVerdict, note?: string
   return refreshed;
 }
 // ---- end Round 5 Task 3 ----
+
+// ---- Round 5 Task 5 ----
+// Inbox ranking + "wasn't sure" explanations (spec §4), and the "skip"
+// action's optional reason (spec §4b, actionInput/the switch above). Pure
+// reads over store.ts; nothing here writes anything new.
+
+// The analysis's own actor string, set once at rule creation and never
+// touched again (createRule/updateRule -- see propose.ts's `createdBy =
+// \`${provider}/${model} (rule writer)\``). Checking the *suffix* rather
+// than the whole string is deliberate: provider/model vary by run, but only
+// propose.ts ever writes a rule created_by ending this way (mcp-server.ts's
+// human create_rule handler and demo.ts's scripted rules both pass their own
+// plain strings -- see harness/src/analysis/propose.ts's own header comment
+// for the full list of createRule call sites this task audited).
+const ANALYSIS_CREATED_BY_SUFFIX = "(rule writer)";
+
+function isAnalysisCreated(rule: RuleRow | null): boolean {
+  return rule != null && rule.created_by.endsWith(ANALYSIS_CREATED_BY_SUFFIX);
+}
+
+function clamp80(text: string): string {
+  return text.length <= 80 ? text : text.slice(0, 80);
+}
+
+// propose.ts's own raw model output for this candidate (RawRuleWriterOutput,
+// unvalidated): stored once, at candidate-creation time, as
+// agent_actions.structured_output (role='rule_writer', action=
+// 'classify_correction' -- see store.createCorrectionCandidate's
+// classification_meta handling). This is where duplicate_of_rule_id and
+// contradicts_rule_id actually live for a *specific* candidate -- neither
+// has its own column on correction_candidates (evidence_reason is a fixed
+// "mined from N corrections" string, not JSON), and a rule_health reverse
+// lookup (contradicted_by_rule_id) would only ever reflect the *latest*
+// contradiction recorded against the older rule, silently going stale for
+// an earlier mined candidate once a second one contradicts the same rule.
+// Reading the per-candidate row instead never has that problem. Only ever
+// non-null for a candidate propose.ts itself created (role='rule_writer');
+// every other candidate (human-authored, demo, classifier-derived) has no
+// such row and this returns null.
+function ruleWriterOutput(
+  correctionCandidateId: number,
+): { duplicate_of_rule_id: number | null; contradicts_rule_id: number | null } | null {
+  const rows = store.getClassificationHistory(correctionCandidateId) as {
+    role: string | null;
+    structured_output: string | null;
+  }[];
+  const row = rows.find((r) => r.role === "rule_writer" && r.structured_output);
+  if (!row?.structured_output) return null;
+  try {
+    const parsed = JSON.parse(row.structured_output) as {
+      duplicate_of_rule_id?: unknown;
+      contradicts_rule_id?: unknown;
+    };
+    return {
+      duplicate_of_rule_id:
+        typeof parsed.duplicate_of_rule_id === "number" ? parsed.duplicate_of_rule_id : null,
+      contradicts_rule_id:
+        typeof parsed.contradicts_rule_id === "number" ? parsed.contradicts_rule_id : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// spec §4: the reason decision_mode='automatic' didn't auto-accept this
+// pending item without asking -- computed at list time, purely from what's
+// already on record (never an LLM call). Gated to decision_mode='automatic'
+// (in 'ask' mode the user decides everything, so nothing is ever "not
+// sure") and to a rule the analysis itself created (a human-authored or
+// demo item was never a candidate for auto-accept in the first place, so
+// there is nothing to explain). First match wins, in the order spec'd:
+// low confidence, then a flagged duplicate, then a flagged contradiction.
+function computeUnsure(c: CorrectionRow, rule: RuleRow | null): string | null {
+  if (store.getSetting("decision_mode") !== "automatic") return null;
+  if (!isAnalysisCreated(rule)) return null;
+
+  const threshold = Number(store.getSetting("decision_auto_confidence"));
+  if (c.confidence != null && c.confidence < threshold) {
+    return `Harness wasn't sure: confidence ${c.confidence.toFixed(2)} is below your automatic threshold (${threshold.toFixed(2)}).`;
+  }
+
+  const writerOutput = ruleWriterOutput(c.id);
+  if (writerOutput?.duplicate_of_rule_id != null) {
+    return "Harness wasn't sure: similar to an existing rule.";
+  }
+
+  if (writerOutput?.contradicts_rule_id != null) {
+    const contradicted = store.getRule(writerOutput.contradicts_rule_id) as {
+      rule: { instruction: string };
+    } | null;
+    if (contradicted) {
+      return `Harness wasn't sure: may conflict with "${clamp80(contradicted.rule.instruction)}".`;
+    }
+  }
+
+  return null;
+}
+
+// A tag's acceptance rate for computeRank below: accepted / (accepted +
+// skipped) from tagAcceptanceRates(), falling back to a neutral 0.5 when
+// the tag has no rate at all yet, or fewer than 3 decided candidates ever
+// carried it (spec §4 -- too little history to trust the signal).
+function acceptanceRateFor(
+  tag: string,
+  rates: Record<string, { accepted: number; skipped: number }>,
+): number {
+  const r = rates[tag];
+  if (!r) return 0.5;
+  const total = r.accepted + r.skipped;
+  return total < 3 ? 0.5 : r.accepted / total;
+}
+
+// spec §4: rank = confidence x (0.5 + acceptanceRate(tag)), averaged across
+// every tag the item carries (episodeScopeTags -- the same union
+// tagAcceptanceRates itself scores by; a retire item has no episode of its
+// own, so listImprovements passes ["general"], matching episodeScopeTags'
+// own fallback for an untagged episode). A candidate with no confidence on
+// record (e.g. hand-authored via the MCP tools, or demo data -- never a
+// rule-writer proposal, which always sets one) is treated as fully
+// confident (1) rather than penalized for a signal it was never given.
+function computeRank(confidence: number | null, tags: string[]): number {
+  const rates = store.tagAcceptanceRates();
+  const effectiveConfidence = confidence ?? 1;
+  const effectiveTags = tags.length > 0 ? tags : ["general"];
+  const sum = effectiveTags.reduce(
+    (total, tag) => total + effectiveConfidence * (0.5 + acceptanceRateFor(tag, rates)),
+    0,
+  );
+  return sum / effectiveTags.length;
+}
+
+// spec §4: pending items ranked highest-rank-first; everything already
+// decided (accepted/skipped) keeps its own relative order exactly as
+// buildImprovement/buildRetireItem produced it (Array.prototype.sort is
+// stable, so ties within the pending group keep their relative order too).
+function sortForInbox(items: Improvement[]): Improvement[] {
+  const pending = items.filter((i) => i.decision.status === "pending");
+  const rest = items.filter((i) => i.decision.status !== "pending");
+  pending.sort((a, b) => b.rank - a.rank);
+  return [...pending, ...rest];
+}
+// ---- end Round 5 Task 5 ----

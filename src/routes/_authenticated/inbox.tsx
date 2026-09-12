@@ -2,20 +2,16 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  DecisionCard,
-  ImprovementDetail,
-  type Improvement,
-} from "@/components/harness/improvement";
+import { DecisionCard, type Improvement } from "@/components/harness/improvement";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import { fetchImprovements, postImprovementAction } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
-  validateSearch: (search: Record<string, unknown>): { improvement?: number } => {
-    const raw = search["improvement"];
-    const id = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : undefined;
-    return id != null && Number.isFinite(id) ? { improvement: id } : {};
-  },
+  // Round 5 Task 5 / spec §2: the Inbox has no detail view of its own any
+  // more -- clicking an item goes to Suggestions (/ledger), which owns
+  // ImprovementDetail. Kept (returning {}) rather than removed, since
+  // TanStack Router still calls it for every navigation to this route.
+  validateSearch: (): Record<string, never> => ({}),
   head: () => ({
     meta: [
       { title: "Inbox — Harness Ledger" },
@@ -81,7 +77,6 @@ function ConfirmationRow({
 function Page() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const search = Route.useSearch();
   // Items decided this visit: id -> the exact toast text, so the
   // confirmation row says the same thing the toast said. Cleared by "Undo"
   // or by leaving the page (component state only -- a reload starts clean).
@@ -117,10 +112,10 @@ function Page() {
     const previousAt = new Date(previous).getTime();
     return !Number.isNaN(createdAt) && !Number.isNaN(previousAt) && createdAt > previousAt;
   };
-  const open = (id: number) => navigate({ to: "/inbox", search: { improvement: id } });
-  const back = () => navigate({ to: "/inbox", search: {} });
-  const viewInImprovements = (id: number) =>
-    navigate({ to: "/ledger", search: { improvement: id } });
+  // Round 5 Task 5 / spec §2: clicking an item -- the compact card's title,
+  // or a confirmation row's "Open" -- always goes to Suggestions (/ledger)
+  // with the item preselected. The Inbox itself has no detail view.
+  const onOpen = (id: number) => navigate({ to: "/ledger", search: { improvement: id } });
   const confirmDecision = (id: number, msg: string) => {
     refresh();
     setConfirmed((prev) => {
@@ -192,25 +187,6 @@ function Page() {
   // nothing jumps around on screen.
   const pending = all.filter((i) => i.decision.status === "pending");
   const list = all.filter((i) => i.decision.status === "pending" || confirmed.has(i.id));
-  // Previous/Next browse the pending order -- the list the user came from.
-  const order = pending.map((i) => i.id);
-
-  const selected =
-    search.improvement != null ? all.find((i) => i.id === search.improvement) : undefined;
-  if (selected) {
-    const idx = order.indexOf(selected.id);
-    return (
-      <ImprovementDetail
-        item={selected}
-        onBack={back}
-        onChanged={(msg) => confirmDecision(selected.id, msg)}
-        backLabel="← Inbox"
-        position={idx >= 0 ? { index: idx + 1, total: order.length } : undefined}
-        onPrev={idx > 0 ? () => open(order[idx - 1]!) : undefined}
-        onNext={idx >= 0 && idx < order.length - 1 ? () => open(order[idx + 1]!) : undefined}
-      />
-    );
-  }
 
   return (
     <div className="space-y-4">
@@ -240,13 +216,14 @@ function Page() {
                     message={confirmed.get(i.id)!}
                     busy={undoing.has(i.id)}
                     onUndo={() => void undo(i.id)}
-                    onView={() => viewInImprovements(i.id)}
+                    onView={() => onOpen(i.id)}
                   />
                 ) : (
                   <DecisionCard
+                    compact
                     item={i}
                     onChanged={(msg) => confirmDecision(i.id, msg)}
-                    onOpen={open}
+                    onOpen={onOpen}
                     isNew={isNew(i)}
                   />
                 )}

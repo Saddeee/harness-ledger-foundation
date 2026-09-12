@@ -1642,3 +1642,452 @@ test("verdict action: not_sure just records the verdict, no rule_health side eff
   assert.equal(health.hurt, 0);
   assert.equal(store.listRuleVerdicts(g.rule.id)[0]!.verdict, "not_sure");
 });
+
+// ---- Round 5 Task 5: unsure / rank / skip reason ----
+
+// Like mkRule above, but gives a rule-writer-shaped candidate: a `confidence`
+// on the candidate, `created_by` ending "(rule writer)" on its rule (so
+// isAnalysisCreated treats it as mined), and (optionally) the raw
+// classify_correction/role=rule_writer agent_actions row propose.ts itself
+// writes -- the only place duplicate_of_rule_id/contradicts_rule_id survive
+// per-candidate (see ruleWriterOutput's doc comment in improvements.ts).
+function mkMinedCandidate(input: {
+  project: string;
+  externalIdPrefix: string;
+  content: string;
+  summary: string;
+  instruction: string;
+  scope: "project" | "workspace";
+  confidence: number;
+  structuredOutput?: { duplicate_of_rule_id: number | null; contradicts_rule_id: number | null };
+}) {
+  const msg = store.upsertHistoryItem({
+    project_id: input.project,
+    kind: "message",
+    external_id: `${input.externalIdPrefix}-1`,
+    role: "user",
+    content: input.content,
+    occurred_at: "2026-09-01T00:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const ep = store.createTaskEpisode({
+    project_id: input.project,
+    title: input.externalIdPrefix,
+    provenance: "llm_derived",
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: ep.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: input.scope,
+    summary: input.summary,
+    confidence: input.confidence,
+    evidence_reason: `mined from 1 corrections`,
+    evidence_history_item_ids: [msg.id],
+    ...(input.structuredOutput
+      ? {
+          classification_meta: {
+            provider: "openai",
+            model: "gpt-5.5",
+            role: "rule_writer",
+            structured_output: {
+              propose: true,
+              instruction: input.instruction,
+              scope: input.scope,
+              prediction: "x",
+              failure_signature: "x",
+              evidence_message_ids: [`${input.externalIdPrefix}-1`],
+              confidence: input.confidence,
+              duplicate_of_rule_id: input.structuredOutput.duplicate_of_rule_id,
+              contradicts_rule_id: input.structuredOutput.contradicts_rule_id,
+            },
+          },
+        }
+      : {}),
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: input.instruction,
+    reuse_rationale: "r",
+    proposed_scope: input.scope,
+    confidence: input.confidence,
+    provenance: "llm_derived",
+    created_by: "openai/gpt-5.5 (rule writer)",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: input.instruction,
+    scope: input.scope,
+    applies_when: "always",
+    predicted_failure: "x",
+    ownership: "harness",
+    created_by: "openai/gpt-5.5 (rule writer)",
+  }) as { id: number };
+  return { cc, rule };
+}
+
+const UNSURE_PROJECT = "unsure-test-project";
+db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+  UNSURE_PROJECT,
+  "unsure",
+);
+store.upsertProject({ lovable_project_id: UNSURE_PROJECT, name: "Unsure Test Project" });
+
+test("unsure: null in ask mode, even for a mined candidate below the confidence threshold", () => {
+  store.setSettings({ decision_mode: "ask" });
+  const { cc } = mkMinedCandidate({
+    project: UNSURE_PROJECT,
+    externalIdPrefix: "unsure-ask",
+    content: "please fix the signup flow",
+    summary: "signup flow needs a fix",
+    instruction: "Always validate the signup form before submit.",
+    scope: "project",
+    confidence: 0.3,
+  });
+  assert.equal(imp.getImprovement(cc.id)!.unsure, null);
+});
+
+test("unsure: below-confidence text, exact copy with two-decimal confidence and threshold", () => {
+  store.setSettings({ decision_mode: "automatic", decision_auto_confidence: "0.8" });
+  const { cc } = mkMinedCandidate({
+    project: UNSURE_PROJECT,
+    externalIdPrefix: "unsure-lowconf",
+    content: "please fix the checkout flow",
+    summary: "checkout flow needs a fix",
+    instruction: "Always validate the checkout form before submit.",
+    scope: "project",
+    confidence: 0.62,
+  });
+  assert.equal(
+    imp.getImprovement(cc.id)!.unsure,
+    "Harness wasn't sure: confidence 0.62 is below your automatic threshold (0.80).",
+  );
+  store.setSettings({ decision_mode: "ask" });
+});
+
+test("unsure: a flagged (but not auto-rejected) duplicate reads as 'similar to an existing rule'", () => {
+  store.setSettings({ decision_mode: "automatic", decision_auto_confidence: "0.8" });
+  const { cc } = mkMinedCandidate({
+    project: UNSURE_PROJECT,
+    externalIdPrefix: "unsure-dup",
+    content: "please fix the login flow",
+    summary: "login flow needs a fix",
+    instruction: "Always validate the login form before submit.",
+    scope: "project",
+    confidence: 0.95,
+    structuredOutput: { duplicate_of_rule_id: 999999, contradicts_rule_id: null },
+  });
+  assert.equal(
+    imp.getImprovement(cc.id)!.unsure,
+    "Harness wasn't sure: similar to an existing rule.",
+  );
+  store.setSettings({ decision_mode: "ask" });
+});
+
+test("unsure: a flagged contradiction names the other rule's text, clamped to 80 characters", () => {
+  const longInstruction =
+    "Always require the user to re-authenticate before changing billing details or payment methods on file.";
+  assert.ok(
+    longInstruction.length > 80,
+    "fixture instruction must exceed 80 chars to test the clamp",
+  );
+  const other = mkRule({
+    project: UNSURE_PROJECT,
+    externalIdPrefix: "unsure-other-rule",
+    content: "always require re-auth for billing changes",
+    summary: "billing changes need re-auth",
+    desired: longInstruction,
+    instruction: longInstruction,
+    scope: "project",
+  });
+
+  store.setSettings({ decision_mode: "automatic", decision_auto_confidence: "0.8" });
+  const { cc } = mkMinedCandidate({
+    project: UNSURE_PROJECT,
+    externalIdPrefix: "unsure-contradict",
+    content: "please skip re-auth for billing changes",
+    summary: "billing changes should skip re-auth",
+    instruction: "Never require re-authentication for billing changes.",
+    scope: "project",
+    confidence: 0.95,
+    structuredOutput: { duplicate_of_rule_id: null, contradicts_rule_id: other.rule.id },
+  });
+  assert.equal(
+    imp.getImprovement(cc.id)!.unsure,
+    `Harness wasn't sure: may conflict with "${longInstruction.slice(0, 80)}".`,
+  );
+  store.setSettings({ decision_mode: "ask" });
+});
+
+test("unsure: null once confidence clears the bar and nothing was flagged", () => {
+  store.setSettings({ decision_mode: "automatic", decision_auto_confidence: "0.8" });
+  const { cc } = mkMinedCandidate({
+    project: UNSURE_PROJECT,
+    externalIdPrefix: "unsure-clean",
+    content: "please fix the profile flow",
+    summary: "profile flow needs a fix",
+    instruction: "Always validate the profile form before submit.",
+    scope: "project",
+    confidence: 0.95,
+    structuredOutput: { duplicate_of_rule_id: null, contradicts_rule_id: null },
+  });
+  assert.equal(imp.getImprovement(cc.id)!.unsure, null);
+  store.setSettings({ decision_mode: "ask" });
+});
+
+test("unsure: null for a low-confidence candidate whose rule was NOT created by the analysis", () => {
+  store.setSettings({ decision_mode: "automatic", decision_auto_confidence: "0.8" });
+  // A human-authored candidate, via createCorrectionCandidate directly (the
+  // MCP path) rather than mkMinedCandidate -- confidence is set low, but the
+  // rule's created_by never ends "(rule writer)", so isAnalysisCreated must
+  // gate this out regardless of confidence.
+  const msg = store.upsertHistoryItem({
+    project_id: UNSURE_PROJECT,
+    kind: "message",
+    external_id: "unsure-human-1",
+    role: "user",
+    content: "please fix the export flow",
+    occurred_at: "2026-09-01T00:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const ep = store.createTaskEpisode({
+    project_id: UNSURE_PROJECT,
+    title: "unsure-human",
+    provenance: "llm_derived",
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: ep.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "export flow needs a fix",
+    confidence: 0.1,
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: "Always validate the export form before submit.",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "operator (local UI)",
+  }) as { id: number };
+  store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "Always validate the export form before submit.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "x",
+    ownership: "user",
+    created_by: "operator (local UI)",
+  });
+  assert.equal(imp.getImprovement(cc.id)!.unsure, null);
+  store.setSettings({ decision_mode: "ask" });
+});
+
+test("rank: higher confidence x tag acceptance rate ranks first among pending items", () => {
+  const RANK_PROJECT = "rank-test-project";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    RANK_PROJECT,
+    "rank",
+  );
+  store.upsertProject({ lovable_project_id: RANK_PROJECT, name: "Rank Test Project" });
+
+  // Seeds a decided (accepted/skipped) history for a tag, so
+  // tagAcceptanceRates()[tag] reads a real rate rather than the <3-decisions
+  // fallback -- each seed candidate is immediately accepted or skipped so it
+  // counts, and tagged via insertMessageClassification on its own evidence
+  // message (episodeScopeTags' source).
+  function seedDecision(tag: string, idx: number, outcome: "accept" | "skip") {
+    const msg = store.upsertHistoryItem({
+      project_id: RANK_PROJECT,
+      kind: "message",
+      external_id: `rank-seed-${tag}-${idx}`,
+      role: "user",
+      content: `seed message ${tag} ${idx}`,
+      occurred_at: "2026-09-01T00:00:00Z",
+      provenance: "lovable_mcp",
+    }) as { id: number };
+    store.insertMessageClassification({
+      history_item_id: msg.id,
+      classification: "correction",
+      tags: [tag],
+      summary: "seed",
+    });
+    const ep = store.createTaskEpisode({
+      project_id: RANK_PROJECT,
+      title: `rank-seed-${tag}-${idx}`,
+      provenance: "llm_derived",
+      evidence_history_item_ids: [msg.id],
+    }) as { id: number };
+    const cc = store.createCorrectionCandidate({
+      task_episode_id: ep.id,
+      classification: "constraint_restatement",
+      is_correction: true,
+      reusable: true,
+      proposed_scope: "project",
+      summary: `seed ${tag} ${idx}`,
+      evidence_history_item_ids: [msg.id],
+    }) as { id: number };
+    if (outcome === "accept") {
+      imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+    } else {
+      imp.improvementAction({ action: "skip", id: cc.id });
+    }
+    return cc.id;
+  }
+
+  // "billing": 3 accepted, 1 skipped -> rate 0.75 (>=3 decisions, real rate).
+  seedDecision("billing", 1, "accept");
+  seedDecision("billing", 2, "accept");
+  seedDecision("billing", 3, "accept");
+  seedDecision("billing", 4, "skip");
+  // "ui": 1 accepted, 2 skipped -> rate 1/3 (>=3 decisions, real rate).
+  seedDecision("ui", 1, "accept");
+  seedDecision("ui", 2, "skip");
+  seedDecision("ui", 3, "skip");
+  // "rare": 1 accepted only -> fewer than 3 decisions, falls back to 0.5.
+  seedDecision("rare", 1, "accept");
+
+  // Three NEW pending candidates, same confidence, one tag each -- isolates
+  // rank to the tag's acceptance rate alone.
+  function mkPending(tag: string) {
+    const msg = store.upsertHistoryItem({
+      project_id: RANK_PROJECT,
+      kind: "message",
+      external_id: `rank-pending-${tag}`,
+      role: "user",
+      content: `pending message ${tag}`,
+      occurred_at: "2026-09-02T00:00:00Z",
+      provenance: "lovable_mcp",
+    }) as { id: number };
+    store.insertMessageClassification({
+      history_item_id: msg.id,
+      classification: "correction",
+      tags: [tag],
+      summary: "pending",
+    });
+    const ep = store.createTaskEpisode({
+      project_id: RANK_PROJECT,
+      title: `rank-pending-${tag}`,
+      provenance: "llm_derived",
+      evidence_history_item_ids: [msg.id],
+    }) as { id: number };
+    const cc = store.createCorrectionCandidate({
+      task_episode_id: ep.id,
+      classification: "constraint_restatement",
+      is_correction: true,
+      reusable: true,
+      proposed_scope: "project",
+      summary: `pending ${tag}`,
+      confidence: 0.9,
+      evidence_history_item_ids: [msg.id],
+    }) as { id: number };
+    return cc.id;
+  }
+
+  const billingId = mkPending("billing");
+  const uiId = mkPending("ui");
+  const rareId = mkPending("rare");
+
+  // billing: 0.9 * (0.5 + 0.75) = 1.125
+  // rare:    0.9 * (0.5 + 0.5)  = 0.9
+  // ui:      0.9 * (0.5 + 1/3)  = 0.75
+  const all = imp.listImprovements();
+  const rank = (id: number) => all.find((i) => i.id === id)!.rank;
+  assert.ok(Math.abs(rank(billingId) - 1.125) < 1e-9, `billing rank was ${rank(billingId)}`);
+  assert.ok(Math.abs(rank(rareId) - 0.9) < 1e-9, `rare rank was ${rank(rareId)}`);
+  assert.ok(Math.abs(rank(uiId) - 0.75) < 1e-9, `ui rank was ${rank(uiId)}`);
+
+  // The three land in rank-desc order among themselves, regardless of where
+  // other pending items from earlier tests fall in the full list.
+  const orderedIds = all.map((i) => i.id).filter((id) => [billingId, rareId, uiId].includes(id));
+  assert.deepEqual(orderedIds, [billingId, rareId, uiId]);
+});
+
+test("rank: non-pending items keep their existing (created_at desc) relative order, unaffected by ranking", () => {
+  const ORDER_PROJECT = "rank-order-test-project";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    ORDER_PROJECT,
+    "rank-order",
+  );
+  store.upsertProject({ lovable_project_id: ORDER_PROJECT, name: "Rank Order Test Project" });
+
+  const older = mkRule({
+    project: ORDER_PROJECT,
+    externalIdPrefix: "rank-order-older",
+    content: "always do the older thing",
+    summary: "the older thing needs doing. More words for length here.",
+    desired: "Always do the older thing.",
+    instruction: "Always do the older thing.",
+    scope: "project",
+  });
+  const newer = mkRule({
+    project: ORDER_PROJECT,
+    externalIdPrefix: "rank-order-newer",
+    content: "always do the newer thing",
+    summary: "the newer thing needs doing. More words for length here.",
+    desired: "Always do the newer thing.",
+    instruction: "Always do the newer thing.",
+    scope: "project",
+  });
+  imp.improvementAction({ action: "accept", id: older.cc.id, destination: "project" });
+  imp.improvementAction({ action: "accept", id: newer.cc.id, destination: "project" });
+  setAt("correction_candidates", "created_at", older.cc.id, "2026-09-01 09:00:00");
+  setAt("correction_candidates", "created_at", newer.cc.id, "2026-09-01 10:00:00");
+
+  // store.listCorrectionCandidates orders by created_at DESC -- the same raw
+  // order buildImprovement's caller (listImprovements) starts from, and
+  // sortForInbox must leave untouched for non-pending items.
+  const rawOrder = (store.listCorrectionCandidates() as { id: number }[])
+    .map((r) => r.id)
+    .filter((id) => id === older.cc.id || id === newer.cc.id);
+  assert.deepEqual(rawOrder, [newer.cc.id, older.cc.id], "sanity: raw order is newest first");
+
+  const listedOrder = imp
+    .listImprovements()
+    .map((i) => i.id)
+    .filter((id) => id === older.cc.id || id === newer.cc.id);
+  assert.deepEqual(listedOrder, [newer.cc.id, older.cc.id]);
+});
+
+test("skip: an optional reason is stored via setCandidateSkipReason, readable back off the candidate row", () => {
+  const REASON_PROJECT = "skip-reason-test-project";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    REASON_PROJECT,
+    "skip-reason",
+  );
+  store.upsertProject({ lovable_project_id: REASON_PROJECT, name: "Skip Reason Test Project" });
+
+  const a = mkRule({
+    project: REASON_PROJECT,
+    externalIdPrefix: "skip-reason-a",
+    content: "always do the skip-reason thing",
+    summary: "the skip-reason thing needs doing. More words for length.",
+    desired: "Always do the skip-reason thing.",
+    instruction: "Always do the skip-reason thing.",
+    scope: "project",
+  });
+  const result = imp.improvementAction({ action: "skip", id: a.cc.id, reason: "wrong_wording" });
+  assert.equal(result.decision.status, "skipped");
+  const row = store.getCorrectionCandidate(a.cc.id) as {
+    correction_candidate: { skip_reason: string | null };
+  };
+  assert.equal(row.correction_candidate.skip_reason, "wrong_wording");
+
+  // A second skip with no reason clears it (setCandidateSkipReason(id, null)).
+  imp.improvementAction({ action: "reopen", id: a.cc.id });
+  imp.improvementAction({ action: "skip", id: a.cc.id });
+  const row2 = store.getCorrectionCandidate(a.cc.id) as {
+    correction_candidate: { skip_reason: string | null };
+  };
+  assert.equal(row2.correction_candidate.skip_reason, null);
+});

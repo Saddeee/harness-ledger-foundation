@@ -129,6 +129,15 @@ export type Improvement = {
   // with a rule_health row; null otherwise (including every "retire" item,
   // which carries the equivalent counts under retire.health).
   health: ImprovementHealth | null;
+  // Round 5 Task 5 / spec §4: why decision_mode='automatic' didn't accept
+  // this one without asking; null in ask mode and for "retire" items.
+  unsure: string | null;
+  // Who decided this item: 'user', 'automatic' (Round 5 Task 6), or null
+  // while still pending.
+  decided_by: "user" | "automatic" | null;
+  // Round 5 Task 5 / spec §4: confidence x tag acceptance rate -- the Inbox
+  // sort order for pending items only; every other view ignores it.
+  rank: number;
   developer: {
     correction: unknown;
     learning: unknown | null;
@@ -257,7 +266,6 @@ export type KnowledgeTargetView = {
   // Task C2: rules retired from this target, collapsed under "Retired rules
   // (N)" on the Instructions page, each with a "Re-add" button.
   retired_rules: KnowledgeActiveRule[];
-  versions: KnowledgeVersionSummary[];
   pending_write: { version_id: number; created_at: string } | null;
 };
 
