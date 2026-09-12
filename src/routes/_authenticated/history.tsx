@@ -12,7 +12,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Timeline } from "@/components/harness/timeline";
-import { fetchKnowledge, fetchTimeline, postKnowledge } from "@/lib/improvements-client";
+import {
+  executorQueryOptions,
+  fetchKnowledge,
+  fetchTimeline,
+  postKnowledge,
+} from "@/lib/improvements-client";
 
 type HistorySearch = { target?: "project" | "workspace"; id?: string };
 
@@ -53,6 +58,7 @@ function Page() {
   const search = Route.useSearch();
 
   const knowledge = useQuery({ queryKey: ["harness-knowledge"], queryFn: fetchKnowledge });
+  const executor = useQuery(executorQueryOptions);
 
   // Derived before the loading/error returns below so every hook here is
   // called on every render, never skipped -- selected is undefined while
@@ -132,7 +138,9 @@ function Page() {
 
       {targets.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
-          Nothing to show yet. Allow a project on the Projects page, then press Sync now.
+          {executor.data?.connection?.connected === false
+            ? "Connect Lovable on the Projects page, then press Sync now."
+            : "Nothing to show yet. Allow a project on the Projects page, then press Sync now."}
         </div>
       ) : (
         <>

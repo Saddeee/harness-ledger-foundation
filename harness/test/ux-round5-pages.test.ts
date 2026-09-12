@@ -54,7 +54,16 @@ test("instructions.tsx: renders a rules table, and the old per-version history v
   assert.match(code, /\(\$\{content\.length\} characters\)/);
 
   // rules table columns/status vocabulary (spec §3a)
-  for (const text of ["Rule", "Status", "Since", "Observed", "In Lovable", "Staged", "Needs attention", "Testing"]) {
+  for (const text of [
+    "Rule",
+    "Status",
+    "Since",
+    "Observed",
+    "In Lovable",
+    "Staged",
+    "Needs attention",
+    "Testing",
+  ]) {
     assert.ok(raw.includes(text), `instructions.tsx missing rules-table text "${text}"`);
   }
   assert.ok(raw.includes("No rules yet."));
@@ -67,9 +76,18 @@ test("instructions.tsx: renders a rules table, and the old per-version history v
   assert.ok(raw.includes("{/* verdict-buttons */}"));
   assert.ok(raw.includes("{/* adherence-line */}"));
 
-  // the whole row navigates to the rule's Suggestions detail
-  assert.match(code, /role: "link"/);
-  assert.match(code, /tabIndex: 0/);
+  // Fix round 1: the row itself keeps native <tr> semantics -- clicking
+  // anywhere in the row is a mouse-only convenience navigating to the
+  // rule's Suggestions detail, but the row must not claim role="link" or
+  // steal a tab stop from the table; the rule text is reachable by keyboard
+  // through its own focusable Link/Button in the first cell instead.
+  assert.ok(!raw.includes('role="link"'), "the <tr> must not override its role to link");
+  assert.ok(!code.includes('role: "link"'), "the <tr> must not override its role to link");
+  assert.match(
+    code,
+    /<Link to="\/ledger" search=\{\{ improvement: improvementId \}\}/,
+    "the rule cell must render a focusable Link when there's a Suggestions detail to open",
+  );
   assert.match(code, /to: "\/ledger", search: \{ improvement: improvementId \}/);
 });
 
@@ -149,7 +167,10 @@ test("timeline.tsx: aria-expanded nodes, a diff toggle, Restore, nothing expande
 
 test("timeline.tsx: instructions.tsx imports ManagedBlockText from it (moved, not duplicated)", () => {
   const instructionsCode = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(instructionsCode, /import \{ ManagedBlockText \} from "@\/components\/harness\/timeline"/);
+  assert.match(
+    instructionsCode,
+    /import \{ ManagedBlockText \} from "@\/components\/harness\/timeline"/,
+  );
   // the old local copies are gone from instructions.tsx
   assert.ok(!/function ManagedBlockText/.test(instructionsCode));
   assert.ok(!/function WhatChangedLines/.test(instructionsCode));

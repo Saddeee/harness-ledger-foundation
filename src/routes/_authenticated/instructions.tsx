@@ -9,8 +9,7 @@
 // Only talks to the local Harness routes (fetchKnowledge/postExecutor/
 // postImprovementAction) -- writing to Lovable itself happens in the
 // executor process, never from this page.
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import type { KeyboardEvent } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -123,9 +122,17 @@ function KnowledgeText({
   );
 }
 
-// One row per active rule: the rule text (plain, not link-styled -- the
-// whole row navigates to its Suggestions detail), status, since-added date,
-// what's been observed, and the Retire action. spec §3a.
+// One row per active rule: the rule text -- a keyboard-focusable Link when
+// there's a Suggestions detail to open, plain text otherwise -- status,
+// since-added date, what's been observed, and the Retire action. spec §3a.
+// Fix round 1: the row itself keeps its native table-row semantics (no ARIA
+// role or tab-stop override) -- clicking anywhere in the row still
+// navigates, as a mouse-only convenience, but the rule is reachable by
+// keyboard through the Link/Button in its own cell, not by tabbing to the
+// row.
+const RULE_LINK_CLASS =
+  "text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
 function RuleRow({
   rule,
   retireBusy,
@@ -140,9 +147,6 @@ function RuleRow({
   const goToSuggestion = () => {
     if (improvementId != null) navigate({ to: "/ledger", search: { improvement: improvementId } });
   };
-  const onKeyDown = (e: KeyboardEvent<HTMLTableRowElement>) => {
-    if (e.key === "Enter") goToSuggestion();
-  };
 
   const text =
     rule.text || (improvementId != null ? `Suggestion #${improvementId}` : `Rule #${rule.id}`);
@@ -152,18 +156,16 @@ function RuleRow({
 
   return (
     <TableRow
-      {...(improvementId != null
-        ? {
-            role: "link",
-            tabIndex: 0,
-            onClick: goToSuggestion,
-            onKeyDown,
-            className: "cursor-pointer",
-          }
-        : {})}
+      {...(improvementId != null ? { onClick: goToSuggestion, className: "cursor-pointer" } : {})}
     >
       <TableCell>
-        <span>{text}</span>
+        {improvementId != null ? (
+          <Link to="/ledger" search={{ improvement: improvementId }} className={RULE_LINK_CLASS}>
+            {text}
+          </Link>
+        ) : (
+          <span>{text}</span>
+        )}
       </TableCell>
       <TableCell>{status}</TableCell>
       <TableCell>{since}</TableCell>
