@@ -5,7 +5,7 @@
 import { connect, disconnect, status } from "./lovable-auth.js";
 import { loop, runOnce, nextRunAt, scheduleFromSettings } from "./schedule.js";
 import { getSettings, latestSyncRun } from "../store.js";
-import { runAnalysis } from "../analysis/run.js";
+import { runAnalyseCommand } from "../analysis/run.js";
 import { createCallLlm } from "../llm/index.js";
 
 const USAGE =
@@ -50,16 +50,15 @@ if (command === "" || command === "loop") {
   if (!result.ran) process.exit(0);
   if (!result.ok) process.exit(1);
 } else if (command === "analyse") {
-  // Round 4 Task A3: one analysis pass, independent of the Lovable
-  // connection (spec §2) -- runs even with no "Analyse now" request queued
-  // (nothing to take, so it finishes immediately with zero counts) and even
-  // with no provider configured (providerReady's reason becomes the run's
-  // error). Never throws; prints no key material, only counts/tokens.
-  const result = await runAnalysis(createCallLlm());
-  console.log(
-    `Analysis run ${result.runId} ${result.ok ? "ok" : `failed: ${result.error}`} ${JSON.stringify(result.counts)} tokens=${result.tokens}`,
-  );
-  if (!result.ok) process.exit(1);
+  // Round 4 Task A3 (fix round 1): queues an analysis_requests row (same
+  // audit trail a UI-triggered "Analyse now" leaves) and refuses to overlap
+  // a run already in flight, exactly like `--once` does for sync -- see
+  // runAnalyseCommand's own doc comment. Independent of the Lovable
+  // connection (spec §2). Never throws; prints no key material, only
+  // counts/tokens.
+  const outcome = await runAnalyseCommand(createCallLlm());
+  if (!outcome.ran) process.exit(0);
+  if (!outcome.result.ok) process.exit(1);
 } else if (command === "connect") {
   const me = await connect();
   console.log(`Connected as ${me.email ?? "(unknown)"} — ${me.workspaces.length} workspace(s).`);

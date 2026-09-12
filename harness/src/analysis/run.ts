@@ -44,22 +44,52 @@ function providersInUse(): LlmProvider[] {
   return [...providers];
 }
 
+// Fix round 1: providerReady() is called on every executor route GET (the
+// Inbox/Instructions notices poll it), so a claude_code setup was spawning
+// `claude --version` on every page load. The CLI check itself is cheap but
+// not free (a real process spawn) and its answer changes at most as often
+// as the CLI is installed/removed -- a 60-second memo is plenty fresh for a
+// UI status line. Key checks (harness/src/llm-keys.ts's keyStatus) stay
+// live/uncached: they're a local file read, not a process spawn, and must
+// reflect a key the user just saved immediately.
+const CLAUDE_CODE_CHECK_TTL_MS = 60_000;
+let claudeCodeCheckCache: { at: number; result: ProviderReady } | null = null;
+
+async function checkClaudeCode(exec: Exec, now: () => number): Promise<ProviderReady> {
+  const nowMs = now();
+  if (claudeCodeCheckCache && nowMs - claudeCodeCheckCache.at < CLAUDE_CODE_CHECK_TTL_MS) {
+    return claudeCodeCheckCache.result;
+  }
+  const raw = await exec("claude", ["--version"], "").catch(() => null);
+  const result: ProviderReady =
+    raw && raw.code === 0
+      ? { ok: true }
+      : { ok: false, reason: "Claude Code was not found on this machine." };
+  claudeCodeCheckCache = { at: nowMs, result };
+  return result;
+}
+
 /**
  * Checks the provider(s) a run would use are actually usable before
  * spending a single LLM call: an API provider (openai/anthropic/google)
- * needs a stored key (harness/src/llm-keys.ts); claude_code needs the CLI
- * on PATH, checked via an injectable `exec` so tests never spawn the real
- * binary. Returns the first reason found, in role order (classifier before
- * miner) -- there is normally only one distinct provider across both roles.
+ * needs a stored key (harness/src/llm-keys.ts, checked live every call);
+ * claude_code needs the CLI on PATH, checked via an injectable `exec` (so
+ * tests never spawn the real binary) and memoized for 60 seconds (see
+ * checkClaudeCode above). Returns the first reason found, in role order
+ * (classifier before miner) -- there is normally only one distinct
+ * provider across both roles. `deps.now` is injectable for tests to
+ * control the memo window without a real 60-second wait.
  */
-export async function providerReady(deps?: { exec?: Exec }): Promise<ProviderReady> {
+export async function providerReady(deps?: {
+  exec?: Exec;
+  now?: () => number;
+}): Promise<ProviderReady> {
   const exec = deps?.exec ?? defaultExec;
+  const now = deps?.now ?? Date.now;
   for (const provider of providersInUse()) {
     if (provider === "claude_code") {
-      const result = await exec("claude", ["--version"], "").catch(() => null);
-      if (!result || result.code !== 0) {
-        return { ok: false, reason: "Claude Code was not found on this machine." };
-      }
+      const result = await checkClaudeCode(exec, now);
+      if (!result.ok) return result;
     } else {
       const status = keyStatus()[provider];
       if (!status?.has_key) {
@@ -170,4 +200,40 @@ export async function runAnalysis(
   for (const id of requestIds) store.completeAnalysisRequest(id);
 
   return { runId, ok, counts, tokens, costUsd, ...(error ? { error } : {}) };
+}
+
+export type RunAnalyseCommandResult = { ran: true; result: RunAnalysisResult } | { ran: false };
+
+/**
+ * Fix round 1: the single entry point for a manual "Analyse now" trigger
+ * from outside the scheduler loop (the `--analyse` CLI flag). Queues an
+ * `analysis_requests` row first -- coalesced with any request already open,
+ * exactly like the UI's "Analyse now" button -- so a CLI-triggered run
+ * leaves the same audit trail (a request row, `done` and linked to the run
+ * that consumed it) a UI-triggered one does; previously `--analyse` called
+ * runAnalysis directly with no request at all, invisible to that trail.
+ * Then, unless a run is already in flight (store.runningAnalysisRun's own
+ * 15-minute crash window -- the same guard schedule.ts's loop and
+ * executor/schedule.ts's runOnce use for sync), runs it, which consumes the
+ * request just queued (and any other still open). Never calls the LLM when
+ * a run is already running; prints its own status line either way, exactly
+ * like schedule.ts's runOnce does for sync, so cli.ts only has to decide
+ * the exit code.
+ */
+export async function runAnalyseCommand(callLlm: CallLlm): Promise<RunAnalyseCommandResult> {
+  store.requestAnalysis();
+
+  const running = store.runningAnalysisRun();
+  if (running) {
+    console.log(
+      `An analysis is already running (run ${running.id}, started ${running.started_at}).`,
+    );
+    return { ran: false };
+  }
+
+  const result = await runAnalysis(callLlm, "manual");
+  console.log(
+    `Analysis run ${result.runId} ${result.ok ? "ok" : `failed: ${result.error}`} ${JSON.stringify(result.counts)} tokens=${result.tokens}`,
+  );
+  return { ran: true, result };
 }

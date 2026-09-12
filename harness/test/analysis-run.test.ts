@@ -277,6 +277,16 @@ test("runAnalysis: a step that throws (segment hits corrupted data) finishes ok:
   assert.equal(finished?.id, result.runId);
   assert.equal(finished?.ok, false);
   assert.equal(finished?.error, result.error);
+
+  // Repair the corrupted row: segmentAllProjects sweeps every allowed
+  // project's classified backlog on every future run in this same process
+  // (this file's DB is shared across all its tests), so leaving invalid
+  // JSON behind would make every later runAnalysis/runAnalyseCommand call
+  // in this file fail the same way, for an unrelated reason.
+  db.prepare(`UPDATE message_classifications SET tags_json = ? WHERE history_item_id = ?`).run(
+    "[]",
+    msg.id,
+  );
 });
 
 test("store.runningAnalysisRun: an unfinished run blocks a second one (15-minute crash window, mirrors runningSyncRun)", () => {
@@ -290,7 +300,14 @@ test("store.runningAnalysisRun: an unfinished run blocks a second one (15-minute
   assert.equal(store.runningAnalysisRun(), null, "a finished run no longer blocks");
 });
 
-test("run.providerReady: claude_code checks the CLI via an injectable exec, never spawning the real binary", async () => {
+const DEFAULT_LLM_MODELS = {
+  classifier: { provider: "openai", model: "gpt-5.4-mini" },
+  miner: { provider: "openai", model: "gpt-5.5" },
+  reviewer: { provider: "openai", model: "gpt-5.5" },
+  proposer: { provider: "openai", model: "gpt-5.5" },
+};
+
+function setClaudeCodeModels(): void {
   store.setSettings({
     llm_models: JSON.stringify({
       classifier: { provider: "claude_code", model: "sonnet" },
@@ -299,26 +316,129 @@ test("run.providerReady: claude_code checks the CLI via an injectable exec, neve
       proposer: { provider: "claude_code", model: "sonnet" },
     }),
   });
+}
 
+function restoreDefaultModels(): void {
+  // Restore the default provider so a settings change can't leak into a
+  // later test in this file (each test file gets its own temp DB, but the
+  // module-level claude_code check cache below is shared by every test in
+  // this process, so leaving llm_models pointed at claude_code would also
+  // leak the cached result into an unrelated later test).
+  store.setSettings({ llm_models: JSON.stringify(DEFAULT_LLM_MODELS) });
+}
+
+test("run.providerReady: claude_code checks the CLI via an injectable exec, never spawning the real binary", async () => {
+  setClaudeCodeModels();
+  // Each call uses a `now` far enough apart (> the 60s memo window) that
+  // the fix-round-1 cache (see the caching test below) never masks one
+  // exec's result with the other's -- this test is about providerReady
+  // correctly reflecting whatever the CLI check says, not about caching.
   const notFound = await run.providerReady({
     exec: async () => ({ stdout: "", code: 1 }),
+    now: () => 0,
   });
   assert.deepEqual(notFound, { ok: false, reason: "Claude Code was not found on this machine." });
 
   const found = await run.providerReady({
     exec: async () => ({ stdout: "2.1.0", code: 0 }),
+    now: () => 61_000,
   });
   assert.deepEqual(found, { ok: true });
 
-  // Restore the default provider so this test's settings change can't leak
-  // into a later test file run against the same process (each test file
-  // gets its own temp DB, but this documents the intent regardless).
-  store.setSettings({
-    llm_models: JSON.stringify({
-      classifier: { provider: "openai", model: "gpt-5.4-mini" },
-      miner: { provider: "openai", model: "gpt-5.5" },
-      reviewer: { provider: "openai", model: "gpt-5.5" },
-      proposer: { provider: "openai", model: "gpt-5.5" },
-    }),
+  restoreDefaultModels();
+});
+
+test("run.providerReady: memoizes the claude_code CLI check for 60 seconds -- two calls within the window invoke the injected exec once", async () => {
+  setClaudeCodeModels();
+  let execCalls = 0;
+  const exec = async () => {
+    execCalls++;
+    return { stdout: "2.1.0", code: 0 };
+  };
+
+  // A `now` base far separated (> 60s) from whatever timestamp the previous
+  // test's cache was last written at, so this test's first call is
+  // guaranteed a fresh miss regardless of test order/leftover cache state.
+  const BASE = 10_000_000;
+  const first = await run.providerReady({ exec, now: () => BASE });
+  const second = await run.providerReady({ exec, now: () => BASE + 59_000 });
+  assert.deepEqual(first, { ok: true });
+  assert.deepEqual(second, { ok: true });
+  assert.equal(execCalls, 1, "the second call within the 60s window reused the cached result");
+
+  // Past the window, the check runs again.
+  const third = await run.providerReady({ exec, now: () => BASE + 60_001 });
+  assert.deepEqual(third, { ok: true });
+  assert.equal(execCalls, 2, "past the 60s window, the check runs again");
+
+  restoreDefaultModels();
+});
+
+test("run.providerReady: key checks (non-claude_code providers) stay live, never cached", async () => {
+  // openai has no key stored right now (the earlier tests' keys are for
+  // this same file's shared DB, but re-asserting the live behavior here:
+  // remove any key, confirm not-ready, save one, confirm ready -- back to
+  // back, with no memo window involved at all for API providers).
+  llmKeys.removeKey("openai");
+  const before = await run.providerReady();
+  assert.deepEqual(before, {
+    ok: false,
+    reason: "No API key saved for openai. Add one in Settings.",
   });
+
+  llmKeys.setKey("openai", "sk-test-not-a-real-key");
+  const after = await run.providerReady();
+  assert.deepEqual(after, { ok: true }, "a key check reflects the change immediately, uncached");
+});
+
+test("runAnalyseCommand: queues an analysis_requests row and runs it, leaving the request done and linked to the run", async () => {
+  llmKeys.setKey("openai", "sk-test-not-a-real-key");
+
+  const before = db.prepare(`SELECT COUNT(*) as n FROM analysis_requests`).get() as { n: number };
+
+  const outcome = await run.runAnalyseCommand(fakeCallLlm({}));
+
+  assert.equal(outcome.ran, true);
+  if (!outcome.ran) throw new Error("unreachable");
+  assert.equal(outcome.result.ok, true, outcome.result.error);
+
+  const after = db.prepare(`SELECT COUNT(*) as n FROM analysis_requests`).get() as { n: number };
+  assert.equal(after.n, before.n + 1, "runAnalyseCommand queued exactly one new request");
+
+  const request = db
+    .prepare(`SELECT status, run_id FROM analysis_requests ORDER BY id DESC LIMIT 1`)
+    .get() as { status: string; run_id: number };
+  assert.equal(
+    request.status,
+    "done",
+    "the CLI-queued request left the same audit trail a UI-queued one would",
+  );
+  assert.equal(
+    request.run_id,
+    outcome.result.runId,
+    "the request is linked to the run that consumed it",
+  );
+});
+
+test("runAnalyseCommand: refuses to overlap a run already in flight, without calling the LLM", async () => {
+  const runningId = store.startAnalysisRun("manual");
+  let callLlmInvoked = false;
+  const callLlm: CallLlm = async () => {
+    callLlmInvoked = true;
+    throw new Error("must never be called while a run is in flight");
+  };
+
+  const before = db.prepare(`SELECT COUNT(*) as n FROM analysis_requests`).get() as { n: number };
+  const outcome = await run.runAnalyseCommand(callLlm);
+  const after = db.prepare(`SELECT COUNT(*) as n FROM analysis_requests`).get() as { n: number };
+
+  assert.equal(outcome.ran, false);
+  assert.equal(callLlmInvoked, false, "the LLM is never called when a run is already in flight");
+  assert.equal(
+    after.n,
+    before.n + 1,
+    "a request is still queued (coalesced by a later run) even though this call didn't run it",
+  );
+
+  store.finishAnalysisRun(runningId, { ok: true, counts: {}, tokens: 0, cost_usd: 0 });
 });
