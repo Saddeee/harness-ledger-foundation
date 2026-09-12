@@ -48,17 +48,18 @@ const TOUCHED_PAGES = [
 
 // ---- 1. Nav: six items, in order ----
 
-test("nav: Inbox, Improvements, Instructions, Skills, Projects, Settings -- six items, in order", () => {
+test("nav: Inbox, Suggestions, Instructions, History, Skills, Projects, Settings -- seven items, in order", () => {
   const shell = codeOnly(readApp(SHELL));
   const order = [
     'label: "Inbox"',
-    'label: "Improvements"',
+    'label: "Suggestions"',
     'label: "Instructions"',
+    'label: "History"',
     'label: "Skills"',
     'label: "Projects"',
     'label: "Settings"',
   ];
-  assert.equal(count(shell, 'label: "'), 6, "exactly six nav items");
+  assert.equal(count(shell, 'label: "'), 7, "exactly seven nav items");
   let last = -1;
   for (const marker of order) {
     const at = shell.indexOf(marker);
@@ -66,6 +67,7 @@ test("nav: Inbox, Improvements, Instructions, Skills, Projects, Settings -- six 
     last = at;
   }
   assert.match(shell, /\{ to: "\/instructions", label: "Instructions" \}/);
+  assert.match(shell, /\{ to: "\/history", label: "History" \}/);
   assert.match(shell, /\{ to: "\/skills", label: "Skills" \}/);
   assert.ok(!/label: "Knowledge"/.test(shell), "Knowledge is no longer a nav label");
 });
@@ -193,8 +195,8 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
   );
   assert.match(raw, /type="password"/);
 
-  // four role rows
-  for (const roleLabel of ["Classifier", "Miner", "Reviewer", "Proposer"]) {
+  // five role rows (Round 5 adds Judge)
+  for (const roleLabel of ["Classifier", "Rule writer", "Judge", "Reviewer", "Proposer"]) {
     assert.ok(raw.includes(roleLabel), `local-settings.tsx missing role label "${roleLabel}"`);
   }
 
@@ -443,14 +445,16 @@ test("local-settings.tsx: one AI-analysis save action (settings + key when typed
   // role hints, one per role, directly under each role's own label
   for (const [role, hint] of [
     ["Classifier", "Sorts each chat message: new request, correction, question or approval."],
-    ["Miner", "Turns your corrections into proposed instructions."],
+    ["Rule writer", "Turns your corrections into proposed rules."],
+    ["Judge", "Checks whether Lovable followed a rule in a real build."],
     ["Reviewer", "Judges a build or a test result."],
     ["Proposer", "Suggests an instruction when a build fails and none covers it."],
   ] as const) {
     assert.ok(raw.includes(hint), `local-settings.tsx missing the ${role} hint`);
   }
   assert.match(code, /hint: "Sorts each chat message/);
-  assert.match(code, /hint: "Turns your corrections into proposed instructions\."/);
+  assert.match(code, /hint: "Turns your corrections into proposed rules\."/);
+  assert.match(code, /hint: "Checks whether Lovable followed a rule in a real build\."/);
   assert.match(code, /hint: "Judges a build or a test result\."/);
   assert.match(code, /hint: "Suggests an instruction when a build fails and none covers it\."/);
 });

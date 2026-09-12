@@ -40,16 +40,16 @@ test("Inbox: no decidedIds, no 'Hide decided', no 'Nothing left to decide' anywh
   assert.ok(!/Nothing left to decide/.test(inbox), "'Nothing left to decide' must be gone from inbox.tsx");
 });
 
-test("Inbox: a decided item becomes a confirmation row with Undo and View in Improvements", () => {
+test("Inbox: a decided item becomes a confirmation row with Undo and Open", () => {
   const inbox = codeOnly(readApp(INBOX));
   assert.match(inbox, /Undo/);
-  assert.match(inbox, /View in Improvements/);
+  assert.match(inbox, /Open/);
   // Undo reopens through the shared postImprovementAction helper, not a
   // fetch call authored directly in inbox.tsx.
   assert.match(inbox, /import\s*\{[^}]*\bpostImprovementAction\b[^}]*\}\s*from\s*"@\/lib\/improvements-client"/);
   assert.match(inbox, /postImprovementAction\(\{\s*action:\s*"reopen",\s*id\s*\}\)/);
   assert.ok(!/fetch\(/.test(inbox), "inbox.tsx must not call fetch directly -- it goes through the shared client");
-  // "View in Improvements" routes to /ledger with the item preselected.
+  // "Open" routes to /ledger with the item preselected.
   assert.match(inbox, /navigate\(\{\s*to:\s*"\/ledger",\s*search:\s*\{\s*improvement:\s*\w+(?:\.\w+)?\s*\}\s*\}\)/);
 });
 

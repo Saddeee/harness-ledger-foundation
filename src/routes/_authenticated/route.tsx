@@ -17,13 +17,14 @@ export const Route = createFileRoute("/_authenticated")({
   component: AuthedLayout,
 });
 
-// The same six pages in every runtime. Scoreboard, Versions, Demo and Jobs
+// The same pages in every runtime. Scoreboard, Versions, Demo and Jobs
 // stay routable (Jobs is linked from Settings › Advanced) but are not in the
-// sidebar until they have content.
+// sidebar until they have content. History links to a page created in Task 4.
 const NAV = [
   { to: "/inbox", label: "Inbox" },
-  { to: "/ledger", label: "Improvements" },
+  { to: "/ledger", label: "Suggestions" },
   { to: "/instructions", label: "Instructions" },
+  { to: "/history", label: "History" },
   { to: "/skills", label: "Skills" },
   { to: "/projects", label: "Projects" },
   { to: "/settings", label: "Settings" },
@@ -90,7 +91,7 @@ function AuthedLayout() {
       Notification.permission === "granted"
     ) {
       new Notification("Harness Ledger", {
-        body: "A new improvement is waiting for your decision.",
+        body: "A new suggestion is waiting for your decision.",
       });
     }
 

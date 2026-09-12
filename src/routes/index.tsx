@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { HOW_IT_WORKS_STEPS, LANDING_INTRO } from "@/lib/harness-ux";
+import { HOW_IT_WORKS_STEPS, LANDING_INTRO, LANDING_CREDITS_LINE } from "@/lib/harness-ux";
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -62,6 +62,8 @@ function Landing() {
             </li>
           ))}
         </ol>
+
+        <p className="text-sm">{LANDING_CREDITS_LINE}</p>
 
         {signedIn !== null && (
           <div>

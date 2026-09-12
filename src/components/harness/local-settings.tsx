@@ -82,8 +82,13 @@ const LLM_ROLES: { key: LlmRole; label: string; hint: string }[] = [
   },
   {
     key: "rule_writer",
-    label: "Miner",
-    hint: "Turns your corrections into proposed instructions.",
+    label: "Rule writer",
+    hint: "Turns your corrections into proposed rules.",
+  },
+  {
+    key: "judge",
+    label: "Judge",
+    hint: "Checks whether Lovable followed a rule in a real build.",
   },
   {
     key: "reviewer",

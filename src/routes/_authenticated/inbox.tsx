@@ -71,7 +71,7 @@ function ConfirmationRow({
           className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={onView}
         >
-          View in Improvements
+          Open
         </button>
       </div>
     </div>
@@ -219,16 +219,16 @@ function Page() {
       {list.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
-            ? "Improvements Harness finds in your Lovable chats will appear here."
-            : "Nothing needs your decision. Everything you've decided on is under Improvements."}
+            ? "Suggestions Harness finds in your Lovable chats will appear here."
+            : "Nothing needs your decision. Everything you've decided on is under Suggestions."}
         </div>
       ) : (
         <>
           {pending.length > 0 ? (
             <p className="text-sm text-muted-foreground">
               {pending.length === 1
-                ? "One improvement is waiting for your decision."
-                : `${pending.length} improvements are waiting for your decision.`}
+                ? "One suggestion is waiting for your decision."
+                : `${pending.length} suggestions are waiting for your decision.`}
             </p>
           ) : null}
           <ul className="space-y-3">

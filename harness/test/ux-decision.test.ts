@@ -70,7 +70,7 @@ test("AddConfirm help text: exact copy for each choice", () => {
     detail,
     /Harness runs the same request with and without this instruction in a temporary copy of the project and shows you the difference before anything is written\./,
   );
-  assert.match(detail, /proveCostLine\(item\.proof\?\.lovable_credits_max\)/);
+  assert.match(detail, /proveCostLine\(\)/);
   assert.match(
     detail,
     /Testing is not switched on yet; your choice is saved and runs when it is\./,
@@ -138,14 +138,14 @@ test("Inbox: decided-this-visit items become a confirmation row in place, count 
   assert.match(inbox, /all\.filter\(\(i\) => i\.decision\.status === "pending" \|\| confirmed\.has\(i\.id\)\)/);
   // the count line still counts pending only, and only appears when there's something pending
   assert.match(inbox, /pending\.length > 0/);
-  assert.match(inbox, /"One improvement is waiting for your decision\."/);
-  assert.match(inbox, /`\$\{pending\.length\} improvements are waiting for your decision\.`/);
+  assert.match(inbox, /"One suggestion is waiting for your decision\."/);
+  assert.match(inbox, /`\$\{pending\.length\} suggestions are waiting for your decision\.`/);
 });
 
 test("harness-ux.ts: LANDING_INTRO and the four HOW_IT_WORKS_STEPS from spec 6.5, verbatim", () => {
   assert.equal(
     ux.LANDING_INTRO,
-    "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a standing instruction. You approve; Harness writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.",
+    "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a rule you approve. Harness writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.",
   );
   assert.deepEqual(
     ux.HOW_IT_WORKS_STEPS.map((s) => s.title),
@@ -155,7 +155,7 @@ test("harness-ux.ts: LANDING_INTRO and the four HOW_IT_WORKS_STEPS from spec 6.5
     ux.HOW_IT_WORKS_STEPS.map((s) => s.text),
     [
       "Harness reads your Lovable chats and Knowledge every hour. No credits, no AI.",
-      "Where you corrected Lovable, Harness proposes one instruction, with the exact messages as evidence.",
+      "Where you corrected Lovable, Harness's AI analysis proposes one rule, with the exact messages as evidence.",
       "Add it now, test it first in a temporary copy, or skip. Nothing changes until you say so.",
       "Harness writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
     ],

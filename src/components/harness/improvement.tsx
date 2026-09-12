@@ -63,7 +63,7 @@ const NO_INSTRUCTION = "Harness hasn't drafted an instruction yet.";
 const ADD_NOW_HELP = "Harness writes this exact text at the next sync. Uses no credits.";
 const RETIRE_TITLE = "Retire this rule?";
 const RETIRE_BODY = "Harness will rewrite your Knowledge without it at the next sync.";
-const RETIRE_CONSEQUENCES = ["You can re-add it later from Improvements."];
+const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
 const RETIRED_TOAST = "Retired — Harness will rewrite your Knowledge at the next sync.";
 const KEPT_TOAST = "Kept — Harness will ask again in 30 days";
 const READDED_TOAST = "Re-added — will be written at the next sync";
@@ -206,7 +206,7 @@ function AddConfirm({
             Test it first
           </Button>
           <p className="text-xs text-muted-foreground">
-            {`Harness runs the same request with and without this instruction in a temporary copy of the project and shows you the difference before anything is written. ${proveCostLine(item.proof?.lovable_credits_max)} Testing is not switched on yet; your choice is saved and runs when it is.`}
+            {`Harness runs the same request with and without this instruction in a temporary copy of the project and shows you the difference before anything is written. ${proveCostLine()} Testing is not switched on yet; your choice is saved and runs when it is.`}
           </p>
         </div>
       </div>
@@ -247,7 +247,7 @@ function SkipConfirm({ item, busy, run }: { item: Improvement; busy: boolean; ru
     <ConfirmAction
       trigger="Skip"
       variant="ghost"
-      title="Skip this improvement?"
+      title="Skip this suggestion?"
       body="Harness won't suggest it again."
       consequences={["Nothing changes in Lovable."]}
       confirmLabel="Skip"

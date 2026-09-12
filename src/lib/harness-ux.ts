@@ -310,7 +310,7 @@ export function decisionSentence(input: {
     const choice = label(DESTINATION_PHRASES, input.destination) || "accept this";
     return `You chose: ${choice}${when}. ${lovableStatusLine(input.lovable, input.ctx)}.`;
   }
-  if (input.decision.status === "skipped") return `You skipped this improvement${when}.`;
+  if (input.decision.status === "skipped") return `You skipped this suggestion${when}.`;
   return "Waiting for your decision.";
 }
 
@@ -351,14 +351,14 @@ export function improvementGroup(input: {
 export const PROVE_INTRO =
   "Harness runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.";
 
-export function proveCostLine(maxCredits: number | null | undefined): string {
-  return `Uses up to ${maxCredits ?? 6} Lovable credits.`;
+export function proveCostLine(): string {
+  return "Uses Lovable credits like any build; the cost is recorded after the test.";
 }
 
 // ---- Onboarding: the only place the product explains itself ----
 
 export const LANDING_INTRO =
-  "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a standing instruction. You approve; Harness writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.";
+  "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a rule you approve. Harness writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.";
 
 export const HOW_IT_WORKS_STEPS = [
   {
@@ -367,7 +367,7 @@ export const HOW_IT_WORKS_STEPS = [
   },
   {
     title: "Proposed",
-    text: "Where you corrected Lovable, Harness proposes one instruction, with the exact messages as evidence.",
+    text: "Where you corrected Lovable, Harness's AI analysis proposes one rule, with the exact messages as evidence.",
   },
   {
     title: "Approved by you",
@@ -378,6 +378,9 @@ export const HOW_IT_WORKS_STEPS = [
     text: "Harness writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
   },
 ] as const;
+
+export const LANDING_CREDITS_LINE =
+  "Credits left this month? Spend them on making Lovable better at your project. Syncing chats and writing Knowledge costs nothing. Testing a rule in a temporary copy is a normal Lovable build and uses credits like one; Harness records what each test cost.";
 
 // Wording-history attribution: a stored reason is shown only when it was
 // typed in this UI; anything else is attributed to Harness without its

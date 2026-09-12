@@ -14,10 +14,10 @@ export const Route = createFileRoute("/_authenticated/ledger")({
   },
   head: () => ({
     meta: [
-      { title: "Improvements — Harness Ledger" },
-      { name: "description", content: "Where each improvement stands." },
-      { property: "og:title", content: "Improvements — Harness Ledger" },
-      { property: "og:description", content: "Where each improvement stands." },
+      { title: "Suggestions — Harness Ledger" },
+      { name: "description", content: "Where each suggestion stands." },
+      { property: "og:title", content: "Suggestions — Harness Ledger" },
+      { property: "og:description", content: "Where each suggestion stands." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -39,7 +39,7 @@ function Page() {
   if (query.isLoading) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Improvements</h1>
+        <h1 className="text-2xl font-semibold">Suggestions</h1>
         <div className="rounded-md border p-6 text-sm text-muted-foreground">Loading…</div>
       </div>
     );
@@ -47,7 +47,7 @@ function Page() {
   if (query.isError) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Improvements</h1>
+        <h1 className="text-2xl font-semibold">Suggestions</h1>
         <div
           role="alert"
           className="rounded-md border border-destructive/50 bg-destructive/5 p-6 text-sm text-destructive"
@@ -60,7 +60,7 @@ function Page() {
   if (query.data && query.data.available === false) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Improvements</h1>
+        <h1 className="text-2xl font-semibold">Suggestions</h1>
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {query.data.reason}
         </div>
@@ -88,7 +88,7 @@ function Page() {
         item={selected}
         onBack={back}
         onChanged={refresh}
-        backLabel="← Improvements"
+        backLabel="← Suggestions"
         position={idx >= 0 ? { index: idx + 1, total: order.length } : undefined}
         onPrev={idx > 0 ? () => open(order[idx - 1]!) : undefined}
         onNext={idx >= 0 && idx < order.length - 1 ? () => open(order[idx + 1]!) : undefined}
@@ -104,7 +104,7 @@ function Page() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Improvements</h1>
+      <h1 className="text-2xl font-semibold">Suggestions</h1>
 
       {showFilters ? (
         <details className="rounded-md border">
@@ -129,7 +129,7 @@ function Page() {
       {listed === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
-            ? "Improvements Harness finds in your Lovable chats will appear here."
+            ? "Suggestions Harness finds in your Lovable chats will appear here."
             : "Nothing decided yet — what's waiting for you is in Inbox."}
         </div>
       ) : (

@@ -118,7 +118,7 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
   // Retire confirm: same copy shape as the spec.
   assert.ok(raw.includes("Retire this rule?"));
   assert.ok(raw.includes("Harness will rewrite your Knowledge without it at the next sync."));
-  assert.ok(raw.includes("You can re-add it later from Improvements."));
+  assert.ok(raw.includes("You can re-add it later from Suggestions."));
 
   // Keep is a ghost button with its own toast, not a confirm dialog.
   assert.match(code, /variant="ghost"[\s\S]{0,200}action: "keep"/);
@@ -148,7 +148,7 @@ test("instructions.tsx: a Retire button under each live rule, and retired rules 
 
   assert.ok(raw.includes("Retire this rule?"));
   assert.ok(raw.includes("Harness will rewrite your Knowledge without it at the next sync."));
-  assert.ok(raw.includes("You can re-add it later from Improvements."));
+  assert.ok(raw.includes("You can re-add it later from Suggestions."));
   assert.match(code, /Retired rules \(\{rules\.length\}\)/);
   assert.match(code, /action: "retire", rule_id: ruleId/);
   assert.match(code, /action: "readd", id: improvementId/);
@@ -166,7 +166,7 @@ test("instructions.tsx: a Retire button under each live rule, and retired rules 
   }
 });
 
-test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows the message and View in Improvements)", () => {
+test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows the message and Open)", () => {
   const code = codeOnly(readApp(INBOX));
   const row = code.slice(code.indexOf("function ConfirmationRow"), code.indexOf("function Page"));
   const guardStart = row.indexOf('item.kind === "retire" ? null : (');
@@ -176,9 +176,9 @@ test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows 
   // Search from guardStart, not 0 -- "Undo" is a substring of the earlier
   // `onUndo` prop type declaration above the guard.
   const undoIdx = row.indexOf("Undo", guardStart);
-  const viewIdx = row.indexOf("View in Improvements");
+  const openIdx = row.indexOf("Open", guardStart);
   assert.ok(undoIdx > guardStart && undoIdx < guardEnd, "Undo must live inside the kind guard");
-  assert.ok(viewIdx > guardEnd, "View in Improvements must render unconditionally, after the guard");
+  assert.ok(openIdx > guardEnd, "Open must render unconditionally, after the guard");
 });
 
 test("the improvements API's action set now includes retire, keep, readd, mark_seen", () => {

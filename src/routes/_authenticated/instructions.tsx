@@ -59,7 +59,7 @@ const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
 // copy as the Inbox's retirement proposal card (improvement.tsx).
 const RETIRE_TITLE = "Retire this rule?";
 const RETIRE_BODY = "Harness will rewrite your Knowledge without it at the next sync.";
-const RETIRE_CONSEQUENCES = ["You can re-add it later from Improvements."];
+const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
 
 // ---- Copy for each version's status. Never implies more happened than the
 // record shows -- "written" only when the executor actually wrote it. ----

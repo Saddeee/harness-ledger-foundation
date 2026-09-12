@@ -6,7 +6,18 @@ For the next agent. Everything here comes from the working session of 2026-09-11
 
 Harness Ledger makes a Lovable user's builder agent better over time. It reads the user's own chat history with Lovable, finds where they corrected Lovable, proposes one standing instruction per correction, and — once the user approves — writes it into the project's or workspace's Lovable **Knowledge**, keeping every version and letting them roll back. It then watches later real builds to see whether each rule helped, hurt, went unused or was contradicted, and proposes retiring the ones that don't earn their place. Autonomy is the sell point, but *nothing spends Lovable credits and nothing spends LLM tokens unless the user pressed a button*. Every number shown is labelled with what produced it.
 
-## 2. Where the code is
+## 2. Vocabulary (Round 5)
+
+| Concept | UI word | Code / docs word |
+|---|---|---|
+| Reading chats, Knowledge and Skills from Lovable on a schedule; no model | **Sync** | sync |
+| The model step that reads synced chats and proposes a rule | **Analysis** ("Analyse now", "AI analysis" in Settings) | analysis; roles are **Classifier**, **Rule writer**, **Judge** |
+| A rule the analysis proposes and the user has not decided on | **Suggestion** | suggestion / improvement (internal view name stays) |
+| A suggestion the user accepted | **Rule** | rule |
+
+Nav label changed from "Improvements" to "Suggestions"; `/ledger` stays the same. `/improvements` and `/suggestions` redirect to `/ledger`. Role label "Miner" renamed to "Rule writer"; "Judge" role added. `proveCostLine()` now returns "Uses Lovable credits like any build; the cost is recorded after the test." without parameters.
+
+## 3. Where the code is
 
 Repo: `/home/ibbzy/harness-ledger-foundation`, branch `local-harness-dev` (82 commits ahead of `main` at head `50ccb52`; the owner never chose merge / PR / keep — ask). Two halves:
 

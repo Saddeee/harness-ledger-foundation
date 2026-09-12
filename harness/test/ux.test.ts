@@ -217,7 +217,7 @@ test("decision card: three buttons for pending items, decision buttons shown inl
   );
   assert.match(client, /export function groupOf\(item: Improvement\): ImprovementGroup \| null/);
   assert.match(detail, /trigger="Skip"\s+variant="ghost"/);
-  assert.match(detail, /title="Skip this improvement\?"/);
+  assert.match(detail, /title="Skip this suggestion\?"/);
 });
 
 test("proof copy stays defined for later but nothing on screen runs or mentions a proof", () => {
@@ -225,8 +225,10 @@ test("proof copy stays defined for later but nothing on screen runs or mentions 
     ux.PROVE_INTRO,
     "Harness runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.",
   );
-  assert.equal(ux.proveCostLine(6), "Uses up to 6 Lovable credits.");
-  assert.equal(ux.proveCostLine(null), "Uses up to 6 Lovable credits.");
+  assert.equal(
+    ux.proveCostLine(),
+    "Uses Lovable credits like any build; the cost is recorded after the test.",
+  );
   for (const page of PAGES) {
     const code = codeOnly(readApp(page));
     assert.ok(
@@ -372,7 +374,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
     decision: { status: "skipped", decided_at: null },
     destination: null,
   });
-  assert.equal(skipped, "You skipped this improvement.");
+  assert.equal(skipped, "You skipped this suggestion.");
   const added = ux.decisionSentence({
     decision: { status: "accepted", decided_at: null },
     destination: "project",
@@ -457,11 +459,11 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   );
 });
 
-test("Improvements page: contract groups only, non-empty only, decision cards, restore lives in the card", () => {
+test("Suggestions page: contract groups only, non-empty only, decision cards, restore lives in the card", () => {
   const ledger = codeOnly(readApp(LEDGER));
   assert.match(ledger, /IMPROVEMENT_GROUPS\.filter\(/);
   assert.match(ledger, /\(grouped\.get\(g\)\?\.length \?\? 0\) > 0/);
-  assert.ok(!/Everything Harness has learned/.test(ledger), "no subtitle on Improvements");
+  assert.ok(!/Everything Harness has learned/.test(ledger), "no subtitle on Suggestions");
   assert.ok(
     !/Needs your decision|Waiting for proof|Ready to add|Decide later/.test(ledger),
     "old group names are gone",
@@ -537,19 +539,21 @@ test("Settings: hosted usage cards live under Advanced, gated to the hosted runt
   assert.ok(!/queryKey: \["overview"\]/.test(settings));
 });
 
-test("nav: Inbox, Improvements, Instructions, Skills, Projects, Settings in every runtime; How Harness works links to the landing page", () => {
+test("nav: Inbox, Suggestions, Instructions, History, Skills, Projects, Settings in every runtime; How Harness works links to the landing page", () => {
   const shell = codeOnly(readApp(SHELL));
   assert.match(shell, /\{ to: "\/inbox", label: "Inbox" \}/);
-  assert.match(shell, /\{ to: "\/ledger", label: "Improvements" \}/);
+  assert.match(shell, /\{ to: "\/ledger", label: "Suggestions" \}/);
   assert.match(shell, /\{ to: "\/instructions", label: "Instructions" \}/);
+  assert.match(shell, /\{ to: "\/history", label: "History" \}/);
   assert.match(shell, /\{ to: "\/skills", label: "Skills" \}/);
   assert.match(shell, /\{ to: "\/projects", label: "Projects" \}/);
   assert.match(shell, /\{ to: "\/settings", label: "Settings" \}/);
-  assert.equal(count(shell, 'label: "'), 6, "exactly six nav items");
+  assert.equal(count(shell, 'label: "'), 7, "exactly seven nav items");
   const navOrder = [
     'label: "Inbox"',
-    'label: "Improvements"',
+    'label: "Suggestions"',
     'label: "Instructions"',
+    'label: "History"',
     'label: "Skills"',
     'label: "Projects"',
     'label: "Settings"',
@@ -623,13 +627,15 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   }
   // the client lib carries the contract field name lovable_credits_max, but no user-facing credit copy
   assert.equal(count(codeOnly(readApp(CLIENT)), "Lovable credits"), 0);
-  // harness-ux.ts (Task 8): "Lovable credits" appears once, in
-  // proveCostLine. "credit" appears twice in total: that same occurrence,
-  // plus step 1's "No credits, no AI." -- bare "credits", not "Lovable
-  // credits", since syncing never touches Lovable's credit-metered agent.
+  // harness-ux.ts (Round 5 Task 2): "Lovable credits" appears once in
+  // proveCostLine. "credit" and "Credit" combined appear in: "credits" twice
+  // (proveCostLine and step 1), "CREDITS" (constant name), "Credits" and
+  // "credits" (in LANDING_CREDITS_LINE).
   const uxSource = codeOnly(readApp("lib/harness-ux.ts"));
   assert.equal(count(uxSource, "Lovable credits"), 1);
-  assert.equal(count(uxSource, "credit"), 2);
+  // Count case-insensitive: use regex to match credit/credits/Credit/Credits/CREDITS
+  const creditMatches = (uxSource.match(/credit/gi) || []).length;
+  assert.equal(creditMatches, 5);
 });
 
 test("no internal vocabulary in user-facing JSX outside the Developer view", () => {
@@ -711,8 +717,8 @@ test("Inbox: a count line, then decision cards you can act on without opening th
     inbox,
     /<DecisionCard\s+item=\{i\}\s+onChanged=\{\(msg\)\s*=>\s*confirmDecision\(i\.id,\s*msg\)\}\s+onOpen=\{open\}/,
   );
-  assert.match(inbox, /"One improvement is waiting for your decision\."/);
-  assert.match(inbox, /`\$\{pending\.length\} improvements are waiting for your decision\.`/);
+  assert.match(inbox, /"One suggestion is waiting for your decision\."/);
+  assert.match(inbox, /`\$\{pending\.length\} suggestions are waiting for your decision\.`/);
   assert.ok(!/ImprovementCard|ClickableCard|isDeferred/.test(inbox));
   assert.ok(!/>\s*Review\s*<\/Button>/.test(inbox));
 });
@@ -735,7 +741,7 @@ test("landing page: public, four steps from HOW_IT_WORKS_STEPS (spec 6.5), one b
     ux.HOW_IT_WORKS_STEPS.map((s) => s.text),
     [
       "Harness reads your Lovable chats and Knowledge every hour. No credits, no AI.",
-      "Where you corrected Lovable, Harness proposes one instruction, with the exact messages as evidence.",
+      "Where you corrected Lovable, Harness's AI analysis proposes one rule, with the exact messages as evidence.",
       "Add it now, test it first in a temporary copy, or skip. Nothing changes until you say so.",
       "Harness writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
     ],
