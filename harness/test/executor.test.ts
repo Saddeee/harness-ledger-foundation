@@ -949,6 +949,53 @@ test("improvementActionAndWrite: accept before any Knowledge snapshot exists rep
     store.disallowProject(freshProject);
   }));
 
+// ---- Round 6 Task 5 fix round 1 (B1) ----
+test("improvementActionAndWrite: retiring a demo rule reports write.kind 'demo' (never 'no_snapshot'), even with a real Knowledge snapshot present; a real rule with genuinely no snapshot still reports 'no_snapshot'", async () =>
+  withFakeConnection(async () => {
+    // A real Knowledge snapshot DOES exist for PROJECT (recorded by an
+    // earlier test in this file, and again here for robustness against
+    // reordering) -- retiring a demo rule must report 'demo', not silently
+    // fall into 'no_snapshot' just because retireRule staged nothing.
+    store.recordKnowledgeSnapshot({
+      target: "project",
+      project_id: PROJECT,
+      content: "Existing Knowledge.",
+      fetched_by: "test",
+    });
+    const demoRule = makeRule("Demo: always do something.", "demo");
+    store.updateRule({ id: demoRule.id, state: "active", actor: "demo" });
+
+    const retiredDemo = await beats.improvementActionAndWrite({
+      action: "retire",
+      rule_id: demoRule.id,
+    });
+    assert.ok(retiredDemo.write, "retire always reports a write outcome");
+    assert.equal(retiredDemo.write!.written, false);
+    assert.ok(!retiredDemo.write!.written && retiredDemo.write!.kind === "demo");
+    assert.ok(
+      !retiredDemo.write!.written &&
+        retiredDemo.write!.reason === "Demo data is never written to Lovable.",
+    );
+    assert.equal(retiredDemo.write!.version_id, null);
+
+    // A real rule, in a fresh project with genuinely no snapshot at all,
+    // still reports 'no_snapshot' -- the new demo check must not swallow
+    // this case too.
+    const freshProject = "exec-project-demo-vs-no-snapshot";
+    store.allowProject(freshProject, "No snapshot, and not a demo rule");
+    const realRule = makeRule("Always do a real thing.", "test", freshProject);
+    const realResult = await beats.improvementActionAndWrite({
+      action: "accept",
+      id: realRule.correctionId,
+      destination: "project",
+    });
+    assert.ok(realResult.write);
+    assert.equal(realResult.write!.written, false);
+    assert.ok(!realResult.write!.written && realResult.write!.kind === "no_snapshot");
+    store.disallowProject(freshProject);
+  }));
+// ---- end Round 6 Task 5 fix round 1 (B1) ----
+
 test("improvementActionAndWrite: retryKnowledgeWrite reports not connected for a real pending version", async () => {
   const v = stagePending("live text", "live text + rule");
   const write = await beats.retryKnowledgeWrite(v.id);

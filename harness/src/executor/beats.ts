@@ -939,6 +939,22 @@ export async function improvementActionAndWrite(
   }
 
   if (stagedId == null) {
+    // Round 6 Task 5 fix round 1 (B1): a demo rule's retire/re-add/restore
+    // (and accept, in principle) is accepted but stages nothing at all
+    // (stagePendingWrite's/retireRule's own created_by = 'demo' guard) --
+    // that is not "no snapshot yet", and must not be reported as if a Sync
+    // now would fix it.
+    if (result.rule_id != null && store.isDemoRuleId(result.rule_id)) {
+      return {
+        ...result,
+        write: {
+          written: false,
+          version_id: null,
+          reason: "Demo data is never written to Lovable.",
+          kind: "demo",
+        },
+      };
+    }
     return {
       ...result,
       write: {
