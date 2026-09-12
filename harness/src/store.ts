@@ -4084,6 +4084,45 @@ export function reopenKnowledgeVersionForRetry(versionId: number): KnowledgeVers
   insertEvent("knowledge_version.pending", null, { id: versionId, retried: true });
   return getKnowledgeVersion(versionId)!;
 }
+
+/**
+ * Fix round 1 item 3: `runningSyncRun()` (a plain SELECT) followed by
+ * `startSyncRun()` (a plain INSERT) as two separate calls left an
+ * await-gap race -- `syncNow()` (a request-driven inline sync) and the
+ * in-app scheduler's own tick both check "is one already running?" with a
+ * network `await` in between the check and the actual insert, so two
+ * concurrent callers can both see "no" and both start a `runAll` pass.
+ * This runs the same check-and-insert as a single `db.transaction`, so
+ * nothing else can observe the database between the SELECT and the
+ * INSERT -- better-sqlite3 transactions serialize even across the two
+ * separate Node processes (app + `npm run harness:executor`) that can
+ * share this same SQLite file, not just within one process. Returns the
+ * new run's id, or `null` when a run is already in flight (finished_at IS
+ * NULL, started within the 15-minute crash window) -- a caller receiving
+ * `null` must treat it as "someone else already has this," not retry in a
+ * loop. `startSyncRun` is kept as-is for any caller that must start
+ * unconditionally (there is none today; removing it would be an unrelated
+ * refactor of every existing call site).
+ */
+export function tryStartSyncRun(kind: "scheduled" | "manual" | "once"): number | null {
+  const attempt = db.transaction((k: "scheduled" | "manual" | "once") => {
+    const running = db
+      .prepare(
+        `SELECT id FROM sync_runs
+         WHERE finished_at IS NULL AND started_at >= datetime('now', '-15 minutes')
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get() as { id: number } | undefined;
+    if (running) return null;
+    const row = db.prepare(`INSERT INTO sync_runs (kind) VALUES (?) RETURNING id`).get(k) as {
+      id: number;
+    };
+    return row.id;
+  });
+  const id = attempt(kind);
+  if (id != null) insertEvent("sync_run.started", null, { id, kind });
+  return id;
+}
 // ---- end Round 6 Task 2 ----
 
 // ---- Round 6 Task 5 ----

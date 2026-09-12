@@ -519,13 +519,17 @@ let ruleCounter = 0;
 // Round 6 Task 5: createdBy defaults to "test" (every existing call site is
 // unaffected) -- pass "demo" to get a rule executeWrites/executeVersionNow
 // must skip (spec §5).
+// Fix round 1: `project` defaults to the shared PROJECT const (every
+// existing call site unaffected) -- pass a fresh, never-snapshotted
+// project id for a test that needs "no snapshot recorded yet" to be true.
 function makeRule(
   instruction: string,
   createdBy: string = "test",
+  project: string = PROJECT,
 ): { id: number; instruction: string; correctionId: number } {
   ruleCounter += 1;
   const evidence = store.upsertHistoryItem({
-    project_id: PROJECT,
+    project_id: project,
     kind: "message",
     external_id: `execversion-evidence-${ruleCounter}`,
     role: "user",
@@ -533,7 +537,7 @@ function makeRule(
     provenance: "lovable_mcp",
   }) as { id: number };
   const episode = store.createTaskEpisode({
-    project_id: PROJECT,
+    project_id: project,
     title: "executeVersionNow test episode",
     provenance: "llm_derived",
     evidence_history_item_ids: [evidence.id],
@@ -610,10 +614,15 @@ test("executeVersionNow: base changed only outside the managed block -- recompos
   assert.equal(store.getKnowledgeVersion(v.id)?.status, "written");
 });
 
-test("executeVersionNow: base changed AND the managed block itself was edited in Lovable -- stale, never writes", async () => {
+test("executeVersionNow: base changed AND the managed block itself was edited in Lovable by a human -- stale, never writes", async () => {
   const rule = makeRule("Always write tests before committing.");
+  // Registered active so the "is this a concurrent Harness write?" check
+  // (fix round 1 item 2) has a real known-rule set to compare against --
+  // the point of this test is that the EXTRA line matches none of it.
+  store.updateRule({ id: rule.id, state: "active", actor: "test" });
   const previousContent = `Some text.\n\n${managedBlock([rule.instruction])}`;
-  // Someone typed directly inside the Harness-managed block in Lovable.
+  // Someone typed directly inside the Harness-managed block in Lovable --
+  // this extra line is not one of Harness's own active rules.
   const tamperedBlock = managedBlock([
     rule.instruction,
     "Someone typed this directly into Lovable.",
@@ -636,10 +645,121 @@ test("executeVersionNow: base changed AND the managed block itself was edited in
   const outcome = await beats.executeVersionNow(v.id, fake);
   assert.equal(outcome.written, false);
   assert.ok(!outcome.written && outcome.kind === "stale");
-  assert.ok(!outcome.written && /edited|changed/i.test(outcome.reason));
+  assert.ok(!outcome.written && /edited the Harness block/i.test(outcome.reason));
   assert.equal(fake.setCalls.length, 0, "never writes when the managed block itself drifted");
   assert.equal(store.getKnowledgeVersion(v.id)?.status, "stale");
 });
+
+// ---- fix round 1 ----
+
+test("executeVersionNow: a write that already landed (an earlier read-back mismatch was spurious) is recognized as written, never re-staled", async () => {
+  const rule = makeRule("Always land correctly.");
+  const previousContent = "Some text.";
+  const block = managedBlock([rule.instruction]);
+  const intendedContent = `${previousContent}\n\n${block}`;
+
+  const fake = new FakeLovable();
+  // The live content already IS exactly what this version intended to
+  // write -- e.g. an earlier attempt's write actually landed, but that
+  // attempt's own read-back comparison mismatched for an unrelated reason
+  // (a transient read, or a network blip right after the write).
+  fake.projectKnowledge[PROJECT] = intendedContent;
+
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: PROJECT,
+    previous_content: previousContent,
+    new_content: intendedContent,
+    rule_ids: [rule.id],
+    actor: "test",
+  });
+  store.markKnowledgeWriteFailed(v.id, "read-back hash mismatch (simulated)");
+
+  const outcome = await beats.executeVersionNow(v.id, fake);
+  assert.equal(outcome.written, true);
+  assert.equal(fake.setCalls.length, 0, "never re-writes what's already there");
+  assert.equal(store.getKnowledgeVersion(v.id)?.status, "written");
+});
+
+test("executeVersionNow: the block drifted to a rule set Harness recognizes as its own (a concurrent Harness write) -- recomposes on the union and writes", async () => {
+  const rule1 = makeRule("Always do A.");
+  const rule2 = makeRule("Always do B.");
+  store.updateRule({ id: rule1.id, state: "active", actor: "test" });
+  store.updateRule({ id: rule2.id, state: "active", actor: "test" });
+
+  const previousContent = `Some text.\n\n${managedBlock([rule1.instruction])}`;
+  // Another Harness pass wrote rule2 into the block in between -- every
+  // live line is still one of Harness's own known active rules.
+  const liveContent = `Some text.\n\n${managedBlock([rule1.instruction, rule2.instruction])}`;
+
+  const fake = new FakeLovable();
+  fake.projectKnowledge[PROJECT] = liveContent;
+
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: rule1.id,
+    target: "project",
+    project_id: PROJECT,
+    previous_content: previousContent,
+    new_content: previousContent,
+    rule_ids: [rule1.id],
+    actor: "test",
+  });
+
+  const outcome = await beats.executeVersionNow(v.id, fake);
+  assert.equal(outcome.written, true);
+  const written = fake.setCalls[0]!.content;
+  assert.ok(written.includes(rule1.instruction));
+  assert.ok(written.includes(rule2.instruction), "the union keeps the concurrently-added rule");
+  assert.equal(store.getKnowledgeVersion(v.id)?.status, "written");
+});
+
+test("executeVersionNow: a union recompose that would exceed the project's rule cap is rejected, not written", async () => {
+  const rule1 = makeRule("Always do C.");
+  const rule2 = makeRule("Always do D.");
+  store.updateRule({ id: rule1.id, state: "active", actor: "test" });
+  store.updateRule({ id: rule2.id, state: "active", actor: "test" });
+  store.setProjectSettings(PROJECT, { max_active_rules: 1 });
+
+  try {
+    const previousContent = `Some text.\n\n${managedBlock([rule1.instruction])}`;
+    const liveContent = `Some text.\n\n${managedBlock([rule1.instruction, rule2.instruction])}`;
+    const fake = new FakeLovable();
+    fake.projectKnowledge[PROJECT] = liveContent;
+    const v = store.createPendingKnowledgeVersion({
+      rule_id: rule1.id,
+      target: "project",
+      project_id: PROJECT,
+      previous_content: previousContent,
+      new_content: previousContent,
+      rule_ids: [rule1.id],
+      actor: "test",
+    });
+
+    const outcome = await beats.executeVersionNow(v.id, fake);
+    assert.equal(outcome.written, false);
+    assert.ok(!outcome.written && outcome.kind === "rejected");
+    assert.ok(!outcome.written && /already has \d+ active rules/.test(outcome.reason));
+    assert.equal(fake.setCalls.length, 0);
+    assert.equal(store.getKnowledgeVersion(v.id)?.status, "failed");
+  } finally {
+    store.setProjectSettings(PROJECT, { max_active_rules: null });
+  }
+});
+
+test("executeVersionNow: a request-scoped timeout returns a plain error instead of hanging on a stuck write", async () => {
+  const fake = new FakeLovable();
+  fake.projectKnowledge[PROJECT] = "live text";
+  fake.setProjectKnowledge = () => new Promise<void>(() => {});
+  const v = stagePending("live text", "live text + rule");
+
+  const outcome = await beats.executeVersionNow(v.id, fake, { timeoutMs: 10 });
+  assert.equal(outcome.written, false);
+  assert.ok(!outcome.written && outcome.kind === "error");
+  assert.ok(!outcome.written && /did not answer in time/i.test(outcome.reason));
+  assert.equal(store.getKnowledgeVersion(v.id)?.status, "failed");
+});
+// ---- end fix round 1 ----
 
 test("executeVersionNow: an unknown version id reports a plain error, never throws", async () => {
   const fake = new FakeLovable();
@@ -669,6 +789,39 @@ test("syncNow: reports not connected without touching the network", async () => 
   assert.equal(result.ok, false);
   assert.match(result.error ?? "", /not connected/i);
 });
+
+// ---- fix round 1 item 3 ----
+
+function withFakeConnection<T>(run: () => Promise<T>): Promise<T> {
+  writeFileSync(
+    process.env.HARNESS_AUTH_PATH!,
+    JSON.stringify({ tokens: { access_token: "fake", token_type: "bearer" } }),
+  );
+  return run().finally(() => rmSync(process.env.HARNESS_AUTH_PATH!, { force: true }));
+}
+
+test("syncNow: two concurrent calls -- exactly one sync_runs row starts, the other is told a sync is already running", async () =>
+  withFakeConnection(async () => {
+    const fake = new FakeLovable();
+    const openClient = async () => fake;
+
+    const results = await Promise.all([beats.syncNow(openClient), beats.syncNow(openClient)]);
+    const started = results.filter((r) => r.ok);
+    const refused = results.filter((r) => !r.ok);
+    assert.equal(started.length, 1, "exactly one of the two concurrent calls actually ran a sync");
+    assert.equal(refused.length, 1);
+    assert.match(refused[0]!.error ?? "", /already running/i);
+  }));
+
+test("syncNow: a request-scoped timeout returns ok:false with a plain error instead of hanging", async () =>
+  withFakeConnection(async () => {
+    const fake = new FakeLovable();
+    fake.listMessages = () => new Promise<Page>(() => {});
+    const result = await beats.syncNow(async () => fake, { timeoutMs: 10 });
+    assert.equal(result.ok, false);
+    assert.match(result.error ?? "", /did not answer in time/i);
+  }));
+// ---- end fix round 1 item 3 ----
 
 // -------------------------------------------------------- lock interplay --
 
@@ -775,25 +928,26 @@ test("improvementActionAndWrite: retire and readd (not connected) each report wr
   assert.ok(readded.write && !readded.write.written && readded.write.kind === "not_connected");
 });
 
-test("improvementActionAndWrite: accept before any Knowledge snapshot exists reports write.kind 'no_snapshot'", async () => {
-  // A brand-new project this test's own PROJECT const has never had a
-  // snapshot recorded for, so stagePendingWrite has nothing to compose
-  // against and stages nothing -- improvementActionAndWrite must still
-  // report a write outcome (connected, but nothing to write), not silently
-  // omit `write`. status().connected is false in this test file, but the
-  // "no_snapshot" report should win when there is genuinely nothing staged
-  // regardless -- covered structurally by checking the field always exists
-  // for a write-eligible action (the not_connected tests above already
-  // cover the "nothing staged AND not connected" path taking precedence).
-  const rule = makeRule("Always do V.");
-  const result = await beats.improvementActionAndWrite({
-    action: "accept",
-    id: rule.correctionId,
-    destination: "project",
-  });
-  assert.ok(result.write);
-  assert.equal(result.write!.written, false);
-});
+test("improvementActionAndWrite: accept before any Knowledge snapshot exists reports write.kind 'no_snapshot', for real", async () =>
+  withFakeConnection(async () => {
+    // Fix round 1: a brand-new project (never PROJECT, which earlier tests
+    // in this file already snapshotted) that has never had a snapshot
+    // recorded, with a genuinely connected auth file -- so this actually
+    // exercises the "connected, but nothing was staged to write" branch,
+    // not the "not connected" branch it silently fell into before.
+    const freshProject = "exec-project-no-snapshot";
+    store.allowProject(freshProject, "No snapshot yet");
+    const rule = makeRule("Always do V.", "test", freshProject);
+    const result = await beats.improvementActionAndWrite({
+      action: "accept",
+      id: rule.correctionId,
+      destination: "project",
+    });
+    assert.ok(result.write);
+    assert.equal(result.write!.written, false);
+    assert.ok(!result.write!.written && result.write!.kind === "no_snapshot");
+    store.disallowProject(freshProject);
+  }));
 
 test("improvementActionAndWrite: retryKnowledgeWrite reports not connected for a real pending version", async () => {
   const v = stagePending("live text", "live text + rule");

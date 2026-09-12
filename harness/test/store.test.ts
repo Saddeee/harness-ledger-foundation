@@ -418,6 +418,26 @@ test("v5 sync runs and requests", () => {
   assert.deepEqual(store.latestSyncRun()?.counts, { messages: 3 });
 });
 
+// Round 6 Task 2 fix round 1 item 3: the atomic check-and-insert
+// `startSyncRun`/`runningSyncRun` (two separate calls) left available for
+// racing callers to exploit.
+test("tryStartSyncRun: a second call is refused while the first is still running, succeeds again once it finishes", () => {
+  const first = store.tryStartSyncRun("manual");
+  assert.equal(typeof first, "number");
+  assert.ok(store.runningSyncRun());
+
+  const second = store.tryStartSyncRun("scheduled");
+  assert.equal(second, null, "refused while the first run is still in flight");
+
+  store.finishSyncRun(first!, { ok: true });
+  assert.equal(store.runningSyncRun(), null);
+
+  const third = store.tryStartSyncRun("once");
+  assert.equal(typeof third, "number");
+  assert.notEqual(third, first);
+  store.finishSyncRun(third!, { ok: true });
+});
+
 test("v5 allow/disallow project and history stats", () => {
   store.allowProject("p-new", "New");
   assert.ok(

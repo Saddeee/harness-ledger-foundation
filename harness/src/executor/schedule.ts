@@ -218,7 +218,9 @@ export async function loop(
           client ??= await openLovableClient();
           const result = await runAll(client, opts.once ? "once" : kind);
           console.log(
-            `Sync run ${result.runId} (${kind}) ${result.ok ? "ok" : `failed: ${result.error}`} ${JSON.stringify(result.counts)}`,
+            result.ran
+              ? `Sync run ${result.runId} (${kind}) ${result.ok ? "ok" : `failed: ${result.error}`} ${JSON.stringify(result.counts)}`
+              : `Sync (${kind}) not started: ${result.error}`,
           );
         } catch (err) {
           // Opening the client failed (expired grant, network): drop it so the
@@ -293,9 +295,16 @@ export async function runOnce(): Promise<{ ok: boolean; ran: boolean; error?: st
   try {
     const result = await runAll(client, "once");
     console.log(
-      `Sync run ${result.runId} ${result.ok ? "ok" : `failed: ${result.error}`} ${JSON.stringify(result.counts)}`,
+      result.ran
+        ? `Sync run ${result.runId} ${result.ok ? "ok" : `failed: ${result.error}`} ${JSON.stringify(result.counts)}`
+        : `Sync not started: ${result.error}`,
     );
-    return { ok: result.ok, ran: true, ...(result.error ? { error: result.error } : {}) };
+    // Fix round 1 item 3: runAll's own tryStartSyncRun is now the source of
+    // truth for "did this actually run" -- the plain runningSyncRun() check
+    // above is still a fast pre-check, but the two can race (an await gap
+    // between them and this call), so this reflects whatever runAll itself
+    // decided, not an assumption that reaching this line means it ran.
+    return { ok: result.ok, ran: result.ran, ...(result.error ? { error: result.error } : {}) };
   } finally {
     await client.close().catch(() => {});
   }
