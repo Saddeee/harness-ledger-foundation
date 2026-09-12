@@ -141,6 +141,35 @@ async function handleGet({ request }: { request: Request }) {
     }
 
     const keyStatus = adapter.llmKeyStatus();
+
+    // Round 4 Task A3: "Analyse now" status -- independent of the Lovable
+    // connection above (spec §2). provider_ready comes from the same
+    // providerReady() the executor loop and `--analyse` gate a run on, so
+    // this line and an actual run agree on whether one would work.
+    const lastAnalysisRun = adapter.latestAnalysisRun();
+    const analysis_last_run = lastAnalysisRun
+      ? {
+          started_at: lastAnalysisRun.started_at,
+          finished_at: lastAnalysisRun.finished_at,
+          ok: lastAnalysisRun.ok,
+          error: lastAnalysisRun.error,
+          counts: lastAnalysisRun.counts,
+          tokens: lastAnalysisRun.tokens,
+          cost_usd: lastAnalysisRun.cost_usd,
+        }
+      : null;
+    let provider_ready: { ok: boolean; reason?: string } = {
+      ok: false,
+      reason: "the local executor is not available",
+    };
+    if (executor) {
+      try {
+        provider_ready = await executor.analysis.providerReady();
+      } catch (e) {
+        provider_ready = { ok: false, reason: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
     return Response.json({
       available: true,
       connection,
@@ -156,6 +185,12 @@ async function handleGet({ request }: { request: Request }) {
         tokens_this_month: adapter.sumLlmTokensThisMonth(),
         spent_usd: adapter.sumLlmCostThisMonth(),
         keys: keyStatus,
+      },
+      analysis: {
+        last_run: analysis_last_run,
+        running: adapter.runningAnalysisRun() != null,
+        awaiting_analysis: adapter.countHistoryItemsAwaitingAnalysis(),
+        provider_ready,
       },
       defaults: { max_active_rules: Number(settings.max_active_rules) },
     });
@@ -184,6 +219,15 @@ async function handlePost({ request }: { request: Request }) {
     if (action === "sync_now") {
       const result = adapter.requestSync();
       return Response.json({ available: true, id: result.id, created: result.created });
+    }
+
+    // Round 4 Task A3: "Analyse now" -- queues an analysis_requests row the
+    // executor loop (or `--analyse`) picks up independent of the Lovable
+    // connection. Coalesced like sync_now: requestAnalysis() returns the
+    // existing open request's id instead of stacking a second one.
+    if (action === "analyse_now") {
+      const result = adapter.requestAnalysis();
+      return Response.json({ available: true, requested: true, id: result.id });
     }
 
     if (action === "connect") {

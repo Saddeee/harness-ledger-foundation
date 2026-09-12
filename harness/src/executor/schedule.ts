@@ -9,6 +9,8 @@ import * as store from "../store.js";
 import { runAll } from "./beats.js";
 import { status } from "./lovable-auth.js";
 import { openLovableClient, type LovableClient } from "./lovable-mcp.js";
+import { runAnalysis } from "../analysis/run.js";
+import { createCallLlm } from "../llm/index.js";
 
 export type ScheduleSettings = {
   enabled: boolean;
@@ -95,9 +97,33 @@ function openRequestExists(): boolean {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * The scheduler. One tick decides at most one run: an explicit "Sync now"
- * beats the schedule, and a run already in flight beats both. The Lovable
- * client is opened lazily on the first run and reused afterwards.
+ * Round 4 Task A3: "Analyse now" runs independent of the Lovable connection
+ * and of the sync schedule/window (spec §2) -- an open analysis_requests
+ * row is picked up on the very next tick regardless of `status().connected`.
+ * A run already in flight (store.runningAnalysisRun's own 15-minute crash
+ * window) blocks a second one. Never throws: a failure to even start is
+ * logged, exactly like the sync run's own catch below, so it can never
+ * break the tick that follows.
+ */
+async function maybeRunAnalysis(): Promise<void> {
+  if (!store.hasOpenAnalysisRequest() || store.runningAnalysisRun()) return;
+  try {
+    const result = await runAnalysis(createCallLlm(), "manual");
+    console.log(
+      `Analysis run ${result.runId} ${result.ok ? "ok" : `failed: ${result.error}`} ${JSON.stringify(result.counts)}`,
+    );
+  } catch (err) {
+    console.error(
+      `Analysis run could not start: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/**
+ * The scheduler. One tick decides at most one sync run: an explicit "Sync
+ * now" beats the schedule, and a sync run already in flight beats both. The
+ * Lovable client is opened lazily on the first run and reused afterwards.
+ * Analysis (above) is checked every tick too, independent of all of this.
  */
 export async function loop(opts: { tickMs?: number; once?: boolean } = {}): Promise<void> {
   const tickMs = opts.tickMs ?? DEFAULT_TICK_MS;
@@ -113,6 +139,8 @@ export async function loop(opts: { tickMs?: number; once?: boolean } = {}): Prom
 
   try {
     for (;;) {
+      await maybeRunAnalysis();
+
       const connected = status().connected;
       if (!connected) {
         await closeClient();

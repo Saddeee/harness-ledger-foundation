@@ -53,6 +53,16 @@ export {
   keyStatus as llmKeyStatus,
 } from "./llm-keys.js";
 
+// Round 4 Task A3: "Analyse now" -- the executor route's GET needs the last
+// run/running state, the local UI's POST needs to create a request. Mirrors
+// the sync re-exports above.
+export {
+  requestAnalysis,
+  hasOpenAnalysisRequest,
+  latestAnalysisRun,
+  runningAnalysisRun,
+} from "./store.js";
+
 // Round 3: a small, pure line diff for the Instructions page's "What
 // changed" view (see diff.ts).
 export { lineDiff } from "./diff.js";

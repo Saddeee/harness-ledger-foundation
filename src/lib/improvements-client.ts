@@ -324,6 +324,29 @@ export type ExecutorLlm = {
 
 export type ExecutorDefaults = { max_active_rules: number };
 
+// Round 4 Task A3 (spec §2): "Analyse now" status, independent of the
+// Lovable connection above -- an analysis run has its own last_run/running
+// pair and its own readiness check (provider_ready), since it can run
+// whether or not Lovable is connected.
+export type ExecutorAnalysisLastRun = {
+  started_at: string;
+  finished_at: string | null;
+  ok: boolean | null;
+  error: string | null;
+  counts: Record<string, number>;
+  tokens: number;
+  cost_usd: number | null;
+} | null;
+
+export type ExecutorProviderReady = { ok: boolean; reason?: string };
+
+export type ExecutorAnalysis = {
+  last_run: ExecutorAnalysisLastRun;
+  running: boolean;
+  awaiting_analysis: number;
+  provider_ready: ExecutorProviderReady;
+};
+
 export type ExecutorResponse = {
   available: boolean;
   reason?: string;
@@ -334,6 +357,7 @@ export type ExecutorResponse = {
   next_run_at?: string | null;
   running?: boolean;
   llm?: ExecutorLlm;
+  analysis?: ExecutorAnalysis;
   defaults?: ExecutorDefaults;
 };
 

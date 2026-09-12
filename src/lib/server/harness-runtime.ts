@@ -28,16 +28,21 @@ export async function loadHarnessAdapter(): Promise<HarnessAdapter | null> {
   return cached;
 }
 
-// Same guard and caching shape as loadHarnessAdapter, but for the three
+// Same guard and caching shape as loadHarnessAdapter, but for the four
 // executor modules the knowledge/executor/projects routes need: connecting
-// to Lovable, computing the next scheduled run, and (only for the cached
-// project list) reading Lovable's project list. Everything else Lovable
-// touches stays in the executor process (harness/src/executor/beats.ts),
-// never here.
+// to Lovable, computing the next scheduled run, checking whether the
+// configured AI-analysis provider is actually usable (Round 4 Task A3 --
+// harness/src/analysis/run.ts's providerReady, itself never calling
+// Lovable), and (only for the cached project list) reading Lovable's
+// project list. Everything else Lovable touches stays in the executor
+// process (harness/src/executor/beats.ts), never here; the analysis run
+// itself (classify/segment/mine) stays in that same process too -- this
+// route only ever asks whether it *could* run.
 type HarnessExecutor = {
   auth: typeof import("../../../harness/dist/executor/lovable-auth.js");
   schedule: typeof import("../../../harness/dist/executor/schedule.js");
   mcp: typeof import("../../../harness/dist/executor/lovable-mcp.js");
+  analysis: typeof import("../../../harness/dist/analysis/run.js");
 };
 
 let cachedExecutor: HarnessExecutor | null | undefined;
@@ -49,12 +54,13 @@ export async function loadHarnessExecutor(): Promise<HarnessExecutor | null> {
     return cachedExecutor;
   }
   try {
-    const [auth, schedule, mcp] = await Promise.all([
+    const [auth, schedule, mcp, analysis] = await Promise.all([
       import(/* @vite-ignore */ "../../../harness/dist/executor/lovable-auth.js"),
       import(/* @vite-ignore */ "../../../harness/dist/executor/schedule.js"),
       import(/* @vite-ignore */ "../../../harness/dist/executor/lovable-mcp.js"),
+      import(/* @vite-ignore */ "../../../harness/dist/analysis/run.js"),
     ]);
-    cachedExecutor = { auth, schedule, mcp };
+    cachedExecutor = { auth, schedule, mcp, analysis };
   } catch {
     cachedExecutor = null;
   }
