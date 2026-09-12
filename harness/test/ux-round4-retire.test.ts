@@ -103,7 +103,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   assert.equal(
     sinceLine,
-    "Since it was added: 4 tasks · 1 helped · 3 repeat corrections · last used 1 Sep",
+    "Since it was added: 4 tasks · 1 helped · 3 repeat corrections · last used 1 Sep · from real builds",
   );
 });
 

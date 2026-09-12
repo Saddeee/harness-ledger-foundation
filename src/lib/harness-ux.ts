@@ -429,7 +429,9 @@ export function retireReasonSentence(input: RetireLike): string {
 // The one-line health summary under a retirement proposal's title -- the
 // stats line for "hurt", and a plainer sentence for "contradiction"/"unused"
 // where applicable/helped/hurt counts are often all zero and wouldn't read
-// as evidence of anything.
+// as evidence of anything. The "hurt" stats line labels its source the same
+// way healthLine below does -- these are real counts from real builds, not
+// a model's guess.
 export function retireSinceLine(input: RetireLike): string {
   if (input.reason === "contradiction") {
     return "This rule is still live, but a newer rule now says the opposite.";
@@ -441,14 +443,12 @@ export function retireSinceLine(input: RetireLike): string {
   const last = input.health.last_applicable_at
     ? formatDay(input.health.last_applicable_at)
     : "never";
-  return `Since it was added: ${input.health.applicable_tasks} tasks · ${input.health.helped} helped · ${input.health.hurt} repeat corrections · last used ${last}`;
+  return `Since it was added: ${input.health.applicable_tasks} tasks · ${input.health.helped} helped · ${input.health.hurt} repeat corrections · last used ${last} · from real builds`;
 }
 
 // ---- Outcome tracking (Task C3 / spec §4 v1-lite + §4b display) ----
 // The muted health line shown under a *live* rule -- on its Improvement
-// card and on the Instructions page -- distinct from retireSinceLine above
-// (which is for a retirement proposal and never labels its source, since a
-// proposal's own reason sentence already says why Harness is asking).
+// card and on the Instructions page.
 // Every number here comes from real builds users actually ran, never a
 // model's guess -- "from real builds" says so on every line.
 export type HealthLike = {
