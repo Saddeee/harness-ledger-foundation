@@ -48,14 +48,21 @@ test("Decided status: buttons render directly in a row, using outline/ghost vari
   );
   assert.ok(!/<details/.test(decided), "no <details> wrapper left in DecidedStatus");
   assert.ok(!/<summary/.test(decided), "no <summary> wrapper left in DecidedStatus");
-  // Add(s), Restore, Reopen and Re-add (Task C2) are outline; Skip is ghost
-  // (baked into SkipConfirm itself, so it doesn't need a variant at the call
-  // site here).
-  assert.equal(count(decided, 'variant="outline"'), 6);
+  // Add(s), Try again, and Re-add (Task C2) pass variant="outline" directly
+  // at their DecidedStatus call site; Skip and Remove from Knowledge (Round
+  // 6 Task 3) bake their own outline styling into SkipConfirm/
+  // RemoveFromKnowledgeConfirm themselves, same reason Skip always has;
+  // Undo (Round 6 Task 3) is ghost, also baked in at its own call site.
+  assert.equal(count(decided, 'variant="outline"'), 4);
   assert.match(decided, /trigger="Add it now instead"/);
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
   assert.match(decided, /action: "retry_write", id: item\.id, version_id: retryableVersion\.id/);
-  assert.match(decided, /trigger="Restore previous version"/);
+  assert.match(
+    decided,
+    /<RemoveFromKnowledgeConfirm ruleId=\{ruleId\} busy=\{busy\} run=\{run\} \/>/,
+  );
+  assert.match(decided, /action: "undo", id: item\.id/);
+  assert.ok(!/Restore previous version/.test(decided), "Restore moved to the History page only");
   assert.match(decided, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
 });
 

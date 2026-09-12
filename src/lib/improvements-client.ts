@@ -87,6 +87,12 @@ export type LovableInfo = {
   // Present for every improvement; the UI only acts on it for
   // project-destination items -- see lovableOf's fallback below.
   auto_write: boolean;
+  // Round 6 Task 3 / spec §3: only set once the rule behind this
+  // improvement has been retired -- the write status of the retirement's
+  // own removal rewrite (never this rule's own write history above). Drives
+  // whether the card offers Undo (the removal never reached Lovable) or
+  // Re-add (it did -- the rule really is gone now). Null otherwise.
+  retirement_write_status: LovableWriteStatus | null;
 };
 
 // A retirement proposal (Task C2 / spec §4b-§5), shown as an item of kind
@@ -248,7 +254,8 @@ export async function postImprovementAction(body: Record<string, unknown>): Prom
   // Round 6 Task 2 / spec §2: present whenever the action just attempted a
   // Knowledge write (accept unless test_first, retire, readd, restore,
   // change_wording of a written rule, retry_write) -- absent for every
-  // other action (skip, reopen, set_destination, verdict, keep).
+  // other action (skip, reopen, set_destination, verdict, keep, and Round 6
+  // Task 3's own undo/cancel_write, which never touch Lovable).
   write?: WriteOutcome;
 }> {
   const res = await fetch("/api/public/harness/improvements", {
@@ -679,6 +686,7 @@ export function lovableOf(item: Improvement): LovableInfo {
       versions: [],
       untested: false,
       auto_write: true,
+      retirement_write_status: null,
     }
   );
 }

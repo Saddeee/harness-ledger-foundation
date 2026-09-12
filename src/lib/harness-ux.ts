@@ -438,6 +438,20 @@ export function wordingChangeLine(entry: {
   return `Updated by Harness on ${day}.`;
 }
 
+// ---- Round 6 Task 3 / spec §3: Undo, Cancel, Remove from Knowledge ----
+// "Anything not yet written to Lovable gets a plain Undo (no dialog);
+// anything written gets Remove from Knowledge (retire + immediate rewrite)
+// instead of Restore; Cancel lives on the Instructions pending-write
+// banner; Restore lives on the History page only." Exact copy, kept here so
+// every caller (the Suggestions card/detail, the Inbox confirmation row,
+// the Instructions page) reads the same words.
+export const UNDO_TOAST = "Undone — back in your Inbox";
+export const CANCEL_WRITE_TOAST = "Cancelled — back in your Inbox";
+export const REMOVE_FROM_KNOWLEDGE_TITLE = "Remove this rule from Knowledge?";
+export const REMOVE_FROM_KNOWLEDGE_BODY =
+  "Harness rewrites your Knowledge without it now. You can re-add it later.";
+export const REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL = "Remove";
+
 // ---- Retirement proposals (Task C2 / spec §4b-§5) ----
 
 export type RetireReason = "hurt" | "contradiction" | "unused";

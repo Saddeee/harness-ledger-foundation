@@ -2318,3 +2318,420 @@ test("prepareWordingChangeRewrite: stages a rewrite when the rule being reworded
   assert.equal(versions[0]!.status, "pending", "change_wording's own rewrite was re-staged");
   assert.match(versions[0]!.new_content, /Always do R, updated\./);
 });
+
+// ---- Round 6 Task 5: demo isolation (spec §5 / spec §0's incident) ----
+// A demo Knowledge snapshot is recorded with fetched_by = 'demo' under the
+// SAME real project/workspace id the demo uses (harness/src/demo.ts) -- so
+// without latestKnowledgeSnapshot's forWrite guard, a real rule's own
+// preview/accept could silently compose on demo text just by being newer.
+// Separately, a demo rule's own retire/re-add/restore must stage nothing at
+// all (stagePendingWrite's created_by = 'demo' guard, and the matching
+// guard in retireRule/the "restore" case) -- that is exactly the poisoned
+// recompose (rule_id: null, rule_ids_json naming demo rules) spec §0 found.
+
+test("buildPreview/stagePendingWrite: a real rule's preview and staged write use the newest NON-demo Knowledge snapshot, even when a demo snapshot is newer", () => {
+  const project = "improvements-test-demo-isolation-preview";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Demo Isolation Preview Project" });
+
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "# Real Knowledge\n\nReal content.\n",
+    fetched_by: "executor",
+  });
+  // Recorded AFTER the real one (a higher id -- "newer" by
+  // latestKnowledgeSnapshot's own ORDER BY id DESC) but must still be
+  // ignored by any real preview/write.
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "# Demo Knowledge\n\nDemo content, never real.\n",
+    fetched_by: "demo",
+  });
+
+  const { cc, rule } = mkRule({
+    project,
+    externalIdPrefix: "demo-isolation-real-rule",
+    content: "please always do Z",
+    summary: "s",
+    desired: "Always do Z.",
+    instruction: "Always do Z.",
+    scope: "project",
+  });
+
+  const preview = imp.getImprovement(cc.id)!.lovable.previews.project;
+  assert.ok(preview, "a preview must exist once a real snapshot has been recorded");
+  assert.match(preview!.final_content, /Real Knowledge/);
+  assert.doesNotMatch(preview!.final_content, /Demo Knowledge/);
+
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+
+  const versions = store.listKnowledgeVersions(rule.id);
+  assert.equal(versions.length, 1);
+  assert.equal(versions[0]!.status, "pending");
+  assert.match(versions[0]!.previous_content, /Real Knowledge/);
+  assert.doesNotMatch(versions[0]!.previous_content, /Demo Knowledge/);
+  assert.match(versions[0]!.new_content, /Real Knowledge/);
+  assert.doesNotMatch(versions[0]!.new_content, /Demo Knowledge/);
+});
+
+function mkDemoRule(project: string, externalIdPrefix: string) {
+  // Hand-built rather than via mkRule -- mkRule hardcodes created_by:
+  // "test", and this needs created_by: "demo" on both the learning and the
+  // rule (improvements.ts's stagePendingWrite/retireRule/"restore" guards
+  // all key off the rule's own created_by).
+  const msg = store.upsertHistoryItem({
+    project_id: project,
+    kind: "message",
+    external_id: `${externalIdPrefix}-1`,
+    role: "user",
+    content: "Demo: a demo request",
+    occurred_at: "2026-09-01T00:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const ep = store.createTaskEpisode({
+    project_id: project,
+    title: "Demo: episode",
+    provenance: "manual",
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: ep.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "Demo: summary",
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: "Demo: desired",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "demo",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "Demo: always do W.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "x",
+    ownership: "harness",
+    created_by: "demo",
+  }) as { id: number };
+  return { cc, rule };
+}
+
+test("improvementAction 'retire' on a demo rule stages nothing -- not even the target-level (rule_id: null) recompose spec §0 found", () => {
+  const project = "improvements-test-demo-isolation-retire";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Demo Isolation Retire Project" });
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "# Real Knowledge\n\nReal content.\n",
+    fetched_by: "executor",
+  });
+
+  const { rule } = mkDemoRule(project, "demo-isolation-retire");
+  store.updateRule({ id: rule.id, state: "active", actor: "demo" });
+
+  imp.improvementAction({ action: "retire", rule_id: rule.id });
+
+  assert.equal((store.getRule(rule.id) as { rule: { state: string } }).rule.state, "retired");
+  assert.equal(
+    store.listKnowledgeVersions(rule.id).length,
+    0,
+    "retiring a demo rule must stage no knowledge_version tied to its own id",
+  );
+  const targetLevelRecompose = db
+    .prepare(
+      `SELECT COUNT(*) as n FROM knowledge_versions WHERE rule_id IS NULL AND project_id = ?`,
+    )
+    .get(project) as { n: number };
+  assert.equal(
+    targetLevelRecompose.n,
+    0,
+    "retiring a demo rule must not stage the target-level recompose either -- that recompose's rule_ids_json would have named a demo rule",
+  );
+});
+
+test("improvementAction 'readd' and 'restore' on a demo rule stage nothing (stagePendingWrite's and 'restore' case's created_by = 'demo' guards)", () => {
+  const project = "improvements-test-demo-isolation-readd-restore";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({
+    lovable_project_id: project,
+    name: "Demo Isolation Readd/Restore Project",
+  });
+
+  const { cc, rule } = mkDemoRule(project, "demo-isolation-readd-restore");
+  const base = "# Real Knowledge\n\nReal content.\n";
+  const written = `${base}\n- Demo: always do W.`;
+  const v0 = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: project,
+    previous_content: base,
+    new_content: written,
+    rule_ids: [rule.id],
+    actor: "demo",
+  }) as { id: number };
+  store.recordKnowledgeReadback(v0.id, written);
+  store.updateRule({ id: rule.id, state: "retired", actor: "demo" });
+
+  imp.improvementAction({ action: "readd", id: cc.id });
+  assert.equal((store.getRule(rule.id) as { rule: { state: string } }).rule.state, "approved");
+  assert.equal(
+    store.listKnowledgeVersions(rule.id).filter((v) => v.status === "pending").length,
+    0,
+    "re-adding a demo rule must stage nothing",
+  );
+
+  imp.improvementAction({ action: "restore", id: cc.id, version_id: v0.id });
+  assert.equal(
+    store.listKnowledgeVersions(rule.id).filter((v) => v.status === "pending").length,
+    0,
+    "restoring a demo rule's written version must stage nothing",
+  );
+});
+
+// ---- Round 6 Task 3 / spec §3: Undo, Cancel, Remove from Knowledge ----
+// Undo (a plain, no-dialog reversal of any decided-but-unwritten item) and
+// cancel_write (the Instructions page's own pending-write banner); Remove
+// from Knowledge is just the existing "retire" action wired through
+// executor/beats.ts's improvementActionAndWrite (already write-eligible),
+// so it needs no new backend test here.
+
+test("undo: reopens an accepted-but-unwritten item back to pending, cancelling the staged write", () => {
+  const project = "improvements-test-undo-unwritten";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Undo Unwritten Project" });
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "# Knowledge\n\nExisting text.",
+    fetched_by: "test",
+  });
+
+  const { cc, rule } = mkRule({
+    project,
+    externalIdPrefix: "undo-unwritten",
+    content: "please always do U",
+    summary: "s",
+    desired: "d",
+    instruction: "Always do U.",
+    scope: "project",
+  });
+
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  const stagedBefore = (
+    store.listPendingKnowledgeWrites() as { id: number; rule_id: number | null }[]
+  ).filter((w) => w.rule_id === rule.id);
+  assert.equal(stagedBefore.length, 1, "accept stages one pending write");
+
+  const item = imp.improvementAction({ action: "undo", id: cc.id });
+  assert.equal(item.decision.status, "pending");
+  assert.equal(item.stage, "review");
+  assert.equal(
+    (store.getRule(rule.id) as { rule: { state: string } }).rule.state,
+    "proposed",
+    "undo puts the rule back to proposed, same as reopen",
+  );
+  assert.equal(
+    store.listKnowledgeVersions(rule.id).some((v) => v.status === "pending"),
+    false,
+    "undo cancels the staged write",
+  );
+  assert.equal(
+    store.listKnowledgeVersions(rule.id).find((v) => v.id === stagedBefore[0]!.id)!.status,
+    "cancelled",
+  );
+});
+
+test("undo: a retired rule whose removal was never written comes back to 'active' (not 'proposed'), and the removal rewrite is cancelled", () => {
+  const project = "improvements-test-undo-retired-unwritten";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Undo Retired Unwritten Project" });
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "# Knowledge\n\nExisting text.",
+    fetched_by: "test",
+  });
+
+  const { cc, rule } = mkRule({
+    project,
+    externalIdPrefix: "undo-retired-unwritten",
+    content: "please always do V",
+    summary: "s",
+    desired: "d",
+    instruction: "Always do V.",
+    scope: "project",
+  });
+
+  // Get the rule written for real first (undo-while-retired only makes
+  // sense for a rule that really was live in Lovable).
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  const staged = (
+    store.listPendingKnowledgeWrites() as {
+      id: number;
+      rule_id: number | null;
+      new_content: string;
+    }[]
+  ).find((w) => w.rule_id === rule.id)!;
+  store.recordKnowledgeReadback(staged.id, staged.new_content);
+  assert.equal(imp.getImprovement(cc.id)!.lovable.write_status, "written");
+
+  // Retire it (the manual, rule_id path -- no proposal involved). This
+  // stages the removal rewrite (rule_id: null) but never writes it -- same
+  // as improvementAction always does; only executor/beats.ts's
+  // improvementActionAndWrite attempts an actual Lovable write.
+  imp.improvementAction({ action: "retire", rule_id: rule.id });
+  assert.equal((store.getRule(rule.id) as { rule: { state: string } }).rule.state, "retired");
+  const retiredItem = imp.getImprovement(cc.id)!;
+  assert.equal(retiredItem.decision.retired, true);
+  assert.equal(
+    retiredItem.lovable.retirement_write_status,
+    "pending",
+    "the removal rewrite is staged but not yet written",
+  );
+
+  const undone = imp.improvementAction({ action: "undo", id: cc.id });
+  assert.equal(
+    (store.getRule(rule.id) as { rule: { state: string } }).rule.state,
+    "active",
+    "undo brings the rule straight back to active -- it was never actually removed from Lovable",
+  );
+  assert.equal(undone.decision.retired, false);
+  assert.equal(undone.decision.status, "accepted");
+  const rewrite = (
+    store.listKnowledgeVersions() as {
+      rule_id: number | null;
+      reason: string | null;
+      status: string;
+    }[]
+  ).find((v) => v.rule_id === null && v.reason === `retired rule ${rule.id}`);
+  assert.ok(rewrite, "the removal rewrite version must still exist, now cancelled");
+  assert.equal(rewrite!.status, "cancelled");
+});
+
+test("cancel_write: cancels the staged version and reopens the item it belongs to", () => {
+  const project = "improvements-test-cancel-write";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Cancel Write Project" });
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "# Knowledge\n\nExisting text.",
+    fetched_by: "test",
+  });
+
+  const { cc, rule } = mkRule({
+    project,
+    externalIdPrefix: "cancel-write",
+    content: "please always do X",
+    summary: "s",
+    desired: "d",
+    instruction: "Always do X.",
+    scope: "project",
+  });
+
+  // Same starting shape as a real accept that never got its inline write
+  // (Harness disconnected, or the write failed) -- a plain pending version,
+  // exactly what the Instructions page's own pending-write banner shows.
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  const staged = (
+    store.listPendingKnowledgeWrites() as { id: number; rule_id: number | null }[]
+  ).find((w) => w.rule_id === rule.id)!;
+
+  const item = imp.improvementAction({ action: "cancel_write", version_id: staged.id });
+  assert.equal(item.id, cc.id);
+  assert.equal(item.decision.status, "pending");
+  assert.equal((store.getRule(rule.id) as { rule: { state: string } }).rule.state, "proposed");
+  assert.equal(store.getKnowledgeVersion(staged.id)!.status, "cancelled");
+
+  // A version that's already terminal (stale/failed) is reopened first,
+  // not thrown on -- same tolerance executeVersionNow's own retry path has.
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  const stagedAgain = (
+    store.listPendingKnowledgeWrites() as { id: number; rule_id: number | null }[]
+  ).find((w) => w.rule_id === rule.id)!;
+  store.markKnowledgeWriteFailed(stagedAgain.id, "simulated failure");
+  const afterFailedCancel = imp.improvementAction({
+    action: "cancel_write",
+    version_id: stagedAgain.id,
+  });
+  assert.equal(afterFailedCancel.decision.status, "pending");
+  assert.equal(store.getKnowledgeVersion(stagedAgain.id)!.status, "cancelled");
+});
+
+test("undo: refused for a written (not retired) rule, with a clear reason pointing at Remove from Knowledge", () => {
+  const project = "improvements-test-undo-refused-written";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Undo Refused Written Project" });
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "# Knowledge\n\nExisting text.",
+    fetched_by: "test",
+  });
+
+  const { cc, rule } = mkRule({
+    project,
+    externalIdPrefix: "undo-refused-written",
+    content: "please always do Z",
+    summary: "s",
+    desired: "d",
+    instruction: "Always do Z.",
+    scope: "project",
+  });
+
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  const staged = (
+    store.listPendingKnowledgeWrites() as {
+      id: number;
+      rule_id: number | null;
+      new_content: string;
+    }[]
+  ).find((w) => w.rule_id === rule.id)!;
+  store.recordKnowledgeReadback(staged.id, staged.new_content);
+  assert.equal(imp.getImprovement(cc.id)!.lovable.write_status, "written");
+
+  assert.throws(
+    () => imp.improvementAction({ action: "undo", id: cc.id }),
+    /Remove from Knowledge/,
+  );
+
+  // Refused cleanly -- nothing about the item changed.
+  const after = imp.getImprovement(cc.id)!;
+  assert.equal(after.decision.status, "accepted");
+  assert.equal(after.lovable.write_status, "written");
+  assert.equal((store.getRule(rule.id) as { rule: { state: string } }).rule.state, "active");
+});
+// ---- end Round 6 Task 3 ----

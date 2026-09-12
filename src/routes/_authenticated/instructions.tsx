@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/table";
 import {
   adherenceLine,
+  CANCEL_WRITE_TOAST,
   formatDate,
   formatDay,
   healthLine,
@@ -310,6 +311,8 @@ function TargetSection({
   onRetire,
   readdBusy,
   onReadd,
+  cancelWriteBusy,
+  onCancelWrite,
 }: {
   target: KnowledgeTargetView;
   syncing: boolean;
@@ -318,6 +321,8 @@ function TargetSection({
   onRetire: (ruleId: number) => void;
   readdBusy: boolean;
   onReadd: (improvementId: number) => void;
+  cancelWriteBusy: boolean;
+  onCancelWrite: (versionId: number) => void;
 }) {
   const statusLine = target.current
     ? `Read from Lovable at ${formatDate(target.current.fetched_at)}`
@@ -345,14 +350,26 @@ function TargetSection({
 
       {target.pending_write ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3 text-sm">
-          {/* Round 6 Task 2 / spec §2, §3: pressing a decision writes
+          {/* Round 6 Tasks 2-3 / spec §§2-3: pressing a decision writes
               immediately when Harness is connected -- reaching this staged
               state at all now means the write failed or Harness was
-              disconnected at accept time. Sync now retries it. */}
+              disconnected at accept time. The sync button below retries it;
+              the cancel button is the only place a staged write can be
+              cancelled. */}
           <p>One change is staged, not yet written to Lovable.</p>
-          <Button size="sm" onClick={onSyncNow} disabled={syncing}>
-            {syncing ? "Syncing…" : "Sync now"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={cancelWriteBusy}
+              onClick={() => onCancelWrite(target.pending_write!.version_id)}
+            >
+              Cancel
+            </Button>
+            <Button size="sm" onClick={onSyncNow} disabled={syncing}>
+              {syncing ? "Syncing…" : "Sync now"}
+            </Button>
+          </div>
         </div>
       ) : null}
     </section>
@@ -396,6 +413,22 @@ function Page() {
       void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Re-add failed"),
+  });
+
+  // Round 6 Task 3 / spec §3: Cancel on the pending-write banner -- only
+  // reachable now when a write failed or Harness was disconnected at the
+  // moment the decision was pressed. Never writes to Lovable itself (the
+  // whole point is that nothing was written yet), so there's no `write`
+  // outcome to read back, just the plain toast.
+  const cancelWrite = useMutation({
+    mutationFn: (versionId: number) =>
+      postImprovementAction({ action: "cancel_write", version_id: versionId }),
+    onSuccess: () => {
+      toast.success(CANCEL_WRITE_TOAST);
+      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
+      void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Cancel failed"),
   });
 
   if (query.isLoading) {
@@ -476,6 +509,8 @@ function Page() {
             onRetire={(ruleId) => retireRule.mutate(ruleId)}
             readdBusy={readdRule.isPending}
             onReadd={(improvementId) => readdRule.mutate(improvementId)}
+            cancelWriteBusy={cancelWrite.isPending}
+            onCancelWrite={(versionId) => cancelWrite.mutate(versionId)}
           />
         ))
       )}

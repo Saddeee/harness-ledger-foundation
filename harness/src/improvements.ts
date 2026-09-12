@@ -153,6 +153,16 @@ export type Improvement = {
     // flag (a workspace write happens alongside the project's own Knowledge
     // sync), but the UI only surfaces it for project-destination items.
     auto_write: boolean;
+    // Round 6 Task 3 / spec §3: only set once the rule behind this
+    // improvement has been retired (decision.retired) -- the write status
+    // of retireRule's own removal rewrite (a target-level write, rule_id
+    // null, found by its own reason string; see retirementWriteStatus
+    // below), never this rule's OWN write history above. Drives whether the
+    // card offers Undo (nothing written yet -- the retirement never
+    // actually reached Lovable) or Re-add (the removal was written; the
+    // rule really is gone from Lovable's Knowledge now). Null for every
+    // non-retired item.
+    retirement_write_status: KnowledgeWriteStatus | null;
   };
   // Set only for kind "retire"; null for an ordinary improvement.
   retire: RetireInfo | null;
@@ -359,7 +369,9 @@ function buildPreview(
   rule: RuleRow | null,
 ): KnowledgePreview | null {
   if (!targetId) return null;
-  const snapshot = store.latestKnowledgeSnapshot(target, targetId);
+  // Round 6 Task 5: this preview feeds lovable.previews (the Add dialog) --
+  // never compose it on a demo snapshot (spec §5).
+  const snapshot = store.latestKnowledgeSnapshot(target, targetId, { forWrite: true });
   if (!snapshot) return null;
   // A project target enforces its own effective max (its override, else the
   // global default); a workspace target has no per-project override to
@@ -621,6 +633,8 @@ function buildImprovement(
       })),
       untested: status === "accepted" && !proofComplete,
       auto_write: c.project_id ? store.getProjectSettings(c.project_id).auto_write : true,
+      retirement_write_status:
+        rule && ruleState === "retired" ? retirementWriteStatus(rule.id) : null,
     },
     retire: null,
     rule_id: rule?.id ?? null,
@@ -712,6 +726,7 @@ function buildRetireItem(
       versions: [],
       untested: false,
       auto_write: true,
+      retirement_write_status: null,
     },
     retire: {
       proposal_id: proposal.id,
@@ -831,6 +846,10 @@ const actionInput = z.discriminatedUnion("action", [
     verdict: z.enum(["helped", "did_not_help", "not_sure"]),
     note: z.string().max(2000).optional(),
   }),
+  // ---- Round 6 Task 3 ----
+  z.object({ action: z.literal("undo"), id: z.number().int() }),
+  z.object({ action: z.literal("cancel_write"), version_id: z.number().int() }),
+  // ---- end Round 6 Task 3 ----
 ]);
 
 // After the user approves "Add", stage the exact write for the executor --
@@ -841,6 +860,9 @@ function stagePendingWrite(
   target: "project" | "workspace",
   reason?: string,
 ) {
+  // Round 6 Task 5: a demo rule's retire/re-add/restore is accepted but
+  // never stages a write (spec §5) -- there is no real decision to compose.
+  if (rule.created_by === "demo") return;
   const preview = improvement.lovable.previews[target];
   if (!preview) return;
   if (preview.over_cap)
@@ -856,6 +878,7 @@ function stagePendingWrite(
     target === "project"
       ? improvement.project.id
       : (store.getProjectMeta(improvement.project.id)?.workspace_id ?? ""),
+    { forWrite: true },
   );
   if (!snapshot) return;
   store.cancelPendingKnowledgeWrites(rule.id, "superseded by a newer decision");
@@ -990,8 +1013,13 @@ function retireRule(ruleId: number): Improvement {
         ? (store.getProjectMeta(original.project.id)?.workspace_id ?? null)
         : null;
 
-  if (targetId) {
-    const snapshot = store.latestKnowledgeSnapshot(target, targetId);
+  // Round 6 Task 5: a demo rule's retire stages nothing -- this is exactly
+  // the poisoned recompose from spec §0 (rule_id: null, rule_ids_json
+  // naming demo rules) if left unguarded. forWrite: true also keeps a REAL
+  // rule's retire recompose off a demo snapshot recorded under this same
+  // target id.
+  if (targetId && rule.created_by !== "demo") {
+    const snapshot = store.latestKnowledgeSnapshot(target, targetId, { forWrite: true });
     // No snapshot yet to compose against -- nothing staged; the rule is
     // still retired and the proposal still decided, same as a normal
     // accept before Harness has ever read Knowledge (stagePendingWrite).
@@ -1085,6 +1113,13 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
   // at the end of this file.
   if (a.action === "verdict") {
     return recordVerdict(a.rule_id, a.verdict, a.note);
+  }
+  // Round 6 Task 3 / spec §3: "cancel_write" (the Instructions page's
+  // pending-write banner) addresses a knowledge_versions id directly, not a
+  // correction_candidate -- see cancelPendingVersion in the delimited block
+  // at the end of this file.
+  if (a.action === "cancel_write") {
+    return cancelPendingVersion(a.version_id);
   }
 
   const current = getImprovement(a.id);
@@ -1204,7 +1239,8 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
       const version = store.getKnowledgeVersion(a.version_id);
       if (!version || version.rule_id !== rule.id)
         throw new Error(`knowledge version ${a.version_id} does not belong to this improvement`);
-      store.createRestoreVersion(a.version_id, ACTOR);
+      // Round 6 Task 5: a demo rule's restore is accepted but stages nothing.
+      if (rule.created_by !== "demo") store.createRestoreVersion(a.version_id, ACTOR);
       break;
     }
     case "readd": {
@@ -1233,6 +1269,46 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
         );
       break;
     }
+    // ---- Round 6 Task 3 ----
+    // "Undo": a plain, no-dialog reversal of any decided-but-unwritten item
+    // (spec §3). Reopen semantics (rule back to "proposed", staged write
+    // cancelled, decision pending) for the ordinary case; for a rule that
+    // was retired but whose removal was never actually written to Lovable,
+    // there is nothing to "review" again -- the rule is still live exactly
+    // as it was, so Undo instead brings it straight back to "active" and
+    // cancels the not-yet-written removal rewrite (undoRetirement, in the
+    // delimited block at the end of this file). Refused, with a clear
+    // reason, once the rule (or its removal) really has been written --
+    // "Remove from Knowledge" / "Re-add" are the levers from there.
+    case "undo": {
+      // Same "no rule yet" tolerance as "reopen" above -- a correction can
+      // be skipped before any rule exists for it (rule-writing hasn't run
+      // yet), and Undo must reopen that just as plainly.
+      if (rule && current.decision.retired) {
+        if (retirementWriteStatus(rule.id) === "written") {
+          throw new Error(
+            "This rule was already removed from Lovable — Undo isn't available; use Re-add instead.",
+          );
+        }
+        undoRetirement(rule.id);
+        break;
+      }
+      if (
+        rule &&
+        (current.lovable.write_status === "written" || current.lovable.write_status === "reverted")
+      ) {
+        throw new Error(
+          "This rule is already written to Lovable — Undo isn't available; use Remove from Knowledge instead.",
+        );
+      }
+      store.reviewCorrectionCandidate({ id: a.id, action: "include", reviewer: ACTOR });
+      if (rule) {
+        store.cancelPendingKnowledgeWrites(rule.id, "cancelled: undone");
+        store.updateRule({ id: rule.id, state: "proposed", actor: ACTOR });
+      }
+      break;
+    }
+    // ---- end Round 6 Task 3 ----
   }
   const refreshed = getImprovement(a.id);
   if (!refreshed) throw new Error(`improvement ${a.id} not found after update`);
@@ -1861,3 +1937,105 @@ export function prepareWordingChangeRewrite(input: unknown): () => void {
   };
 }
 // ---- end Round 6 Task 2 ----
+
+// ---- Round 6 Task 3 ----
+// Undo, Cancel, and Remove from Knowledge (spec §3): "anything not yet
+// written to Lovable gets a plain Undo (no dialog); anything written gets
+// Remove from Knowledge (retire + immediate rewrite) instead of Restore;
+// Cancel lives on the Instructions pending-write banner; Restore lives on
+// the History page only." Remove needs no new code of its own here -- it IS
+// the existing "retire" action (called through executor/beats.ts's
+// improvementActionAndWrite, already write-eligible for "retire", so it
+// writes immediately). The two pieces this block adds are what "undo"'s own
+// switch case above needs for the retired-not-yet-removed case, and
+// "cancel_write"'s own top-level handler.
+
+// retireRule's own removal rewrite carries rule_id: null (deliberately --
+// see retireRule's own comment above) and this exact reason string, so it's
+// found by reason rather than rule_id. "none" once nothing matches: already
+// written, already cancelled, or never staged in the first place (no
+// snapshot existed to compose against at retire time -- the same edge case
+// stagePendingWrite's own "no snapshot" path leaves an ordinary accept in).
+function retirementWriteStatus(ruleId: number): KnowledgeWriteStatus {
+  const reason = `retired rule ${ruleId}`;
+  const latest =
+    (store.listKnowledgeVersions() as store.KnowledgeVersionRow[]).find(
+      (v) => v.rule_id === null && v.reason === reason && v.status !== "cancelled",
+    ) ?? null;
+  return latest ? latest.status : "none";
+}
+
+// The inverse of retireRule, for a retirement whose removal never actually
+// reached Lovable: cancels the not-yet-written rewrite (reopening a
+// stale/failed one first, the same tolerance executeVersionNow's own retry
+// path already has) and brings the rule straight back to "active" -- not
+// "proposed": this rule was already live and reviewed; only its removal is
+// being undone, there is nothing new here for the user to decide.
+function undoRetirement(ruleId: number): void {
+  const reason = `retired rule ${ruleId}`;
+  const rewrite = (store.listKnowledgeVersions() as store.KnowledgeVersionRow[]).find(
+    (v) => v.rule_id === null && v.reason === reason && v.status !== "cancelled",
+  );
+  if (rewrite && rewrite.status !== "written") {
+    const pending =
+      rewrite.status === "pending" ? rewrite : store.reopenKnowledgeVersionForRetry(rewrite.id);
+    store.markKnowledgeWriteCancelled(
+      pending.id,
+      "cancelled: retirement undone before it was written",
+    );
+  }
+  store.updateRule({
+    id: ruleId,
+    state: "active",
+    actor: ACTOR,
+    reason: "retirement undone before it was written",
+  });
+}
+
+// The Instructions page's pending-write banner "Cancel": cancels the one
+// staged version (reopening a stale/failed one first, so this always ends
+// on a genuinely cancelled row rather than throwing) and reopens whatever
+// decision staged it. A rule-scoped write (accept/readd/restore/
+// change_wording) reopens that rule's own improvement, the same plain
+// reopen "undo" itself falls back to above; retireRule's own target-level
+// rewrite (rule_id null) has no single rule's *decision* to reopen that way
+// -- it undoes the retirement that staged it instead, bringing the rule
+// back to "active" (never written, so there is nothing to roll back in
+// Lovable itself).
+function cancelPendingVersion(versionId: number): Improvement {
+  let row = store.getKnowledgeVersion(versionId);
+  if (!row) throw new Error(`knowledge version ${versionId} not found`);
+  if (row.status === "stale" || row.status === "failed") {
+    row = store.reopenKnowledgeVersionForRetry(versionId);
+  }
+  if (row.status !== "pending")
+    throw new Error(`knowledge version ${versionId} is ${row.status}, not staged`);
+  store.markKnowledgeWriteCancelled(versionId, "cancelled: write cancelled by the owner");
+
+  let correctionId: number | null = null;
+  if (row.rule_id != null) {
+    store.updateRule({ id: row.rule_id, state: "proposed", actor: ACTOR });
+    correctionId = store.getCorrectionIdForRule(row.rule_id);
+    if (correctionId != null)
+      store.reviewCorrectionCandidate({ id: correctionId, action: "include", reviewer: ACTOR });
+  } else {
+    const match = row.reason?.match(/^retired rule (\d+)$/);
+    const retiredRuleId = match?.[1] != null ? Number(match[1]) : null;
+    if (retiredRuleId != null) {
+      store.updateRule({
+        id: retiredRuleId,
+        state: "active",
+        actor: ACTOR,
+        reason: "retirement's write cancelled before it was written",
+      });
+      correctionId = store.getCorrectionIdForRule(retiredRuleId);
+    }
+  }
+
+  if (correctionId == null)
+    throw new Error(`knowledge version ${versionId} was cancelled, but has no linked improvement`);
+  const refreshed = getImprovement(correctionId);
+  if (!refreshed) throw new Error(`improvement ${correctionId} not found after cancel_write`);
+  return refreshed;
+}
+// ---- end Round 6 Task 3 ----

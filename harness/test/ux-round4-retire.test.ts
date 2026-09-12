@@ -188,23 +188,40 @@ test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows 
   assert.ok(openIdx > guardEnd, "Open must render unconditionally, after the guard");
 });
 
-test("the improvements API's action set now includes retire, keep, readd, mark_seen, verdict, retry_write", () => {
+test("the improvements API's action set now includes retire, keep, readd, mark_seen, verdict, retry_write, undo, cancel_write", () => {
   const detailAndLedger = codeOnly(
     readApp(DETAIL) + readApp("routes/_authenticated/ledger.tsx") + readApp(INBOX),
   );
-  const actions = [...detailAndLedger.matchAll(/action: "([a-z_]+)"/g)].map((m) => m[1]);
+  // Round 6 Task 3: cancel_write lives only on the Instructions page's
+  // pending-write banner. That whole file also has postExecutor's own
+  // "sync_now" action (a different endpoint) -- rather than pull it into
+  // the general blob above, only its postImprovementAction(...) call lines
+  // are added to the scan, the same lines the "restore lives on the
+  // History page only" test elsewhere in this round checks too.
+  const instructionsCalls = codeOnly(readApp(INSTRUCTIONS_PAGE))
+    .split("\n")
+    .filter((l) => l.includes("postImprovementAction("))
+    .join("\n");
+  const actions = [...(detailAndLedger + instructionsCalls).matchAll(/action: "([a-z_]+)"/g)].map(
+    (m) => m[1],
+  );
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
+    // Round 6 Task 3: cancel the Instructions page's own staged write.
+    "cancel_write",
     "change_wording",
     "keep",
     "mark_seen",
     "readd",
     "reopen",
-    "restore",
     "retire",
     // Round 6 Task 2: "Try again" on a not-written outcome.
     "retry_write",
     "skip",
+    // Round 6 Task 3: a plain, no-dialog reopen for anything not yet
+    // written -- "restore" is gone from this set: it moved to the History
+    // page only (see ux-round6-controls.test.ts).
+    "undo",
     "verdict",
   ]);
 });

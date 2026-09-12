@@ -190,9 +190,15 @@ test("decision card: three buttons for pending items, decision buttons shown inl
   );
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
   assert.match(decided, /action: "retry_write", id: item\.id, version_id: retryableVersion\.id/);
-  assert.match(decided, /trigger="Restore previous version"/);
-  assert.match(decided, /\{ action: "restore", id: item\.id, version_id: latestWritten\.id \}/);
-  assert.match(decided, /\{ action: "reopen", id: item\.id \}/);
+  // Round 6 Task 3 / spec §3: "Restore previous version" is gone from
+  // DecidedStatus -- Remove from Knowledge (still the "retire" action) took
+  // its place, and Restore itself moved to the History page only.
+  assert.ok(!/Restore previous version/.test(decided), "Restore moved to the History page only");
+  assert.match(
+    decided,
+    /<RemoveFromKnowledgeConfirm ruleId=\{ruleId\} busy=\{busy\} run=\{run\} \/>/,
+  );
+  assert.match(decided, /\{ action: "undo", id: item\.id \}/);
   assert.match(decided, /\{decisionSentence\(/);
   // "role=\"radio\"" used to be forbidden here (an earlier deferred-decision
   // design); Task 8 reintroduces it deliberately for the Add-confirmation
@@ -710,17 +716,20 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
   ].map((m) => m[1]);
   // Task C2 adds retire/keep/readd (the Retire/Keep/Re-add actions); Round 5
   // Task 7 adds verdict (the "Did this rule help?" buttons); Round 6 Task 2
-  // adds retry_write ("Try again" on a not-written outcome).
+  // adds retry_write ("Try again" on a not-written outcome). Round 6 Task 3:
+  // "reopen" and "restore" are gone from DETAIL+LEDGER -- Restore moved to
+  // the History page only, and the skipped-only "Reopen" button folded into
+  // the new "undo" (a plain, no-dialog reversal of anything not yet
+  // written, shared by the accepted-unwritten and skipped cases alike).
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
     "change_wording",
     "keep",
     "readd",
-    "reopen",
-    "restore",
     "retire",
     "retry_write",
     "skip",
+    "undo",
     "verdict",
   ]);
 });

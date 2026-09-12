@@ -27,8 +27,12 @@ import {
   label,
   lovableReplyText,
   proveCostLine,
+  REMOVE_FROM_KNOWLEDGE_BODY,
+  REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL,
+  REMOVE_FROM_KNOWLEDGE_TITLE,
   retireReasonSentence,
   retireSinceLine,
+  UNDO_TOAST,
   VERDICT_TEXT,
   verdictLine,
   type StatusCtx,
@@ -69,8 +73,6 @@ function overRulesLine(activeRulesCount: number): string {
 // (writeToastText, below) -- these four are only the defensive fallback for
 // a response that somehow carries no `write` field at all.
 const SAVED_LINE = "Added.";
-const RESTORE_TITLE = "Restore the previous Knowledge?";
-const RESTORE_BODY = "Harness will write the earlier text back, as a new version.";
 const NO_INSTRUCTION = "Harness hasn't drafted an instruction yet.";
 const ADD_NOW_HELP = "Harness writes this exact text now, when you press Add. Uses no credits.";
 const RETIRE_TITLE = "Retire this rule?";
@@ -79,6 +81,12 @@ const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
 const RETIRED_TOAST = "Retired.";
 const KEPT_TOAST = "Kept — Harness will ask again in 30 days";
 const READDED_TOAST = "Re-added.";
+// Round 6 Task 3 / spec §3: "Remove from Knowledge" replaces "Restore
+// previous version" on a written rule's card -- it retires the rule and
+// rewrites Knowledge without it immediately (the same "retire" action,
+// through improvementActionAndWrite, so the response carries `write`).
+// Restore itself moved to the History page only.
+const REMOVED_TOAST = "Removed from Knowledge.";
 
 const LONG_TEXT = 600;
 
@@ -426,6 +434,35 @@ function RetireConfirm({
   );
 }
 
+// Round 6 Task 3 / spec §3: replaces the old restore-to-an-earlier-version
+// button on a written rule's card (Restore itself now lives on the History
+// page only). Same underlying action as RetireConfirm above (this
+// item's own rule is definitely live, so it's always addressed by
+// rule_id -- never a retire-proposal id), but its own copy: the confirm
+// explains what happens to Knowledge, not that the rule is "retired".
+function RemoveFromKnowledgeConfirm({
+  ruleId,
+  busy,
+  run,
+}: {
+  ruleId: number;
+  busy: boolean;
+  run: Run;
+}) {
+  return (
+    <ConfirmAction
+      trigger="Remove from Knowledge"
+      variant="outline"
+      title={REMOVE_FROM_KNOWLEDGE_TITLE}
+      body={REMOVE_FROM_KNOWLEDGE_BODY}
+      consequences={[]}
+      confirmLabel={REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL}
+      disabled={busy}
+      onConfirm={() => void run({ action: "retire", rule_id: ruleId }, REMOVED_TOAST)}
+    />
+  );
+}
+
 function RetireCard({
   item,
   busy,
@@ -525,18 +562,24 @@ function DecidedStatus({
 }) {
   const lovable = lovableOf(item);
   const accepted = item.decision.status === "accepted";
-  const skipped = item.decision.status === "skipped";
   const retired = item.decision.retired;
   const written = lovable.write_status === "written";
-  const latestWritten = lovable.versions
-    .filter((v) => v.status === "written")
-    .sort((a, b) => b.id - a.id)[0];
   // Round 6 Task 2: "Try again" (Needs attention) re-runs executeVersionNow
   // on this exact version -- the one whose status is why the card reads
   // stale/failed in the first place.
   const retryableVersion = lovable.versions.find(
     (v) => v.status === "stale" || v.status === "failed",
   );
+  // Round 6 Task 3 / spec §3: Undo is offered on anything not yet written --
+  // for a retired rule that means its own removal rewrite (never this
+  // rule's own past write, which is what `written` above already reads),
+  // everywhere else it means this item's own write_status. "reverted" is
+  // deliberately excluded either way (out of scope for this task; Add-
+  // instead/Skip already cover it below).
+  const removalWritten = lovable.retirement_write_status === "written";
+  const canUndo = retired
+    ? !removalWritten
+    : lovable.write_status !== "written" && lovable.write_status !== "reverted";
 
   // spec §5.2: verdict buttons for a live (accepted + written) rule --
   // replaced by "You said: ..." with a "Change" link once a verdict
@@ -603,15 +646,32 @@ function DecidedStatus({
       ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {retired ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full sm:w-auto"
-            disabled={busy}
-            onClick={() => void run({ action: "readd", id: item.id }, READDED_TOAST)}
-          >
-            Re-add
-          </Button>
+          canUndo ? (
+            // Round 6 Task 3 / spec §3: the removal never actually reached
+            // Lovable (write failed, or Harness was disconnected at retire
+            // time) -- Undo brings the rule straight back to "active", no
+            // Lovable write involved. Once the removal IS written, Re-add
+            // takes over (below).
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full sm:w-auto"
+              disabled={busy}
+              onClick={() => void run({ action: "undo", id: item.id }, UNDO_TOAST)}
+            >
+              Undo
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              disabled={busy}
+              onClick={() => void run({ action: "readd", id: item.id }, READDED_TOAST)}
+            >
+              Re-add
+            </Button>
+          )
         ) : (
           <>
             {accepted &&
@@ -663,36 +723,22 @@ function DecidedStatus({
                 Try again
               </Button>
             ) : null}
-            {accepted && written && latestWritten ? (
-              <ConfirmAction
-                trigger="Restore previous version"
-                variant="outline"
-                title={RESTORE_TITLE}
-                body={RESTORE_BODY}
-                consequences={[]}
-                confirmLabel="Restore"
-                disabled={busy}
-                onConfirm={() =>
-                  void run(
-                    { action: "restore", id: item.id, version_id: latestWritten.id },
-                    "Restore requested — Harness will write the earlier text back",
-                  )
-                }
-              />
+            {accepted && written && ruleId != null ? (
+              <RemoveFromKnowledgeConfirm ruleId={ruleId} busy={busy} run={run} />
             ) : null}
-            {skipped ? (
+            {/* Round 6 Task 3 / spec §3: a plain, no-dialog Undo -- shown for
+                every decided-but-unwritten item, accepted or skipped alike
+                (the skipped case's own "Reopen" button folded into this same
+                one, since it's exactly the same reopen semantics). */}
+            {canUndo ? (
               <Button
-                variant="outline"
+                type="button"
+                variant="ghost"
                 className="w-full sm:w-auto"
                 disabled={busy}
-                onClick={() =>
-                  void run(
-                    { action: "reopen", id: item.id },
-                    "Reopened — waiting for your decision",
-                  )
-                }
+                onClick={() => void run({ action: "undo", id: item.id }, UNDO_TOAST)}
               >
-                Reopen
+                Undo
               </Button>
             ) : null}
           </>
