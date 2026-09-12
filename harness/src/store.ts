@@ -3626,4 +3626,21 @@ export function listRetireProposalsForRule(ruleId: number): RetireProposalRow[] 
       .all(ruleId) as RetireProposalDbRow[]
   ).map(parseRetireProposal);
 }
+
+/** Fix round 1: every "rule.readded" event for exactly this rule, oldest
+ * first -- listEventsForRecord's `payload LIKE '%"id":<id>%'` is only an
+ * approximation (good enough for an audit panel), and a substring match
+ * false-positives across rules once ids overlap as substrings (rule 3 also
+ * matches payloads {"id":30}, {"id":300}, {"id":31}, ...). The History
+ * timeline needs an exact match, so this reads the same column with
+ * json_extract instead of scanning payload text. */
+export function listReaddEventsForRule(ruleId: number): { id: number; created_at: string }[] {
+  return db
+    .prepare(
+      `SELECT id, created_at FROM events
+       WHERE kind = 'rule.readded' AND json_extract(payload, '$.id') = ?
+       ORDER BY id ASC`,
+    )
+    .all(ruleId) as { id: number; created_at: string }[];
+}
 // ---- end Round 5 Task 3 ----

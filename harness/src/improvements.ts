@@ -1379,11 +1379,11 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
     }
 
     // ---- decision nodes: re-adds (the "rule.readded" event the readd
-    // action above writes) ----
-    for (const ev of store.listEventsForRecord(["rule.readded"], ruleId) as unknown as {
-      id: number;
-      created_at: string;
-    }[]) {
+    // action above writes). Fix round 1: listEventsForRecord's payload
+    // substring match false-positives across rules once ids overlap as
+    // substrings (rule 3 also matches {"id":30}, {"id":300}, ...) --
+    // listReaddEventsForRule uses an exact json_extract match instead. ----
+    for (const ev of store.listReaddEventsForRule(ruleId)) {
       nodes.push({
         id: `decision:readd-${ev.id}`,
         kind: "decision",

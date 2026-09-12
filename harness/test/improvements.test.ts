@@ -1325,6 +1325,67 @@ test("buildTimeline: retire_proposals create 'Harness suggested retiring' + 'You
   }
 });
 
+// Fix round 1: listEventsForRecord's `payload LIKE '%"id":<id>%'` is a
+// substring match -- rule 3's lookup also matches a "rule.readded" event
+// whose payload is {"id":30} (or 300, 31, ...), since "id":3 is a literal
+// substring of "id":30. listReaddEventsForRule uses an exact json_extract
+// match instead. Ids chosen far apart from any this file's shared DB could
+// otherwise produce, so this can't collide with a real rule's own readd.
+test("store.listReaddEventsForRule: exact id match, never a payload substring match", () => {
+  store.insertEvent("rule.readded", null, { id: 500003 });
+  store.insertEvent("rule.readded", null, { id: 500030 });
+  store.insertEvent("rule.readded", null, { id: 500300 });
+  store.insertEvent("rule.readded", null, { id: 500031 });
+
+  const forShort = store.listReaddEventsForRule(500003);
+  assert.equal(forShort.length, 1, "must match only the exact id, not 500030/500300/500031");
+
+  const forLong = store.listReaddEventsForRule(500030);
+  assert.equal(forLong.length, 1, "must match only the exact id 500030");
+});
+
+test("buildTimeline: 'Re-added' is attributed to the exact rule id, not a substring (rule 3 vs rule 30)", () => {
+  const TL_PROJECT_READD_EXACT = "timeline-test-project-readd-exact";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    TL_PROJECT_READD_EXACT,
+    "tl-readd-exact",
+  );
+  store.upsertProject({
+    lovable_project_id: TL_PROJECT_READD_EXACT,
+    name: "Timeline Re-add Exact Project",
+  });
+
+  // rule_ids_json carries no foreign key, so this puts literal ids 3 and 30
+  // into buildTimeline's per-target rule set without needing 30 real rows
+  // in the rules table.
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: TL_PROJECT_READD_EXACT,
+    content: "# Knowledge\n\nBaseline.",
+    fetched_by: "test",
+  });
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: null,
+    target: "project",
+    project_id: TL_PROJECT_READD_EXACT,
+    previous_content: "# Knowledge\n\nBaseline.",
+    new_content: "# Knowledge\n\nBaseline.\n\n- rule 3.\n- rule 30.",
+    rule_ids: [3, 30],
+    actor: "test",
+  }) as { id: number; new_content: string };
+  store.recordKnowledgeReadback(v.id, v.new_content);
+
+  // Only rule 30 is re-added.
+  store.insertEvent("rule.readded", null, { id: 30 });
+
+  const nodes = imp.buildTimeline("project", TL_PROJECT_READD_EXACT);
+  const readdNodesFor = (ruleId: number) =>
+    nodes.filter((n) => n.label === "Re-added" && n.rule_ids.includes(ruleId));
+
+  assert.equal(readdNodesFor(3).length, 0, "rule 3 must not see rule 30's re-add event");
+  assert.equal(readdNodesFor(30).length, 1, "rule 30 sees its own re-add event");
+});
+
 test("buildTimeline: a workspace timeline includes two skill snapshots for the same name, the second carrying a diff against the first", () => {
   const TL_WORKSPACE = "timeline-test-workspace";
   const first = store.recordSkillSnapshot({
