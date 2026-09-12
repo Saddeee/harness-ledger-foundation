@@ -31,16 +31,29 @@ function isApplicable(episodeTags: string[], scopeTags: string[]): boolean {
 }
 
 // Spec §4b signal 1: a correction "matches" a rule's failure when its
-// summary is the same failure signature (kebab-case compare) or is similar
-// enough, by bigram Dice, to the rule's predicted failure text.
+// summary is the same failure signature (kebab-case compare), or its slug is
+// similar enough -- by bigram Dice -- to the failure signature, or the raw
+// summary is similar enough to the rule's predicted failure text.
+//
+// A real classifier summary is prose ("You used inline colors instead of
+// the design tokens again."), never literally equal to a kebab-case slug
+// like "inline-colors-instead-of-design-tokens" -- the exact-equality
+// shortcut below is a cheap fast path (also covers a human-edited summary
+// that happens to already be the slug), but the slug-vs-signature Dice
+// comparison is what actually matches real prose against a rule's failure
+// signature.
 function matchesFailure(
   correctionSummary: string,
   failureSignature: string,
   prediction: string,
 ): boolean {
   if (!correctionSummary) return false;
-  if (failureSignature && toKebabCase(correctionSummary) === toKebabCase(failureSignature))
-    return true;
+  if (failureSignature) {
+    const summarySlug = toKebabCase(correctionSummary);
+    const signatureSlug = toKebabCase(failureSignature);
+    if (summarySlug === signatureSlug) return true;
+    if (dice(summarySlug, signatureSlug) >= DICE_HURT_THRESHOLD) return true;
+  }
   if (!prediction) return false;
   return dice(correctionSummary, prediction) >= DICE_HURT_THRESHOLD;
 }
@@ -137,4 +150,34 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
   }
 
   return { rules: rules.length, suggested };
+}
+
+/**
+ * Task C2: the correction history_item ids that counted as "hurt" for one
+ * rule, under this module's own applicability/match rules -- oldest first,
+ * capped at `limit`. Used as evidence on a retirement proposal with reason
+ * 'hurt' (harness/src/analysis/retire.ts). Returns [] for a rule that isn't
+ * live with a written Knowledge version (listLiveRulesWithTargets excludes
+ * it) or that has no hurt corrections.
+ */
+export function hurtCorrectionHistoryItemIds(ruleId: number, limit = 5): number[] {
+  const rule = store.listLiveRulesWithTargets().find((r) => r.id === ruleId);
+  if (!rule || !rule.first_written_at) return [];
+
+  const episodes = store.listEpisodesAfter(
+    rule.scope === "project" ? rule.project_id : null,
+    rule.first_written_at,
+  );
+
+  const ids: number[] = [];
+  for (const episode of episodes) {
+    if (!isApplicable(episode.tags, rule.scope_tags)) continue;
+    for (const correction of episode.corrections) {
+      if (matchesFailure(correction.summary, rule.failure_signature, rule.prediction)) {
+        ids.push(correction.history_item_id);
+        if (ids.length >= limit) return ids;
+      }
+    }
+  }
+  return ids;
 }

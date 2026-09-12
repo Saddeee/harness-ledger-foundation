@@ -5,14 +5,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // Isolated temp DB for this test file, set before db.ts is first imported.
-process.env.HARNESS_DB_PATH = join(mkdtempSync(join(tmpdir(), "harness-rule-health-test-")), "harness.db");
+process.env.HARNESS_DB_PATH = join(
+  mkdtempSync(join(tmpdir(), "harness-rule-health-test-")),
+  "harness.db",
+);
 
 const { db } = await import("../src/db.js");
 const store = await import("../src/store.js");
 const { recomputeRuleHealth } = await import("../src/analysis/health.js");
 
 const PROJECT = "rule-health-project";
-db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT, "test");
+db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+  PROJECT,
+  "test",
+);
 store.upsertProject({ lovable_project_id: PROJECT, name: "Test Project" });
 
 // A fixed "now" (today, per the environment) so every day-math in the test
@@ -124,44 +130,68 @@ function makeLiveRule(input: {
 
 const styledRuleId = makeLiveRule({
   predictedFailure: "inline colors instead of design tokens",
-  failureSignature: "design-system-bypassed",
+  failureSignature: "inline-colors-instead-of-design-tokens",
   scopeTags: ["styling"],
   writtenAt: RULE_WRITTEN_AT,
 });
 
-// Episode A: applicable (styling), hurt via exact kebab-case match on the
-// failure signature.
+// Episode A: applicable (styling), hurt. The correction summary is prose, as
+// a real classifier would write it -- never literally equal to the
+// kebab-case failure signature -- so this specifically exercises the fuzzy
+// slug-vs-signature Dice match, not the exact-equality shortcut.
 const reqA = message("Make the CTA button blue.", "2026-09-02T00:00:00Z");
 classify(reqA, "new_task", ["styling"]);
-const corrA = message("You hardcoded a hex color instead of using the design token.", "2026-09-02T01:00:00Z");
-classify(corrA, "correction", ["styling"], "design-system-bypassed");
-const episodeA = episode("2026-09-02T00:00:00Z", [reqA, corrA]);
+const corrA = message(
+  "You used inline colors instead of the design tokens again.",
+  "2026-09-02T01:00:00Z",
+);
+classify(
+  corrA,
+  "correction",
+  ["styling"],
+  "You used inline colors instead of the design tokens again.",
+);
+episode("2026-09-02T00:00:00Z", [reqA, corrA]);
 
-// Episode B: applicable (styling), hurt via Dice similarity (>=0.7) against
-// the rule's predicted failure rather than an exact signature match.
+// Episode B: applicable (styling), hurt via Dice similarity (>=0.7) of the
+// raw correction summary against the rule's predicted failure text, rather
+// than the signature-slug path.
 const reqB = message("Update the card background.", "2026-09-03T00:00:00Z");
 classify(reqB, "new_task", ["styling"]);
 const corrB = message(
   "Still seeing inline colors used instead of design tokens on the card.",
   "2026-09-03T01:00:00Z",
 );
-classify(corrB, "correction", ["styling"], "inline colors used instead of design tokens");
-const episodeB = episode("2026-09-03T00:00:00Z", [reqB, corrB]);
+classify(
+  corrB,
+  "correction",
+  ["styling"],
+  "Still seeing inline colors used instead of design tokens on the card.",
+);
+episode("2026-09-03T00:00:00Z", [reqB, corrB]);
 
-// Episode C: applicable (styling), helped -- no correction at all.
+// Episode C: applicable (styling), helped -- it DOES carry a correction, but
+// one that is clearly unrelated to this rule's failure signature/prediction,
+// so matchesFailure must not fire on it (a corrected episode isn't
+// automatically "hurt" just for having a correction).
 const reqC = message("Add a settings tab.", "2026-09-04T00:00:00Z");
 classify(reqC, "new_task", ["styling"]);
-const episodeC = episode("2026-09-04T00:00:00Z", [reqC]);
+const corrC = message("Please add a dark mode toggle to settings.", "2026-09-04T01:00:00Z");
+classify(corrC, "correction", ["styling"], "Please add a dark mode toggle to settings.");
+episode("2026-09-04T00:00:00Z", [reqC, corrC]);
 
 // Episode D: NOT applicable to the styling rule (tags don't overlap), even
 // though it carries a correction that would otherwise match the signature.
 const reqD = message("Fix the webhook retry backoff.", "2026-09-05T00:00:00Z");
 classify(reqD, "new_task", ["backend"]);
-const corrD = message("The retry still uses the design-system-bypassed color path.", "2026-09-05T01:00:00Z");
+const corrD = message(
+  "The retry still uses the design-system-bypassed color path.",
+  "2026-09-05T01:00:00Z",
+);
 classify(corrD, "correction", ["backend"], "design-system-bypassed");
 episode("2026-09-05T00:00:00Z", [reqD, corrD]);
 
-test("recomputeRuleHealth: 3 applicable episodes, 2 hurt, 1 helped -> retire_suggested", () => {
+test("recomputeRuleHealth: 3 applicable episodes, 2 hurt (prose summaries, fuzzy-matched) 1 helped (unrelated correction) -> retire_suggested", () => {
   const result = recomputeRuleHealth(NOW);
   assert.equal(result.rules, 1, "only the one live, written rule should be scored so far");
   assert.equal(result.suggested, 1);
@@ -169,10 +199,22 @@ test("recomputeRuleHealth: 3 applicable episodes, 2 hurt, 1 helped -> retire_sug
   const health = store.getRuleHealth(styledRuleId);
   assert.ok(health);
   assert.equal(health!.applicable_tasks, 3, "episode D's tags don't overlap ['styling']");
-  assert.equal(health!.hurt, 2);
-  assert.equal(health!.helped, 1);
+  assert.equal(
+    health!.hurt,
+    2,
+    "A hurts via slug(summary)~=failure_signature, B hurts via summary~=prediction -- both prose, neither literally equal",
+  );
+  assert.equal(
+    health!.helped,
+    1,
+    "C has a correction, but its summary is unrelated to this rule's signature/prediction",
+  );
   assert.equal(health!.status, "retire_suggested");
-  assert.equal(health!.last_applicable_at, "2026-09-04T00:00:00Z", "latest APPLICABLE episode is C, not D");
+  assert.equal(
+    health!.last_applicable_at,
+    "2026-09-04T00:00:00Z",
+    "latest APPLICABLE episode is C, not D",
+  );
   assert.equal(health!.unused_since, null);
 });
 
@@ -224,7 +266,11 @@ test("snoozeRuleHealth: status becomes snoozed, and a later recompute keeps it s
   assert.equal(recomputed.suggested, 0, "a snoozed rule must not count toward 'suggested'");
   const health = store.getRuleHealth(styledRuleId)!;
   assert.equal(health.status, "snoozed");
-  assert.equal(health.snoozed_until, untilIso, "recompute must carry the snooze forward, not clear it");
+  assert.equal(
+    health.snoozed_until,
+    untilIso,
+    "recompute must carry the snooze forward, not clear it",
+  );
 
   // Once the snooze has expired, the same underlying signal resumes.
   const afterExpiry = new Date("2026-11-15T00:00:00Z");
@@ -232,9 +278,49 @@ test("snoozeRuleHealth: status becomes snoozed, and a later recompute keeps it s
   assert.equal(store.getRuleHealth(styledRuleId)!.status, "retire_suggested");
 });
 
+test("snoozeRuleHealth: upserts a minimal all-zero row when rule_health has never scored the rule (Task C2's 'Keep' can fire before any recompute)", () => {
+  // Written long enough ago, with a tag no fixture episode carries, that
+  // this rule is genuinely "unused" -- so the underlying signal still
+  // warrants retire_suggested once recomputed, and snoozing it is
+  // meaningful (as opposed to a rule with nothing wrong, where a recompute
+  // correctly reports 'healthy' regardless of any stored snoozed_until).
+  const freshRuleId = makeLiveRule({
+    predictedFailure: "never recomputed",
+    failureSignature: "never-recomputed",
+    scopeTags: ["never-recomputed-tag"],
+    writtenAt: "2026-01-01T00:00:00.000Z",
+  });
+  assert.equal(
+    store.getRuleHealth(freshRuleId),
+    null,
+    "precondition: no prior recompute for this rule",
+  );
+
+  const untilIso = "2026-10-11T00:00:00.000Z";
+  const snoozed = store.snoozeRuleHealth(freshRuleId, untilIso);
+  assert.equal(snoozed.status, "snoozed");
+  assert.equal(snoozed.snoozed_until, untilIso);
+  assert.equal(snoozed.applicable_tasks, 0);
+  assert.equal(snoozed.helped, 0);
+  assert.equal(snoozed.hurt, 0);
+  assert.equal(snoozed.last_applicable_at, null);
+  assert.equal(snoozed.contradicted_by_rule_id, null);
+  assert.equal(snoozed.unused_since, null);
+
+  // A subsequent recompute fills in the real counts (still zero here, since
+  // this rule's tag matches no fixture episode) and finds it unused, but
+  // preserves the snooze instead of reporting retire_suggested.
+  recomputeRuleHealth(NOW);
+  const after = store.getRuleHealth(freshRuleId)!;
+  assert.equal(after.status, "snoozed");
+  assert.equal(after.snoozed_until, untilIso);
+  assert.equal(after.unused_since, "2026-01-01T00:00:00.000Z");
+});
+
 test("recomputeRuleHealth: a rule scoped 'general' applies to every episode regardless of tags", () => {
   const generalRuleId = makeLiveRule({
-    predictedFailure: "an unrelated, generic mistake that shares no wording with any correction below",
+    predictedFailure:
+      "an unrelated, generic mistake that shares no wording with any correction below",
     failureSignature: "totally-unrelated-signature",
     scopeTags: null, // keep the v9 default: '["general"]'
     writtenAt: RULE_WRITTEN_AT,
@@ -294,7 +380,11 @@ test("recomputeRuleHealth: hurt but below the retirement threshold -> watch", ()
   const health = store.getRuleHealth(watchRuleId)!;
   assert.equal(health.applicable_tasks, 1);
   assert.equal(health.hurt, 1);
-  assert.equal(health.status, "watch", "hurt but applicable_tasks < 3, so retirement isn't suggested yet");
+  assert.equal(
+    health.status,
+    "watch",
+    "hurt but applicable_tasks < 3, so retirement isn't suggested yet",
+  );
 });
 
 test("listLiveRulesWithTargets / recomputeRuleHealth: a rule with no written Knowledge version is skipped", () => {
@@ -339,6 +429,10 @@ test("listLiveRulesWithTargets / recomputeRuleHealth: a rule with no written Kno
   const before = store.listRuleHealth().length;
   recomputeRuleHealth(NOW);
   const after = store.listRuleHealth().length;
-  assert.equal(after, before, "no rule_health row should be created for a rule that was never written");
+  assert.equal(
+    after,
+    before,
+    "no rule_health row should be created for a rule that was never written",
+  );
   assert.equal(store.getRuleHealth(rule.id), null);
 });

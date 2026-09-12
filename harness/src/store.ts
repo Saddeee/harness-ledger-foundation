@@ -2108,20 +2108,25 @@ export function upsertRuleHealth(row: {
 }
 
 // A human "Keep" decision on a retirement proposal (Task C2): the signal is
-// acknowledged but not acted on for a while (30 days, per the spec). There
-// is nothing to snooze on a rule rule_health has never scored, so this
-// requires a prior recomputeRuleHealth to have run for it.
+// acknowledged but not acted on for a while (30 days, per the spec). C2 can
+// call this on a rule rule_health has never scored yet (e.g. right after the
+// rule went live, before any recompute has run), so a missing row upserts a
+// minimal all-zero one rather than throwing -- the next recomputeRuleHealth
+// fills in the real counts while carrying the snooze forward (health.ts
+// reads and preserves an existing row's snoozed_until).
 export function snoozeRuleHealth(ruleId: number, untilIso: string): RuleHealthRow {
   const existing = getRuleHealth(ruleId);
-  if (!existing) {
-    throw new Error(`rule_health for rule ${ruleId} not found -- run recomputeRuleHealth first`);
-  }
-  const result = db
-    .prepare(
-      `UPDATE rule_health SET snoozed_until = ?, status = 'snoozed', computed_at = datetime('now')
-       WHERE rule_id = ? RETURNING *`,
-    )
-    .get(untilIso, ruleId) as RuleHealthRow;
+  const result = upsertRuleHealth({
+    rule_id: ruleId,
+    applicable_tasks: existing?.applicable_tasks ?? 0,
+    helped: existing?.helped ?? 0,
+    hurt: existing?.hurt ?? 0,
+    last_applicable_at: existing?.last_applicable_at ?? null,
+    contradicted_by_rule_id: existing?.contradicted_by_rule_id ?? null,
+    unused_since: existing?.unused_since ?? null,
+    status: "snoozed",
+    snoozed_until: untilIso,
+  });
   insertEvent("rule_health.snoozed", null, { rule_id: ruleId, until: untilIso });
   return result;
 }

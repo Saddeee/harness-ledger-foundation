@@ -333,10 +333,17 @@ export async function runAll(
 
     // Round 4 Task C1 / spec §4b: outcome tracking, recomputed after every
     // run so "Since added" and retirement suggestions stay current without
-    // needing their own schedule.
-    const health = recomputeRuleHealth();
-    counts.health_suggested = health.suggested;
-    store.insertEvent("executor.sync.health", null, health);
+    // needing their own schedule. Isolated in its own try/catch: a bug here
+    // must never fail an otherwise-successful sync (history/knowledge/write
+    // beats already ran and should still be recorded as ok).
+    try {
+      const health = recomputeRuleHealth();
+      counts.health_suggested = health.suggested;
+      store.insertEvent("executor.sync.health", null, health);
+    } catch (healthErr) {
+      counts.health_error = 1;
+      store.insertEvent("executor.sync.health_error", null, { error: errorMessage(healthErr) });
+    }
   } catch (err) {
     ok = false;
     error = errorMessage(err);
