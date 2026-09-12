@@ -11,8 +11,12 @@
  * project's and the workspace's Knowledge with real rule_health/verdict/
  * adherence data, one accepted automatically, one reverted, one skipped,
  * one needing attention (a stale write), one retired, and one waiting to be
- * tested -- plus workspace Skill snapshots and a Knowledge change made
- * directly in Lovable outside Harness. Every row it creates carries a fixed
+ * tested -- plus workspace Skill snapshots. An outside edit (a Knowledge
+ * change made directly in Lovable, outside Harness) cannot be demoed:
+ * demo snapshots never impersonate Lovable (Round 6 Task 5, spec §5) --
+ * buildTimeline's own external_change detection ignores every
+ * fetched_by = 'demo' row on purpose, so nothing here produces one. Every
+ * row it creates carries a fixed
  * "Demo:" title/instruction/name (or, for internal actor/reason strings
  * that are never shown as such, the literal string "demo"), so `--add` is
  * idempotent and `--remove` deletes exactly those rows -- nothing a real
@@ -1243,11 +1247,14 @@ export function addDemoData(): AddDemoResult {
     "demo",
   );
 
-  // ---- One external_change snapshot: Knowledge edited in Lovable outside
-  // Harness. Recorded strictly after the project's existing snapshot above,
-  // with content that matches no recorded version -- buildTimeline's own
-  // sha comparison (listKnowledgeSnapshots orders by id, not fetched_at) is
-  // what turns this into an external_change node. ----
+  // ---- One more recorded Knowledge snapshot, illustrating what an outside
+  // edit would look like -- but it never becomes an "external_change"
+  // timeline node: an outside edit cannot be demoed, since demo snapshots
+  // must never impersonate a real Lovable edit (Round 6 Task 5, spec §5).
+  // buildTimeline's own external_change detection deliberately ignores
+  // every fetched_by = 'demo' row (see improvements.ts), so this is just
+  // additional recorded history for the project, same as any other demo
+  // snapshot. ----
   const externalChangeContent = `${v3.final_content}\n<!-- Demo: edited directly in Lovable, outside Harness -->\n`;
   const externalSnapshot = store.recordKnowledgeSnapshot({
     target: "project",

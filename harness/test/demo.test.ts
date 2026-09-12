@@ -366,7 +366,7 @@ test("listImprovements(): every demo-created item, every IMPROVEMENT_GROUPS valu
   setDecisionMode("ask");
 });
 
-test("buildTimeline: project target has >= 12 nodes including one external_change and one restore; workspace target has skill nodes", () => {
+test("buildTimeline: project target has >= 12 nodes including one restore, and ZERO external_change nodes while demo is loaded; workspace target has skill nodes", () => {
   const expectedProjectId = (store.getAllowedProjects() as { lovable_project_id: string }[])[0]!
     .lovable_project_id;
   const workspaceId = store.getProjectMeta(expectedProjectId)?.workspace_id ?? "demo-workspace";
@@ -376,9 +376,16 @@ test("buildTimeline: project target has >= 12 nodes including one external_chang
     projectTimeline.length >= 12,
     `expected >= 12 project timeline nodes, got ${projectTimeline.length}`,
   );
-  assert.ok(
-    projectTimeline.some((n: { kind: string }) => n.kind === "external_change"),
-    "expected an external_change node",
+  // Round 6 Task 5 fix round 1 (follow-up to Task 3's fix 1, commit
+  // 33ca934): buildTimeline's own external_change detection now ignores
+  // every fetched_by = 'demo' knowledge_snapshots row on purpose (spec §5
+  // -- a demo snapshot must never impersonate a real Lovable edit), so the
+  // demo's own "illustrative outside edit" snapshot (src/demo.ts) no
+  // longer produces one. Assert the isolation, not the old artifact.
+  assert.equal(
+    projectTimeline.filter((n: { kind: string }) => n.kind === "external_change").length,
+    0,
+    "demo snapshots must never appear as an external_change node -- an outside edit cannot be demoed",
   );
   assert.ok(
     projectTimeline.some(
