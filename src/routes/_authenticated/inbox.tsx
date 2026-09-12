@@ -7,6 +7,7 @@ import {
   ImprovementDetail,
   type Improvement,
 } from "@/components/harness/improvement";
+import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import { fetchImprovements, postImprovementAction } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
@@ -211,6 +212,7 @@ function Page() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Inbox</h1>
+      <AnalyseNotice />
       {list.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
