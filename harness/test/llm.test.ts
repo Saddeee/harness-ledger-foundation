@@ -406,6 +406,47 @@ test("claude_code: defensive fallback to 0 tokens when usage is missing from the
   assert.equal(result.tokensOut, 0);
 });
 
+test("claude_code: a JSON result wrapped in a ```json markdown fence is stripped and parses on the first attempt (no parse-failure retry)", async () => {
+  setRoleModel("claude_code", "sonnet");
+  const fenced =
+    "```json\n" + JSON.stringify({ classification: "question", confidence: 0.4 }) + "\n```";
+  const { exec, calls } = makeClaudeExec({
+    runResponses: [
+      {
+        stdout: JSON.stringify({ result: fenced, usage: { input_tokens: 5, output_tokens: 3 } }),
+        code: 0,
+      },
+    ],
+  });
+  const callLlm = llm.createCallLlm({ exec });
+  const result = await callLlm<{ classification: string; confidence: number }>({
+    role: "classifier",
+    system: "s",
+    user: "u",
+    schema: SCHEMA,
+    schemaName: "X",
+  });
+  assert.deepEqual(result.json, { classification: "question", confidence: 0.4 });
+  assert.equal(calls.filter((c) => c.args.includes("-p")).length, 1, "no retry needed");
+});
+
+test("claude_code: a plain (unfenced) JSON result still parses -- the fence strip is a no-op", async () => {
+  setRoleModel("claude_code", "sonnet");
+  const unfenced = JSON.stringify({ classification: "other", confidence: 0.2 });
+  const { exec } = makeClaudeExec({
+    runResponses: [{ stdout: JSON.stringify({ result: unfenced }), code: 0 }],
+  });
+  const callLlm = llm.createCallLlm({ exec });
+  const result = await callLlm<{ classification: string; confidence: number }>({
+    role: "classifier",
+    system: "s",
+    user: "u",
+    schema: SCHEMA,
+    schemaName: "X",
+  });
+  assert.deepEqual(result.json, { classification: "other", confidence: 0.2 });
+});
+
 test("claude_code: LlmProviderUnavailable when `claude --version` fails; the failed attempt is still logged", async () => {
   setRoleModel("claude_code", "sonnet");
   const { exec } = makeClaudeExec({ versionOk: false, runResponses: [] });

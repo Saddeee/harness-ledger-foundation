@@ -12,7 +12,8 @@
     "executor": "tsx src/executor/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "llm:smoke": "tsx src/llm/smoke.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

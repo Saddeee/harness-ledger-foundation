@@ -61,6 +61,21 @@ type ClaudeCliEnvelope = {
   usage?: { input_tokens?: number; output_tokens?: number };
 };
 
+// Round 4 fix wave item 7 finding: unlike the three API providers (OpenAI's
+// json_schema strict mode, Google's responseSchema, Anthropic's tool-
+// forcing), the `claude` CLI's -p/--output-format json has no structured-
+// output mode -- `result` is just the model's free-form text reply, and a
+// real model reliably wraps that reply in a ```json ... ``` fence even when
+// the system prompt says "respond only via the schema" (observed live via
+// `npm run llm:smoke`). Left unstripped, index.ts's JSON.parse fails on the
+// first attempt, burns its one parse-failure retry on a second real `claude`
+// invocation, and still fails if that one is fenced too. Strip a fence that
+// wraps the *entire* string before ever handing it to index.ts's parser.
+function stripMarkdownFence(text: string): string {
+  const match = text.trim().match(/^```(?:json)?\s*\n([\s\S]*?)\n?```$/);
+  return match ? match[1] : text;
+}
+
 export async function callClaudeCode(params: ClaudeCodeCallParams): Promise<ClaudeCodeCallResult> {
   const { model, system, user, exec } = params;
 
@@ -94,7 +109,10 @@ export async function callClaudeCode(params: ClaudeCodeCallParams): Promise<Clau
   }
 
   return {
-    raw: envelope.result ?? null,
+    raw:
+      typeof envelope.result === "string"
+        ? stripMarkdownFence(envelope.result)
+        : (envelope.result ?? null),
     tokensIn: envelope.usage?.input_tokens ?? 0,
     tokensOut: envelope.usage?.output_tokens ?? 0,
   };
