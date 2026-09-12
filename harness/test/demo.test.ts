@@ -750,3 +750,86 @@ test("--remove deletes (not cancels) already-terminal residue matching the same 
     "the terminal row is deleted",
   );
 });
+
+test("fix round 1 (A2): --remove's residue sweep is scoped to the demo's own project/workspace -- a real pending version in a DIFFERENT project whose previous_content happens to equal a demo snapshot's content survives untouched", () => {
+  assert.equal(demo.demoLoaded(), false);
+
+  const OTHER_PROJECT = "demo-test-a-different-real-project";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    OTHER_PROJECT,
+    "A different real project, not the demo's own",
+  );
+  store.upsertProject({ lovable_project_id: OTHER_PROJECT, name: "A Different Real Project" });
+
+  const addResult = demo.addDemoData();
+  assert.equal(addResult.added, true);
+  // Confirms the fixture's premise: --add always uses the FIRST allowed
+  // project (REAL_PROJECT, allowed at the top of this file, long before
+  // OTHER_PROJECT here) -- OTHER_PROJECT is genuinely a different project,
+  // not the demo's own.
+  assert.equal(addResult.project_id, REAL_PROJECT);
+
+  // The exact coincidence this test is about: OTHER_PROJECT's own pending
+  // version's previous_content happens to be byte-identical to one of the
+  // demo's own recorded Knowledge snapshots -- not because OTHER_PROJECT is
+  // anywhere near the demo, but because two unrelated projects can
+  // legitimately start from the same boilerplate doc.
+  const demoSnapshotContent = store.latestKnowledgeSnapshot("project", REAL_PROJECT)!.content;
+  const otherEpisode = store.createTaskEpisode({
+    project_id: OTHER_PROJECT,
+    title: "A different project's own episode",
+    provenance: "manual",
+    evidence_history_item_ids: [],
+  }) as { id: number };
+  const otherCandidate = store.createCorrectionCandidate({
+    task_episode_id: otherEpisode.id,
+    classification: "other",
+    is_correction: true,
+    summary: "a different project's own summary",
+    evidence_history_item_ids: [],
+  }) as { id: number };
+  const otherLearning = store.createLearning({
+    correction_candidate_id: otherCandidate.id,
+    observed_problem: "p",
+    desired_behavior: "d",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "real-user",
+  }) as { id: number };
+  const otherRule = store.createRule({
+    learning_id: otherLearning.id,
+    correction_candidate_id: otherCandidate.id,
+    instruction: "A different project's own rule, coincidentally on the same boilerplate doc.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "f",
+    ownership: "harness",
+    created_by: "real-user",
+  }) as { id: number };
+  const otherPendingVersion = store.createPendingKnowledgeVersion({
+    rule_id: otherRule.id,
+    target: "project",
+    project_id: OTHER_PROJECT,
+    previous_content: demoSnapshotContent,
+    new_content: `${demoSnapshotContent}\n<!-- a different project's own real write -->\n`,
+    rule_ids: [otherRule.id],
+    actor: "real-user",
+    reason: "real: a coincidental content match, not demo residue",
+  }) as { id: number };
+
+  const removeResult = demo.removeDemoData();
+  assert.equal(removeResult.removed, true);
+  assert.equal(
+    removeResult.counts.knowledge_versions_cancelled,
+    0,
+    "OTHER_PROJECT's version must not be swept as demo residue just because its content happens to match",
+  );
+
+  const survivor = store.getKnowledgeVersion(otherPendingVersion.id);
+  assert.ok(survivor, "a different project's own pending version must survive --remove untouched");
+  assert.equal(survivor!.status, "pending");
+  assert.ok(db.prepare(`SELECT 1 FROM rules WHERE id = ?`).get(otherRule.id));
+
+  store.disallowProject(OTHER_PROJECT);
+});

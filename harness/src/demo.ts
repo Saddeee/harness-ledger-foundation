@@ -1510,9 +1510,24 @@ export function removeDemoData(): RemoveDemoResult {
   const residuePendingIds: number[] = [];
   const residueTerminalIds: number[] = [];
   if (demoRuleIdSet.size > 0 || demoSnapshotContents.size > 0) {
+    // Fix round 1 (important): scoped to the demo's OWN targets (the first
+    // allowed project and its workspace, recorded above) -- previous_content
+    // equality is a coincidence check, not a rule/id check, and a real
+    // project elsewhere can start from the exact same boilerplate doc (e.g.
+    // BASE_KNOWLEDGE_DOC's own text) without being anywhere near the demo.
+    // Unscoped, that real project's own pending version would be wrongly
+    // cancelled by a project it has nothing to do with.
     const candidates = db
-      .prepare(`SELECT id, status, rule_ids_json, previous_content FROM knowledge_versions`)
-      .all() as { id: number; status: string; rule_ids_json: string; previous_content: string }[];
+      .prepare(
+        `SELECT id, status, rule_ids_json, previous_content FROM knowledge_versions
+         WHERE (target = 'project' AND project_id = ?) OR (target = 'workspace' AND workspace_id = ?)`,
+      )
+      .all(projectId, workspaceId) as {
+      id: number;
+      status: string;
+      rule_ids_json: string;
+      previous_content: string;
+    }[];
     for (const v of candidates) {
       if (alreadyHandledVersionIds.has(v.id)) continue;
       const namesADemoRule = parseRuleIdsJson(v.rule_ids_json).some((id) => demoRuleIdSet.has(id));

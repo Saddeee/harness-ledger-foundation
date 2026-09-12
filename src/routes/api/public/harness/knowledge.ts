@@ -134,7 +134,11 @@ async function buildKnowledgeResponse(adapter: Adapter) {
   );
 
   const targetsOut = targets.map((t) => {
-    const current = adapter.latestKnowledgeSnapshot(t.target, t.id);
+    // Round 6 Task 5 fix 1a: this is what the Instructions page shows as
+    // "Read from Lovable at ..." -- it must reflect what Lovable really
+    // holds, never a demo snapshot (fetched_by = 'demo'), even while the
+    // demo is loaded (spec §5).
+    const current = adapter.latestKnowledgeSnapshot(t.target, t.id, { forWrite: true });
     const activeRules = adapter.activeRulesForTarget(t.target, t.id) as {
       id: number;
       instruction: string;
