@@ -3683,3 +3683,61 @@ export function countAutoAcceptedSince(sinceIso: string): number {
   ).n;
 }
 // ---- end Round 5 Task 6 ----
+
+// ---- Round 5 Task 7 ----
+// spec §5 item 3: the adherence Judge needs one episode's request text and
+// Lovable's human-visible reply, for an arbitrary episode (not just the
+// corrected/uncandidated ones listMinableEpisodes selects -- the Judge works
+// through every applicable-since-written episode, corrected or not). Mirrors
+// listMinableEpisodes' own request/reply reads above (same "earliest
+// evidence message" and "assistant replies in the episode's own time
+// window" queries), just for one episode id instead of a batch, and without
+// listMinableEpisodes' "has a correction, no candidate yet" selection filter.
+
+const JUDGE_TEXT_CHAR_LIMIT = 1500;
+
+/** One episode's request text and Lovable's human-visible reply, each
+ * clamped to 1500 characters -- what harness/src/analysis/adherence.ts's
+ * judgeAdherence shows the judge role alongside the rule text. Empty strings
+ * for an episode with no evidence message (defensive; every real episode
+ * has at least the request that opened it). */
+export function episodeTextForJudge(episodeId: number): { request: string; reply: string } {
+  const episode = db
+    .prepare(`SELECT id, project_id, started_at, ended_at FROM task_episodes WHERE id = ?`)
+    .get(episodeId) as
+    | { id: number; project_id: string | null; started_at: string | null; ended_at: string | null }
+    | undefined;
+  if (!episode) return { request: "", reply: "" };
+
+  const reqRow = db
+    .prepare(
+      `SELECT hi.content FROM task_episode_evidence tee
+       JOIN history_items hi ON hi.id = tee.history_item_id
+       WHERE tee.task_episode_id = ?
+       ORDER BY hi.occurred_at ASC, hi.id ASC
+       LIMIT 1`,
+    )
+    .get(episodeId) as { content: string } | undefined;
+
+  const assistantRows = episode.started_at
+    ? (db
+        .prepare(
+          `SELECT hi.content FROM history_items hi
+           WHERE hi.project_id IS ? AND hi.kind = 'message' AND hi.role = 'assistant'
+             AND hi.occurred_at IS NOT NULL
+             AND hi.occurred_at > ?
+             AND (? IS NULL OR hi.occurred_at <= ?)
+           ORDER BY hi.occurred_at ASC, hi.id ASC`,
+        )
+        .all(episode.project_id, episode.started_at, episode.ended_at, episode.ended_at) as {
+        content: string;
+      }[])
+    : [];
+  const reply = assistantRows.map((a) => humanVisibleText(a.content)).join("\n\n");
+
+  return {
+    request: truncateText(reqRow?.content ?? "", JUDGE_TEXT_CHAR_LIMIT),
+    reply: truncateText(reply, JUDGE_TEXT_CHAR_LIMIT),
+  };
+}
+// ---- end Round 5 Task 7 ----

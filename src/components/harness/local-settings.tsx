@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,7 @@ import {
   executorQueryOptions,
   postExecutor,
   type ApiLlmProvider,
+  type EvidenceSources,
   type ExecutorProviderReady,
   type ExecutorSchedule,
   type LlmModels,
@@ -66,6 +68,21 @@ const DEFAULT_AUTO_CONFIDENCE = 0.8;
 function feedbackLine(feedback: { accepted: number; skipped: number; verdicts: number }): string {
   return `From your decisions so far: ${feedback.accepted} accepted, ${feedback.skipped} skipped, ${feedback.verdicts} verdicts. Harness shows the Rule writer what you accepted and skipped, and won't re-propose what you skipped.`;
 }
+
+// ---- Evidence (Round 5 Task 7 / spec §5 "which count"). Which of the four
+// evidence sources feed a rule's health and can trigger a retirement
+// suggestion -- every source is always shown regardless of this choice
+// (turning one off here hides nothing, it only stops it from counting).
+// Paired tests aren't built yet (Phase B), so that row stays disabled and
+// unchecked no matter what this page does. ----
+const EVIDENCE_INTRO =
+  "Signals that count towards a rule's health and retirement. Every signal is always shown; this only changes what can trigger a retirement suggestion.";
+const DEFAULT_EVIDENCE_SOURCES: EvidenceSources = {
+  observed: true,
+  adherence: true,
+  verdicts: true,
+  paired: false,
+};
 
 // ---- AI analysis (Round 3 §4, Round 4 Task A4 / spec §2). Analysis only
 // ever runs when the user presses "Analyse now" (see analyse-notice.tsx); it
@@ -165,6 +182,7 @@ export function LocalSettings() {
 
   const [decisionMode, setDecisionMode] = useState<"ask" | "automatic">(DEFAULT_DECISION_MODE);
   const [autoConfidence, setAutoConfidence] = useState(DEFAULT_AUTO_CONFIDENCE);
+  const [evidenceSources, setEvidenceSources] = useState<EvidenceSources>(DEFAULT_EVIDENCE_SOURCES);
 
   const [schedule, setSchedule] = useState<ExecutorSchedule>(DEFAULT_SCHEDULE);
   const [cap, setCap] = useState(DEFAULT_CAP);
@@ -195,6 +213,11 @@ export function LocalSettings() {
     const threshold = executor.data?.settings?.decision_auto_confidence;
     if (threshold != null) setAutoConfidence(threshold);
   }, [executor.data?.settings?.decision_auto_confidence]);
+
+  useEffect(() => {
+    const sources = executor.data?.settings?.evidence_sources;
+    if (sources != null) setEvidenceSources(sources);
+  }, [executor.data?.settings?.evidence_sources]);
 
   useEffect(() => {
     if (executor.data?.schedule) setSchedule(executor.data.schedule);
@@ -243,6 +266,15 @@ export function LocalSettings() {
       }),
     onSuccess: () => {
       toast.success("Decisions setting saved");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
+  });
+
+  const saveEvidence = useMutation({
+    mutationFn: () => postExecutor({ action: "settings", evidence_sources: evidenceSources }),
+    onSuccess: () => {
+      toast.success("Evidence setting saved");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
@@ -444,6 +476,57 @@ export function LocalSettings() {
 
         <Button onClick={() => saveDecisions.mutate()} disabled={saveDecisions.isPending}>
           {saveDecisions.isPending ? "Saving…" : "Save decisions"}
+        </Button>
+      </section>
+
+      <section className="space-y-4 rounded-md border p-4">
+        <h2 className="text-lg font-medium">Evidence</h2>
+        <p className="text-sm text-muted-foreground">{EVIDENCE_INTRO}</p>
+
+        <div className="space-y-3">
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="evidence-observed"
+              checked={evidenceSources.observed}
+              onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, observed: v === true }))}
+              className="mt-0.5"
+            />
+            <Label htmlFor="evidence-observed" className="font-normal">
+              Repeat corrections observed in your real builds
+            </Label>
+          </div>
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="evidence-adherence"
+              checked={evidenceSources.adherence}
+              onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, adherence: v === true }))}
+              className="mt-0.5"
+            />
+            <Label htmlFor="evidence-adherence" className="font-normal">
+              AI adherence check (with quotes)
+            </Label>
+          </div>
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="evidence-verdicts"
+              checked={evidenceSources.verdicts}
+              onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, verdicts: v === true }))}
+              className="mt-0.5"
+            />
+            <Label htmlFor="evidence-verdicts" className="font-normal">
+              Your verdicts
+            </Label>
+          </div>
+          <div className="flex items-start gap-2">
+            <Checkbox id="evidence-paired" checked={false} disabled className="mt-0.5" />
+            <Label htmlFor="evidence-paired" className="font-normal text-muted-foreground">
+              Paired tests (not available yet)
+            </Label>
+          </div>
+        </div>
+
+        <Button onClick={() => saveEvidence.mutate()} disabled={saveEvidence.isPending}>
+          {saveEvidence.isPending ? "Saving…" : "Save evidence"}
         </Button>
       </section>
 

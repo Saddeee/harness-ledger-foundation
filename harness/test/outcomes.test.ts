@@ -113,6 +113,11 @@ test("buildImprovement: a live rule with a rule_health row carries health, `sinc
     hurt: 2,
     last_applicable_at: "2026-08-10T00:00:00Z",
     since: "2026-08-01T00:00:00.000Z",
+    // Round 5 Task 7 / spec §5: no verdict/adherence recorded for this rule
+    // yet, and none of the three sources has any data for it.
+    verdict: null,
+    adherence: null,
+    sources: { observed: true, adherence: false, verdicts: false },
   });
 });
 

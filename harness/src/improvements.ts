@@ -78,6 +78,21 @@ export type ImprovementHealth = {
   hurt: number;
   last_applicable_at: string | null;
   since: string | null;
+  // Round 5 Task 7 / spec §5: the other three (free, human, AI) evidence
+  // sources for this same rule, alongside the observed counts above --
+  // null when there's nothing recorded yet for that source. `sources` says
+  // which of observed/adherence/verdicts have any data at all for this
+  // rule (regardless of whether Settings › Evidence has them counted
+  // towards retirement) -- what the Details paragraph's "has run for this
+  // rule"/"hasn't run for this rule yet" reads.
+  verdict: { verdict: store.RuleVerdict; created_at: string } | null;
+  adherence: {
+    followed: number;
+    broke: number;
+    not_applicable: number;
+    quotes: { verdict: store.AdherenceVerdict; quote: string; created_at: string }[];
+  } | null;
+  sources: { observed: boolean; adherence: boolean; verdicts: boolean };
 };
 
 export type Improvement = {
@@ -140,6 +155,13 @@ export type Improvement = {
   };
   // Set only for kind "retire"; null for an ordinary improvement.
   retire: RetireInfo | null;
+  // Round 5 Task 7 / spec §5.2: the rule this item is about, once one
+  // exists -- what the verdict buttons address directly (the same
+  // rule_id-addressed convention improvementAction's "verdict"/"retire"
+  // cases already use). Null until a rule has been proposed/created for
+  // this correction, and for a "retire" item (RetireInfo.rule_id already
+  // carries it there).
+  rule_id: number | null;
   // Task C3 / spec §4/§4b: set only for kind "improvement" whose rule is
   // live (state 'active') and has a rule_health row yet (recomputeRuleHealth
   // runs after every sync/analysis run -- a brand-new active rule may not
@@ -284,12 +306,37 @@ function computeHealth(
     if (v.status !== "written" || !v.written_at) continue;
     if (since === null || v.written_at < since) since = v.written_at;
   }
+
+  // Round 5 Task 7 / spec §5: the other three evidence sources, read
+  // straight from their own tables -- always present in the payload
+  // (turning a source off in Settings › Evidence only changes what can
+  // trigger a retirement suggestion, never what's shown).
+  const latestVerdict = store.latestRuleVerdict(ruleId);
+  const adherenceRows = store.listRuleAdherence(ruleId);
+  const counts = adherenceRows.length > 0 ? store.adherenceCounts(ruleId) : null;
+
   return {
     applicable_tasks: row.applicable_tasks,
     helped: row.helped,
     hurt: row.hurt,
     last_applicable_at: row.last_applicable_at,
     since,
+    verdict: latestVerdict
+      ? { verdict: latestVerdict.verdict, created_at: latestVerdict.created_at }
+      : null,
+    adherence: counts
+      ? {
+          ...counts,
+          quotes: adherenceRows
+            .filter((r): r is typeof r & { quote: string } => r.quote != null)
+            .map((r) => ({ verdict: r.verdict, quote: r.quote, created_at: r.created_at })),
+        }
+      : null,
+    sources: {
+      observed: row.applicable_tasks > 0,
+      adherence: adherenceRows.length > 0,
+      verdicts: latestVerdict != null,
+    },
   };
 }
 
@@ -575,6 +622,7 @@ function buildImprovement(
       auto_write: c.project_id ? store.getProjectSettings(c.project_id).auto_write : true,
     },
     retire: null,
+    rule_id: rule?.id ?? null,
     health,
     unsure: computeUnsure(c, rule),
     decided_by: c.decided_by ?? null,
@@ -679,6 +727,7 @@ function buildRetireItem(
       since: live.first_written_at,
       contradicts_instruction: contradictsInstruction,
     },
+    rule_id: proposal.rule_id,
     health: null,
     // Round 5 Task 5: a retire proposal has no correction_candidate -- never
     // "unsure" (that's an analysis-mined-improvement concept only) and never

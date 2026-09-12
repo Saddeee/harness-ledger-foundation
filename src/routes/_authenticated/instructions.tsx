@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import { ConfirmAction, DetailSection } from "@/components/harness/decision-layout";
 import { ManagedBlockText } from "@/components/harness/timeline";
+import { VerdictButtons } from "@/components/harness/improvement";
 import {
   Table,
   TableBody,
@@ -25,7 +26,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatDay, healthLine } from "@/lib/harness-ux";
+import {
+  adherenceLine,
+  formatDate,
+  formatDay,
+  healthLine,
+  VERDICT_TEXT,
+  verdictLine,
+} from "@/lib/harness-ux";
 import {
   executorQueryOptions,
   fetchKnowledge,
@@ -71,13 +79,6 @@ const RULE_STATUS_LABEL: Record<NonNullable<KnowledgeActiveRule["status"]>, stri
   stale: "Needs attention",
   failed: "Needs attention",
   testing: "Testing",
-};
-
-// spec §5.2: the muted "You said: ..." line under a rule's Observed column.
-const VERDICT_TEXT: Record<"helped" | "did_not_help" | "not_sure", string> = {
-  helped: "helped",
-  did_not_help: "didn't help",
-  not_sure: "not sure",
 };
 
 // The Harness-managed block, when present, gets its own visually marked
@@ -143,6 +144,7 @@ function RuleRow({
   onRetire: (ruleId: number) => void;
 }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const improvementId = rule.improvement_id;
   const goToSuggestion = () => {
     if (improvementId != null) navigate({ to: "/ledger", search: { improvement: improvementId } });
@@ -153,6 +155,21 @@ function RuleRow({
   const status = rule.status ? RULE_STATUS_LABEL[rule.status] : "—";
   const since = rule.since ? formatDay(rule.since) : "—";
   const observed = healthLine(rule.health ?? null);
+
+  // spec §5.2: after a verdict exists, the buttons are replaced by "You
+  // said: ..." with a "Change" link that shows them again -- local state
+  // only, reset once a new verdict is saved.
+  const [showVerdictButtons, setShowVerdictButtons] = useState(false);
+  const saveVerdict = useMutation({
+    mutationFn: (verdict: "helped" | "did_not_help" | "not_sure") =>
+      postImprovementAction({ action: "verdict", rule_id: rule.id, verdict }),
+    onSuccess: (_data, verdict) => {
+      toast.success(`You said: ${VERDICT_TEXT[verdict]}`);
+      setShowVerdictButtons(false);
+      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save your verdict"),
+  });
 
   return (
     <TableRow
@@ -171,16 +188,11 @@ function RuleRow({
       <TableCell>{since}</TableCell>
       <TableCell>
         <p className="text-xs text-muted-foreground">{observed ?? "no builds yet"}</p>
-        {rule.verdict ? (
-          <p className="text-xs text-muted-foreground">
-            You said: {VERDICT_TEXT[rule.verdict.verdict]}, {formatDay(rule.verdict.created_at)}
-          </p>
+        {verdictLine(rule.verdict) ? (
+          <p className="text-xs text-muted-foreground">{verdictLine(rule.verdict)}</p>
         ) : null}
-        {rule.adherence && rule.adherence.followed + rule.adherence.broke > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Followed in {rule.adherence.followed} of{" "}
-            {rule.adherence.followed + rule.adherence.broke} builds it applied to · judged by AI
-          </p>
+        {adherenceLine(rule.adherence ?? null) ? (
+          <p className="text-xs text-muted-foreground">{adherenceLine(rule.adherence ?? null)}</p>
         ) : null}
         {/* adherence-line */}
       </TableCell>
@@ -197,6 +209,21 @@ function RuleRow({
             onConfirm={() => onRetire(rule.id)}
           />
           {/* verdict-buttons */}
+          {rule.verdict && !showVerdictButtons ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowVerdictButtons(true)}
+            >
+              Change
+            </Button>
+          ) : (
+            <VerdictButtons
+              busy={saveVerdict.isPending}
+              onPick={(verdict) => saveVerdict.mutate(verdict)}
+            />
+          )}
         </div>
       </TableCell>
     </TableRow>

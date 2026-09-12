@@ -130,6 +130,8 @@ test("runAnalysis: provider not ready (no API key) finishes ok:false with the re
     skipped_duplicate: 0,
     rejected: 0,
     auto_accepted: 0,
+    judged: 0,
+    judge_failed: 0,
   });
   assert.equal(result.tokens, 0);
   assert.equal(result.costUsd, 0);
@@ -209,6 +211,11 @@ test("runAnalysis: main path -- consumes an open request, classifies, segments, 
     // for the user, never auto-accepted (see the dedicated
     // analysis-auto-accept.test.ts for the automatic-mode path).
     auto_accepted: 0,
+    // Round 5 Task 7: no rule is live yet (the one this run just proposed
+    // is still 'proposed', not written to Lovable), so the adherence judge
+    // finds nothing to score and never calls the LLM at all.
+    judged: 0,
+    judge_failed: 0,
   });
 
   // Three real calls were made (2 classify + 1 rule_writer), each logging

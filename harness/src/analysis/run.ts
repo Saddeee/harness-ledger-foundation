@@ -12,12 +12,17 @@ import { classifyPending } from "./classify.js";
 import { segmentAllProjects } from "./segment.js";
 import { proposeRules } from "./propose.js";
 import { autoAcceptProposals } from "./auto-accept.js";
+import { judgeAdherence } from "./adherence.js";
 import { keyStatus } from "../llm-keys.js";
 import { defaultExec, type Exec } from "../llm/claude-code.js";
 
 /** Per-run cap on LLM calls (spec §2): classify gets at most this many of it. */
 const PER_RUN_CALL_CAP = 200;
 const CLASSIFY_CALL_CAP = 150;
+// Round 5 Task 7 / spec §5 item 3: the adherence judge gets at most this
+// many calls of whatever budget classify+mine didn't use, inside the same
+// 200-call run cap -- never a call on top of it.
+const JUDGE_CALL_CAP = 50;
 
 export type ProviderReady = { ok: true } | { ok: false; reason: string };
 
@@ -126,6 +131,12 @@ export type AnalysisCounts = {
   // decision_mode='automatic' accepted without asking -- 0 in 'ask' mode,
   // and 0 whenever nothing was proposed this run.
   auto_accepted: number;
+  // Round 5 Task 7 / spec §5 item 3: how many (rule, episode) pairs the
+  // adherence judge scored this run, and how many of its own calls failed
+  // (a budget-exceeded stop counts as one failure here, same convention as
+  // classify/mine's own `failed`).
+  judged: number;
+  judge_failed: number;
 };
 
 export type RunAnalysisResult = {
@@ -145,6 +156,8 @@ const EMPTY_COUNTS: AnalysisCounts = {
   skipped_duplicate: 0,
   rejected: 0,
   auto_accepted: 0,
+  judged: 0,
+  judge_failed: 0,
 };
 
 /**
@@ -191,12 +204,18 @@ export async function runAnalysis(
 
       const callsUsed = classifyResult.classified + classifyResult.failed;
       const mineLimit = Math.max(0, maxCalls - callsUsed);
+      let mineCallsUsed = 0;
       if (mineLimit > 0) {
         const mineResult = await proposeRules(callLlm, { limit: mineLimit, runId });
         counts.proposed = mineResult.proposed;
         counts.skipped_duplicate = mineResult.skippedDuplicate;
         counts.rejected = mineResult.skippedNoProposal;
         counts.failed += mineResult.failed;
+        mineCallsUsed =
+          mineResult.proposed +
+          mineResult.skippedDuplicate +
+          mineResult.skippedNoProposal +
+          mineResult.failed;
 
         // Round 5 Task 6 / spec §4: only ever considers the candidates THIS
         // run just wrote (mineResult.createdCandidateIds) -- an older still-
@@ -205,6 +224,19 @@ export async function runAnalysis(
         // (and free) call in decision_mode='ask' or when nothing proposed.
         const autoAccept = autoAcceptProposals(mineResult.createdCandidateIds, runId);
         counts.auto_accepted = autoAccept.accepted;
+      }
+
+      // Round 5 Task 7 / spec §5 item 3: the adherence judge, capped at
+      // JUDGE_CALL_CAP calls within whatever's left of maxCalls after
+      // classify + mine -- never on top of the run's own 200-call cap.
+      const judgeLimit = Math.max(
+        0,
+        Math.min(JUDGE_CALL_CAP, maxCalls - callsUsed - mineCallsUsed),
+      );
+      if (judgeLimit > 0) {
+        const judgeResult = await judgeAdherence(callLlm, { limit: judgeLimit, runId });
+        counts.judged = judgeResult.judged;
+        counts.judge_failed = judgeResult.failed;
       }
     }
   } catch (err) {

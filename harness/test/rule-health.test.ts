@@ -13,6 +13,25 @@ process.env.HARNESS_DB_PATH = join(
 const { db } = await import("../src/db.js");
 const store = await import("../src/store.js");
 const { recomputeRuleHealth } = await import("../src/analysis/health.js");
+// Round 5 Task 7 / spec §5 "which count": the third appended test below
+// exercises the verdict action's own hurt bump (improvements.ts, Task 3)
+// end to end against a rule this file's own recomputeRuleHealth scores.
+const imp = await import("../src/improvements.js");
+
+// Round 5 Task 7: restores the default evidence_sources setting -- every
+// appended test below that toggles a source calls this when it's done, so
+// it never leaks into a later test (in this file or, since settings are
+// process-global, any test file that happens to share this same temp DB).
+function resetEvidenceSources(): void {
+  store.setSettings({
+    evidence_sources: JSON.stringify({
+      observed: true,
+      adherence: true,
+      verdicts: true,
+      paired: false,
+    }),
+  });
+}
 
 const PROJECT = "rule-health-project";
 db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
@@ -435,4 +454,130 @@ test("listLiveRulesWithTargets / recomputeRuleHealth: a rule with no written Kno
     "no rule_health row should be created for a rule that was never written",
   );
   assert.equal(store.getRuleHealth(rule.id), null);
+});
+
+// ---- Round 5 Task 7 / spec §5 "which count": evidence_sources gating ----
+
+test("recomputeRuleHealth: a rule_adherence 'broke' row counts as hurt only when evidence_sources.adherence is enabled", () => {
+  const ruleId = makeLiveRule({
+    predictedFailure: "an accessibility regression judged only by the AI adherence check",
+    failureSignature: "adherence-broke-signature",
+    scopeTags: ["adherence-broke-tag"],
+    writtenAt: RULE_WRITTEN_AT,
+  });
+
+  // No correction at all -- the tag-based scan alone would count this as
+  // "helped" (a build without a repeat), never hurt.
+  const req = message("Add an icon-only button.", "2026-09-08T00:00:00Z");
+  classify(req, "new_task", ["adherence-broke-tag"]);
+  const epId = episode("2026-09-08T00:00:00Z", [req]);
+
+  store.recordRuleAdherence({
+    rule_id: ruleId,
+    task_episode_id: epId,
+    verdict: "broke",
+    quote: "the button has no accessible label",
+    llm_call_id: null,
+    run_id: null,
+  });
+
+  assert.equal(store.getEvidenceSources().adherence, true, "default has adherence enabled");
+  recomputeRuleHealth(NOW);
+  let health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 1);
+  assert.equal(
+    health.helped,
+    1,
+    "no correction matched, so the tag-based scan still counts it as a build without a repeat",
+  );
+  assert.equal(health.hurt, 1, "the broke adherence row adds one more hurt on top of that");
+
+  store.setSettings({
+    evidence_sources: JSON.stringify({
+      observed: true,
+      adherence: false,
+      verdicts: true,
+      paired: false,
+    }),
+  });
+  recomputeRuleHealth(NOW);
+  health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.hurt, 0, "with adherence disabled, the broke row no longer counts as hurt");
+
+  resetEvidenceSources();
+});
+
+test("recomputeRuleHealth: a matching correction does not count as hurt when evidence_sources.observed is disabled", () => {
+  const ruleId = makeLiveRule({
+    predictedFailure: "a form validation regression",
+    failureSignature: "form-validation-regression",
+    scopeTags: ["observed-off-tag"],
+    writtenAt: RULE_WRITTEN_AT,
+  });
+
+  const req = message("Add a signup form.", "2026-09-09T00:00:00Z");
+  classify(req, "new_task", ["observed-off-tag"]);
+  const corr = message("The form validation regression is back.", "2026-09-09T01:00:00Z");
+  classify(corr, "correction", ["observed-off-tag"], "form-validation-regression");
+  episode("2026-09-09T00:00:00Z", [req, corr]);
+
+  recomputeRuleHealth(NOW);
+  let health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.hurt, 1, "matches by default, with observed enabled");
+
+  store.setSettings({
+    evidence_sources: JSON.stringify({
+      observed: false,
+      adherence: true,
+      verdicts: true,
+      paired: false,
+    }),
+  });
+  recomputeRuleHealth(NOW);
+  health = store.getRuleHealth(ruleId)!;
+  assert.equal(
+    health.hurt,
+    0,
+    "with observed disabled, the same correction no longer counts as hurt",
+  );
+  assert.equal(health.applicable_tasks, 1, "the episode is still counted as applicable");
+  assert.equal(health.helped, 1, "and now falls into the 'without a repeat' bucket instead");
+
+  resetEvidenceSources();
+});
+
+test("verdict action: a did_not_help verdict bumps rule_health.hurt only when evidence_sources.verdicts is enabled", () => {
+  const ruleId = makeLiveRule({
+    predictedFailure: "a rule scored only to exercise the verdict-driven hurt bump",
+    failureSignature: "verdict-gate-signature",
+    scopeTags: ["verdict-gate-tag"], // a tag no fixture episode uses, for isolation
+    writtenAt: RULE_WRITTEN_AT,
+  });
+  recomputeRuleHealth(NOW); // seeds a rule_health row (hurt: 0 -- no episodes carry this tag)
+  assert.equal(store.getRuleHealth(ruleId)!.hurt, 0);
+
+  assert.equal(store.getEvidenceSources().verdicts, true, "default has verdicts enabled");
+  imp.improvementAction({ action: "verdict", rule_id: ruleId, verdict: "did_not_help" });
+  assert.equal(
+    store.getRuleHealth(ruleId)!.hurt,
+    1,
+    "hurt bumps by one when verdicts evidence is enabled",
+  );
+
+  store.setSettings({
+    evidence_sources: JSON.stringify({
+      observed: true,
+      adherence: true,
+      verdicts: false,
+      paired: false,
+    }),
+  });
+  imp.improvementAction({ action: "verdict", rule_id: ruleId, verdict: "did_not_help" });
+  assert.equal(
+    store.getRuleHealth(ruleId)!.hurt,
+    1,
+    "a second did_not_help does not bump hurt again while verdicts evidence is disabled",
+  );
+
+  resetEvidenceSources();
 });

@@ -83,6 +83,25 @@ export type ImprovementHealth = {
   hurt: number;
   last_applicable_at: string | null;
   since: string | null;
+  // Round 5 Task 7 / spec §5: the other three evidence sources for this same
+  // rule -- see KnowledgeActiveRule.verdict/adherence below, which these
+  // mirror (this is the Suggestions-list/detail read of the same data, that
+  // one is the Instructions-table read). `sources` says which of
+  // observed/adherence/verdicts have any data at all for this rule, driving
+  // the Details paragraph's "has run for this rule" / "hasn't run for this
+  // rule yet".
+  verdict: { verdict: "helped" | "did_not_help" | "not_sure"; created_at: string } | null;
+  adherence: {
+    followed: number;
+    broke: number;
+    not_applicable: number;
+    quotes: {
+      verdict: "followed" | "broke" | "not_applicable";
+      quote: string;
+      created_at: string;
+    }[];
+  } | null;
+  sources: { observed: boolean; adherence: boolean; verdicts: boolean };
 };
 
 export type Improvement = {
@@ -125,6 +144,11 @@ export type Improvement = {
   // so an older payload still renders (status falls back to "none").
   lovable?: LovableInfo;
   retire: RetireInfo | null;
+  // Round 5 Task 7 / spec §5.2: the rule this item is about, once one
+  // exists -- what the verdict buttons address directly. Null until a rule
+  // has been proposed/created for this correction; for a "retire" item,
+  // RetireInfo.rule_id already carries it.
+  rule_id: number | null;
   // Task C3: set only for a live (rule state 'active') "improvement" item
   // with a rule_health row; null otherwise (including every "retire" item,
   // which carries the equivalent counts under retire.health).

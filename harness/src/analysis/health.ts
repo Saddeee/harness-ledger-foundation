@@ -79,11 +79,16 @@ function matchesFailure(
  * "applicable" when its classified tags overlap the rule's scope tags, or
  * the rule is tagged "general"; each applicable episode counts as "hurt" if
  * it has a matching correction (matchesFailure above) or "helped"
- * otherwise. contradicted_by_rule_id (written elsewhere, by the miner) and
- * snoozed_until (a human "Keep" decision, Task C2) are carried forward from
- * whatever rule_health already has for the rule rather than recomputed
- * here -- this function only ever produces the four count/date fields and
- * the status they imply.
+ * otherwise -- unless Settings › Evidence has the "observed" source turned
+ * off, in which case a correction never counts as hurt. With the "AI
+ * adherence check" source on (Round 5 Task 7 / spec §5 item 3), a `broke`
+ * rule_adherence row inside the same window adds one more hurt, and a
+ * `followed` row adds one more applicable/helped when its episode wasn't
+ * already counted by the tag-based scan. contradicted_by_rule_id (written
+ * elsewhere, by the miner) and snoozed_until (a human "Keep" decision, Task
+ * C2) are carried forward from whatever rule_health already has for the
+ * rule rather than recomputed here -- this function only ever produces the
+ * four count/date fields and the status they imply.
  *
  * Status: `retire_suggested` when applicable_tasks >= 3 and hurt > helped,
  * or the rule is contradicted, or it is unused (its last applicable episode
@@ -97,6 +102,15 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
   const rules = store.listLiveRulesWithTargets();
   let suggested = 0;
 
+  // Round 5 Task 7 / spec §5 "which count": read once for the whole
+  // recompute, not per rule -- the user's own choice of which evidence
+  // sources feed retirement doesn't change mid-run. Only gates what counts
+  // towards applicable_tasks/hurt/helped (and therefore `status`) below;
+  // the raw rows themselves (rule_adherence, rule_verdicts) are always kept
+  // and always shown elsewhere, so turning a source off here hides nothing,
+  // it only stops it from being able to trigger a retirement suggestion.
+  const sources = store.getEvidenceSources();
+
   for (const rule of rules) {
     if (!rule.first_written_at) continue; // defensive; listLiveRulesWithTargets already filters these out
 
@@ -109,23 +123,59 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
       rule.scope === "project" ? rule.project_id : null,
       start,
     );
+    const episodeById = new Map(episodes.map((e) => [e.id, e]));
 
     let applicableTasks = 0;
     let helped = 0;
     let hurt = 0;
     let lastApplicableAt: string | null = null;
+    // Episodes already reflected in applicableTasks via the tag-based scan
+    // above -- an adherence "followed" row for one of these must not add a
+    // second "build without a repeat" for the same episode below.
+    const countedApplicable = new Set<number>();
 
     for (const episode of episodes) {
       if (!isApplicable(episode.tags, rule.scope_tags)) continue;
       applicableTasks += 1;
+      countedApplicable.add(episode.id);
       if (!lastApplicableAt || episode.started_at > lastApplicableAt) {
         lastApplicableAt = episode.started_at;
       }
-      const wasHurt = episode.corrections.some((c) =>
-        matchesFailure(c.summary, rule.failure_signature, rule.prediction),
-      );
+      // spec §5 "which count": with the observed source off, a repeat
+      // correction is still visible in the raw rule_adherence/history data,
+      // but it no longer counts as hurt here.
+      const wasHurt =
+        sources.observed &&
+        episode.corrections.some((c) =>
+          matchesFailure(c.summary, rule.failure_signature, rule.prediction),
+        );
       if (wasHurt) hurt += 1;
       else helped += 1;
+    }
+
+    // spec §5 item 3: with the AI adherence check enabled, a `broke` row
+    // inside this same window counts as one more hurt signal for
+    // retirement; a `followed` row counts as one more "build without a
+    // repeat" only for an episode the tag-based scan above didn't already
+    // count (the judge, unlike isApplicable, can find a build applicable
+    // that the scope-tag heuristic missed).
+    if (sources.adherence) {
+      const adherenceRows = store
+        .listRuleAdherence(rule.id)
+        .filter((a) => episodeById.has(a.task_episode_id));
+      for (const row of adherenceRows) {
+        if (row.verdict === "broke") {
+          hurt += 1;
+        } else if (row.verdict === "followed" && !countedApplicable.has(row.task_episode_id)) {
+          const episode = episodeById.get(row.task_episode_id)!;
+          applicableTasks += 1;
+          helped += 1;
+          countedApplicable.add(row.task_episode_id);
+          if (!lastApplicableAt || episode.started_at > lastApplicableAt) {
+            lastApplicableAt = episode.started_at;
+          }
+        }
+      }
     }
 
     const contradictedByRuleId = existing?.contradicted_by_rule_id ?? null;

@@ -181,7 +181,7 @@ test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows 
   assert.ok(openIdx > guardEnd, "Open must render unconditionally, after the guard");
 });
 
-test("the improvements API's action set now includes retire, keep, readd, mark_seen", () => {
+test("the improvements API's action set now includes retire, keep, readd, mark_seen, verdict", () => {
   const detailAndLedger = codeOnly(
     readApp(DETAIL) + readApp("routes/_authenticated/ledger.tsx") + readApp(INBOX),
   );
@@ -196,5 +196,6 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     "restore",
     "retire",
     "skip",
+    "verdict",
   ]);
 });

@@ -172,14 +172,14 @@ test("local-settings.tsx: five sections with the exact sentences, schedule and c
   assert.match(code, /onError:/);
   assert.match(code, /toast\.error\(/);
 
-  // save buttons per section: decisions (Round 5 Task 6), schedule, cap, one
-  // combined AI analysis save (settings + key when typed), key remove, and
-  // project defaults (Round 3 §4)
+  // save buttons per section: decisions (Round 5 Task 6), evidence (Round 5
+  // Task 7), schedule, cap, one combined AI analysis save (settings + key
+  // when typed), key remove, and project defaults (Round 3 §4)
   assert.match(code, /useMutation\(/);
   assert.equal(
     count(code, "useMutation("),
-    6,
-    "decisions, schedule, cap, ai analysis save, llm key remove, defaults",
+    7,
+    "decisions, evidence, schedule, cap, ai analysis save, llm key remove, defaults",
   );
 
   // only the local Harness client helpers

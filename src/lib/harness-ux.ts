@@ -449,26 +449,89 @@ export function retireSinceLine(input: RetireLike): string {
   return `Since it was added: ${input.health.applicable_tasks} tasks · ${input.health.helped} helped · ${input.health.hurt} repeat corrections · last used ${last} · from real builds`;
 }
 
-// ---- Outcome tracking (Task C3 / spec §4 v1-lite + §4b display) ----
+// ---- Outcome tracking (Task C3 / spec §4 v1-lite + §4b display; Round 5
+// Task 7 / spec §5.1 rewrites the copy) ----
 // The muted health line shown under a *live* rule -- on its Improvement
-// card and on the Instructions page.
-// Every number here comes from real builds users actually ran, never a
-// model's guess -- "from real builds" says so on every line.
+// card and on the Instructions page. Every number here is counted from real
+// builds users actually ran, so it's labelled "observed from your real
+// builds" -- but an applicable build without a repeat correction only means
+// no repeat was SEEN, not that the rule helped, so the word "helped" never
+// appears here (spec §5.1: "an applicable build without a repeat correction
+// is not proof of help"). `helped` stays on the type (ImprovementHealth
+// keeps the raw count for other reads, e.g. retirement math) -- this line
+// just never renders it.
 export type HealthLike = {
   applicable_tasks: number;
-  helped: number;
   hurt: number;
   last_applicable_at: string | null;
 };
 
 export function healthLine(health: HealthLike | null | undefined): string | null {
   if (!health) return null;
-  if (health.applicable_tasks === 0) return "Since added: no matching tasks yet · from real builds";
+  if (health.applicable_tasks === 0) return "No builds in this area yet";
   const last = health.last_applicable_at
     ? ` · last used ${formatDay(health.last_applicable_at)}`
     : "";
-  const tasks = health.applicable_tasks === 1 ? "1 task" : `${health.applicable_tasks} tasks`;
+  const builds =
+    health.applicable_tasks === 1
+      ? "1 build in this area"
+      : `${health.applicable_tasks} builds in this area`;
   const corrections =
     health.hurt === 1 ? "1 repeat correction" : `${health.hurt} repeat corrections`;
-  return `Since added: ${tasks} · ${health.helped} helped · ${corrections}${last} · from real builds`;
+  return `Since added: ${builds} · ${corrections}${last} · observed from your real builds`;
+}
+
+// ---- Round 5 Task 7 / spec §5.2-§5 item 3: your verdict + the AI
+// adherence check, shown alongside healthLine above (never inside it --
+// each number keeps its own label naming exactly which source produced
+// it). ----
+
+export const VERDICT_TEXT: Record<"helped" | "did_not_help" | "not_sure", string> = {
+  helped: "helped",
+  did_not_help: "didn't help",
+  not_sure: "not sure",
+};
+
+export type VerdictLike = { verdict: "helped" | "did_not_help" | "not_sure"; created_at: string };
+
+// "You said: helped, 5 Sep" -- replaces the verdict buttons once a verdict
+// exists; the buttons come back via a "Change" link next to this line.
+export function verdictLine(verdict: VerdictLike | null | undefined): string | null {
+  if (!verdict) return null;
+  return `You said: ${VERDICT_TEXT[verdict.verdict]}, ${formatDay(verdict.created_at)}`;
+}
+
+export type AdherenceLike = { followed: number; broke: number; not_applicable: number };
+
+// "Followed in 5 of 6 builds it applied to · judged by AI, with quotes" --
+// null (renders nothing) until at least one episode has been judged
+// followed or broke (a rule judged not_applicable on every build so far has
+// nothing meaningful to report yet).
+export function adherenceLine(adherence: AdherenceLike | null | undefined): string | null {
+  if (!adherence) return null;
+  const total = adherence.followed + adherence.broke;
+  if (total === 0) return null;
+  return `Followed in ${adherence.followed} of ${total} builds it applied to · judged by AI, with quotes`;
+}
+
+// ---- Round 5 Task 7 / spec §5 "which count": the Suggestions detail's
+// "How Harness judges whether a rule helps" paragraph -- four sentences in
+// plain words, each naming whether that source has actually run for this
+// one rule (`sources`, from harness/src/improvements.ts's computeHealth),
+// regardless of whether Settings › Evidence currently counts it towards
+// retirement. ----
+export type EvidenceSourcesLike = { observed: boolean; adherence: boolean; verdicts: boolean };
+
+function ranSuffix(hasRun: boolean): string {
+  return hasRun ? "This has run for this rule." : "This hasn't run for this rule yet.";
+}
+
+export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefined): string[] {
+  const s = sources ?? { observed: false, adherence: false, verdicts: false };
+  return [
+    `Observed from your real builds: Harness counts builds in this rule's area and any repeat correction, automatically, for free. ${ranSuffix(s.observed)}`,
+    `Your verdict: you can say directly whether a rule helped, didn't help, or you're not sure, any time. ${ranSuffix(s.verdicts)}`,
+    `AI adherence check: Harness's AI reads the request and Lovable's reply and says whether the rule was followed, broken, or didn't apply, with a quote. ${ranSuffix(s.adherence)}`,
+    `Paired test: the same request run with and without the rule, side by side, to see the difference directly — not available yet.`,
+  ];
 }

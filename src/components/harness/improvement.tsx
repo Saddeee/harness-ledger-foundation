@@ -15,8 +15,10 @@ import {
   DetailSection,
 } from "@/components/harness/decision-layout";
 import {
+  adherenceLine,
   CLASSIFICATION_LABELS,
   DESTINATION_LABELS,
+  evidenceSourceLines,
   healthLine,
   KNOWLEDGE_CHAR_LIMIT,
   decisionSentence,
@@ -27,6 +29,8 @@ import {
   proveCostLine,
   retireReasonSentence,
   retireSinceLine,
+  VERDICT_TEXT,
+  verdictLine,
   type StatusCtx,
   versionStatusLine,
   whyFor,
@@ -459,6 +463,41 @@ function RetireCard({
 
 // ---- Decided items: where it stands, and how to change your mind ----
 
+// spec §5.2: "Did this rule help? Yes / No / Not sure" -- three small
+// outline buttons, one aria-labelled group. Shared by the Suggestions
+// detail (DecidedStatus below) and the Instructions row
+// (instructions.tsx imports this rather than defining its own).
+const VERDICT_CHOICES: { value: "helped" | "did_not_help" | "not_sure"; label: string }[] = [
+  { value: "helped", label: "Helped" },
+  { value: "did_not_help", label: "Didn't help" },
+  { value: "not_sure", label: "Not sure" },
+];
+
+export function VerdictButtons({
+  busy,
+  onPick,
+}: {
+  busy: boolean;
+  onPick: (verdict: "helped" | "did_not_help" | "not_sure") => void;
+}) {
+  return (
+    <div role="group" aria-label="Did this rule help?" className="flex flex-wrap gap-1">
+      {VERDICT_CHOICES.map((c) => (
+        <Button
+          key={c.value}
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => onPick(c.value)}
+        >
+          {c.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 function DecidedStatus({
   item,
   busy,
@@ -479,6 +518,13 @@ function DecidedStatus({
     .filter((v) => v.status === "written")
     .sort((a, b) => b.id - a.id)[0];
 
+  // spec §5.2: verdict buttons for a live (accepted + written) rule --
+  // replaced by "You said: ..." with a "Change" link once a verdict
+  // exists, exactly like the Instructions row's own copy of this toggle.
+  const [showVerdictButtons, setShowVerdictButtons] = useState(false);
+  const ruleId = item.rule_id;
+  const verdictEligible = accepted && written && ruleId != null;
+
   return (
     <div className="space-y-2">
       <p className="text-sm">
@@ -491,6 +537,34 @@ function DecidedStatus({
       </p>
       {item.health ? (
         <p className="text-xs text-muted-foreground">{healthLine(item.health)}</p>
+      ) : null}
+      {item.health && verdictLine(item.health.verdict) ? (
+        <p className="text-xs text-muted-foreground">{verdictLine(item.health.verdict)}</p>
+      ) : null}
+      {item.health && adherenceLine(item.health.adherence) ? (
+        <p className="text-xs text-muted-foreground">{adherenceLine(item.health.adherence)}</p>
+      ) : null}
+      {verdictEligible ? (
+        item.health?.verdict && !showVerdictButtons ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowVerdictButtons(true)}
+          >
+            Change
+          </Button>
+        ) : (
+          <VerdictButtons
+            busy={busy}
+            onPick={(verdict) =>
+              void run(
+                { action: "verdict", rule_id: ruleId, verdict },
+                `You said: ${VERDICT_TEXT[verdict]}`,
+              ).then((ok) => ok && setShowVerdictButtons(false))
+            }
+          />
+        )
       ) : null}
       {accepted && lovable.write_status === "none" ? (
         <p className="text-xs text-muted-foreground">
@@ -1040,6 +1114,27 @@ export function ImprovementDetail({
             <p>Added without a proof — Harness hasn't tested this instruction.</p>
           ) : null}
           <p>Harness analysis uses Harness's own AI, not your Lovable account.</p>
+        </DetailSection>
+
+        <DetailSection title="How Harness judges whether a rule helps">
+          {evidenceSourceLines(item.health?.sources ?? null).map((line, i) => (
+            <p key={i}>{line}</p>
+          ))}
+          {item.health?.adherence && item.health.adherence.quotes.length > 0 ? (
+            <details className="mt-2 rounded-md border bg-background">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Quotes
+              </summary>
+              <ul className="space-y-2 border-t px-3 py-3">
+                {item.health.adherence.quotes.map((q, i) => (
+                  <li key={i}>
+                    “{q.quote}” — {q.verdict === "broke" ? "broke the rule" : "followed the rule"},{" "}
+                    {formatDay(q.created_at)}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
         </DetailSection>
 
         <DetailSection title={`Wording history (${item.wording_history.length})`}>

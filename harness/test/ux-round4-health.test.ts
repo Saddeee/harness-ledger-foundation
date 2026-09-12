@@ -33,38 +33,52 @@ const INSTRUCTIONS_PAGE = "routes/_authenticated/instructions.tsx";
 const ROUTE = "routes/_authenticated/route.tsx";
 const INBOX = "routes/_authenticated/inbox.tsx";
 
-test("harness-ux.ts: healthLine -- no row, zero tasks, no last_applicable_at, and the full line", () => {
+// Round 5 Task 7 / spec §5.1: rewritten with intent -- "helped" leaves this
+// line entirely (an applicable build without a repeat correction is not
+// proof the rule helped, just that no repeat was observed), the noun
+// changes from "tasks" to "builds in this area", the zero-builds line drops
+// its "Since added:" prefix, and the source label changes from "from real
+// builds" to "observed from your real builds" (spec's own example line).
+test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, and the full line, never says 'helped'", () => {
   assert.equal(
     ux.healthLine(null),
     null,
     "no health row yet (rule not live, or rule_health hasn't scored it) -> no line",
   );
   assert.equal(
-    ux.healthLine({ applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null }),
-    "Since added: no matching tasks yet · from real builds",
+    ux.healthLine({ applicable_tasks: 0, hurt: 0, last_applicable_at: null }),
+    "No builds in this area yet",
   );
   assert.equal(
-    ux.healthLine({ applicable_tasks: 4, helped: 2, hurt: 2, last_applicable_at: null }),
-    "Since added: 4 tasks · 2 helped · 2 repeat corrections · from real builds",
+    ux.healthLine({ applicable_tasks: 4, hurt: 2, last_applicable_at: null }),
+    "Since added: 4 builds in this area · 2 repeat corrections · observed from your real builds",
     "omits 'last used' when null",
   );
   assert.equal(
     ux.healthLine({
       applicable_tasks: 4,
-      helped: 3,
       hurt: 1,
       last_applicable_at: "2026-09-01T00:00:00Z",
     }),
-    "Since added: 4 tasks · 3 helped · 1 repeat correction · last used 1 Sep · from real builds",
+    "Since added: 4 builds in this area · 1 repeat correction · last used 1 Sep · observed from your real builds",
     "singular 'repeat correction' when hurt === 1",
   );
   // Fix round 1 (C3 minor): applicable_tasks/hurt both pluralize correctly
-  // at 1; helped has no plural form to get wrong.
+  // at 1.
   assert.equal(
-    ux.healthLine({ applicable_tasks: 1, helped: 1, hurt: 0, last_applicable_at: null }),
-    "Since added: 1 task · 1 helped · 0 repeat corrections · from real builds",
-    "singular 'task' when applicable_tasks === 1",
+    ux.healthLine({ applicable_tasks: 1, hurt: 0, last_applicable_at: null }),
+    "Since added: 1 build in this area · 0 repeat corrections · observed from your real builds",
+    "singular 'build' when applicable_tasks === 1",
   );
+  for (const health of [
+    { applicable_tasks: 0, hurt: 0, last_applicable_at: null },
+    { applicable_tasks: 4, hurt: 2, last_applicable_at: "2026-09-01T00:00:00Z" },
+  ]) {
+    assert.ok(
+      !/helped/i.test(ux.healthLine(health) ?? ""),
+      "the word 'helped' must never appear in healthLine's output",
+    );
+  }
 });
 
 test("improvement.tsx: DecidedStatus renders the health line for a live item's health, via healthLine", () => {

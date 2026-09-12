@@ -709,7 +709,8 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
   const actions = [
     ...codeOnly(readApp(DETAIL) + readApp(LEDGER)).matchAll(/action: "([a-z_]+)"/g),
   ].map((m) => m[1]);
-  // Task C2 adds retire/keep/readd (the Retire/Keep/Re-add actions).
+  // Task C2 adds retire/keep/readd (the Retire/Keep/Re-add actions); Round 5
+  // Task 7 adds verdict (the "Did this rule help?" buttons).
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
     "change_wording",
@@ -719,6 +720,7 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
     "restore",
     "retire",
     "skip",
+    "verdict",
   ]);
 });
 
