@@ -102,52 +102,67 @@ test("landing page: renders LANDING_CREDITS_LINE", () => {
   assert.match(code, /\{LANDING_CREDITS_LINE\}/, "landing must render LANDING_CREDITS_LINE");
 });
 
-test("no user-facing string in improvement/inbox/ledger/instructions/settings contains 'improvement' or 'improvements' outside identifiers", () => {
-  const files = [IMPROVEMENT, INBOX, LEDGER, INSTRUCTIONS, SETTINGS];
-  // Allowlist of acceptable "improvement" occurrences (queryKeys, routes, identifiers)
-  const allowedLiterals = [
-    '"harness-improvements"',
-    '"/api/public/harness/improvements"',
-    '"improvement"',
-    "improvement:",
+test("no user-facing 'improvement' word survives in the guarded pages", () => {
+  const GUARDED = [IMPROVEMENT, INBOX, LEDGER, INSTRUCTIONS, SETTINGS];
+
+  // Exact identifier/technical substrings that legitimately contain the word
+  // Plain strings, replaced verbatim (split/join), never regexes
+  const IDENTIFIERS = [
+    "improvements-client",
+    "harness-improvements",
+    "/api/public/harness/improvements",
     "improvement_id",
     "improvements_id",
-    "search{{ improvement",
+    "ImprovementDetail",
+    "ImprovementHealth",
+    "ImprovementGroup",
+    "ImprovementsResponse",
+    "Improvement[]",
+    "Improvement;",
+    "Improvement,",
+    "Improvement }",
+    "Improvement)",
+    "Improvement |",
+    "type Improvement",
+    "Improvement =",
+    "postImprovementAction",
+    "fetchImprovements",
+    "improvementGroup",
+    "`improvement-${",
     "search.improvement",
+    'search["improvement"]',
+    "search={{ improvement",
+    "{ improvement:",
+    "improvement: id",
+    "improvement?:",
+    "improvement:",
+    "improvement }",
+    "(improvement",
+    "improvement)",
+    "improvement,",
+    "improvement.",
+    "?.improvements",
     "@/lib/improvements-client",
     "@/components/harness/improvement",
-    "from.*improvements-client",
+    "improvements.tsx",
+    "improvement.tsx",
   ];
 
-  for (const file of files) {
-    const raw = readApp(file);
-    const code = codeOnly(raw);
+  function stripIdentifiers(src: string): string {
+    let out = src;
+    for (const id of IDENTIFIERS) out = out.split(id).join(" ");
+    return out;
+  }
 
-    // Collect all double-quoted string literals
-    const stringLiterals = code.match(/"[^\n]*"/g) || [];
-    // Collect all JSX text runs
-    const jsxTextRuns = code.match(/>[^<{}\n]*/g) || [];
-
-    const allTexts = [...stringLiterals, ...jsxTextRuns];
-
-    const violations = allTexts.filter((text) => {
-      // Check if text contains improvement/improvements
-      if (!/\bimprovements?\b/i.test(text)) {
-        return false;
-      }
-      // Check against allowlist
-      for (const allowed of allowedLiterals) {
-        if (new RegExp(allowed, "i").test(text)) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    assert.equal(
-      violations.length,
-      0,
-      `${file}: user-facing strings must not contain "improvement/improvements": ${violations.slice(0, 3).join(", ")}${violations.length > 3 ? "..." : ""}`,
+  for (const rel of GUARDED) {
+    const stripped = stripIdentifiers(codeOnly(readApp(rel)));
+    const hits = [...stripped.matchAll(/[^\n]{0,40}\bimprovements?\b[^\n]{0,40}/gi)].map(
+      (m) => m[0].trim(),
+    );
+    assert.deepEqual(
+      hits,
+      [],
+      `${rel} still says "improvement" in user-facing text: ${JSON.stringify(hits)}`,
     );
   }
 });

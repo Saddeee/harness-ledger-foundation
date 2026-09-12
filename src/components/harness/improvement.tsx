@@ -829,7 +829,7 @@ export function ImprovementDetail({
         </h2>
         {item.evidence.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No Lovable messages are attached to this improvement.
+            No Lovable messages are attached to this suggestion.
           </p>
         ) : (
           <ol className="space-y-2">

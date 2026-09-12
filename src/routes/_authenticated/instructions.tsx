@@ -231,7 +231,7 @@ function ActiveRulesList({
       {rules.map((r) => {
         const text =
           r.text ||
-          (r.improvement_id != null ? `Improvement #${r.improvement_id}` : `Rule #${r.id}`);
+          (r.improvement_id != null ? `Suggestion #${r.improvement_id}` : `Rule #${r.id}`);
         const health = healthLine(r.health ?? null);
         return (
           <li key={r.id} className="space-y-1 text-sm">
