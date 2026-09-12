@@ -125,6 +125,62 @@ test("local-settings.tsx: one provider Select + one model Input for analysis, ap
   }
 });
 
+test("local-settings.tsx: the one-model save gate tracks perRoleEdited, not whether Advanced is/was open", () => {
+  const raw = readApp(SETTINGS);
+  const code = codeOnly(raw);
+
+  // Fix round 1 item 2: merely opening Advanced to look must not leave the
+  // save gate keyed off it -- there must be no advancedOpen state left at
+  // all, and the gate itself must read perRoleEdited.
+  assert.ok(!/advancedOpen/.test(code), "advancedOpen must be fully removed");
+  assert.match(code, /const \[perRoleEdited, setPerRoleEdited\] = useState\(false\)/);
+
+  const saveFn = code.slice(
+    code.indexOf("const saveAiAnalysis = useMutation("),
+    code.indexOf("const removeLlmKey = useMutation("),
+  );
+  assert.match(saveFn, /const modelsToSave: LlmModels = perRoleEdited\s*\n\s*\? llmModels/);
+  // Reset only once a save actually applied the models (never on a
+  // settingsError, which leaves per-role edits still un-persisted).
+  assert.match(saveFn, /setPerRoleEdited\(false\)/);
+
+  // Any per-role row's own onChange (both the provider Select and the
+  // model Input, for every LLM_ROLES row via the shared map) marks
+  // perRoleEdited -- not the primary fields' onChange, which stay bound to
+  // llmModels.rule_writer only.
+  const detailsBody = code.slice(
+    code.indexOf('<details className="rounded-md border">'),
+    code.indexOf("</details>"),
+  );
+  assert.equal(
+    (detailsBody.match(/setPerRoleEdited\(true\)/g) ?? []).length,
+    2,
+    "both per-role fields (provider Select and model Input) must set perRoleEdited",
+  );
+
+  // The primary fields' own onChange handlers (outside the details) must
+  // never themselves flip perRoleEdited.
+  const primaryFieldsBody = code.slice(
+    code.indexOf('<p className="text-sm font-medium">Model for analysis</p>'),
+    code.indexOf('<details className="rounded-md border">'),
+  );
+  assert.ok(
+    !/setPerRoleEdited/.test(primaryFieldsBody),
+    "editing the primary fields must not itself mark perRoleEdited",
+  );
+});
+
+test("local-settings.tsx: the primary fields show a muted note when roles differ and nothing has been edited per-role yet", () => {
+  const raw = readApp(SETTINGS);
+  const code = codeOnly(raw);
+  assert.ok(
+    raw.includes(
+      "Roles currently use different models; saving these fields applies them to every role.",
+    ),
+  );
+  assert.match(code, /rolesDiffer\(llmModels\) && !perRoleEdited/);
+});
+
 test("local-settings.tsx: 'Advanced: different models per role' is a collapsed <details> wrapping the five role rows, with a note when they differ", () => {
   const raw = readApp(SETTINGS);
   const code = codeOnly(raw);

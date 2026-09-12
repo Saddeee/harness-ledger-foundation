@@ -853,6 +853,78 @@ test("proposeRules' user prompt carries the user's own feedback -- accepted rule
   drainEpisode(seeded.episodeId);
 });
 
+test("proposeRules' prompt clamps a skipped suggestion's unbounded summary to 300 chars before it enters the prompt", async () => {
+  const PROJECT = "proj-mine-feedback-clamp";
+  store.allowProject(PROJECT, "Feedback Clamp Co");
+
+  // correction_candidates.summary has no length constraint at the DB layer
+  // (unlike a mined instruction, which is always <= INSTRUCTION_CHAR_LIMIT)
+  // -- an MCP-created candidate can carry an arbitrarily long one. Fix round
+  // 1 item 1: this must be clamped before it ever reaches the prompt.
+  const LONG_SUMMARY = "Always do the thing. ".repeat(100);
+  assert.ok(LONG_SUMMARY.length > 2000, "fixture summary must actually exceed 2,000 chars");
+
+  const skipEpisode = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: "skip seed clamp",
+    provenance: "manual",
+  }) as { id: number };
+  const skipMsg = insertMessage(
+    PROJECT,
+    "user",
+    "seed correction for an unbounded skipped summary",
+  );
+  store.addEpisodeEvidence(skipEpisode.id, skipMsg.id, "correction");
+  const skipCandidate = store.createCorrectionCandidate({
+    task_episode_id: skipEpisode.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: LONG_SUMMARY,
+    evidence_history_item_ids: [skipMsg.id],
+  }) as { id: number };
+  store.reviewCorrectionCandidate({
+    id: skipCandidate.id,
+    action: "exclude",
+    reviewer: "test seed",
+  });
+
+  const seeded = seedEpisode(PROJECT, {
+    request: "Build a settings page.",
+    corrections: ["Please add a toggle for dark mode."],
+  });
+
+  const { callLlm, prompts } = fakeCapturingCallLlm({ propose: false });
+  await propose.proposeRules(callLlm, { limit: 10 });
+
+  assert.equal(prompts.length, 1);
+  const prompt = prompts[0]!;
+  assert.match(prompt, /Suggestions this user skipped -- do not propose these again/);
+  assert.ok(
+    !prompt.includes(LONG_SUMMARY),
+    "the full 2,000+ char summary must never appear verbatim in the prompt",
+  );
+
+  const skippedBlockStart = prompt.indexOf("Suggestions this user skipped");
+  const skippedBlockEnd = prompt.indexOf("\n\n", skippedBlockStart);
+  const skippedBlock = prompt.slice(
+    skippedBlockStart,
+    skippedBlockEnd === -1 ? undefined : skippedBlockEnd,
+  );
+  const entryLine = skippedBlock.split("\n").find((l) => l.startsWith("- "));
+  assert.ok(entryLine, "expected a rendered entry line in the skipped-suggestions block");
+  // "- " prefix + the clamped text + a " (skipped)"/" (skipped: reason)"
+  // suffix -- strip both to check the clamped text itself is <= 300 chars.
+  const textOnly = entryLine!.replace(/^- /, "").replace(/ \(skipped(?::[^)]*)?\)$/, "");
+  assert.ok(
+    textOnly.length <= 300,
+    `expected the clamped entry to be <= 300 chars, got ${textOnly.length}`,
+  );
+
+  drainEpisode(seeded.episodeId);
+});
+
 test("proposeRules drops a new proposal that dice-matches a skipped suggestion (re-proposal guard), counts it as skippedDuplicate, and logs suggestion.skipped_repeat", async () => {
   const PROJECT = "proj-mine-repeat-skip";
   store.allowProject(PROJECT, "Repeat Skip Co");

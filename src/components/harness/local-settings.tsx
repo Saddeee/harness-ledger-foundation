@@ -135,13 +135,19 @@ const AI_ANALYSIS_LINE =
   "Analysis runs only when you press Analyse now. Chat text is sent to the provider you chose.";
 const MODEL_FOR_ANALYSIS_LINE =
   "Used for every analysis role (classifier, rule writer, judge, reviewer, proposer) unless you set one per role below.";
+// Fix round 1 item 2: shown under the primary fields (not inside Advanced)
+// only when nothing has been edited per-role yet this visit -- see
+// perRoleEdited below. Once a per-role row has actually been touched, a
+// save preserves those edits instead of normalising to the primary fields,
+// so this exact warning would no longer be true.
+const ROLES_DIFFER_PRIMARY_LINE =
+  "Roles currently use different models; saving these fields applies them to every role.";
 
 // spec §1: "one provider and one model by default" -- the Rule writer's own
 // entry is the single source of truth the primary Select/Input above the
 // Advanced details read and write; saveAiAnalysis below copies it onto
-// every other role at save time (see its own comment for why that has to
-// happen unconditionally, not just when the simple fields are the only
-// ones touched).
+// every other role at save time unless a per-role row was itself edited
+// this visit (see perRoleEdited/saveAiAnalysis).
 function rolesDiffer(models: LlmModels): boolean {
   const base = models.rule_writer;
   return (Object.keys(models) as LlmRole[]).some(
@@ -165,10 +171,15 @@ export function LocalSettings() {
 
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(DEFAULT_LLM_PROVIDER);
   const [llmModels, setLlmModels] = useState<LlmModels>(DEFAULT_LLM_MODELS);
-  // Whether "Advanced: different models per role" has been opened this
-  // visit -- see saveAiAnalysis below for why this changes what a save
-  // writes.
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Fix round 1 item 2: whether a per-role row (inside "Advanced: different
+  // models per role") has itself been edited this visit -- not just
+  // whether Advanced was opened to look. Set by any per-role Select/Input
+  // onChange below; reset once a save actually applies those per-role
+  // values (see saveAiAnalysis's onSuccess). Gates what saveAiAnalysis
+  // writes: false -> normalise every role to the primary fields (the only
+  // honest reading of the simple view, which has no per-role fields to
+  // show); true -> write the per-role values exactly as edited.
+  const [perRoleEdited, setPerRoleEdited] = useState(false);
   const [budget, setBudget] = useState(DEFAULT_TOKEN_BUDGET);
   const [keyInput, setKeyInput] = useState("");
   const [maxActiveRules, setMaxActiveRules] = useState(DEFAULT_MAX_ACTIVE_RULES);
@@ -281,17 +292,18 @@ export function LocalSettings() {
 
       let settingsError: string | null = null;
       try {
-        // spec §1: "one provider and one model by default" -- the primary
-        // Select/Input above the Advanced details edit only
-        // llmModels.rule_writer. Saving from the simple view (Advanced
-        // never opened this visit) writes that one choice to every role --
-        // the simple view has no per-role fields at all, so that is the
-        // only honest reading of "this is the model Harness uses". Once the
-        // owner has opened Advanced -- a deliberate look at (or edit of)
-        // the five separate rows -- save respects whatever is in each row
-        // instead, so opening it to check never silently collapses a
-        // genuinely different per-role setup back to one model.
-        const modelsToSave: LlmModels = advancedOpen
+        // Fix round 1 item 2 / spec §1: "one provider and one model by
+        // default". Gated on perRoleEdited, not on whether Advanced is/was
+        // open -- merely opening it to look must not leave the four
+        // non-rule_writer roles stale the next time the primary fields are
+        // saved. perRoleEdited is false -> the primary Select/Input are the
+        // only fields the owner has touched, so that one choice is written
+        // to every role (the simple view has no per-role fields to show,
+        // so that is the only honest reading of "this is the model Harness
+        // uses"). perRoleEdited is true -> a per-role row was itself
+        // edited this visit, so save respects whatever is in each row
+        // exactly as edited.
+        const modelsToSave: LlmModels = perRoleEdited
           ? llmModels
           : {
               classifier: { ...llmModels.rule_writer },
@@ -324,6 +336,11 @@ export function LocalSettings() {
         } else {
           toast.success("AI analysis settings saved");
         }
+        // Fix round 1 item 2: only once the models actually saved -- a
+        // failed save (settingsError above) leaves any per-role edits
+        // un-persisted, so perRoleEdited must keep gating the next attempt
+        // toward writing them, not toward normalising them away.
+        setPerRoleEdited(false);
       }
       if (keySaved) setKeyInput("");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
@@ -619,12 +636,12 @@ export function LocalSettings() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">{MODEL_FOR_ANALYSIS_LINE}</p>
+          {rolesDiffer(llmModels) && !perRoleEdited ? (
+            <p className="text-xs text-muted-foreground">{ROLES_DIFFER_PRIMARY_LINE}</p>
+          ) : null}
         </div>
 
-        <details
-          className="rounded-md border"
-          onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
-        >
+        <details className="rounded-md border">
           <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Advanced: different models per role
           </summary>
@@ -643,12 +660,13 @@ export function LocalSettings() {
                     <Label htmlFor={`llm-role-provider-${key}`}>{roleLabel} provider</Label>
                     <Select
                       value={llmModels[key].provider}
-                      onValueChange={(v) =>
+                      onValueChange={(v) => {
                         setLlmModels((m) => ({
                           ...m,
                           [key]: { ...m[key], provider: v as LlmProvider },
-                        }))
-                      }
+                        }));
+                        setPerRoleEdited(true);
+                      }}
                     >
                       <SelectTrigger id={`llm-role-provider-${key}`}>
                         <SelectValue />
@@ -668,12 +686,13 @@ export function LocalSettings() {
                       id={`llm-role-model-${key}`}
                       placeholder={llmModels[key].provider === "claude_code" ? "sonnet" : undefined}
                       value={llmModels[key].model}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setLlmModels((m) => ({
                           ...m,
                           [key]: { ...m[key], model: e.target.value },
-                        }))
-                      }
+                        }));
+                        setPerRoleEdited(true);
+                      }}
                     />
                   </div>
                 </div>

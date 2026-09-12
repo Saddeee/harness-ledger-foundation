@@ -88,21 +88,26 @@ function tryAutoAccept(correctionCandidateId: number, runId: number, threshold: 
   const scope: "project" | "workspace" = proposed_scope === "workspace" ? "workspace" : "project";
   if (wouldExceedLimits(correctionCandidateId, scope)) return false;
 
+  // Fix round 1 item 3: the whole accept + mark-decided + log sequence is
+  // one try/catch, not just the accept itself -- a failure in any of the
+  // three (e.g. setCandidateDecidedBy or insertEvent) must still leave this
+  // one candidate for the user instead of throwing out of the loop and
+  // aborting every candidate after it in this run.
   try {
     improvementAction(
       { action: "accept", id: correctionCandidateId, destination: scope },
       AUTO_ACTOR,
     );
+    store.setCandidateDecidedBy(correctionCandidateId, "automatic");
+    store.insertEvent("suggestion.auto_accepted", null, {
+      id: correctionCandidateId,
+      run_id: runId,
+      confidence,
+      destination: scope,
+    });
   } catch {
     return false;
   }
-  store.setCandidateDecidedBy(correctionCandidateId, "automatic");
-  store.insertEvent("suggestion.auto_accepted", null, {
-    id: correctionCandidateId,
-    run_id: runId,
-    confidence,
-    destination: scope,
-  });
   return true;
 }
 
