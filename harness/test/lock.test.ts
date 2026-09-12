@@ -8,7 +8,11 @@ import { join } from "node:path";
 // executor loop) and a manually-run `npm run harness:executor` CLI
 // invocation never both drive Lovable at once. Nothing here touches
 // SQLite or the network -- just node:fs against a scratch directory.
-import { acquireLock, heartbeat, releaseLock } from "../src/executor/lock.ts";
+// `_fsHooks` is the test-only seam described in lock.ts's own comment --
+// used below (round 1 fix) to simulate a real cross-process rename race
+// deterministically, since node:fs's own exports cannot be mocked
+// (`t.mock.method` throws "Cannot redefine property" on them -- verified).
+import { acquireLock, heartbeat, releaseLock, _fsHooks } from "../src/executor/lock.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "harness-lock-test-"));
 let n = 0;
@@ -55,20 +59,64 @@ test("acquireLock: the same process re-acquiring its own held, fresh lock succee
   assert.equal(again.held, true, "the process already holding the lock can re-acquire it");
 });
 
-test("heartbeat: updates heartbeat_at on the held lock without changing owner/pid", async () => {
+test("heartbeat: updates heartbeat_at on the held lock without changing owner/pid, returns { ok: true }", async () => {
   const lockPath = freshLockPath();
   acquireLock(lockPath, "cli");
   const before = JSON.parse(readFileSync(lockPath, "utf8"));
   await new Promise((r) => setTimeout(r, 5));
-  heartbeat(lockPath);
+  const result = heartbeat(lockPath);
+  assert.deepEqual(result, { ok: true });
   const after = JSON.parse(readFileSync(lockPath, "utf8"));
   assert.equal(after.owner, "cli");
   assert.equal(after.pid, process.pid);
   assert.notEqual(after.heartbeat_at, before.heartbeat_at, "heartbeat_at advanced");
 });
 
-test("heartbeat: throws when there is no lock file to heartbeat", () => {
-  assert.throws(() => heartbeat(freshLockPath()));
+test("heartbeat: returns { ok: false, holder: null } (does not throw) when there is no lock file to heartbeat", () => {
+  const result = heartbeat(freshLockPath());
+  assert.deepEqual(result, { ok: false, holder: null });
+});
+
+// Round 6 Task 1 fix round 1, item 1 (CRITICAL): heartbeat() had no
+// ownership check, so after process B took over a stale lock, A's
+// heartbeat() would silently keep refreshing B's file forever -- A never
+// finds out it lost the lock. Reproduces the reviewer's exact scenario: A
+// acquires, its lock goes stale, B (a different pid, simulated by writing
+// the file directly) takes over, then A calls heartbeat().
+test("heartbeat: after a stale lock is taken over by a different pid, the original holder's heartbeat() reports the loss and does not touch the file", () => {
+  const lockPath = freshLockPath();
+
+  const a = acquireLock(lockPath, "app");
+  assert.equal(a.held, true, "A acquires first");
+
+  // Make A's lock stale, then have B (pid 999999, a different owner too,
+  // so the takeover is unambiguous) take over -- written directly rather
+  // than through acquireLock, exactly like the other staleness tests above,
+  // since acquireLock always stamps process.pid (this test process, i.e.
+  // "A" itself) and B must be a genuinely different pid.
+  const staleHeartbeat = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+  writeFileSync(
+    lockPath,
+    JSON.stringify({ owner: "cli", pid: 999999, heartbeat_at: staleHeartbeat }),
+  );
+  const bFileBefore = readFileSync(lockPath, "utf8");
+
+  // A, unaware it lost the lock, calls heartbeat().
+  const result = heartbeat(lockPath);
+  assert.equal(result.ok, false, "A no longer holds the lock -- heartbeat must report failure");
+  if (!result.ok) {
+    assert.ok(result.holder, "the current holder is named");
+    assert.equal(result.holder!.owner, "cli", "it's B's lock now");
+    assert.equal(result.holder!.pid, 999999);
+  }
+
+  // The critical assertion: A's heartbeat() must not have written anything
+  // -- B's file is byte-for-byte unchanged.
+  assert.equal(
+    readFileSync(lockPath, "utf8"),
+    bFileBefore,
+    "A's heartbeat call did not touch B's lock file at all",
+  );
 });
 
 test("acquireLock: a lock whose heartbeat is older than 3 minutes is stale and can be taken by a different owner/pid", () => {
@@ -90,6 +138,51 @@ test("acquireLock: a lock whose heartbeat is older than 3 minutes is stale and c
 
   const onDisk = JSON.parse(readFileSync(lockPath, "utf8"));
   assert.equal(onDisk.owner, "app", "the file itself now reflects the new holder");
+});
+
+// Round 6 Task 1 fix round 1, item 2 (IMPORTANT): acquireLock's stale
+// takeover used to be read -> check -> overwrite-in-place, with no
+// atomicity -- two processes racing the same stale lock could both believe
+// they won. The fix routes the takeover through a temp-file-then-rename
+// (atomic) followed by a re-read that verifies this process actually ended
+// up as the last writer. This test drives that exact verification path by
+// simulating, via the `_fsHooks` test seam (see this file's top-of-file
+// comment for why: node:fs's own exports cannot be mocked), a competing
+// process's rename landing immediately after this process's own rename --
+// the real race the fix exists to detect.
+test("acquireLock: stale takeover verification reports held:false when another process's rename wins the race", () => {
+  const lockPath = freshLockPath();
+  const staleHeartbeat = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+  writeFileSync(
+    lockPath,
+    JSON.stringify({ owner: "cli", pid: 111111, heartbeat_at: staleHeartbeat }),
+  );
+
+  const realRenameSync = _fsHooks.renameSync;
+  const rival = { owner: "cli" as const, pid: 222222, heartbeat_at: new Date().toISOString() };
+  _fsHooks.renameSync = (...args: Parameters<typeof realRenameSync>) => {
+    // Perform this process's own rename for real (so the temp file is
+    // actually consumed, matching what would happen in production), then
+    // simulate a rival process's rename landing immediately afterward --
+    // exactly the interleaving acquireLock's post-rename re-read exists to
+    // detect.
+    const result = (realRenameSync as (...a: Parameters<typeof realRenameSync>) => void)(...args);
+    writeFileSync(lockPath, JSON.stringify(rival));
+    return result;
+  };
+
+  try {
+    const result = acquireLock(lockPath, "app");
+    assert.equal(result.held, false, "the rival's rename landed last -- this call lost the race");
+    assert.ok(result.holder, "the actual (rival) holder is reported");
+    assert.equal(result.holder!.pid, 222222);
+    assert.equal(result.holder!.owner, "cli");
+
+    const onDisk = JSON.parse(readFileSync(lockPath, "utf8"));
+    assert.equal(onDisk.pid, 222222, "the file on disk reflects the true last writer, the rival");
+  } finally {
+    _fsHooks.renameSync = realRenameSync;
+  }
 });
 
 test("acquireLock: a heartbeat just under 3 minutes old is NOT stale -- still refused", () => {
