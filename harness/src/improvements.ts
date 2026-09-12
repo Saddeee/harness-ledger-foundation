@@ -7,6 +7,7 @@ import { z } from "zod";
 import * as store from "./store.js";
 import { composeManagedKnowledge, sha256 } from "./knowledge.js";
 import { lineDiff, type DiffLine } from "./diff.js";
+import { recomputeRuleHealth } from "./analysis/health.js";
 
 export type StageKey = "found" | "review" | "proof" | "in_lovable";
 export type StageState = "complete" | "current" | "future" | "blocked";
@@ -1600,30 +1601,25 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
 }
 
 // spec §5.2: a whole-rule verdict from the Instructions page's verdict
-// buttons. did_not_help nudges rule_health.hurt up by one, but only when
-// the user's own verdicts are configured as an evidence source (spec §4b)
-// and only on a rule_health row that already exists -- a verdict alone
-// never creates one. helped snoozes a rule Harness had suggested retiring
-// (the user's word overrides the signal for 30 days, the same snooze
-// keepProposal above already uses), but leaves any other status alone.
+// buttons. did_not_help is fed into rule_health.hurt as a derived input by
+// health.ts's recomputeRuleHealth (Round 5 fix wave item 1 -- it used to be
+// written straight into the stored row right here, which the very next
+// recompute then silently overwrote); this function's job for that verdict
+// is just to trigger that recompute, so the stored row is immediately
+// consistent rather than waiting for the next executor sync or analysis
+// run. Only when the user's own verdicts are configured as an evidence
+// source (spec §4b), and only on a rule_health row that already exists -- a
+// verdict alone never creates one. helped snoozes a rule Harness had
+// suggested retiring (the user's word overrides the signal for 30 days,
+// the same snooze keepProposal above already uses), but leaves any other
+// status alone.
 function recordVerdict(ruleId: number, verdict: store.RuleVerdict, note?: string): Improvement {
   store.recordRuleVerdict({ rule_id: ruleId, verdict, note: note ?? null });
 
   const health = store.getRuleHealth(ruleId);
   if (health) {
     if (verdict === "did_not_help" && store.getEvidenceSources().verdicts) {
-      store.upsertRuleHealth({
-        rule_id: health.rule_id,
-        applicable_tasks: health.applicable_tasks,
-        helped: health.helped,
-        hurt: health.hurt + 1,
-        last_applicable_at: health.last_applicable_at,
-        contradicted_by_rule_id: health.contradicted_by_rule_id,
-        unused_since: health.unused_since,
-        status: health.status,
-        snoozed_until: health.snoozed_until,
-        baseline_at: health.baseline_at,
-      });
+      recomputeRuleHealth();
     } else if (verdict === "helped" && health.status === "retire_suggested") {
       store.upsertRuleHealth({
         rule_id: health.rule_id,

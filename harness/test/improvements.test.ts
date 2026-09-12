@@ -12,6 +12,10 @@ process.env.HARNESS_DB_PATH = join(
 const { db } = await import("../src/db.js");
 const store = await import("../src/store.js");
 const imp = await import("../src/improvements.js");
+// Round 5 fix wave item 1: the verdict action's did_not_help path now
+// recomputes rule_health instead of mutating it directly -- one test below
+// exercises that same recompute directly, to seed/verify a real row.
+const { recomputeRuleHealth } = await import("../src/analysis/health.js");
 const { lineDiff: adapterLineDiff } = await import("../src/diff.js");
 const { improvementGroup, lovableStatusLine } = await import("../../src/lib/harness-ux.ts");
 
@@ -1443,7 +1447,7 @@ test("buildTimeline: caps at 200 nodes", () => {
   assert.equal(nodes.length, 200);
 });
 
-test("verdict action: records the row; did_not_help bumps rule_health.hurt only when evidence_sources.verdicts is enabled, and only on an existing row", () => {
+test("verdict action: records the row; did_not_help feeds rule_health.hurt through recomputeRuleHealth, only when evidence_sources.verdicts is enabled, and only on an existing row (Round 5 fix wave item 1: derived, not mutated)", () => {
   const TL_PROJECT4 = "timeline-test-project-verdict";
   db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
     TL_PROJECT4,
@@ -1460,18 +1464,24 @@ test("verdict action: records the row; did_not_help bumps rule_health.hurt only 
     instruction: "Do not retry failed jobs forever.",
     scope: "project",
   });
-  imp.improvementAction({ action: "accept", id: c.cc.id, destination: "project" });
-  store.upsertRuleHealth({
-    rule_id: c.rule.id,
-    applicable_tasks: 5,
-    helped: 2,
-    hurt: 1,
-    last_applicable_at: null,
-    contradicted_by_rule_id: null,
-    unused_since: null,
-    status: "healthy",
-    snoozed_until: null,
-  });
+  // Make rule c genuinely live (active, with a written, backdated Knowledge
+  // version) -- the verdict action now calls recomputeRuleHealth
+  // internally (Round 5 fix wave item 1), which only ever touches rules
+  // store.listLiveRulesWithTargets returns, not whatever a plain "accept"
+  // alone leaves (state 'approved', a still-pending write). Backdated well
+  // clear of the verdict recorded below (real "now"), and well inside the
+  // default 60-day rule_unused_after_days window.
+  store.updateRule({ id: c.rule.id, state: "active", actor: "test" });
+  db.prepare(
+    `INSERT INTO knowledge_versions
+       (rule_id, target, project_id, previous_content, new_content, previous_sha256, new_sha256, rule_ids_json, status, actor, written_at)
+     VALUES (?, 'project', ?, '', '', '', '', '[]', 'written', 'test', ?)`,
+  ).run(c.rule.id, TL_PROJECT4, "2026-09-01T00:00:00.000Z");
+
+  // Seed a real rule_health row via the same recompute the verdict action
+  // now uses -- rule c has no episodes at all, so it starts at all zeros.
+  recomputeRuleHealth();
+  assert.equal(store.getRuleHealth(c.rule.id)!.hurt, 0, "no episodes yet, so hurt starts at 0");
 
   assert.equal(store.getEvidenceSources().verdicts, true, "default has verdicts enabled");
   const result = imp.improvementAction({
@@ -1483,12 +1493,22 @@ test("verdict action: records the row; did_not_help bumps rule_health.hurt only 
   assert.equal(result.id, c.cc.id);
   assert.equal(
     store.getRuleHealth(c.rule.id)!.hurt,
-    2,
-    "hurt bumps by one when verdicts evidence is enabled",
+    1,
+    "hurt+1 immediately -- the action records the verdict and recomputes rule_health, which reads it back",
   );
   const verdicts = store.listRuleVerdicts(c.rule.id);
   assert.equal(verdicts[0]!.verdict, "did_not_help");
   assert.equal(verdicts[0]!.note, "broke the build");
+
+  // A later, unrelated recompute (an executor sync, an analysis run) does
+  // not lose the verdict-driven hurt -- it is a derived input, not a
+  // one-off mutation the next recompute would overwrite.
+  recomputeRuleHealth();
+  assert.equal(
+    store.getRuleHealth(c.rule.id)!.hurt,
+    1,
+    "the verdict-driven hurt survives an unrelated later recompute",
+  );
 
   // Disable verdicts evidence: a second did_not_help must not bump hurt again.
   store.setSettings({
@@ -1502,7 +1522,7 @@ test("verdict action: records the row; did_not_help bumps rule_health.hurt only 
   imp.improvementAction({ action: "verdict", rule_id: c.rule.id, verdict: "did_not_help" });
   assert.equal(
     store.getRuleHealth(c.rule.id)!.hurt,
-    2,
+    1,
     "hurt does not bump while verdicts evidence is disabled",
   );
   store.setSettings({
@@ -1515,7 +1535,7 @@ test("verdict action: records the row; did_not_help bumps rule_health.hurt only 
   });
 
   // A rule with no rule_health row yet: did_not_help records the verdict but
-  // creates no row (only bumps "the existing row").
+  // triggers no recompute, so it creates no row (only bumps "the existing row").
   const d = mkRule({
     project: TL_PROJECT4,
     externalIdPrefix: "tl-verdict-d",

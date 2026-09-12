@@ -14,7 +14,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -30,15 +32,22 @@ const LOCAL_SETTINGS = "components/harness/local-settings.tsx";
 
 const CONNECT_LOVABLE_SENTENCE =
   "Harness reads your chats and Knowledge through Lovable's MCP. Reading and writing Knowledge uses no credits.";
-const SCHEDULE_SENTENCE = "Syncing reads your Lovable chats and Knowledge. It uses no Lovable credits and no AI.";
+const SCHEDULE_SENTENCE =
+  "Syncing reads your Lovable chats and Knowledge. It uses no Lovable credits and no AI.";
 const APPROVAL_SENTENCE = "Nothing is written to Lovable until you approve it here.";
 
 test("projects.tsx and settings.tsx switch on runtime mode, hosted by default while loading", () => {
   const projects = codeOnly(readApp(PROJECTS_ROUTE));
   assert.match(projects, /mode === "local" \? <LocalProjects/);
   assert.match(projects, /<HostedProjects/);
-  assert.match(projects, /import \{ HostedProjects \} from "@\/components\/harness\/hosted-projects";/);
-  assert.match(projects, /import \{ LocalProjects \} from "@\/components\/harness\/local-projects";/);
+  assert.match(
+    projects,
+    /import \{ HostedProjects \} from "@\/components\/harness\/hosted-projects";/,
+  );
+  assert.match(
+    projects,
+    /import \{ LocalProjects \} from "@\/components\/harness\/local-projects";/,
+  );
   assert.match(projects, /const mode = runtime\.data\?\.mode;/);
   // validateSearch/head stay on the route file
   assert.match(projects, /validateSearch:/);
@@ -47,7 +56,10 @@ test("projects.tsx and settings.tsx switch on runtime mode, hosted by default wh
   const settings = codeOnly(readApp(SETTINGS_ROUTE));
   assert.match(settings, /mode === "local" \? <LocalSettings/);
   assert.match(settings, /<HostedSettings/);
-  assert.match(settings, /import \{ LocalSettings \} from "@\/components\/harness\/local-settings";/);
+  assert.match(
+    settings,
+    /import \{ LocalSettings \} from "@\/components\/harness\/local-settings";/,
+  );
   assert.match(settings, /const mode = runtime\.data\?\.mode;/);
 });
 
@@ -88,8 +100,14 @@ test("hosted-projects.tsx carries the moved-out hosted Projects page unchanged i
 
   // moved out of the route file -- projects.tsx no longer renders the table itself
   const projects = codeOnly(readApp(PROJECTS_ROUTE));
-  assert.ok(!/Write workspace Knowledge/.test(projects), "the hosted table body should live in hosted-projects.tsx only");
-  assert.ok(!/supabase\.from\(/.test(projects), "the route file no longer talks to Supabase directly");
+  assert.ok(
+    !/Write workspace Knowledge/.test(projects),
+    "the hosted table body should live in hosted-projects.tsx only",
+  );
+  assert.ok(
+    !/supabase\.from\(/.test(projects),
+    "the route file no longer talks to Supabase directly",
+  );
 });
 
 test("local-projects.tsx: connection card, sync card, allowed switch, connect flow, only the client helpers", () => {
@@ -100,7 +118,11 @@ test("local-projects.tsx: connection card, sync card, allowed switch, connect fl
     assert.ok(raw.includes(text), `local-projects.tsx missing "${text}"`);
   }
   assert.match(raw, /uses no credits/);
-  assert.equal(count(raw, CONNECT_LOVABLE_SENTENCE), 1, "the exact MCP/credits sentence appears exactly once");
+  assert.equal(
+    count(raw, CONNECT_LOVABLE_SENTENCE),
+    1,
+    "the exact MCP/credits sentence appears exactly once",
+  );
 
   // sync card: last-run line built from last_run.counts, using the count
   // keys the executor actually writes (see harness/src/executor/beats.ts runAll)
@@ -130,7 +152,10 @@ test("local-projects.tsx: connection card, sync card, allowed switch, connect fl
 
   // only the local Harness client helpers -- no raw fetch, no Supabase, no Lovable
   assert.ok(!/\bfetch\(/.test(code), "local-projects.tsx must not call fetch directly");
-  assert.ok(!/supabase|lovable\.dev|callApi\(/i.test(code), "local-projects.tsx must not talk to Supabase or Lovable directly");
+  assert.ok(
+    !/supabase|lovable\.dev|callApi\(/i.test(code),
+    "local-projects.tsx must not talk to Supabase or Lovable directly",
+  );
   assert.match(code, /from "@\/lib\/improvements-client"/);
 
   // credits only in the one approved sentence
@@ -184,7 +209,10 @@ test("local-settings.tsx: five sections with the exact sentences, schedule and c
 
   // only the local Harness client helpers
   assert.ok(!/\bfetch\(/.test(code), "local-settings.tsx must not call fetch directly");
-  assert.ok(!/supabase|lovable\.dev|callApi\(/i.test(code), "local-settings.tsx must not talk to Supabase or Lovable directly");
+  assert.ok(
+    !/supabase|lovable\.dev|callApi\(/i.test(code),
+    "local-settings.tsx must not talk to Supabase or Lovable directly",
+  );
   assert.match(code, /from "@\/lib\/improvements-client"/);
   assert.match(code, /postExecutor\(/);
 

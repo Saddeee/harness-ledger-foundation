@@ -17,7 +17,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -129,7 +131,9 @@ test("skills.tsx: heading, read-only line, per-skill fields, history, empty stat
   assert.match(code, /<h1[^>]*>Skills<\/h1>/);
   assert.ok(raw.includes("Harness reads your workspace Skills; it does not write them yet."));
   assert.ok(
-    raw.includes("Your workspace has no Skills yet. Harness will show them here as soon as it reads one."),
+    raw.includes(
+      "Your workspace has no Skills yet. Harness will show them here as soon as it reads one.",
+    ),
   );
 
   // per-skill: name, description, last changed, collapsed content; a link to
@@ -157,7 +161,9 @@ test("skills.tsx: heading, read-only line, per-skill fields, history, empty stat
   assert.match(code, /skillsQueryOptions/);
   assert.ok(!/\bfetch\(/.test(code), "skills.tsx must not call fetch directly");
   assert.ok(
-    !/fetchImprovements|postImprovementAction|fetchProjects\(|postProjects\(|fetchExecutor\(|fetchKnowledge/.test(code),
+    !/fetchImprovements|postImprovementAction|fetchProjects\(|postProjects\(|fetchExecutor\(|fetchKnowledge/.test(
+      code,
+    ),
     "skills.tsx only uses the skills client helper",
   );
 });
@@ -222,7 +228,13 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
 
   // section order: Sync schedule, Knowledge limit, AI analysis,
   // Defaults for projects, Approval
-  const order = ["Sync schedule", "Knowledge limit", "AI analysis", "Defaults for projects", "Approval"];
+  const order = [
+    "Sync schedule",
+    "Knowledge limit",
+    "AI analysis",
+    "Defaults for projects",
+    "Approval",
+  ];
   let last = -1;
   for (const marker of order) {
     const at = raw.indexOf(`>${marker}<`);
@@ -273,7 +285,10 @@ test("local-projects.tsx: expand control, max active rules, auto-write switch, p
   assert.match(code, /use default \(\$\{defaultMaxActiveRules\}\)/);
   assert.match(code, /action: "project_settings"/);
   assert.match(code, /lovable_project_id: projectId/);
-  assert.match(code, /max_active_rules:\s*maxActiveRules\.trim\(\) === "" \? null : Number\(maxActiveRules\)/);
+  assert.match(
+    code,
+    /max_active_rules:\s*maxActiveRules\.trim\(\) === "" \? null : Number\(maxActiveRules\)/,
+  );
   assert.match(code, /auto_write: autoWrite/);
 
   // uses `settings` from the projects GET
@@ -298,7 +313,10 @@ test("local-projects.tsx: 'credit' still appears only in the one MCP sentence", 
 
 test("improvement.tsx AddConfirm: over_rules disables confirm and shows the retire-a-rule alert", () => {
   const detail = codeOnly(readApp(DETAIL));
-  const confirm = detail.slice(detail.indexOf("function AddConfirm"), detail.indexOf("function SkipConfirm"));
+  const confirm = detail.slice(
+    detail.indexOf("function AddConfirm"),
+    detail.indexOf("function SkipConfirm"),
+  );
 
   assert.match(detail, /const overRules = preview\?\.over_rules === true;/);
   assert.match(confirm, /confirmDisabled=\{overCap \|\| overRules \|\| choice == null\}/);
@@ -336,22 +354,23 @@ test("only the six local harness routes are fetched anywhere in the touched page
     const code = codeOnly(readApp(page));
     const targets = [...code.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]);
     for (const t of targets) {
-      assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects|skills)$/, `${page} fetches ${t}`);
+      assert.match(
+        t!,
+        /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects|skills)$/,
+        `${page} fetches ${t}`,
+      );
     }
   }
   const client = codeOnly(readApp(CLIENT));
   const targets = new Set([...client.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]));
-  assert.deepEqual(
-    [...targets].sort(),
-    [
-      "/api/public/harness/executor",
-      "/api/public/harness/improvements",
-      "/api/public/harness/knowledge",
-      "/api/public/harness/projects",
-      "/api/public/harness/runtime",
-      "/api/public/harness/skills",
-    ],
-  );
+  assert.deepEqual([...targets].sort(), [
+    "/api/public/harness/executor",
+    "/api/public/harness/improvements",
+    "/api/public/harness/knowledge",
+    "/api/public/harness/projects",
+    "/api/public/harness/runtime",
+    "/api/public/harness/skills",
+  ]);
 });
 
 // ---- 10. No internal vocabulary, no spec/Claude Code mentions ----
@@ -392,7 +411,10 @@ test("no internal vocabulary or spec/Claude Code mentions in the Round 3 Task 3b
 
 test("improvements-client.ts: KnowledgePreview carries active_rules_count and over_rules", () => {
   const client = codeOnly(readApp(CLIENT));
-  const preview = client.slice(client.indexOf("export type KnowledgePreview"), client.indexOf("export type KnowledgeVersion"));
+  const preview = client.slice(
+    client.indexOf("export type KnowledgePreview"),
+    client.indexOf("export type KnowledgeVersion"),
+  );
   assert.match(preview, /active_rules_count: number;/);
   assert.match(preview, /over_rules: boolean;/);
 });
@@ -497,7 +519,10 @@ test("lovableStatusLine: autoWriteOff explains a pending/none write ahead of the
   );
   // still overridden by the more specific states
   assert.equal(
-    ux.lovableStatusLine({ write_status: "written", written_at: "2026-09-10T08:00:00Z" }, { autoWriteOff: true }),
+    ux.lovableStatusLine(
+      { write_status: "written", written_at: "2026-09-10T08:00:00Z" },
+      { autoWriteOff: true },
+    ),
     "Added to Lovable, 10 Sep",
   );
   assert.equal(
@@ -524,8 +549,14 @@ test("improvement.tsx: DecisionCard computes autoWriteOff only for project-desti
 
 test("improvements-client.ts: LovableInfo carries auto_write, defaulting true when lovable is absent", () => {
   const client = codeOnly(readApp(CLIENT));
-  const info = client.slice(client.indexOf("export type LovableInfo"), client.indexOf("export type Improvement"));
+  const info = client.slice(
+    client.indexOf("export type LovableInfo"),
+    client.indexOf("export type Improvement"),
+  );
   assert.match(info, /auto_write: boolean;/);
-  const lovableOf = client.slice(client.indexOf("export function lovableOf"), client.indexOf("export function groupOf"));
+  const lovableOf = client.slice(
+    client.indexOf("export function lovableOf"),
+    client.indexOf("export function groupOf"),
+  );
   assert.match(lovableOf, /auto_write: true,/);
 });

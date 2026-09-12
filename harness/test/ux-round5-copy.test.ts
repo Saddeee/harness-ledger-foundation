@@ -156,8 +156,8 @@ test("no user-facing 'improvement' word survives in the guarded pages", () => {
 
   for (const rel of GUARDED) {
     const stripped = stripIdentifiers(codeOnly(readApp(rel)));
-    const hits = [...stripped.matchAll(/[^\n]{0,40}\bimprovements?\b[^\n]{0,40}/gi)].map(
-      (m) => m[0].trim(),
+    const hits = [...stripped.matchAll(/[^\n]{0,40}\bimprovements?\b[^\n]{0,40}/gi)].map((m) =>
+      m[0].trim(),
     );
     assert.deepEqual(
       hits,

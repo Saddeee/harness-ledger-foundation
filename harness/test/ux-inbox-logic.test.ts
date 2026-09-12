@@ -21,7 +21,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -37,7 +39,10 @@ test("Inbox: no decidedIds, no 'Hide decided', no 'Nothing left to decide' anywh
   const inbox = readApp(INBOX);
   assert.ok(!/decidedIds/.test(inbox), "decidedIds must be gone from inbox.tsx");
   assert.ok(!/Hide decided/.test(inbox), "'Hide decided' must be gone from inbox.tsx");
-  assert.ok(!/Nothing left to decide/.test(inbox), "'Nothing left to decide' must be gone from inbox.tsx");
+  assert.ok(
+    !/Nothing left to decide/.test(inbox),
+    "'Nothing left to decide' must be gone from inbox.tsx",
+  );
 });
 
 test("Inbox: a decided item becomes a confirmation row with Undo and Open", () => {
@@ -46,14 +51,23 @@ test("Inbox: a decided item becomes a confirmation row with Undo and Open", () =
   assert.match(inbox, /Open/);
   // Undo reopens through the shared postImprovementAction helper, not a
   // fetch call authored directly in inbox.tsx.
-  assert.match(inbox, /import\s*\{[^}]*\bpostImprovementAction\b[^}]*\}\s*from\s*"@\/lib\/improvements-client"/);
+  assert.match(
+    inbox,
+    /import\s*\{[^}]*\bpostImprovementAction\b[^}]*\}\s*from\s*"@\/lib\/improvements-client"/,
+  );
   assert.match(inbox, /postImprovementAction\(\{\s*action:\s*"reopen",\s*id\s*\}\)/);
-  assert.ok(!/fetch\(/.test(inbox), "inbox.tsx must not call fetch directly -- it goes through the shared client");
+  assert.ok(
+    !/fetch\(/.test(inbox),
+    "inbox.tsx must not call fetch directly -- it goes through the shared client",
+  );
   // "Open" routes to /ledger with the item preselected.
-  assert.match(inbox, /navigate\(\{\s*to:\s*"\/ledger",\s*search:\s*\{\s*improvement:\s*\w+(?:\.\w+)?\s*\}\s*\}\)/);
+  assert.match(
+    inbox,
+    /navigate\(\{\s*to:\s*"\/ledger",\s*search:\s*\{\s*improvement:\s*\w+(?:\.\w+)?\s*\}\s*\}\)/,
+  );
 });
 
-test("Inbox: action \"reopen\" is only ever posted through postImprovementAction, never a raw fetch", () => {
+test('Inbox: action "reopen" is only ever posted through postImprovementAction, never a raw fetch', () => {
   const inbox = readApp(INBOX);
   const lines = inbox.split("\n");
   const reopenLines = lines
@@ -72,7 +86,10 @@ test("Inbox: action \"reopen\" is only ever posted through postImprovementAction
 
 test("improvement.tsx: no ProcessProgress stage bar", () => {
   const detail = readApp(DETAIL);
-  assert.ok(!/<ProcessProgress/.test(detail), "the stage bar must be removed from ImprovementDetail");
+  assert.ok(
+    !/<ProcessProgress/.test(detail),
+    "the stage bar must be removed from ImprovementDetail",
+  );
   assert.ok(!/ProcessProgress/.test(detail), "no remaining reference to ProcessProgress at all");
 });
 
@@ -106,21 +123,30 @@ test("Detail view for a just-decided item still renders the decided card (chip +
     /\) : \(\s*<div className="flex flex-wrap items-center gap-2">\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>/,
   );
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
-  const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
+  const decided = detail.slice(
+    detail.indexOf("function DecidedStatus"),
+    detail.indexOf("export function DecisionCard"),
+  );
   assert.match(decided, /decisionSentence\(/, "the status sentence is decisionSentence's output");
 });
 
 // ---- Constraints unchanged by this fix ----
 
-test("unchanged: exactly two role=\"radio\" buttons in AddConfirm", () => {
+test('unchanged: exactly two role="radio" buttons in AddConfirm', () => {
   const detail = codeOnly(readApp(DETAIL));
-  const confirm = detail.slice(detail.indexOf("function AddConfirm"), detail.indexOf("function SkipConfirm"));
+  const confirm = detail.slice(
+    detail.indexOf("function AddConfirm"),
+    detail.indexOf("function SkipConfirm"),
+  );
   assert.equal(count(confirm, 'role="radio"'), 2, "exactly two radio buttons");
 });
 
 test("unchanged: 'Lovable credits' <= 2 and 'Harness analysis' exactly 1 on the detail page", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.ok(count(detail, "Lovable credits") <= 2, `Lovable credits x${count(detail, "Lovable credits")}`);
+  assert.ok(
+    count(detail, "Lovable credits") <= 2,
+    `Lovable credits x${count(detail, "Lovable credits")}`,
+  );
   assert.equal(count(detail, "Harness analysis"), 1);
 });
 
@@ -137,6 +163,10 @@ test("unchanged: only local harness routes are fetched, and inbox.tsx/improvemen
   for (const rel of [INBOX, DETAIL]) {
     const code = codeOnly(readApp(rel));
     const targets = [...code.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]);
-    assert.equal(targets.length, 0, `${rel} must not call fetch directly -- it goes through the shared client`);
+    assert.equal(
+      targets.length,
+      0,
+      `${rel} must not call fetch directly -- it goes through the shared client`,
+    );
   }
 });

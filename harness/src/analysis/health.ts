@@ -86,11 +86,18 @@ function matchesFailure(
  * once per episode, whatever the source -- an episode already scored hurt
  * by the tag-based scan is left alone), and a `followed` row adds one more
  * applicable/helped when its episode wasn't already counted by the
- * tag-based scan. contradicted_by_rule_id (written
- * elsewhere, by the miner) and snoozed_until (a human "Keep" decision, Task
- * C2) are carried forward from whatever rule_health already has for the
- * rule rather than recomputed here -- this function only ever produces the
- * four count/date fields and the status they imply.
+ * tag-based scan. With the "user verdicts" source on (Round 5 fix wave item
+ * 1 / spec §5.2), the rule's own latest whole-rule verdict
+ * (store.latestRuleVerdict) adds one more hurt when it is "did_not_help"
+ * and was recorded after this same window started -- a "helped" verdict
+ * contributes nothing here (its snooze is a carried-forward stored field,
+ * not a count); this is what makes a verdict's hurt bump durable across a
+ * recompute, instead of a caller writing it straight into the stored row
+ * only for the next recompute to overwrite it. contradicted_by_rule_id
+ * (written elsewhere, by the miner) and snoozed_until (a human "Keep"
+ * decision, Task C2) are carried forward from whatever rule_health already
+ * has for the rule rather than recomputed here -- this function only ever
+ * produces the four count/date fields and the status they imply.
  *
  * Status: `retire_suggested` when applicable_tasks >= 3 and hurt > helped,
  * or the rule is contradicted, or it is unused (its last applicable episode
@@ -200,6 +207,33 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
           if (!lastApplicableAt || episode.started_at > lastApplicableAt) {
             lastApplicableAt = episode.started_at;
           }
+        }
+      }
+    }
+
+    // Round 5 fix wave item 1 / spec §5.2: a whole-rule verdict from the
+    // Instructions page's verdict buttons is a derived input too -- only
+    // the latest one for this rule counts, only "did_not_help" adds
+    // anything (a "helped" verdict's effect is the carried-forward
+    // snoozed_until below, not a count), only when Settings › Evidence has
+    // the "user verdicts" source on, and only when it was recorded after
+    // this rule's own episode window started (the same `start` the episode
+    // scan above uses) -- a verdict left over from before a "Re-add" must
+    // not carry into the rule's new life, same reasoning as windowStart
+    // above. There's no episode behind a verdict, so unlike a `broke`
+    // adherence row this can't unconditionally add one to
+    // applicable_tasks; it adds one only if that's what it takes to keep
+    // hurt <= applicable_tasks.
+    if (sources.verdicts) {
+      const verdict = store.latestRuleVerdict(rule.id);
+      if (
+        verdict &&
+        verdict.verdict === "did_not_help" &&
+        new Date(verdict.created_at).getTime() > new Date(start).getTime()
+      ) {
+        hurt += 1;
+        if (hurt > applicableTasks) {
+          applicableTasks += 1;
         }
       }
     }

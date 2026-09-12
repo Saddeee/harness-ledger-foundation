@@ -96,7 +96,7 @@ const LLM_PROVIDERS: { value: LlmProvider; label: string }[] = [
 function isApiProvider(p: LlmProvider): p is ApiLlmProvider {
   return p !== "claude_code";
 }
-// provider_ready checks whichever provider the classifier/miner roles
+// provider_ready checks whichever provider the classifier/rule_writer roles
 // actually use, not specifically the "Key for" dropdown above -- so it only
 // tells us about Claude Code when it's ready, or when it's the provider the
 // reason itself names (e.g. "Claude Code was not found on this machine.").

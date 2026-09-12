@@ -18,7 +18,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -50,7 +52,10 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
   // confirm disabled until a choice is made (Round 3 §5 also disables it
   // when the project is already over its active-rule cap)
   assert.match(confirm, /confirmDisabled=\{overCap \|\| overRules \|\| choice == null\}/);
-  assert.match(confirm, /confirmLabel=\{wantsTest \? "Save for testing" : preview \? "Add" : "Save choice"\}/);
+  assert.match(
+    confirm,
+    /confirmLabel=\{wantsTest \? "Save for testing" : preview \? "Add" : "Save choice"\}/,
+  );
   // the choice resets when the dialog closes
   assert.match(confirm, /onOpenChange=\{/);
   assert.match(confirm, /setChoice\(null\)/);
@@ -62,10 +67,7 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
 
 test("AddConfirm help text: exact copy for each choice", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(
-    detail,
-    /Harness writes this exact text at the next sync\. Uses no credits\./,
-  );
+  assert.match(detail, /Harness writes this exact text at the next sync\. Uses no credits\./);
   assert.match(
     detail,
     /Harness runs the same request with and without this instruction in a temporary copy of the project and shows you the difference before anything is written\./,
@@ -79,10 +81,7 @@ test("AddConfirm help text: exact copy for each choice", () => {
 
 test("SAVED_LINE and the new toasts", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(
-    detail,
-    /const SAVED_LINE = "Added — will be written at the next sync\.";/,
-  );
+  assert.match(detail, /const SAVED_LINE = "Added — will be written at the next sync\.";/);
   assert.match(detail, /"Skipped"/);
   assert.ok(!/Uses no Lovable credits/.test(detail), "the old consequence line is gone");
   assert.match(detail, /"You can restore the previous version at any time\."/);
@@ -135,7 +134,10 @@ test("Inbox: decided-this-visit items become a confirmation row in place, count 
   const inbox = codeOnly(readApp(INBOX));
   assert.match(inbox, /useState<Map<number, string>>/);
   // list = pending plus decided-this-visit (confirmed), taken from `all` (original order)
-  assert.match(inbox, /all\.filter\(\(i\) => i\.decision\.status === "pending" \|\| confirmed\.has\(i\.id\)\)/);
+  assert.match(
+    inbox,
+    /all\.filter\(\(i\) => i\.decision\.status === "pending" \|\| confirmed\.has\(i\.id\)\)/,
+  );
   // the count line still counts pending only, and only appears when there's something pending
   assert.match(inbox, /pending\.length > 0/);
   assert.match(inbox, /"One suggestion is waiting for your decision\."/);
@@ -174,6 +176,9 @@ test("Landing page renders LANDING_INTRO; login has no 'Internal tool' and its s
 
 test("cost accounting stays honest: 'Lovable credits' <= 2 and 'Harness analysis' == 1 on the detail page", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.ok(count(detail, "Lovable credits") <= 2, `Lovable credits x${count(detail, "Lovable credits")}`);
+  assert.ok(
+    count(detail, "Lovable credits") <= 2,
+    `Lovable credits x${count(detail, "Lovable credits")}`,
+  );
   assert.equal(count(detail, "Harness analysis"), 1);
 });

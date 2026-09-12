@@ -546,7 +546,7 @@ test("recomputeRuleHealth: a matching correction does not count as hurt when evi
   resetEvidenceSources();
 });
 
-test("verdict action: a did_not_help verdict bumps rule_health.hurt only when evidence_sources.verdicts is enabled", () => {
+test("verdict action: a did_not_help verdict bumps rule_health.hurt only when evidence_sources.verdicts is enabled, and the bump survives a later recompute (Round 5 fix wave item 1: derived, not mutated)", () => {
   const ruleId = makeLiveRule({
     predictedFailure: "a rule scored only to exercise the verdict-driven hurt bump",
     failureSignature: "verdict-gate-signature",
@@ -557,11 +557,25 @@ test("verdict action: a did_not_help verdict bumps rule_health.hurt only when ev
   assert.equal(store.getRuleHealth(ruleId)!.hurt, 0);
 
   assert.equal(store.getEvidenceSources().verdicts, true, "default has verdicts enabled");
+  // The action itself now just records the verdict and calls
+  // recomputeRuleHealth (health.ts reads it back via store.latestRuleVerdict)
+  // instead of writing hurt+1 into the stored row directly, so the bump
+  // shows up immediately here...
   imp.improvementAction({ action: "verdict", rule_id: ruleId, verdict: "did_not_help" });
   assert.equal(
     store.getRuleHealth(ruleId)!.hurt,
     1,
     "hurt bumps by one when verdicts evidence is enabled",
+  );
+
+  // ...and, being a derived input rather than a one-off mutation, survives
+  // an unrelated later recompute (an executor sync, an analysis run) intact
+  // instead of that recompute clobbering it back to 0.
+  recomputeRuleHealth(NOW);
+  assert.equal(
+    store.getRuleHealth(ruleId)!.hurt,
+    1,
+    "a later recompute does not lose the verdict-driven hurt",
   );
 
   store.setSettings({
@@ -668,6 +682,68 @@ test("recomputeRuleHealth: a broke adherence row counts hurt at most once per ep
     1,
     "the broke row is ignored with adherence disabled; the correction alone still counts",
   );
+
+  resetEvidenceSources();
+});
+
+// ---- Round 5 fix wave item 1: a verdict's hurt is a derived input to
+// recomputeRuleHealth, so it survives being recomputed instead of a
+// recompute silently clobbering a hurt+1 some earlier caller wrote
+// directly into the stored row. ----
+
+test("recomputeRuleHealth: a did_not_help verdict survives recompute", () => {
+  const ruleId = makeLiveRule({
+    predictedFailure: "a rule scored only to exercise the verdict surviving recompute",
+    failureSignature: "verdict-survives-recompute-signature",
+    scopeTags: ["verdict-survives-recompute-tag"], // no fixture episode uses this tag
+    writtenAt: RULE_WRITTEN_AT,
+  });
+  recomputeRuleHealth(NOW);
+  assert.equal(store.getRuleHealth(ruleId)!.hurt, 0, "no episodes, no verdict yet -- hurt is 0");
+
+  store.recordRuleVerdict({ rule_id: ruleId, verdict: "did_not_help" });
+
+  recomputeRuleHealth(NOW);
+  assert.equal(
+    store.getRuleHealth(ruleId)!.hurt,
+    1,
+    "recomputeRuleHealth reads the verdict back itself, so hurt reflects it right away",
+  );
+
+  recomputeRuleHealth(NOW);
+  assert.equal(
+    store.getRuleHealth(ruleId)!.hurt,
+    1,
+    "recomputing a second time does not count the same verdict twice -- it survives, exactly once",
+  );
+
+  resetEvidenceSources();
+});
+
+test("recomputeRuleHealth: a did_not_help verdict contributes nothing when evidence_sources.verdicts is disabled", () => {
+  const ruleId = makeLiveRule({
+    predictedFailure: "a rule scored only to exercise the verdicts-evidence-off gate",
+    failureSignature: "verdict-off-signature",
+    scopeTags: ["verdict-off-tag"], // no fixture episode uses this tag
+    writtenAt: RULE_WRITTEN_AT,
+  });
+  store.recordRuleVerdict({ rule_id: ruleId, verdict: "did_not_help" });
+
+  store.setSettings({
+    evidence_sources: JSON.stringify({
+      observed: true,
+      adherence: true,
+      verdicts: false,
+      paired: false,
+    }),
+  });
+  recomputeRuleHealth(NOW);
+  assert.equal(
+    store.getRuleHealth(ruleId)!.hurt,
+    0,
+    "with verdicts evidence disabled, the did_not_help verdict adds no hurt",
+  );
+  assert.equal(store.getRuleHealth(ruleId)!.applicable_tasks, 0);
 
   resetEvidenceSources();
 });

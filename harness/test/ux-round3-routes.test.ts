@@ -16,7 +16,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -82,7 +84,10 @@ test("executor.ts: GET returns llm + defaults, POST supports llm_settings/llm_ke
   assert.match(code, /monthly_token_budget:\s*Number\(settings\.llm_monthly_token_budget\)/);
   assert.match(code, /tokens_this_month:\s*adapter\.sumLlmTokensThisMonth\(\)/);
   assert.match(code, /spent_usd:\s*adapter\.sumLlmCostThisMonth\(\)/);
-  assert.match(code, /defaults:\s*\{\s*max_active_rules:\s*Number\(settings\.max_active_rules\)\s*\}/);
+  assert.match(
+    code,
+    /defaults:\s*\{\s*max_active_rules:\s*Number\(settings\.max_active_rules\)\s*\}/,
+  );
 
   for (const action of ["llm_settings", "llm_key", "llm_key_remove", "defaults"]) {
     assert.match(code, new RegExp(`action === "${action}"`), `missing POST action ${action}`);
@@ -91,7 +96,11 @@ test("executor.ts: GET returns llm + defaults, POST supports llm_settings/llm_ke
   assert.match(code, /adapter\.removeLlmKey\(provider\)/);
   assert.match(code, /key\.length === 0/, "llm_key must reject an empty key");
   assert.match(code, /key\.length > 400/, "llm_key must reject a key over 400 chars");
-  assert.match(code, /isLlmProvider\(/, "llm_key/llm_key_remove must validate provider against the allowed set");
+  assert.match(
+    code,
+    /isLlmProvider\(/,
+    "llm_key/llm_key_remove must validate provider against the allowed set",
+  );
 
   // Never returns a raw key -- only has_key/last4, sourced only from
   // llmKeyStatus()/keyStatus, never a route-authored `key:`/`has_key:` field.
@@ -128,18 +137,18 @@ test("improvements-client.ts: fetchSkills/skillsQueryOptions and the new Round 3
   assert.match(client, /llm\?:\s*ExecutorLlm/);
   assert.match(client, /defaults\?:\s*ExecutorDefaults/);
   assert.match(client, /settings:\s*ProjectSettings/);
-  assert.ok(!/KnowledgeSkills/.test(client), "the old KnowledgeSkills type must be gone from the knowledge contract");
+  assert.ok(
+    !/KnowledgeSkills/.test(client),
+    "the old KnowledgeSkills type must be gone from the knowledge contract",
+  );
 
   const targets = new Set([...client.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]));
-  assert.deepEqual(
-    [...targets].sort(),
-    [
-      "/api/public/harness/executor",
-      "/api/public/harness/improvements",
-      "/api/public/harness/knowledge",
-      "/api/public/harness/projects",
-      "/api/public/harness/runtime",
-      "/api/public/harness/skills",
-    ],
-  );
+  assert.deepEqual([...targets].sort(), [
+    "/api/public/harness/executor",
+    "/api/public/harness/improvements",
+    "/api/public/harness/knowledge",
+    "/api/public/harness/projects",
+    "/api/public/harness/runtime",
+    "/api/public/harness/skills",
+  ]);
 });
