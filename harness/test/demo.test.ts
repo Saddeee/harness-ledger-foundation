@@ -507,3 +507,246 @@ test("removeDemoData with nothing loaded is a harmless no-op", () => {
   assert.equal(result.removed, false);
   assert.deepEqual(result.counts, {});
 });
+
+// ---- Round 6 Task 5: demo isolation (spec §5 / spec §0's incident) ----
+// Each test below is a self-contained --add / ... / --remove cycle: demo
+// data is not loaded when it starts, and is gone again (or its residue is
+// cancelled, never pending) when it ends.
+
+function pendingVersionCount(): number {
+  return (
+    db.prepare(`SELECT COUNT(*) as n FROM knowledge_versions WHERE status = 'pending'`).get() as {
+      n: number;
+    }
+  ).n;
+}
+
+test("after --add, retiring a demo rule via improvementAction then --remove leaves zero pending versions and zero versions referencing the demo rule, while a real pending version seeded before --add survives", () => {
+  assert.equal(demo.demoLoaded(), false, "demo must not already be loaded going into this test");
+
+  // A real, non-demo pending write, seeded BEFORE --add -- must survive both
+  // the demo retire and the demo remove untouched.
+  const realPendingEpisode = store.createTaskEpisode({
+    project_id: REAL_PROJECT,
+    title: "A second real episode, not part of the demo",
+    provenance: "manual",
+    evidence_history_item_ids: [realItem.id],
+  }) as { id: number };
+  const realPendingCandidate = store.createCorrectionCandidate({
+    task_episode_id: realPendingEpisode.id,
+    classification: "other",
+    is_correction: true,
+    summary: "real summary 2, not part of the demo",
+    evidence_history_item_ids: [realItem.id],
+  }) as { id: number };
+  const realPendingLearning = store.createLearning({
+    correction_candidate_id: realPendingCandidate.id,
+    observed_problem: "p",
+    desired_behavior: "d",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "real-user",
+  }) as { id: number };
+  const realPendingRule = store.createRule({
+    learning_id: realPendingLearning.id,
+    correction_candidate_id: realPendingCandidate.id,
+    instruction: "A second real rule, with its own pending write, seeded before --add.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "f",
+    ownership: "harness",
+    created_by: "real-user",
+  }) as { id: number };
+  const realBaseDoc = "# Real Project Knowledge\n\nSeeded before --add.\n";
+  const realPendingVersion = store.createPendingKnowledgeVersion({
+    rule_id: realPendingRule.id,
+    target: "project",
+    project_id: REAL_PROJECT,
+    previous_content: realBaseDoc,
+    new_content: `${realBaseDoc}\n<!-- a real user's own pending write, seeded before --add -->\n`,
+    rule_ids: [realPendingRule.id],
+    actor: "real-user",
+    reason: "real: seeded before --add, must survive",
+  }) as { id: number };
+
+  assert.equal(pendingVersionCount(), 1, "only the real pending version exists so far");
+
+  const addResult = demo.addDemoData();
+  assert.equal(addResult.added, true);
+  // --add's own invariant (asserted precisely in the very first --add test
+  // above) leaves no demo-rule pending write -- so the real one seeded above
+  // must still be the only pending row.
+  assert.equal(pendingVersionCount(), 1);
+
+  const demoRuleRow = db
+    .prepare(
+      `SELECT id FROM rules WHERE created_by = 'demo' AND state != 'retired' ORDER BY id LIMIT 1`,
+    )
+    .get() as { id: number } | undefined;
+  assert.ok(
+    demoRuleRow,
+    "at least one live (not already retired) demo rule must exist after --add",
+  );
+  const demoRuleId = demoRuleRow!.id;
+
+  improvements.improvementAction({ action: "retire", rule_id: demoRuleId });
+  assert.equal(
+    (store.getRule(demoRuleId) as { rule: { state: string } }).rule.state,
+    "retired",
+    "the demo rule itself is still retired -- only the Knowledge write is skipped",
+  );
+  // Round 6 Task 5's whole point: retiring a demo rule stages NOTHING --
+  // spec §0's poisoned recompose (rule_id: null, rule_ids_json naming the
+  // demo rule) never gets created in the first place.
+  assert.equal(pendingVersionCount(), 1, "retiring a demo rule must not stage anything");
+
+  const removeResult = demo.removeDemoData();
+  assert.equal(removeResult.removed, true);
+
+  assert.equal(
+    pendingVersionCount(),
+    1,
+    "--remove must leave exactly the one real pending version, and nothing pending from the demo",
+  );
+  const stillReferencingDemoRule = db
+    .prepare(
+      `SELECT id FROM knowledge_versions WHERE rule_id = ? OR (
+         rule_ids_json IS NOT NULL AND rule_ids_json LIKE '%' || ? || '%'
+       )`,
+    )
+    .all(demoRuleId, demoRuleId) as { id: number }[];
+  // A cheap LIKE pre-filter, then an exact JSON membership check -- a LIKE
+  // match alone could false-positive on a numeric substring (e.g. rule 12
+  // inside "112").
+  const trulyReferencing = stillReferencingDemoRule.filter((row) => {
+    const v = store.getKnowledgeVersion(row.id);
+    if (!v) return false;
+    if (v.rule_id === demoRuleId) return true;
+    try {
+      return (JSON.parse(v.rule_ids_json) as unknown[]).includes(demoRuleId);
+    } catch {
+      return false;
+    }
+  });
+  assert.deepEqual(
+    trulyReferencing,
+    [],
+    "no knowledge_version anywhere may still reference the retired demo rule after --remove",
+  );
+
+  const survivor = store.getKnowledgeVersion(realPendingVersion.id);
+  assert.ok(survivor, "the real pending version must survive --remove");
+  assert.equal(survivor!.status, "pending");
+  assert.equal(
+    survivor!.new_content,
+    `${realBaseDoc}\n<!-- a real user's own pending write, seeded before --add -->\n`,
+  );
+});
+
+test("--remove cancels (not deletes) PENDING residue matching spec §0's two poisoned shapes: a target-level recompose naming a demo rule, and a real rule's write staged on a demo Knowledge snapshot", () => {
+  assert.equal(demo.demoLoaded(), false);
+  const addResult = demo.addDemoData();
+  assert.equal(addResult.added, true);
+
+  const demoRuleRow = db
+    .prepare(`SELECT id FROM rules WHERE created_by = 'demo' LIMIT 1`)
+    .get() as {
+    id: number;
+  };
+  const demoSnapshot = store.latestKnowledgeSnapshot("project", REAL_PROJECT);
+  assert.ok(demoSnapshot, "--add must have recorded at least one (demo) Knowledge snapshot");
+  const pendingBefore = pendingVersionCount();
+
+  // Shape 1 (spec §0's version 24): a retire-style target-level recompose,
+  // rule_id: null, rule_ids_json naming a demo rule -- built directly here
+  // to simulate residue left over from before this fix, since retireRule
+  // itself no longer creates this for a demo rule.
+  const poisonedRecompose = store.createPendingKnowledgeVersion({
+    rule_id: null,
+    target: "project",
+    project_id: REAL_PROJECT,
+    previous_content: "irrelevant base text",
+    new_content: "irrelevant recomposed text",
+    rule_ids: [demoRuleRow.id],
+    actor: "test-legacy-bug",
+    reason: "simulates residue from before the Round 6 Task 5 fix",
+  }) as { id: number };
+
+  // Shape 2 (spec §0's version 10): a REAL rule's write, staged on top of
+  // the demo's fake Knowledge (previous_content byte-identical to a demo
+  // snapshot) -- the rule_id here is real, not a demo rule.
+  const poisonedOnDemoSnapshot = store.createPendingKnowledgeVersion({
+    rule_id: realRule.id,
+    target: "project",
+    project_id: REAL_PROJECT,
+    previous_content: demoSnapshot!.content,
+    new_content: `${demoSnapshot!.content}\n<!-- composed on demo Knowledge -->\n`,
+    rule_ids: [realRule.id],
+    actor: "test-legacy-bug",
+    reason: "simulates a real rule composed on demo Knowledge before the Round 6 Task 5 fix",
+  }) as { id: number };
+
+  const removeResult = demo.removeDemoData();
+  assert.equal(removeResult.removed, true);
+  assert.equal(
+    removeResult.counts.knowledge_versions_cancelled,
+    2,
+    "both poisoned pending rows must be cancelled, not deleted",
+  );
+
+  const recompose = store.getKnowledgeVersion(poisonedRecompose.id);
+  assert.ok(recompose, "a cancelled row still exists -- it is evidence, not deleted");
+  assert.equal(recompose!.status, "cancelled");
+  assert.match(recompose!.error ?? "", /cancelled: demo data removed/);
+
+  const onSnapshot = store.getKnowledgeVersion(poisonedOnDemoSnapshot.id);
+  assert.ok(onSnapshot);
+  assert.equal(onSnapshot!.status, "cancelled");
+  assert.match(onSnapshot!.error ?? "", /cancelled: demo data removed/);
+  // The real rule ITSELF (not a demo row) is untouched -- only its poisoned
+  // version was swept.
+  assert.ok(db.prepare(`SELECT 1 FROM rules WHERE id = ?`).get(realRule.id));
+
+  assert.equal(
+    pendingVersionCount(),
+    pendingBefore,
+    "neither poisoned row is pending any more -- back to exactly what was pending before they were added",
+  );
+});
+
+test("--remove deletes (not cancels) already-terminal residue matching the same two poisoned shapes", () => {
+  assert.equal(demo.demoLoaded(), false);
+  const addResult = demo.addDemoData();
+  assert.equal(addResult.added, true);
+
+  const demoRuleRow = db
+    .prepare(`SELECT id FROM rules WHERE created_by = 'demo' LIMIT 1`)
+    .get() as {
+    id: number;
+  };
+
+  const poisonedRecompose = store.createPendingKnowledgeVersion({
+    rule_id: null,
+    target: "project",
+    project_id: REAL_PROJECT,
+    previous_content: "irrelevant base text 2",
+    new_content: "irrelevant recomposed text 2",
+    rule_ids: [demoRuleRow.id],
+    actor: "test-legacy-bug",
+  }) as { id: number };
+  store.markKnowledgeWriteFailed(poisonedRecompose.id, "simulated pre-existing failure");
+
+  const removeResult = demo.removeDemoData();
+  assert.equal(removeResult.removed, true);
+  assert.equal(
+    removeResult.counts.knowledge_versions_cancelled,
+    0,
+    "a non-pending row is deleted, not cancelled",
+  );
+  assert.equal(
+    store.getKnowledgeVersion(poisonedRecompose.id),
+    null,
+    "the terminal row is deleted",
+  );
+});

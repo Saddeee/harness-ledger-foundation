@@ -212,11 +212,13 @@ export async function snapshotSkills(
 
 type PendingWrite = {
   id: number;
+  rule_id: number | null;
   target: "project" | "workspace";
   project_id: string | null;
   workspace_id: string | null;
   previous_sha256: string;
   new_content: string;
+  rule_ids_json: string;
 };
 
 /**
@@ -250,17 +252,38 @@ async function writeAndVerify(
   return { written: after?.status === "written" };
 }
 
+// ---- Round 6 Task 5 ----
+// A pending version touches a demo rule either directly (rule_id is the
+// demo rule -- a plain accept/readd) or, for a retire recompose (rule_id:
+// null per improvements.ts's retireRule), only via rule_ids_json. Both
+// executeWrites and executeVersionNow must refuse to write either shape
+// (spec §5) -- the demo can never touch a real data path.
+function isDemoWrite(row: { rule_id: number | null; rule_ids_json: string }): boolean {
+  if (row.rule_id != null) return store.isDemoRuleId(row.rule_id);
+  return parseRuleIds(row.rule_ids_json).some((id) => store.isDemoRuleId(id));
+}
+// ---- end Round 6 Task 5 ----
+
 /**
  * Beat 4 — the two-beat write protocol, per pending `knowledge_versions` row:
  * read live, refuse to overwrite text the user never previewed, write, read
  * back, and let the store decide `written` vs `failed` from the read-back hash.
  */
-export async function executeWrites(
-  lovable: LovableReader & LovableWriter,
-): Promise<{ written: number; stale: number; failed: number; skipped_auto_write: number }> {
-  const counts = { written: 0, stale: 0, failed: 0, skipped_auto_write: 0 };
+export async function executeWrites(lovable: LovableReader & LovableWriter): Promise<{
+  written: number;
+  stale: number;
+  failed: number;
+  skipped_auto_write: number;
+  skipped_demo: number;
+}> {
+  const counts = { written: 0, stale: 0, failed: 0, skipped_auto_write: 0, skipped_demo: 0 };
 
   for (const row of store.listPendingKnowledgeWrites() as PendingWrite[]) {
+    // Round 6 Task 5: never write a version that touches a demo rule.
+    if (isDemoWrite(row)) {
+      counts.skipped_demo += 1;
+      continue;
+    }
     // A project with auto_write off is left entirely alone here: the write
     // stays staged (not stale, not failed) until the user turns it back on.
     // Workspace-target rows have no project_id and are never affected.
@@ -320,7 +343,14 @@ export async function executeWrites(
  * finish writing to Lovable, in the one-word form the UI switches on
  * (`src/lib/harness-ux.ts` turns each into the plain-language reason shown
  * on the card/toast — the human-readable text itself travels in `reason`). */
-export type WriteOutcomeKind = "not_connected" | "stale" | "rejected" | "no_snapshot" | "error";
+export type WriteOutcomeKind =
+  | "not_connected"
+  | "stale"
+  | "rejected"
+  | "no_snapshot"
+  | "error"
+  // Round 6 Task 5: the version's rule is demo data (spec §5).
+  | "demo";
 
 export type WriteOutcome =
   | { written: true; at: string; version_id: number }
@@ -383,6 +413,21 @@ export async function executeVersionNow(
       version_id: versionId,
       reason: row.error ?? `Knowledge version ${versionId} is ${row.status}, not pending`,
       kind: "error",
+    };
+  }
+
+  // Round 6 Task 5: defense in depth -- stagePendingWrite/retireRule/restore
+  // should never have staged this for a demo rule, but this beat is the
+  // last thing standing between any staged version and a real Lovable
+  // write, so it refuses too (spec §5).
+  if (isDemoWrite(row)) {
+    const reason = "This rule is demo data — Harness never writes it to Lovable";
+    const cancelled = store.markKnowledgeWriteCancelled(versionId, reason);
+    return {
+      written: false,
+      version_id: versionId,
+      reason: cancelled?.error ?? reason,
+      kind: "demo",
     };
   }
 
@@ -564,6 +609,7 @@ export async function runAll(
     counts.stale = writes.stale;
     counts.failed = writes.failed;
     counts.skipped_auto_write = writes.skipped_auto_write;
+    counts.skipped_demo = writes.skipped_demo;
     store.insertEvent("executor.sync.writes", null, writes);
 
     // Round 4 Task C1 / spec §4b: outcome tracking, recomputed after every

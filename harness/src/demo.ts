@@ -184,20 +184,6 @@ function writeDemoVersion(input: {
   return version.id;
 }
 
-// Task 8: the most recently created pending write for a rule -- used right
-// after an accept-flow call (improvementAction/stagePendingWrite) staged
-// one, so it can be backdated and, for the "needs attention" item, marked
-// stale.
-function latestPendingVersionId(ruleId: number): number {
-  const row = db
-    .prepare(
-      `SELECT id FROM knowledge_versions WHERE rule_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1`,
-    )
-    .get(ruleId) as { id: number } | undefined;
-  if (!row) throw new Error(`demo: expected a pending knowledge_version for rule ${ruleId}`);
-  return row.id;
-}
-
 let demoMsgSeq = 0;
 
 function demoMessage(input: {
@@ -1128,11 +1114,38 @@ export function addDemoData(): AddDemoResult {
     appliesWhen: "rendering the activity feed or any similarly unbounded list",
     predictedFailure: "the activity feed loads unboundedly instead of paginating",
   });
-  improvementAction(
-    { action: "accept", id: staleSeed.candidateId, destination: "project" },
-    "demo",
-  );
-  const stalePendingId = latestPendingVersionId(staleSeed.ruleId);
+  // Round 6 Task 5: this used to go through improvementAction's "accept" --
+  // stagePendingWrite now refuses to stage anything for a demo rule
+  // (created_by = 'demo'), correctly, since that guard exists so retiring/
+  // re-adding an ALREADY-loaded demo rule can never write to Lovable
+  // either. This scenario still needs one genuine pending version to mark
+  // stale a few lines down, so it's staged directly here instead,
+  // replicating exactly what "accept" used to stage.
+  store.recordHumanCorrectionDecision({
+    id: staleSeed.candidateId,
+    final_classification: "missing_requirement",
+    reusable: true,
+    proposed_scope: "project",
+    reviewer: "demo",
+  });
+  store.setCandidateDecidedBy(staleSeed.candidateId, "user");
+  store.updateRule({ id: staleSeed.ruleId, state: "approved", actor: "demo" });
+  store.setRuleEvidenceLevel(staleSeed.ruleId, "human_grounded", "demo");
+  const staleBaseDoc = BASE_KNOWLEDGE_DOC;
+  const staleComposed = composeManagedKnowledge(staleBaseDoc, [
+    { id: staleSeed.ruleId, instruction: RULE_STALE_INSTRUCTION },
+  ]);
+  const stalePending = store.createPendingKnowledgeVersion({
+    rule_id: staleSeed.ruleId,
+    target: "project",
+    project_id: projectId,
+    previous_content: staleBaseDoc,
+    new_content: staleComposed.final_content,
+    rule_ids: [staleSeed.ruleId],
+    actor: "demo",
+    reason: "demo: staged to exercise the needs-attention (stale write) state",
+  }) as { id: number };
+  const stalePendingId = stalePending.id;
   backdateVersionCreatedAt(stalePendingId, 4);
   store.markKnowledgeWriteStale(
     stalePendingId,
@@ -1461,6 +1474,56 @@ export function removeDemoData(): RemoveDemoResult {
       .all(...skillNames) as { id: number }[]
   ).map((r) => r.id);
 
+  // ---- Round 6 Task 5 ----
+  // Residue the plain "rule_id IN ruleIds" sweep above (versionIds) cannot
+  // see, because its own rule_id is null or a REAL rule -- exactly the two
+  // shapes spec §0 found by hand: a retire's recompose (rule_id: null,
+  // rule_ids_json naming a demo rule -- see improvements.ts's retireRule)
+  // and a REAL rule's write staged on top of a demo Knowledge snapshot
+  // (rule_id: that real rule, previous_content byte-identical to a demo
+  // snapshot's). A pending row here is still live enough for the executor
+  // to pick up, so it's cancelled (status preserved as evidence), not
+  // deleted; anything already terminal is deleted like the rest of the
+  // demo's own footprint.
+  const demoRuleIdSet = new Set(ruleIds);
+  const demoSnapshotIdsForContent = [...knowledgeSnapshotIds, ...workspaceKnowledgeSnapshotIds];
+  const demoSnapshotContents = new Set(
+    demoSnapshotIdsForContent.length
+      ? (
+          db
+            .prepare(
+              `SELECT content FROM knowledge_snapshots WHERE id IN (${placeholders(demoSnapshotIdsForContent)})`,
+            )
+            .all(...demoSnapshotIdsForContent) as { content: string }[]
+        ).map((r) => r.content)
+      : [],
+  );
+  const alreadyHandledVersionIds = new Set(versionIds);
+  const parseRuleIdsJson = (json: string): number[] => {
+    try {
+      const parsed: unknown = JSON.parse(json);
+      return Array.isArray(parsed) ? parsed.filter((n): n is number => typeof n === "number") : [];
+    } catch {
+      return [];
+    }
+  };
+  const residuePendingIds: number[] = [];
+  const residueTerminalIds: number[] = [];
+  if (demoRuleIdSet.size > 0 || demoSnapshotContents.size > 0) {
+    const candidates = db
+      .prepare(`SELECT id, status, rule_ids_json, previous_content FROM knowledge_versions`)
+      .all() as { id: number; status: string; rule_ids_json: string; previous_content: string }[];
+    for (const v of candidates) {
+      if (alreadyHandledVersionIds.has(v.id)) continue;
+      const namesADemoRule = parseRuleIdsJson(v.rule_ids_json).some((id) => demoRuleIdSet.has(id));
+      const onDemoSnapshot = demoSnapshotContents.has(v.previous_content);
+      if (!namesADemoRule && !onDemoSnapshot) continue;
+      if (v.status === "pending") residuePendingIds.push(v.id);
+      else residueTerminalIds.push(v.id);
+    }
+  }
+  // ---- end Round 6 Task 5 ----
+
   // Round 5 Task 8: the new tables this seed can touch, gathered the same
   // way -- by the rule ids the cascade above already found. rule_health has
   // no id of its own (rule_id is its primary key), so it's deleted by
@@ -1552,6 +1615,30 @@ export function removeDemoData(): RemoveDemoResult {
           .prepare(`DELETE FROM knowledge_versions WHERE id IN (${placeholders(versionIds)})`)
           .run(...versionIds).changes
       : 0;
+
+    // ---- Round 6 Task 5 ----
+    // Residue found above (rule_ids_json names a demo rule, or
+    // previous_content is byte-identical to a demo snapshot) that the plain
+    // rule_id sweep just above never sees. A pending row is cancelled, not
+    // deleted -- it stays as evidence, and reopenKnowledgeVersionForRetry
+    // can never pick a cancelled row back up.
+    if (residuePendingIds.length) {
+      for (const id of residuePendingIds) {
+        const before = db.prepare(`SELECT reason FROM knowledge_versions WHERE id = ?`).get(id) as
+          { reason: string | null } | undefined;
+        store.markKnowledgeWriteCancelled(
+          id,
+          `${before?.reason ? before.reason + " -- " : ""}cancelled: demo data removed (staged on demo Knowledge residue)`,
+        );
+      }
+    }
+    counts.knowledge_versions_cancelled = residuePendingIds.length;
+    if (residueTerminalIds.length) {
+      counts.knowledge_versions += db
+        .prepare(`DELETE FROM knowledge_versions WHERE id IN (${placeholders(residueTerminalIds)})`)
+        .run(...residueTerminalIds).changes;
+    }
+    // ---- end Round 6 Task 5 ----
 
     // 2. knowledge_snapshots (only the ones this seed fetched, both targets)
     const projectSnapshotsDeleted = knowledgeSnapshotIds.length
@@ -1652,7 +1739,12 @@ export function removeDemoData(): RemoveDemoResult {
       { prefixes: ["correction_candidate."], ids: ccIds },
       { prefixes: ["learning."], ids: learningIds },
       { prefixes: ["rule."], ids: ruleIds },
-      { prefixes: ["knowledge_version."], ids: versionIds },
+      // Round 6 Task 5: residueTerminalIds' own rows were just deleted above
+      // too -- their creation events go with them. residuePendingIds is
+      // deliberately left out: those rows still exist (now cancelled), and
+      // sweeping their events would erase the audit trail cancelling them
+      // is meant to preserve.
+      { prefixes: ["knowledge_version."], ids: [...versionIds, ...residueTerminalIds] },
       {
         prefixes: ["knowledge_snapshot."],
         ids: [...knowledgeSnapshotIds, ...workspaceKnowledgeSnapshotIds],
@@ -1728,11 +1820,21 @@ export function demoStatus(): { loaded: boolean; message: string } {
   };
 }
 
+// Round 6 Task 5 / spec §5, printed verbatim by `--add` below: real Knowledge
+// writes and previews already ignore demo snapshots (store.ts's
+// latestKnowledgeSnapshot forWrite), and a demo rule's retire/re-add/verdict
+// actions are accepted but stage nothing (improvements.ts's created_by =
+// 'demo' guard) -- this line is the only thing telling the person running
+// the CLI that both are true while the demo is loaded.
+const DEMO_ISOLATION_WARNING =
+  "Demo data is loaded. Real Knowledge writes ignore demo snapshots, but retire/re-add on demo rules stage nothing.";
+
 function main(): void {
   const arg = process.argv[2];
   if (arg === "--add") {
     const result = addDemoData();
     console.log(result.message);
+    console.log(DEMO_ISOLATION_WARNING);
     return;
   }
   if (arg === "--remove") {

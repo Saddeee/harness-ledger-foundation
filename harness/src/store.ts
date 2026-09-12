@@ -1145,10 +1145,17 @@ export function recordKnowledgeSnapshot(input: {
   return row;
 }
 
-export function latestKnowledgeSnapshot(target: KnowledgeTarget, targetId: string) {
+// Round 6 Task 5: `forWrite` excludes demo snapshots (fetched_by = 'demo')
+// so a real accept/preview can never compose on demo text (spec §5).
+export function latestKnowledgeSnapshot(
+  target: KnowledgeTarget,
+  targetId: string,
+  opts?: { forWrite?: boolean },
+) {
+  const demoClause = opts?.forWrite ? `AND fetched_by != 'demo'` : "";
   return (db
     .prepare(
-      `SELECT * FROM knowledge_snapshots WHERE target = ? AND ${targetColumn(target)} = ? ORDER BY id DESC LIMIT 1`,
+      `SELECT * FROM knowledge_snapshots WHERE target = ? AND ${targetColumn(target)} = ? ${demoClause} ORDER BY id DESC LIMIT 1`,
     )
     .get(target, targetId) ?? null) as {
     id: number;
@@ -1331,7 +1338,9 @@ export function recordKnowledgeReadback(versionId: number, readBackContent: stri
 export function listPendingKnowledgeWrites() {
   return db
     .prepare(
-      `SELECT id, rule_id, target, project_id, workspace_id, previous_sha256, new_sha256, new_content, created_at, actor, reason, restored_from_version_id
+      // rule_ids_json added for Round 6 Task 5: executeWrites needs it to
+      // recognize a retire recompose (rule_id: null) that names a demo rule.
+      `SELECT id, rule_id, target, project_id, workspace_id, previous_sha256, new_sha256, new_content, created_at, actor, reason, restored_from_version_id, rule_ids_json
        FROM knowledge_versions WHERE status = 'pending' ORDER BY id`,
     )
     .all();
@@ -4076,3 +4085,72 @@ export function reopenKnowledgeVersionForRetry(versionId: number): KnowledgeVers
   return getKnowledgeVersion(versionId)!;
 }
 // ---- end Round 6 Task 2 ----
+
+// ---- Round 6 Task 5 ----
+// executeWrites/executeVersionNow (executor/beats.ts) must never write a
+// version that touches a demo rule -- spec §5. A plain accept/readd write
+// names the demo rule as its own rule_id; the retire recompose (rule_id:
+// null, per improvements.ts's retireRule doc comment) instead names it
+// somewhere in rule_ids_json, so both beats check this per id, not just
+// row.rule_id.
+export function isDemoRuleId(ruleId: number): boolean {
+  const row = db.prepare(`SELECT created_by FROM rules WHERE id = ?`).get(ruleId) as
+    { created_by: string } | undefined;
+  return row?.created_by === "demo";
+}
+// ---- end Round 6 Task 5 ----
+
+// ---- Round 6 Task 6a ----
+// Fix round 1: the paired-test runner (experiments.ts) needs the episode's
+// full, untruncated request text (episodeTextForJudge's own 1500-char cap
+// is for the judge role's on-screen text, not for what actually gets
+// replayed into the copy) and a queued-run guard broader than
+// runningExperimentRun (Task 1) checks -- a run that's merely `queued`
+// (startExperiment already created the row, but runExperiment hasn't been
+// kicked off for it yet) is invisible to that function, since it only looks
+// at copying/building.
+
+/** The full text of the episode's earliest evidence message (the request
+ * that opened it) -- unlike episodeTextForJudge's `request` (capped at 1500
+ * chars for the judge screen), this is what the paired-test runner sends
+ * back to Lovable verbatim, so a long original request replays in full
+ * rather than truncated. Mirrors episodeTextForJudge's own "earliest by
+ * occurred_at/id" reconstruction (task_episode_evidence carries no role
+ * column of its own). null when the episode has no evidence at all. */
+export function episodeRequestText(episodeId: number): string | null {
+  const row = db
+    .prepare(
+      `SELECT hi.content FROM task_episode_evidence tee
+       JOIN history_items hi ON hi.id = tee.history_item_id
+       WHERE tee.task_episode_id = ?
+       ORDER BY hi.occurred_at ASC, hi.id ASC
+       LIMIT 1`,
+    )
+    .get(episodeId) as { content: string } | undefined;
+  return row?.content ?? null;
+}
+
+/** Whether a paired test is active enough that a second startExperiment
+ * should be refused: either mid-flight (copying/building with a live
+ * heartbeat -- delegates to runningExperimentRun, Task 1, unchanged) or
+ * merely queued but recent enough that runExperiment almost certainly
+ * hasn't been kicked off for it yet. Closes the gap runningExperimentRun
+ * alone leaves open (a `queued` row is invisible to it, since it only
+ * checks copying/building). windowMinutes is the same crash-window
+ * convention runningExperimentRun already uses. */
+export function activeExperimentRun(windowMinutes: number): ExperimentRunRow | null {
+  const running = runningExperimentRun(windowMinutes);
+  if (running) return running;
+  const cutoffMs = Date.now() - windowMinutes * 60_000;
+  const queued = db
+    .prepare(`SELECT * FROM experiment_runs WHERE status = 'queued' ORDER BY id DESC`)
+    .all() as ExperimentRunRow[];
+  for (const run of queued) {
+    // SQLite's datetime('now') default is UTC without a zone marker, same
+    // parsing convention runningExperimentRun uses for heartbeat_at.
+    const startedMs = new Date(run.started_at.replace(" ", "T") + "Z").getTime();
+    if (!Number.isNaN(startedMs) && startedMs >= cutoffMs) return run;
+  }
+  return null;
+}
+// ---- end Round 6 Task 6a ----

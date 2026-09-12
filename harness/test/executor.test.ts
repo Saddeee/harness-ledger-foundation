@@ -228,7 +228,13 @@ test("executeWrites writes, verifies the read-back and marks the version written
   const v = stagePending("live text", "live text + rule");
 
   const counts = await beats.executeWrites(fake);
-  assert.deepEqual(counts, { written: 1, stale: 0, failed: 0, skipped_auto_write: 0 });
+  assert.deepEqual(counts, {
+    written: 1,
+    stale: 0,
+    failed: 0,
+    skipped_auto_write: 0,
+    skipped_demo: 0,
+  });
   assert.deepEqual(fake.setCalls, [{ kind: "project", id: PROJECT, content: "live text + rule" }]);
   assert.equal(store.getKnowledgeVersion(v.id)?.status, "written");
 });
@@ -239,7 +245,13 @@ test("executeWrites marks a version stale when live content drifted, without cal
   fake.projectKnowledge[PROJECT] = "someone else edited it";
 
   const counts = await beats.executeWrites(fake);
-  assert.deepEqual(counts, { written: 0, stale: 1, failed: 0, skipped_auto_write: 0 });
+  assert.deepEqual(counts, {
+    written: 0,
+    stale: 1,
+    failed: 0,
+    skipped_auto_write: 0,
+    skipped_demo: 0,
+  });
   assert.equal(fake.setCalls.length, 0);
   const row = store.getKnowledgeVersion(v.id)!;
   assert.equal(row.status, "stale");
@@ -254,7 +266,13 @@ test("executeWrites marks a version failed when the Lovable write throws", async
   const v = stagePending("live text", "another rule");
 
   const counts = await beats.executeWrites(fake);
-  assert.deepEqual(counts, { written: 0, stale: 0, failed: 1, skipped_auto_write: 0 });
+  assert.deepEqual(counts, {
+    written: 0,
+    stale: 0,
+    failed: 1,
+    skipped_auto_write: 0,
+    skipped_demo: 0,
+  });
   const row = store.getKnowledgeVersion(v.id)!;
   assert.equal(row.status, "failed");
   assert.match(row.error ?? "", /lovable exploded/);
@@ -277,7 +295,13 @@ test("executeWrites skips a pending project-target write when the project has au
   });
 
   const counts = await beats.executeWrites(fake);
-  assert.deepEqual(counts, { written: 1, stale: 0, failed: 0, skipped_auto_write: 1 });
+  assert.deepEqual(counts, {
+    written: 1,
+    stale: 0,
+    failed: 0,
+    skipped_auto_write: 1,
+    skipped_demo: 0,
+  });
   assert.equal(store.getKnowledgeVersion(projectVersion.id)?.status, "pending", "left pending, not touched at all");
   assert.equal(store.getKnowledgeVersion(workspaceVersion.id)?.status, "written");
   assert.deepEqual(fake.setCalls, [{ kind: "workspace", id: WORKSPACE, content: "workspace write is unaffected" }]);
@@ -285,8 +309,98 @@ test("executeWrites skips a pending project-target write when the project has au
   // Turning it back on lets the same pending write through on the next pass.
   store.setProjectSettings(PROJECT, { auto_write: true });
   const second = await beats.executeWrites(fake);
-  assert.deepEqual(second, { written: 1, stale: 0, failed: 0, skipped_auto_write: 0 });
+  assert.deepEqual(second, {
+    written: 1,
+    stale: 0,
+    failed: 0,
+    skipped_auto_write: 0,
+    skipped_demo: 0,
+  });
   assert.equal(store.getKnowledgeVersion(projectVersion.id)?.status, "written");
+});
+
+// ---- Round 6 Task 5: demo isolation (spec §5 / spec §0's incident) ----
+
+test("executeWrites skips a pending write whose own rule is a demo rule, and counts it under skipped_demo", async () => {
+  const fake = new FakeLovable();
+  fake.projectKnowledge[PROJECT] = "live text";
+  const demoRule = makeRule("Demo: always do something.", "demo");
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: demoRule.id,
+    target: "project",
+    project_id: PROJECT,
+    previous_content: "live text",
+    new_content: "live text + demo rule",
+    rule_ids: [demoRule.id],
+    actor: "test",
+  });
+
+  const counts = await beats.executeWrites(fake);
+  assert.deepEqual(counts, {
+    written: 0,
+    stale: 0,
+    failed: 0,
+    skipped_auto_write: 0,
+    skipped_demo: 1,
+  });
+  assert.equal(fake.setCalls.length, 0, "a demo rule's write must never reach Lovable");
+  assert.equal(
+    store.getKnowledgeVersion(v.id)?.status,
+    "pending",
+    "left exactly as staged, same as a skipped_auto_write row",
+  );
+  // Left pending on purpose above (that's the behavior under test) -- cancel
+  // it now so it doesn't count against a later test's own executeWrites
+  // counts in this shared-DB file.
+  store.markKnowledgeWriteCancelled(v.id, "test cleanup");
+});
+
+test("executeWrites skips a target-level recompose (rule_id: null) whose rule_ids_json names a demo rule -- the exact residue shape spec §0 found", async () => {
+  const fake = new FakeLovable();
+  fake.projectKnowledge[PROJECT] = "live text";
+  const demoRule = makeRule("Demo: always do the other thing.", "demo");
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: null,
+    target: "project",
+    project_id: PROJECT,
+    previous_content: "live text",
+    new_content: "live text + demo rule (recompose)",
+    rule_ids: [demoRule.id],
+    actor: "test",
+  });
+
+  const counts = await beats.executeWrites(fake);
+  assert.deepEqual(counts, {
+    written: 0,
+    stale: 0,
+    failed: 0,
+    skipped_auto_write: 0,
+    skipped_demo: 1,
+  });
+  assert.equal(fake.setCalls.length, 0);
+  assert.equal(store.getKnowledgeVersion(v.id)?.status, "pending");
+  store.markKnowledgeWriteCancelled(v.id, "test cleanup");
+});
+
+test("executeVersionNow refuses a demo-rule version instead of writing it, defense in depth even if one were ever staged", async () => {
+  const fake = new FakeLovable();
+  fake.projectKnowledge[PROJECT] = "live text";
+  const demoRule = makeRule("Demo: never write this to Lovable.", "demo");
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: demoRule.id,
+    target: "project",
+    project_id: PROJECT,
+    previous_content: "live text",
+    new_content: "live text + demo rule",
+    rule_ids: [demoRule.id],
+    actor: "test",
+  });
+
+  const outcome = await beats.executeVersionNow(v.id, fake);
+  assert.equal(outcome.written, false);
+  assert.ok(!outcome.written && outcome.kind === "demo");
+  assert.equal(fake.setCalls.length, 0);
+  assert.equal(store.getKnowledgeVersion(v.id)?.status, "cancelled");
 });
 
 // -------------------------------------------------------------- schedule
@@ -402,7 +516,13 @@ function managedBlock(rules: string[]): string {
 // mirrors harness/test/adapter.test.ts's own minimal evidence -> episode ->
 // correction -> learning -> rule chain.
 let ruleCounter = 0;
-function makeRule(instruction: string): { id: number; instruction: string; correctionId: number } {
+// Round 6 Task 5: createdBy defaults to "test" (every existing call site is
+// unaffected) -- pass "demo" to get a rule executeWrites/executeVersionNow
+// must skip (spec §5).
+function makeRule(
+  instruction: string,
+  createdBy: string = "test",
+): { id: number; instruction: string; correctionId: number } {
   ruleCounter += 1;
   const evidence = store.upsertHistoryItem({
     project_id: PROJECT,
@@ -432,7 +552,7 @@ function makeRule(instruction: string): { id: number; instruction: string; corre
     reuse_rationale: "r",
     proposed_scope: "project",
     provenance: "llm_derived",
-    created_by: "test",
+    created_by: createdBy,
   }) as { id: number };
   const rule = store.createRule({
     learning_id: learning.id,
@@ -442,7 +562,7 @@ function makeRule(instruction: string): { id: number; instruction: string; corre
     applies_when: "always",
     predicted_failure: "n/a",
     ownership: "harness",
-    created_by: "test",
+    created_by: createdBy,
   }) as { id: number };
   return { id: rule.id, instruction, correctionId: correction.id };
 }
