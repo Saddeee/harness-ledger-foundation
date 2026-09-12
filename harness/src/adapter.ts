@@ -94,6 +94,47 @@ export type {
   FeedbackStats,
 } from "./store.js";
 
+// Round 6 Task 1: schema v12's experiment_runs/credit_ledger bookkeeping,
+// for the paired-test runner and judge UI later Round 6 tasks build on top
+// of. recordRuleVerdict's own re-export above now returns { id, changed }
+// (see its header comment in store.ts) -- no separate export needed for
+// that change.
+export {
+  createExperimentRun,
+  updateExperimentRun,
+  getExperimentRun,
+  listExperimentRuns,
+  runningExperimentRun,
+  creditsThisMonth,
+  recordCredits,
+  lastKnownTestCost,
+  listUndeletedCopies,
+  episodeRequestExternalId,
+  countEditsSince,
+} from "./store.js";
+export type { ExperimentStatus, ExperimentRunRow } from "./store.js";
+
+// The executor's process lock (Round 6 Task 1): the app's own executor loop
+// and a manually-run `npm run harness:executor` CLI invocation both claim
+// this before driving Lovable, so a paired-test run and a sync/analysis
+// pass never race each other.
+export {
+  acquireLock,
+  heartbeat as heartbeatLock,
+  releaseLock,
+  defaultLockPath,
+} from "./executor/lock.js";
+export type { LockOwner, LockHolder, LockAcquireResult } from "./executor/lock.js";
+
+// The Lovable REST client (Round 6 Task 1): plain fetch against
+// api.lovable.dev, used only by the paired-test runner (later Round 6
+// tasks) -- everything else in this app still goes through the Lovable MCP
+// client (lovable-mcp.ts). Re-exported here so the web app's local-runtime
+// route can construct one the same way it reaches every other executor
+// primitive, without importing across the executor/ boundary directly.
+export { createLovableRest, LovableRestError } from "./executor/lovable-rest.js";
+export type { LovableRest, RestMessage, RestBuildStatus } from "./executor/lovable-rest.js";
+
 // Round 3: per-provider LLM API keys, stored in their own 0600 file, never in
 // SQLite and never returned beyond has_key/last4 (see llm-keys.ts).
 export {

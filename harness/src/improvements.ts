@@ -1614,9 +1614,17 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
 // the same snooze keepProposal above already uses), but leaves any other
 // status alone.
 function recordVerdict(ruleId: number, verdict: store.RuleVerdict, note?: string): Improvement {
-  store.recordRuleVerdict({ rule_id: ruleId, verdict, note: note ?? null });
+  // Round 6 Task 1: recordRuleVerdict now returns { id, changed } (an
+  // upsert -- see its own header comment in store.ts). `changed` is false
+  // only when this is the exact same verdict already on file, in which case
+  // there is no new signal and the health-effects below (which exist to
+  // react to a *new* did_not_help/helped) are skipped -- recomputing or
+  // re-snoozing off a click that changed nothing would be redundant, not
+  // wrong, but every other call site already treats "no new row" as "no new
+  // event" (recordRuleAdherence's insert-or-ignore, above).
+  const { changed } = store.recordRuleVerdict({ rule_id: ruleId, verdict, note: note ?? null });
 
-  const health = store.getRuleHealth(ruleId);
+  const health = changed ? store.getRuleHealth(ruleId) : null;
   if (health) {
     if (verdict === "did_not_help" && store.getEvidenceSources().verdicts) {
       recomputeRuleHealth();

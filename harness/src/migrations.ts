@@ -640,4 +640,76 @@ export const MIGRATIONS: Migration[] = [
       UPDATE settings SET value = replace(value, '"miner":', '"rule_writer":') WHERE key = 'llm_models' AND value LIKE '%"miner":%';
     `,
   },
+  {
+    version: 12,
+    name: "round6_experiments",
+    sql: `
+      -- Round 6 Task 1: the paired-test experiment (spec: copy the user's
+      -- project at the message that opened the corrected episode, replay the
+      -- rule against the copy, let the user judge the copy against what
+      -- Lovable actually did). One row per attempt; status walks
+      -- queued -> copying -> building -> judging -> judged, or fails/
+      -- cancels at any point. copy_* / original_* columns are filled in as
+      -- each stage completes -- most are NULL until then. copy_deleted tracks
+      -- whether the copy project itself (a real, credit-bearing Lovable
+      -- project) has been cleaned up yet; listUndeletedCopies (store.ts)
+      -- is the executor's own reminder to sweep these, independent of
+      -- keep_test_copies (the setting below), which only controls whether
+      -- cleanup happens automatically.
+      CREATE TABLE IF NOT EXISTS experiment_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        correction_candidate_id INTEGER NOT NULL REFERENCES correction_candidates(id),
+        task_episode_id INTEGER NOT NULL REFERENCES task_episodes(id),
+        source_project_id TEXT NOT NULL,
+        copy_project_id TEXT,
+        request_message_external_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','copying','building','judging','judged','failed','cancelled')),
+        stage_note TEXT,
+        copy_message_id TEXT, copy_thread_id TEXT, copy_commit_sha TEXT,
+        copy_summary TEXT, copy_reply TEXT, copy_diff_json TEXT,
+        original_commit_sha TEXT, original_diff_json TEXT,
+        cost_credits REAL,
+        copy_deleted INTEGER NOT NULL DEFAULT 0 CHECK (copy_deleted IN (0,1)),
+        copy_cleanup_note TEXT,
+        edits_since_episode INTEGER,
+        score REAL, verdicts_json TEXT,
+        error TEXT,
+        started_at TEXT NOT NULL DEFAULT (datetime('now')), heartbeat_at TEXT, finished_at TEXT, judged_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_experiment_runs_status ON experiment_runs(status);
+
+      -- Every credited Lovable call an experiment makes (chat only -- reads
+      -- are free) gets its own row here, not just a running total on
+      -- experiment_runs, so creditsThisMonth (store.ts) can bound spend
+      -- across every run in the current calendar month regardless of how
+      -- many runs contributed, and a run that spans a month boundary still
+      -- attributes each call to the month it actually happened in.
+      CREATE TABLE IF NOT EXISTS credit_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER NOT NULL REFERENCES experiment_runs(id),
+        cost_credits REAL NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      -- rule_verdicts (v11, Round 5 Task 1) kept every verdict as its own
+      -- row with no way to tell "the current one" from history other than
+      -- "highest id" -- fine for a single reader, but recordRuleVerdict's
+      -- new upsert semantics (store.ts) need exactly one row per rule
+      -- flagged current so a second click of the same verdict can compare
+      -- against it without a MAX(id) scan. superseded = 0 is current;
+      -- superseded = 1 is history, kept forever (never deleted).
+      ALTER TABLE rule_verdicts ADD COLUMN superseded INTEGER NOT NULL DEFAULT 0 CHECK (superseded IN (0,1));
+
+      -- Backfill: every existing rule_verdicts row defaulted to superseded=0
+      -- above. A rule with more than one row would now violate the partial
+      -- unique index below, so mark every row except the newest (highest id)
+      -- per rule_id as superseded=1 first.
+      UPDATE rule_verdicts SET superseded = 1
+      WHERE id NOT IN (SELECT MAX(id) FROM rule_verdicts GROUP BY rule_id);
+
+      -- rule_verdicts: one current row per rule (history kept only on change)
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_verdicts_current ON rule_verdicts(rule_id) WHERE superseded = 0;
+    `,
+  },
 ];

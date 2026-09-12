@@ -13,13 +13,13 @@ const store = await import("../src/store.js");
 const PROJECT = "test-project-id";
 
 test("schema migration: applies all migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 11);
+  assert.equal(schemaVersion(), 12);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
   );
   const tableNames = new Set(
     (
@@ -54,9 +54,77 @@ test("schema migration: applies all migrations exactly once, expected tables exi
     "retire_proposals", // round 4 (v9)
     "rule_verdicts",
     "rule_adherence", // round 5 (v11)
+    "experiment_runs",
+    "credit_ledger", // round 6 (v12)
   ]) {
     assert.ok(tableNames.has(t), `expected table ${t} to exist`);
   }
+});
+
+test("migration v12: on a v11 DB with several rule_verdicts rows for one rule, applying v12 leaves exactly one current row (the newest)", async () => {
+  // Exercises the real migration path (not the already-migrated shared `db`):
+  // a scratch DB is brought up to exactly v11, seeded with three plain
+  // INSERTs the way the Round 5 Task 1 INSERT-only recordRuleVerdict used to
+  // leave rule_verdicts, then v12 is applied and the backfill is checked.
+  const { default: Database } = await import("better-sqlite3");
+  const { MIGRATIONS } = await import("../src/migrations.js");
+  const scratch = new Database(":memory:");
+  scratch.exec(
+    `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  );
+  const sorted = [...MIGRATIONS].sort((a, b) => a.version - b.version);
+  for (const m of sorted.filter((m) => m.version <= 11)) {
+    scratch.exec(m.sql);
+    scratch
+      .prepare(`INSERT INTO schema_migrations (version, name) VALUES (?, ?)`)
+      .run(m.version, m.name);
+  }
+
+  // better-sqlite3 defaults foreign_keys ON, and migration v7's own
+  // PRAGMA foreign_keys=OFF/ON bracket (a no-op inside db.ts's real
+  // transaction-wrapped apply, see its comment) is not a no-op here since
+  // this loop runs each migration's SQL directly -- it leaves the
+  // connection with foreign_keys back ON. Switched off before seeding so a
+  // rule_verdicts row can reference a rule_id with no real `rules` row,
+  // which is beside the point of this test.
+  scratch.pragma("foreign_keys = OFF");
+  const insertVerdict = scratch.prepare(
+    `INSERT INTO rule_verdicts (rule_id, verdict, note) VALUES (?, ?, ?)`,
+  );
+  insertVerdict.run(1, "not_sure", "first");
+  insertVerdict.run(1, "helped", "second");
+  const lastId = insertVerdict.run(1, "did_not_help", "third (newest)").lastInsertRowid;
+  insertVerdict.run(2, "helped", "other rule, single row"); // a rule with only one row must survive untouched
+
+  const v12 = sorted.find((m) => m.version === 12)!;
+  scratch.exec(v12.sql);
+
+  const current = scratch
+    .prepare(`SELECT id, rule_id, note FROM rule_verdicts WHERE rule_id = 1 AND superseded = 0`)
+    .all() as { id: number; rule_id: number; note: string }[];
+  assert.equal(current.length, 1, "exactly one current row for rule 1");
+  assert.equal(current[0]!.id, Number(lastId), "the newest (highest id) row stays current");
+  assert.equal(current[0]!.note, "third (newest)");
+
+  const supersededCount = scratch
+    .prepare(`SELECT COUNT(*) as n FROM rule_verdicts WHERE rule_id = 1 AND superseded = 1`)
+    .get() as { n: number };
+  assert.equal(supersededCount.n, 2, "the two older rows for rule 1 are marked superseded");
+
+  const otherRuleCurrent = scratch
+    .prepare(`SELECT superseded FROM rule_verdicts WHERE rule_id = 2`)
+    .get() as { superseded: number };
+  assert.equal(otherRuleCurrent.superseded, 0, "a rule with a single row keeps it current");
+
+  // The partial unique index actually rejects a second current row for the
+  // same rule -- proves the index (not just the backfill UPDATE) is in place.
+  assert.throws(() => {
+    scratch
+      .prepare(`INSERT INTO rule_verdicts (rule_id, verdict, superseded) VALUES (?, ?, 0)`)
+      .run(1, "not_sure");
+  }, /UNIQUE constraint failed/);
+
+  scratch.close();
 });
 
 test("allowed project validation: rejects unseeded project, accepts seeded one", () => {
@@ -1142,8 +1210,10 @@ test("feedbackStats/listAcceptedRuleTexts/listSkippedSuggestions/listWordingEdit
   store.setCandidateSkipReason(skippedCandidate.id, "not_useful");
   store.setCandidateDecidedBy(skippedCandidate.id, "automatic");
 
-  // -- two rule verdicts on the accepted rule --
-  store.recordRuleVerdict({ rule_id: acceptedRule.id, verdict: "helped" });
+  // -- two rule verdicts on the accepted rule -- distinct verdicts, since
+  // Round 6 Task 1's recordRuleVerdict upsert makes a repeat of the *same*
+  // verdict a no-op (no new row), which would undercount here.
+  store.recordRuleVerdict({ rule_id: acceptedRule.id, verdict: "not_sure" });
   store.recordRuleVerdict({ rule_id: acceptedRule.id, verdict: "helped" });
 
   const after = store.feedbackStats();
@@ -1186,3 +1256,297 @@ test("feedbackStats/listAcceptedRuleTexts/listSkippedSuggestions/listWordingEdit
   assert.equal(afterTag!.skipped - beforeTag.skipped, 1);
 });
 // ---- end Round 5 Task 1 ----
+
+// ---- Round 6 Task 1 ----
+// Schema v12 (experiment_runs/credit_ledger, rule_verdicts.superseded),
+// recordRuleVerdict's upsert semantics, and the paired-test bookkeeping
+// store functions later Round 6 tasks (the runner, the judge UI) build on.
+
+const R6_PROJECT = "round6-task1-project";
+
+function r6Fixture(msgExternalId = `r6-ext-${Math.random().toString(36).slice(2)}`): {
+  ruleId: number;
+  candidateId: number;
+  episodeId: number;
+  externalId: string;
+} {
+  store.allowProject(R6_PROJECT, "Round 6 Task 1 fixtures");
+  const msg = store.upsertHistoryItem({
+    project_id: R6_PROJECT,
+    kind: "message",
+    external_id: msgExternalId,
+    role: "user",
+    content: "seed message for round6 task1 fixture",
+    provenance: "manual",
+  }) as { id: number };
+  const episode = store.createTaskEpisode({
+    project_id: R6_PROJECT,
+    title: "round6 task1 fixture episode",
+    provenance: "manual",
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const candidate = store.createCorrectionCandidate({
+    task_episode_id: episode.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "seed",
+    evidence_history_item_ids: [msg.id],
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: candidate.id,
+    observed_problem: "seed",
+    desired_behavior: "round6 task1 fixture instruction",
+    reuse_rationale: "seed",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "round6 task1 test seed",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: candidate.id,
+    instruction: "round6 task1 fixture rule",
+    scope: "project",
+    applies_when: "seed",
+    predicted_failure: "seed",
+    ownership: "user",
+    created_by: "round6 task1 test seed",
+  }) as { id: number };
+  return {
+    ruleId: rule.id,
+    candidateId: candidate.id,
+    episodeId: episode.id,
+    externalId: msgExternalId,
+  };
+}
+
+test("settings: lovable_monthly_credit_budget/keep_test_copies defaults and validation", () => {
+  assert.equal(store.getSetting("lovable_monthly_credit_budget"), "12");
+  assert.equal(store.getSetting("keep_test_copies"), "false");
+
+  assert.throws(
+    () => store.setSettings({ lovable_monthly_credit_budget: "-1" }),
+    /integer.*0.*1000|between/,
+  );
+  assert.throws(
+    () => store.setSettings({ lovable_monthly_credit_budget: "1001" }),
+    /integer.*0.*1000|between/,
+  );
+  assert.throws(() => store.setSettings({ lovable_monthly_credit_budget: "1.5" }), /integer/);
+  assert.equal(
+    store.setSettings({ lovable_monthly_credit_budget: "0" }).lovable_monthly_credit_budget,
+    "0",
+  );
+  assert.equal(
+    store.setSettings({ lovable_monthly_credit_budget: "1000" }).lovable_monthly_credit_budget,
+    "1000",
+  );
+  assert.equal(
+    store.setSettings({ lovable_monthly_credit_budget: "25" }).lovable_monthly_credit_budget,
+    "25",
+  );
+
+  assert.throws(() => store.setSettings({ keep_test_copies: "yes" }), /true or false/);
+  assert.equal(store.setSettings({ keep_test_copies: "true" }).keep_test_copies, "true");
+  assert.equal(store.setSettings({ keep_test_copies: "false" }).keep_test_copies, "false");
+});
+
+test("recordRuleVerdict: upsert semantics -- same verdict as current is a no-op (changed:false, no new row); a different verdict supersedes the current row", () => {
+  const { ruleId } = r6Fixture();
+
+  const first = store.recordRuleVerdict({ rule_id: ruleId, verdict: "not_sure" });
+  assert.equal(typeof first.id, "number");
+  assert.equal(first.changed, true, "the first verdict for a rule always counts as a change");
+  assert.equal(store.listRuleVerdicts(ruleId).length, 1);
+
+  const repeat = store.recordRuleVerdict({ rule_id: ruleId, verdict: "not_sure" });
+  assert.equal(repeat.id, first.id, "same verdict as current: the current row's id is returned");
+  assert.equal(repeat.changed, false, "no new signal -- changed is false");
+  assert.equal(store.listRuleVerdicts(ruleId).length, 1, "no new row was inserted");
+
+  const changed = store.recordRuleVerdict({
+    rule_id: ruleId,
+    verdict: "helped",
+    note: "actually it did",
+  });
+  assert.notEqual(changed.id, first.id, "a different verdict inserts a new row");
+  assert.equal(changed.changed, true);
+  const all = store.listRuleVerdicts(ruleId);
+  assert.equal(all.length, 2, "history now has both rows");
+  assert.equal(store.latestRuleVerdict(ruleId)?.verdict, "helped");
+
+  // The DB-level invariant migration v12 established: exactly one current row.
+  const currentRows = db
+    .prepare(`SELECT COUNT(*) as n FROM rule_verdicts WHERE rule_id = ? AND superseded = 0`)
+    .get(ruleId) as { n: number };
+  assert.equal(currentRows.n, 1);
+
+  // Same verdict, different note: still "same verdict as current" per the
+  // brief's own wording -- changed stays false and the note is not silently
+  // rewritten (recording a new row is the only way to change the note).
+  const sameVerdictNewNote = store.recordRuleVerdict({
+    rule_id: ruleId,
+    verdict: "helped",
+    note: "a different note",
+  });
+  assert.equal(sameVerdictNewNote.changed, false);
+  assert.equal(sameVerdictNewNote.id, changed.id);
+  assert.equal(
+    store.latestRuleVerdict(ruleId)?.note,
+    "actually it did",
+    "the note was not rewritten",
+  );
+});
+
+test("createExperimentRun/getExperimentRun/updateExperimentRun/listExperimentRuns/runningExperimentRun: experiment_runs lifecycle", () => {
+  const { ruleId, candidateId, episodeId } = r6Fixture();
+
+  const created = store.createExperimentRun({
+    rule_id: ruleId,
+    correction_candidate_id: candidateId,
+    task_episode_id: episodeId,
+    source_project_id: "prj-source-1",
+    request_message_external_id: "msg-ext-1",
+  });
+  assert.equal(typeof created.id, "number");
+
+  assert.equal(store.getExperimentRun(999999999), null);
+  const fetched = store.getExperimentRun(created.id);
+  assert.ok(fetched);
+  assert.equal(fetched!.status, "queued");
+  assert.equal(fetched!.source_project_id, "prj-source-1");
+  assert.equal(fetched!.request_message_external_id, "msg-ext-1");
+  assert.equal(fetched!.copy_project_id, null);
+  assert.equal(fetched!.heartbeat_at, null, "no heartbeat until the first update");
+
+  store.updateExperimentRun(created.id, { status: "copying", copy_project_id: "prj-copy-1" });
+  const afterUpdate = store.getExperimentRun(created.id)!;
+  assert.equal(afterUpdate.status, "copying");
+  assert.equal(afterUpdate.copy_project_id, "prj-copy-1");
+  assert.ok(afterUpdate.heartbeat_at, "updateExperimentRun always bumps heartbeat_at");
+
+  const forRule = store.listExperimentRuns({ rule_id: ruleId });
+  assert.ok(forRule.some((r) => r.id === created.id));
+  const forOtherRule = store.listExperimentRuns({ rule_id: ruleId + 1_000_000 });
+  assert.ok(!forOtherRule.some((r) => r.id === created.id));
+
+  const byStatus = store.listExperimentRuns({ status: ["copying", "building"] });
+  assert.ok(byStatus.some((r) => r.id === created.id));
+  const wrongStatus = store.listExperimentRuns({ status: ["judged", "failed"] });
+  assert.ok(!wrongStatus.some((r) => r.id === created.id));
+
+  assert.equal(
+    store.runningExperimentRun()?.id,
+    created.id,
+    "a fresh heartbeat in status 'copying' counts as running",
+  );
+
+  db.prepare(
+    `UPDATE experiment_runs SET heartbeat_at = datetime('now', '-30 minutes') WHERE id = ?`,
+  ).run(created.id);
+  assert.equal(
+    store.runningExperimentRun(20),
+    null,
+    "a heartbeat older than the crash window is not running",
+  );
+  assert.equal(
+    store.runningExperimentRun(60)?.id,
+    created.id,
+    "a wider window still finds the same stale-but-not-crashed run",
+  );
+
+  db.prepare(
+    `UPDATE experiment_runs SET heartbeat_at = datetime('now'), status = 'judging' WHERE id = ?`,
+  ).run(created.id);
+  assert.equal(
+    store.runningExperimentRun(),
+    null,
+    "status outside copying|building is never 'running' regardless of heartbeat",
+  );
+});
+
+test("recordCredits/creditsThisMonth/lastKnownTestCost", () => {
+  const { ruleId, candidateId, episodeId } = r6Fixture();
+  const run = store.createExperimentRun({
+    rule_id: ruleId,
+    correction_candidate_id: candidateId,
+    task_episode_id: episodeId,
+    source_project_id: "prj-source-credits",
+    request_message_external_id: "msg-ext-credits",
+  });
+
+  const beforeMonth = store.creditsThisMonth();
+  store.recordCredits(run.id, 3.5);
+  assert.equal(store.creditsThisMonth() - beforeMonth, 3.5);
+  assert.equal(store.lastKnownTestCost(), 3.5);
+
+  store.recordCredits(run.id, 2.25);
+  assert.equal(store.creditsThisMonth() - beforeMonth, 5.75);
+  assert.equal(
+    store.lastKnownTestCost(),
+    2.25,
+    "newest credit_ledger row, not the largest or first",
+  );
+});
+
+test("listUndeletedCopies: undeleted copy projects with their cleanup note, cleared once copy_deleted is set", () => {
+  const { ruleId, candidateId, episodeId } = r6Fixture();
+  const run = store.createExperimentRun({
+    rule_id: ruleId,
+    correction_candidate_id: candidateId,
+    task_episode_id: episodeId,
+    source_project_id: "prj-source-undeleted",
+    request_message_external_id: "msg-ext-undeleted",
+  });
+  assert.ok(!store.listUndeletedCopies().some((c) => c.run_id === run.id));
+
+  store.updateExperimentRun(run.id, { copy_project_id: "prj-copy-undeleted" });
+  const listed = store.listUndeletedCopies().find((c) => c.run_id === run.id);
+  assert.ok(listed, "a run with a copy_project_id and copy_deleted=0 is listed");
+  assert.equal(listed!.copy_project_id, "prj-copy-undeleted");
+  assert.equal(listed!.copy_cleanup_note, null);
+
+  store.updateExperimentRun(run.id, { copy_cleanup_note: "kept: keep_test_copies is on" });
+  assert.equal(
+    store.listUndeletedCopies().find((c) => c.run_id === run.id)?.copy_cleanup_note,
+    "kept: keep_test_copies is on",
+  );
+
+  store.updateExperimentRun(run.id, { copy_deleted: 1 });
+  assert.ok(
+    !store.listUndeletedCopies().some((c) => c.run_id === run.id),
+    "once copy_deleted is set the run drops off the list",
+  );
+});
+
+test("episodeRequestExternalId: the episode's first user message external_id, else null", () => {
+  const { episodeId, externalId } = r6Fixture("r6-request-external-id");
+  assert.equal(store.episodeRequestExternalId(episodeId), externalId);
+
+  const bareEpisode = store.createTaskEpisode({
+    project_id: R6_PROJECT,
+    title: "no evidence episode",
+    provenance: "manual",
+  }) as { id: number };
+  assert.equal(store.episodeRequestExternalId(bareEpisode.id), null);
+
+  assert.equal(store.episodeRequestExternalId(999999999), null);
+});
+
+test("countEditsSince: a pure count of edit dates strictly after the given ISO date", () => {
+  const since = "2026-09-01T00:00:00.000Z";
+  assert.equal(
+    store.countEditsSince(since, [
+      "2026-08-31T23:59:59.000Z",
+      "2026-09-01T00:00:00.000Z",
+      "2026-09-02T00:00:00.000Z",
+      "2026-09-03T00:00:00.000Z",
+    ]),
+    2,
+    "strictly after -- the boundary timestamp itself does not count",
+  );
+  assert.equal(store.countEditsSince(since, []), 0);
+  assert.equal(store.countEditsSince(since, ["2026-01-01T00:00:00.000Z"]), 0);
+});
+// ---- end Round 6 Task 1 ----

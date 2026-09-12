@@ -1420,7 +1420,16 @@ export type SettingKey =
   | "decision_auto_confidence"
   // spec §4b: which evidence sources feed a rule's health/verdict picture --
   // a JSON object of exactly the four booleans EvidenceSources below names.
-  | "evidence_sources";
+  | "evidence_sources"
+  // Round 6 Task 1: the paired-test experiment spends real Lovable credits
+  // (copying a project and replaying a message costs the same as the user
+  // doing it themselves) -- a monthly ceiling the runner (a later Round 6
+  // task) checks via creditsThisMonth() before starting a new run.
+  | "lovable_monthly_credit_budget"
+  // Whether a finished experiment's copy project is left in the workspace
+  // (for manual inspection) instead of being deleted once judged --
+  // listUndeletedCopies below is the executor's cleanup reminder either way.
+  | "keep_test_copies";
 
 // AI analysis (Round 4): these keys give the Settings page and the analysis
 // pipeline (harness/src/llm/) something to read and validate. Budget is in
@@ -1470,10 +1479,16 @@ export const SETTING_DEFAULTS: Record<SettingKey, string> = {
     verdicts: true,
     paired: false,
   }),
+  lovable_monthly_credit_budget: "12",
+  keep_test_copies: "false",
 };
 
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
-const BOOLEAN_SETTING_KEYS: SettingKey[] = ["sync_enabled", "require_approval_before_write"];
+const BOOLEAN_SETTING_KEYS: SettingKey[] = [
+  "sync_enabled",
+  "require_approval_before_write",
+  "keep_test_copies",
+];
 
 export function getSetting(key: SettingKey): string {
   const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as
@@ -1645,6 +1660,8 @@ export function setSettings(
       assertDecisionAutoConfidence(value);
     } else if (key === "evidence_sources") {
       assertEvidenceSources(value);
+    } else if (key === "lovable_monthly_credit_budget") {
+      assertIntInRange(key, value, 0, 1000);
     } else {
       // sync_window_start_hour / sync_window_end_hour
       assertIntInRange(key, value, 0, 24);
@@ -3278,28 +3295,52 @@ export function setCandidateDecidedBy(id: number, by: "user" | "automatic"): voi
 
 export type RuleVerdict = "helped" | "did_not_help" | "not_sure";
 
-/** A whole-rule verdict ("did this actually help") -- many per rule, newest
- * one wins on the Instructions page (latestRuleVerdict below). Distinct
- * from rule_adherence, which is per-episode ("did this task follow the
- * rule"), not a judgment on the rule overall. */
+/** A whole-rule verdict ("did this actually help") -- newest one wins on the
+ * Instructions page (latestRuleVerdict below). Distinct from rule_adherence,
+ * which is per-episode ("did this task follow the rule"), not a judgment on
+ * the rule overall.
+ *
+ * Round 6 Task 1 (migration v12): upsert, not a plain INSERT. Recording the
+ * *same* verdict as the current one is a no-op (`changed: false`, the
+ * existing row's id comes back, its note is not rewritten) -- clicking
+ * "helped" again is not a new signal. A *different* verdict supersedes the
+ * current row (superseded=1, kept forever as history) and inserts a new
+ * current row, satisfying the partial unique index
+ * idx_rule_verdicts_current (rule_id WHERE superseded = 0). Comparison is by
+ * verdict value only, per the brief -- a same-verdict call with a different
+ * note still counts as unchanged. */
 export function recordRuleVerdict(input: {
   rule_id: number;
   verdict: RuleVerdict;
   note?: string | null;
-}): { id: number } {
-  const row = db
-    .prepare(
-      `INSERT INTO rule_verdicts (rule_id, verdict, note) VALUES (@rule_id, @verdict, @note) RETURNING id`,
-    )
-    .get({ rule_id: input.rule_id, verdict: input.verdict, note: input.note ?? null }) as {
-    id: number;
-  };
+}): { id: number; changed: boolean } {
+  const current = db
+    .prepare(`SELECT id, verdict FROM rule_verdicts WHERE rule_id = ? AND superseded = 0`)
+    .get(input.rule_id) as { id: number; verdict: RuleVerdict } | undefined;
+
+  if (current && current.verdict === input.verdict) {
+    return { id: current.id, changed: false };
+  }
+
+  const write = db.transaction(() => {
+    if (current) {
+      db.prepare(`UPDATE rule_verdicts SET superseded = 1 WHERE id = ?`).run(current.id);
+    }
+    return db
+      .prepare(
+        `INSERT INTO rule_verdicts (rule_id, verdict, note) VALUES (@rule_id, @verdict, @note) RETURNING id`,
+      )
+      .get({ rule_id: input.rule_id, verdict: input.verdict, note: input.note ?? null }) as {
+      id: number;
+    };
+  });
+  const row = write();
   insertEvent("rule_verdict.recorded", null, {
     id: row.id,
     rule_id: input.rule_id,
     verdict: input.verdict,
   });
-  return { id: row.id };
+  return { id: row.id, changed: true };
 }
 
 export function latestRuleVerdict(
@@ -3741,3 +3782,251 @@ export function episodeTextForJudge(episodeId: number): { request: string; reply
   };
 }
 // ---- end Round 5 Task 7 ----
+
+// ---- Round 6 Task 1 ----
+// Schema v12 (migrations.ts): experiment_runs + credit_ledger. The
+// bookkeeping the paired-test runner (a later Round 6 task) reads and
+// writes as it copies a project, replays a rule against the copy, and
+// leaves the run for a human to judge -- nothing here calls Lovable itself.
+
+export type ExperimentStatus =
+  "queued" | "copying" | "building" | "judging" | "judged" | "failed" | "cancelled";
+
+export type ExperimentRunRow = {
+  id: number;
+  rule_id: number;
+  correction_candidate_id: number;
+  task_episode_id: number;
+  source_project_id: string;
+  copy_project_id: string | null;
+  request_message_external_id: string;
+  status: ExperimentStatus;
+  stage_note: string | null;
+  copy_message_id: string | null;
+  copy_thread_id: string | null;
+  copy_commit_sha: string | null;
+  copy_summary: string | null;
+  copy_reply: string | null;
+  copy_diff_json: string | null;
+  original_commit_sha: string | null;
+  original_diff_json: string | null;
+  cost_credits: number | null;
+  copy_deleted: number;
+  copy_cleanup_note: string | null;
+  edits_since_episode: number | null;
+  score: number | null;
+  verdicts_json: string | null;
+  error: string | null;
+  started_at: string;
+  heartbeat_at: string | null;
+  finished_at: string | null;
+  judged_at: string | null;
+};
+
+/** Opens a new attempt at rule_id's paired test, queued and unstarted --
+ * copying/building/judging are driven by later updateExperimentRun calls.
+ * source_project_id/request_message_external_id are fixed at creation (the
+ * "what are we remixing, and from where" never changes mid-run); everything
+ * else about the run is a patch away. */
+export function createExperimentRun(input: {
+  rule_id: number;
+  correction_candidate_id: number;
+  task_episode_id: number;
+  source_project_id: string;
+  request_message_external_id: string;
+}): { id: number } {
+  const row = db
+    .prepare(
+      `INSERT INTO experiment_runs
+         (rule_id, correction_candidate_id, task_episode_id, source_project_id, request_message_external_id)
+       VALUES (@rule_id, @correction_candidate_id, @task_episode_id, @source_project_id, @request_message_external_id)
+       RETURNING id`,
+    )
+    .get(input) as { id: number };
+  insertEvent("experiment_run.created", null, {
+    id: row.id,
+    rule_id: input.rule_id,
+    source_project_id: input.source_project_id,
+  });
+  return { id: row.id };
+}
+
+const EXPERIMENT_RUN_COLUMNS = new Set<string>([
+  "rule_id",
+  "correction_candidate_id",
+  "task_episode_id",
+  "source_project_id",
+  "copy_project_id",
+  "request_message_external_id",
+  "status",
+  "stage_note",
+  "copy_message_id",
+  "copy_thread_id",
+  "copy_commit_sha",
+  "copy_summary",
+  "copy_reply",
+  "copy_diff_json",
+  "original_commit_sha",
+  "original_diff_json",
+  "cost_credits",
+  "copy_deleted",
+  "copy_cleanup_note",
+  "edits_since_episode",
+  "score",
+  "verdicts_json",
+  "error",
+  "started_at",
+  "heartbeat_at",
+  "finished_at",
+  "judged_at",
+]);
+
+/** Patches any column except id, and always bumps heartbeat_at to now --
+ * every call is itself proof of life for the run, whether or not the patch
+ * touches heartbeat_at explicitly (a caller-supplied heartbeat_at in patch
+ * is overwritten by this same "now", not silently ignored: there is exactly
+ * one writer of heartbeat_at, this function, on every call). */
+export function updateExperimentRun(id: number, patch: Partial<ExperimentRunRow>): void {
+  const entries = Object.entries(patch).filter(
+    ([k, v]) =>
+      k !== "id" && k !== "heartbeat_at" && v !== undefined && EXPERIMENT_RUN_COLUMNS.has(k),
+  );
+  const setClauses = entries
+    .map(([k]) => `${k} = @${k}`)
+    .concat("heartbeat_at = datetime('now')")
+    .join(", ");
+  const params: Record<string, unknown> = { id };
+  for (const [k, v] of entries) params[k] = v;
+  db.prepare(`UPDATE experiment_runs SET ${setClauses} WHERE id = @id`).run(params);
+}
+
+export function getExperimentRun(id: number): ExperimentRunRow | null {
+  return (
+    (db.prepare(`SELECT * FROM experiment_runs WHERE id = ?`).get(id) as
+      ExperimentRunRow | undefined) ?? null
+  );
+}
+
+export function listExperimentRuns(filter?: {
+  rule_id?: number;
+  status?: ExperimentStatus[];
+}): ExperimentRunRow[] {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (filter?.rule_id !== undefined) {
+    clauses.push("rule_id = ?");
+    params.push(filter.rule_id);
+  }
+  if (filter?.status?.length) {
+    clauses.push(`status IN (${filter.status.map(() => "?").join(", ")})`);
+    params.push(...filter.status);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  return db
+    .prepare(`SELECT * FROM experiment_runs ${where} ORDER BY id DESC`)
+    .all(...params) as ExperimentRunRow[];
+}
+
+/** The one run (if any) still actively being driven: status copying or
+ * building, with a heartbeat inside the crash window. A run whose heartbeat
+ * has gone quiet for longer than that is presumed crashed -- not "running"
+ * even though its status column was never updated to say so -- so the
+ * executor's own resume logic (a later task) knows to mark it failed and
+ * start clean rather than wait forever. */
+export function runningExperimentRun(crashWindowMinutes = 20): ExperimentRunRow | null {
+  const candidates = db
+    .prepare(
+      `SELECT * FROM experiment_runs WHERE status IN ('copying','building') AND heartbeat_at IS NOT NULL
+       ORDER BY id DESC`,
+    )
+    .all() as ExperimentRunRow[];
+  const cutoffMs = Date.now() - crashWindowMinutes * 60_000;
+  for (const run of candidates) {
+    // SQLite's datetime('now') is UTC without a zone marker.
+    const heartbeatMs = new Date(run.heartbeat_at!.replace(" ", "T") + "Z").getTime();
+    if (!Number.isNaN(heartbeatMs) && heartbeatMs >= cutoffMs) return run;
+  }
+  return null;
+}
+
+/** Every credited call an experiment makes gets its own credit_ledger row
+ * (migration v12's own comment explains why: per-call attribution, not a
+ * running total on experiment_runs). cost is in Lovable credits. */
+export function recordCredits(runId: number, cost: number): void {
+  db.prepare(`INSERT INTO credit_ledger (run_id, cost_credits) VALUES (?, ?)`).run(runId, cost);
+  insertEvent("credit_ledger.recorded", null, { run_id: runId, cost_credits: cost });
+}
+
+/** Total credits spent since the first of the current calendar month --
+ * what the runner (a later task) checks against the
+ * lovable_monthly_credit_budget setting before starting a new run. */
+export function creditsThisMonth(): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(cost_credits), 0) as total FROM credit_ledger
+       WHERE created_at >= strftime('%Y-%m-01 00:00:00', 'now')`,
+    )
+    .get() as { total: number };
+  return row.total;
+}
+
+/** The most recently recorded credit_ledger cost, else null -- a rough
+ * "what did the last test cost" estimate the Settings page can show
+ * alongside the monthly budget, without averaging across runs of very
+ * different sizes. */
+export function lastKnownTestCost(): number | null {
+  const row = db
+    .prepare(`SELECT cost_credits FROM credit_ledger ORDER BY id DESC LIMIT 1`)
+    .get() as { cost_credits: number } | undefined;
+  return row?.cost_credits ?? null;
+}
+
+/** Copy projects (real, credit-bearing Lovable projects) that still exist
+ * and have not been swept yet -- the executor's own reminder to clean them
+ * up, independent of the keep_test_copies setting (which only decides
+ * whether cleanup happens automatically; a kept copy still shows up here
+ * until someone -- or a future sweep -- deletes it). */
+export function listUndeletedCopies(): {
+  run_id: number;
+  copy_project_id: string;
+  copy_cleanup_note: string | null;
+}[] {
+  return db
+    .prepare(
+      `SELECT id as run_id, copy_project_id, copy_cleanup_note FROM experiment_runs
+       WHERE copy_project_id IS NOT NULL AND copy_deleted = 0
+       ORDER BY id ASC`,
+    )
+    .all() as { run_id: number; copy_project_id: string; copy_cleanup_note: string | null }[];
+}
+
+/** The external_id of the episode's earliest evidence message -- the same
+ * "earliest by occurred_at/id" reconstruction listMinableEpisodes and
+ * episodeTextForJudge above use for "the message that opened this episode"
+ * (task_episode_evidence carries no role column of its own; see
+ * addEpisodeEvidence's note). This is what remixInit's message_id argument
+ * (lovable-rest.ts) is resolved from: the paired test replays the rule
+ * starting at the exact message the user actually sent. null when the
+ * episode has no evidence at all. */
+export function episodeRequestExternalId(episodeId: number): string | null {
+  const row = db
+    .prepare(
+      `SELECT hi.external_id FROM task_episode_evidence tee
+       JOIN history_items hi ON hi.id = tee.history_item_id
+       WHERE tee.task_episode_id = ?
+       ORDER BY hi.occurred_at ASC, hi.id ASC
+       LIMIT 1`,
+    )
+    .get(episodeId) as { external_id: string | null } | undefined;
+  return row?.external_id ?? null;
+}
+
+/** Pure helper for "N edits since" -- how many of editsIsoDates are strictly
+ * after iso. No DB access: the runner passes it Lovable REST edit
+ * timestamps (listEdits) so this stays trivially testable without a fake
+ * server. */
+export function countEditsSince(iso: string, editsIsoDates: string[]): number {
+  const cutoff = new Date(iso).getTime();
+  return editsIsoDates.filter((d) => new Date(d).getTime() > cutoff).length;
+}
+// ---- end Round 6 Task 1 ----
