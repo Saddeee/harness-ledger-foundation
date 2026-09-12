@@ -72,58 +72,51 @@ test("nav: Inbox, Suggestions, Instructions, History, Skills, Projects, Settings
   assert.ok(!/label: "Knowledge"/.test(shell), "Knowledge is no longer a nav label");
 });
 
-// ---- 2. /instructions: What changed view + demo notice ----
+// ---- 2. /instructions: rules table + demo notice (Round 5 Task 4 / spec
+// §3a rewrite -- the "What changed" per-version diff view and its Restore
+// action moved to the History page; see timeline.tsx and history.tsx, and
+// ux-round5-pages.test.ts for their own coverage) ----
 
-test("instructions.tsx: What changed toggle, per-version diff summary, demo notice, everything else kept", () => {
+test("instructions.tsx: rules table, collapsed Knowledge text, demo notice; the old per-version history view is gone", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
 
   for (const text of [
-    "What changed",
-    "lines",
     "Demo data is loaded so you can see how history looks.",
     "harness:demo -- --remove",
-    "Showing the first 400 lines of the change.",
-    "no text change",
+    "Rules Harness added",
+    "Show all",
+    "Full Knowledge text as Lovable sees it",
   ]) {
     assert.ok(raw.includes(text), `instructions.tsx missing "${text}"`);
   }
-  // the "+N lines" summary is a literal JSX text node followed by an
-  // expression container, i.e. the raw source contains "+{"
-  assert.ok(raw.includes("+{"), 'instructions.tsx missing a literal "+{" (the +N lines summary)');
   // the remove command is rendered inside <code>
   assert.match(code, /<code[^>]*>\s*\{DEMO_REMOVE_COMMAND\}/);
   assert.match(code, /demo_loaded/);
 
-  // the diff renders changes.added / changes.removed / changes.lines / changes.truncated
-  assert.match(code, /changes\.added/);
-  assert.match(code, /changes\.removed/);
-  assert.match(code, /changes\.lines/);
-  assert.match(code, /changes\.truncated/);
-  // removed lines red, added lines green, context muted
-  assert.match(code, /"-":\s*"text-red-700/);
-  assert.match(code, /"\+":\s*"text-green-700/);
-  assert.match(code, /" ":\s*"text-muted-foreground"/);
-  // monospace, wraps
-  assert.match(code, /font-mono text-xs/);
-  assert.match(code, /whitespace-pre-wrap break-words/);
+  // Round 5 Task 4 / spec §3a: a shadcn Table for the rules, not the old
+  // underlined-link list.
+  assert.match(code, /<Table/);
 
-  // everything else on the page stays (Round 3 §1: body headings keep
-  // Lovable's own term). The "waiting for analysis" notice itself moved into
-  // the shared <AnalyseNotice /> component in Round 4 Task A4 -- see
-  // ux-round4.test.ts and analyse-notice.tsx for that copy now.
-  for (const text of ["Rules Harness added", "Show all", "Restore this version?"]) {
-    assert.ok(raw.includes(text), `instructions.tsx missing "${text}"`);
-  }
+  // the per-version "What changed" diff view, its line-diff rendering, and
+  // "Restore this version" all moved to the History page -- none of it
+  // survives on Instructions.
+  assert.ok(!raw.includes("What changed"), "the old What changed view moved to History");
+  assert.ok(!raw.includes("Restore this version"), "Restore moved to the History page");
+  assert.ok(!code.includes("versions.map"), "the old per-version list moved to History");
+  assert.ok(!/changes\.(added|removed|lines|truncated)/.test(code));
+
   assert.ok(!code.includes("Skills"), "Skills UI must not live on the Instructions page");
 
   // no <details open>
   for (const tag of code.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag));
 
-  // only the knowledge/executor client helpers, never a raw fetch
+  // only the knowledge/executor/improvement-action client helpers -- restore
+  // (postKnowledge) moved to the History page -- never a raw fetch.
   assert.match(code, /fetchKnowledge/);
-  assert.match(code, /postKnowledge\(/);
   assert.match(code, /postExecutor\(/);
+  assert.match(code, /postImprovementAction/);
+  assert.ok(!/postKnowledge\(/.test(code), "restore (postKnowledge) moved to history.tsx");
   assert.ok(!/\bfetch\(/.test(code), "instructions.tsx must not call fetch directly");
 });
 
@@ -139,14 +132,18 @@ test("skills.tsx: heading, read-only line, per-skill fields, history, empty stat
     raw.includes("Your workspace has no Skills yet. Harness will show them here as soon as it reads one."),
   );
 
-  // per-skill: name, description, last changed, collapsed content, history when > 1
+  // per-skill: name, description, last changed, collapsed content; a link to
+  // the History page (Round 5 Task 4 / spec §3b) when there's more than one
+  // snapshot -- the per-skill +N/-N history list itself moved to the
+  // History page's timeline (timeline.tsx), so this page only links there.
   assert.match(code, /skill\.name/);
   assert.match(code, /skill\.description/);
   assert.match(code, /Last changed \{formatDate\(/);
   assert.match(code, /skill\.content/);
   assert.match(code, /skill\.history\.length > 1/);
-  assert.match(code, /h\.added/);
-  assert.match(code, /h\.removed/);
+  assert.match(code, /to="\/history"/);
+  assert.match(code, /search=\{\{ target: "workspace", id: workspaceId \}\}/);
+  assert.ok(raw.includes("See on the History page"));
 
   // loading / error / unavailable, mirroring the other pages
   assert.match(code, /Loading…/);

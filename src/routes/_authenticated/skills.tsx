@@ -3,7 +3,7 @@
 // content, and a per-skill history when more than one snapshot exists. Read
 // only: Harness does not write Skills yet. Only talks to the local Harness
 // skills route (fetchSkills via skillsQueryOptions).
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { DetailSection } from "@/components/harness/decision-layout";
 import { formatDate } from "@/lib/harness-ux";
@@ -33,7 +33,7 @@ const READ_ONLY_LINE = "Harness reads your workspace Skills; it does not write t
 const EMPTY_LINE =
   "Your workspace has no Skills yet. Harness will show them here as soon as it reads one.";
 
-function SkillSection({ skill }: { skill: Skill }) {
+function SkillSection({ skill, workspaceId }: { skill: Skill; workspaceId: string | null }) {
   const lastChanged = skill.updated_at_remote ?? skill.fetched_at;
   return (
     <section className="space-y-3 rounded-md border p-4">
@@ -50,16 +50,14 @@ function SkillSection({ skill }: { skill: Skill }) {
         <pre className="whitespace-pre-wrap break-words font-mono text-xs">{skill.content}</pre>
       </DetailSection>
 
-      {skill.history.length > 1 ? (
-        <DetailSection title="History">
-          <ul className="space-y-1">
-            {skill.history.map((h) => (
-              <li key={`${h.sha256}-${h.fetched_at}`}>
-                {formatDate(h.fetched_at)}: +{h.added} −{h.removed}
-              </li>
-            ))}
-          </ul>
-        </DetailSection>
+      {skill.history.length > 1 && workspaceId ? (
+        <Link
+          to="/history"
+          search={{ target: "workspace", id: workspaceId }}
+          className="text-sm text-primary underline underline-offset-2"
+        >
+          See on the History page
+        </Link>
       ) : null}
     </section>
   );
@@ -101,6 +99,7 @@ function Page() {
   }
 
   const skills = query.data?.skills ?? [];
+  const workspaceId = query.data?.workspace_id ?? null;
 
   return (
     <div className="space-y-8">
@@ -112,7 +111,7 @@ function Page() {
           {EMPTY_LINE}
         </div>
       ) : (
-        skills.map((s) => <SkillSection key={s.name} skill={s} />)
+        skills.map((s) => <SkillSection key={s.name} skill={s} workspaceId={workspaceId} />)
       )}
     </div>
   );

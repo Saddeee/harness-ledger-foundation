@@ -37,14 +37,8 @@ test("every Round 3 Task 2 route enforces auth through the shared adapter and re
   }
 });
 
-test("knowledge.ts: each version carries a server-computed, capped line diff and the response carries demo_loaded; skills moved out", () => {
+test("knowledge.ts: the response carries demo_loaded and no per-target version diff any more; skills moved out", () => {
   const code = codeOnly(readApp(KNOWLEDGE_ROUTE));
-  assert.match(code, /adapter\.lineDiff\(v\.previous_content, v\.new_content\)/);
-  assert.match(code, /changes:\s*\{/);
-  assert.match(code, /added:\s*diff\.added/);
-  assert.match(code, /removed:\s*diff\.removed/);
-  assert.match(code, /truncated/);
-  assert.match(code, /MAX_DIFF_LINES\s*=\s*400/);
   assert.match(code, /adapter\.demoLoaded\(\)/);
   assert.match(code, /demo_loaded:\s*adapter\.demoLoaded\(\)/);
   // skills is a whole field of the old response object -- it must not be
@@ -52,6 +46,16 @@ test("knowledge.ts: each version carries a server-computed, capped line diff and
   // appears in the file's own doc comment, which codeOnly strips).
   assert.ok(!/\bskills\b/.test(code), "the knowledge route must no longer build a skills field");
   assert.ok(!/latestSkillSnapshots/.test(code), "skill snapshot reads move to skills.ts");
+  // Round 5 Task 4 / spec §3a-§3b: the per-target `versions` array (with its
+  // own per-version line diff) moved out of buildKnowledgeResponse entirely
+  // -- the full write history, and its diff, now live only on the History
+  // page's timeline (`adapter.buildTimeline`, checked in
+  // ux-round5-api.test.ts). buildKnowledgeResponse itself never diffs.
+  assert.ok(
+    !/adapter\.lineDiff\(/.test(code),
+    "buildKnowledgeResponse must no longer compute a per-version diff",
+  );
+  assert.ok(!/versions,/.test(code), "targetsOut must no longer carry a versions field");
 });
 
 test("skills.ts: per-skill latest content plus full snapshot history with a line diff between consecutive snapshots", () => {

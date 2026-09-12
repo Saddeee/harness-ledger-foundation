@@ -1,33 +1,39 @@
 // The Instructions page (formerly Knowledge): what Harness currently sees in
-// each Lovable project's/workspace's Knowledge, the rules it added, and the
-// version history of every write, with a "What changed" line diff per
-// version (Round 3 §2). Skills live on their own route/page. Section
-// headings below the title keep Lovable's own term, "Knowledge" (e.g. the
-// per-target heading, "Rules Harness added"), since that's what the user
-// sees in Lovable itself; only the page's own title, and its name in the
-// nav and URL, say "Instructions". Only talks to the local Harness routes
-// (fetchKnowledge/postKnowledge/postExecutor) -- writing to Lovable itself
-// happens in the executor process, never from this page.
-import { createFileRoute, Link } from "@tanstack/react-router";
+// each Lovable project's/workspace's Knowledge, and the rules it has added
+// there (Round 3 §2). The write history and its per-version change diff
+// moved to the History page (Round 5 §3b) -- this page shows only current.
+// Skills live on their own route/page. Section headings below the title
+// keep Lovable's own term, "Knowledge" (e.g. the per-target heading, "Rules
+// Harness added"), since that's what the user sees in Lovable itself; only
+// the page's own title, and its name in the nav and URL, say "Instructions".
+// Only talks to the local Harness routes (fetchKnowledge/postExecutor/
+// postImprovementAction) -- writing to Lovable itself happens in the
+// executor process, never from this page.
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import type { KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import { ConfirmAction, DetailSection } from "@/components/harness/decision-layout";
-import { cn } from "@/lib/utils";
-import { formatDate, healthLine } from "@/lib/harness-ux";
+import { ManagedBlockText } from "@/components/harness/timeline";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDate, formatDay, healthLine } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
   fetchKnowledge,
   postExecutor,
   postImprovementAction,
-  postKnowledge,
-  type DiffLine,
   type KnowledgeActiveRule,
-  type KnowledgeChanges,
   type KnowledgeTargetView,
-  type KnowledgeVersionSummary,
 } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/instructions")({
@@ -50,8 +56,6 @@ export const Route = createFileRoute("/_authenticated/instructions")({
   component: Page,
 });
 
-const HARNESS_START = "<!-- harness:start -->";
-const HARNESS_END = "<!-- harness:end -->";
 const COLLAPSE_LINES = 12;
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
 
@@ -61,119 +65,24 @@ const RETIRE_TITLE = "Retire this rule?";
 const RETIRE_BODY = "Harness will rewrite your Knowledge without it at the next sync.";
 const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
 
-// ---- Copy for each version's status. Never implies more happened than the
-// record shows -- "written" only when the executor actually wrote it. ----
-function versionStatusLine(v: KnowledgeVersionSummary): string {
-  const base = (() => {
-    switch (v.status) {
-      case "written":
-        return v.restored_from_version_id != null
-          ? `Reverted to an earlier version${v.written_at ? `, ${formatDate(v.written_at)}` : ""}`
-          : `Written to Lovable${v.written_at ? `, ${formatDate(v.written_at)}` : ""}`;
-      case "pending":
-        return "Staged — will be written at the next sync";
-      case "stale":
-        return "Needs attention — Knowledge changed in Lovable before this could be written";
-      case "failed":
-        return "Adding failed";
-      case "cancelled":
-        return "Cancelled — you changed your decision";
-      default:
-        return v.status;
-    }
-  })();
-  return v.restored_from_version_id != null
-    ? `${base} · restored from #${v.restored_from_version_id}`
-    : base;
-}
-
-// One line per version: "+N lines, −M lines", or "no text change" when the
-// write didn't actually change the text (e.g. a restore back to the same
-// content).
-function ChangesSummary({ changes }: { changes: KnowledgeChanges }) {
-  if (changes.added === 0 && changes.removed === 0) {
-    return <p className="text-xs text-muted-foreground">no text change</p>;
-  }
-  return (
-    <p className="text-xs text-muted-foreground">
-      +{changes.added} lines, −{changes.removed} lines
-    </p>
-  );
-}
-
-const DIFF_LINE_STYLE: Record<DiffLine["kind"], string> = {
-  "-": "text-red-700 dark:text-red-400",
-  "+": "text-green-700 dark:text-green-400",
-  " ": "text-muted-foreground",
-};
-const DIFF_LINE_PREFIX: Record<DiffLine["kind"], string> = {
-  "-": "−",
-  "+": "+",
-  " ": " ",
+// Round 5 Task 3/4 / spec §3a: the rules table's Status column.
+const RULE_STATUS_LABEL: Record<NonNullable<KnowledgeActiveRule["status"]>, string> = {
+  written: "In Lovable",
+  pending: "Staged",
+  stale: "Needs attention",
+  failed: "Needs attention",
+  testing: "Testing",
 };
 
-// Collapsed "What changed" toggle: the server-computed line diff, capped at
-// 400 lines, with removed lines in red and added lines in green so what
-// Harness changed is visible without diffing by hand.
-function WhatChangedLines({ changes }: { changes: KnowledgeChanges }) {
-  return (
-    <div className="space-y-0.5 font-mono text-xs">
-      {changes.lines.map((line, i) => (
-        <p key={i} className={cn("whitespace-pre-wrap break-words", DIFF_LINE_STYLE[line.kind])}>
-          {DIFF_LINE_PREFIX[line.kind]}
-          {line.text}
-        </p>
-      ))}
-      {changes.truncated ? (
-        <p className="pt-1 text-muted-foreground">Showing the first 400 lines of the change.</p>
-      ) : null}
-    </div>
-  );
-}
+// spec §5.2: the muted "You said: ..." line under a rule's Observed column.
+const VERDICT_TEXT: Record<"helped" | "did_not_help" | "not_sure", string> = {
+  helped: "helped",
+  did_not_help: "didn't help",
+  not_sure: "not sure",
+};
 
 // The Harness-managed block, when present, gets its own visually marked
 // area; everything the user wrote stays plain text either side of it.
-function ManagedBlockText({
-  content,
-  managedBlockPresent,
-}: {
-  content: string;
-  managedBlockPresent: boolean;
-}) {
-  const plain = (
-    <pre className="whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 font-mono text-xs">
-      {content}
-    </pre>
-  );
-  if (!managedBlockPresent) return plain;
-
-  const startIdx = content.indexOf(HARNESS_START);
-  const endIdx = content.indexOf(HARNESS_END);
-  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return plain;
-
-  const before = content.slice(0, startIdx);
-  const managed = content.slice(startIdx + HARNESS_START.length, endIdx).trim();
-  const after = content.slice(endIdx + HARNESS_END.length);
-
-  return (
-    <div className="space-y-2 rounded-md border bg-muted/30 p-3 font-mono text-xs">
-      {before ? <pre className="whitespace-pre-wrap break-words">{before}</pre> : null}
-      <div className="rounded-md border bg-background p-2">
-        <p className="mb-1 font-sans text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Added by Harness
-        </p>
-        <pre className="whitespace-pre-wrap break-words">{managed}</pre>
-      </div>
-      {after ? <pre className="whitespace-pre-wrap break-words">{after}</pre> : null}
-    </div>
-  );
-}
-
-// Collapsed after ~12 lines so a long Knowledge document doesn't dominate
-// the page; "Show all" reveals the rest, with the managed block marked.
-// Text that already carries a Harness-managed block is never collapsed: the
-// truncated preview would drop or split the "Added by Harness" marking, and
-// seeing what Harness added is the whole point of this page.
 function KnowledgeText({
   content,
   managedBlockPresent,
@@ -214,7 +123,85 @@ function KnowledgeText({
   );
 }
 
-function ActiveRulesList({
+// One row per active rule: the rule text (plain, not link-styled -- the
+// whole row navigates to its Suggestions detail), status, since-added date,
+// what's been observed, and the Retire action. spec §3a.
+function RuleRow({
+  rule,
+  retireBusy,
+  onRetire,
+}: {
+  rule: KnowledgeActiveRule;
+  retireBusy: boolean;
+  onRetire: (ruleId: number) => void;
+}) {
+  const navigate = useNavigate();
+  const improvementId = rule.improvement_id;
+  const goToSuggestion = () => {
+    if (improvementId != null) navigate({ to: "/ledger", search: { improvement: improvementId } });
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLTableRowElement>) => {
+    if (e.key === "Enter") goToSuggestion();
+  };
+
+  const text =
+    rule.text || (improvementId != null ? `Suggestion #${improvementId}` : `Rule #${rule.id}`);
+  const status = rule.status ? RULE_STATUS_LABEL[rule.status] : "—";
+  const since = rule.since ? formatDay(rule.since) : "—";
+  const observed = healthLine(rule.health ?? null);
+
+  return (
+    <TableRow
+      {...(improvementId != null
+        ? {
+            role: "link",
+            tabIndex: 0,
+            onClick: goToSuggestion,
+            onKeyDown,
+            className: "cursor-pointer",
+          }
+        : {})}
+    >
+      <TableCell>
+        <span>{text}</span>
+      </TableCell>
+      <TableCell>{status}</TableCell>
+      <TableCell>{since}</TableCell>
+      <TableCell>
+        <p className="text-xs text-muted-foreground">{observed ?? "no builds yet"}</p>
+        {rule.verdict ? (
+          <p className="text-xs text-muted-foreground">
+            You said: {VERDICT_TEXT[rule.verdict.verdict]}, {formatDay(rule.verdict.created_at)}
+          </p>
+        ) : null}
+        {rule.adherence && rule.adherence.followed + rule.adherence.broke > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Followed in {rule.adherence.followed} of{" "}
+            {rule.adherence.followed + rule.adherence.broke} builds it applied to · judged by AI
+          </p>
+        ) : null}
+        {/* adherence-line */}
+      </TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-col items-end gap-2">
+          <ConfirmAction
+            trigger="Retire"
+            variant="outline"
+            title={RETIRE_TITLE}
+            body={RETIRE_BODY}
+            consequences={RETIRE_CONSEQUENCES}
+            confirmLabel="Retire"
+            disabled={retireBusy}
+            onConfirm={() => onRetire(rule.id)}
+          />
+          {/* verdict-buttons */}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function RulesTable({
   rules,
   retireBusy,
   onRetire,
@@ -227,47 +214,27 @@ function ActiveRulesList({
     return <p className="text-sm text-muted-foreground">No rules yet.</p>;
   }
   return (
-    <ul className="space-y-2">
-      {rules.map((r) => {
-        const text =
-          r.text ||
-          (r.improvement_id != null ? `Suggestion #${r.improvement_id}` : `Rule #${r.id}`);
-        const health = healthLine(r.health ?? null);
-        return (
-          <li key={r.id} className="space-y-1 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {r.improvement_id != null ? (
-                <Link
-                  to="/ledger"
-                  search={{ improvement: r.improvement_id }}
-                  className="text-primary underline underline-offset-2"
-                >
-                  {text}
-                </Link>
-              ) : (
-                <span>{text}</span>
-              )}
-              <ConfirmAction
-                trigger="Retire"
-                variant="outline"
-                title={RETIRE_TITLE}
-                body={RETIRE_BODY}
-                consequences={RETIRE_CONSEQUENCES}
-                confirmLabel="Retire"
-                disabled={retireBusy}
-                onConfirm={() => onRetire(r.id)}
-              />
-            </div>
-            {health ? <p className="text-xs text-muted-foreground">{health}</p> : null}
-          </li>
-        );
-      })}
-    </ul>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Rule</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Since</TableHead>
+          <TableHead>Observed</TableHead>
+          <TableHead />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rules.map((r) => (
+          <RuleRow key={r.id} rule={r} retireBusy={retireBusy} onRetire={onRetire} />
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
 // Collapsed by default -- a project with no retired rules never shows this
-// at all, and one that does keeps the live rules list the focus.
+// at all, and one that does keeps the rules table the focus.
 function RetiredRulesList({
   rules,
   readdBusy,
@@ -307,8 +274,6 @@ function RetiredRulesList({
 function TargetSection({
   target,
   nextRunAt,
-  restoreDisabled,
-  onRestore,
   syncing,
   onSyncNow,
   retireBusy,
@@ -318,8 +283,6 @@ function TargetSection({
 }: {
   target: KnowledgeTargetView;
   nextRunAt: string | null | undefined;
-  restoreDisabled: boolean;
-  onRestore: (versionId: number) => void;
   syncing: boolean;
   onSyncNow: () => void;
   retireBusy: boolean;
@@ -330,10 +293,7 @@ function TargetSection({
   const statusLine = target.current
     ? `Read from Lovable at ${formatDate(target.current.fetched_at)}`
     : "Not read yet — press Sync now";
-
-  const writtenIds = target.versions.filter((v) => v.status === "written").map((v) => v.id);
-  const newestWrittenId = writtenIds.length > 0 ? Math.max(...writtenIds) : null;
-  const historyDesc = [...target.versions].sort((a, b) => b.id - a.id);
+  const content = target.current?.content ?? "";
 
   return (
     <section className="space-y-4 rounded-md border p-4">
@@ -342,48 +302,17 @@ function TargetSection({
         <p className="text-sm text-muted-foreground">{statusLine}</p>
       </div>
 
-      <KnowledgeText
-        content={target.current?.content ?? ""}
-        managedBlockPresent={target.managed_block_present}
-      />
-
       <div className="space-y-2">
         <h3 className="text-sm font-medium">Rules Harness added</h3>
-        <ActiveRulesList rules={target.active_rules} retireBusy={retireBusy} onRetire={onRetire} />
+        <RulesTable rules={target.active_rules} retireBusy={retireBusy} onRetire={onRetire} />
         <RetiredRulesList rules={target.retired_rules} readdBusy={readdBusy} onReadd={onReadd} />
       </div>
 
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">History</h3>
-        {historyDesc.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing written yet.</p>
-        ) : (
-          <ul className="space-y-2">
-            {historyDesc.map((v) => (
-              <li key={v.id} className="space-y-2 rounded-md border bg-background p-2 text-sm">
-                <p>
-                  {formatDate(v.created_at)} · {versionStatusLine(v)}
-                </p>
-                <ChangesSummary changes={v.changes} />
-                <DetailSection title="What changed">
-                  <WhatChangedLines changes={v.changes} />
-                </DetailSection>
-                {v.status === "written" && v.id !== newestWrittenId ? (
-                  <ConfirmAction
-                    trigger="Restore this version"
-                    title="Restore this version?"
-                    body="Harness will write the earlier text back, as a new version."
-                    consequences={[]}
-                    confirmLabel="Restore"
-                    disabled={restoreDisabled}
-                    onConfirm={() => onRestore(v.id)}
-                  />
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <DetailSection
+        title={`Full Knowledge text as Lovable sees it (${content.length} characters)`}
+      >
+        <KnowledgeText content={content} managedBlockPresent={target.managed_block_present} />
+      </DetailSection>
 
       {target.pending_write ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3 text-sm">
@@ -405,15 +334,6 @@ function Page() {
   const qc = useQueryClient();
   const query = useQuery({ queryKey: ["harness-knowledge"], queryFn: fetchKnowledge });
   const executor = useQuery(executorQueryOptions);
-
-  const restore = useMutation({
-    mutationFn: (versionId: number) => postKnowledge({ action: "restore", version_id: versionId }),
-    onSuccess: () => {
-      toast.success("Restore staged — it will be written at the next sync");
-      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Restore failed"),
-  });
 
   const syncNow = useMutation({
     mutationFn: () => postExecutor({ action: "sync_now" }),
@@ -522,8 +442,6 @@ function Page() {
             key={`${t.target}-${t.id}`}
             target={t}
             nextRunAt={executor.data?.next_run_at}
-            restoreDisabled={restore.isPending}
-            onRestore={(versionId) => restore.mutate(versionId)}
             syncing={syncNow.isPending}
             onSyncNow={() => syncNow.mutate()}
             retireBusy={retireRule.isPending}
