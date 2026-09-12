@@ -6,6 +6,7 @@ import {
   improvementGroup,
   type ImprovementGroup,
   type LovableWriteStatus,
+  type RetireReason,
   type Stage,
 } from "@/lib/harness-ux";
 
@@ -55,8 +56,26 @@ export type LovableInfo = {
   auto_write: boolean;
 };
 
+// A retirement proposal (Task C2 / spec §4b-§5), shown as an item of kind
+// "retire" with a negative id (-proposal_id). Null on every ordinary
+// (kind "improvement") item.
+export type RetireInfo = {
+  proposal_id: number;
+  rule_id: number;
+  reason: RetireReason;
+  health: {
+    applicable_tasks: number;
+    helped: number;
+    hurt: number;
+    last_applicable_at: string | null;
+  };
+  since: string | null;
+  contradicts_instruction: string | null;
+};
+
 export type Improvement = {
   id: number;
+  kind: "improvement" | "retire";
   project: { id: string; name: string | null };
   title: string;
   proposed_instruction: string | null;
@@ -67,6 +86,7 @@ export type Improvement = {
     decided_at: string | null;
     divergence: string | null;
     test_first: boolean;
+    retired: boolean;
   };
   stage: Stage["key"];
   stages: Stage[];
@@ -88,6 +108,7 @@ export type Improvement = {
   // Present once the data layer ships the Lovable write lifecycle; optional
   // so an older payload still renders (status falls back to "none").
   lovable?: LovableInfo;
+  retire: RetireInfo | null;
   developer: {
     correction: unknown;
     learning: unknown | null;
@@ -190,6 +211,9 @@ export type KnowledgeTargetView = {
   current: KnowledgeCurrent;
   managed_block_present: boolean;
   active_rules: KnowledgeActiveRule[];
+  // Task C2: rules retired from this target, collapsed under "Retired rules
+  // (N)" on the Instructions page, each with a "Re-add" button.
+  retired_rules: KnowledgeActiveRule[];
   versions: KnowledgeVersionSummary[];
   pending_write: { version_id: number; created_at: string } | null;
 };
@@ -403,6 +427,7 @@ export function groupOf(item: Improvement): ImprovementGroup | null {
     status: item.decision.status,
     writeStatus: lovableOf(item).write_status,
     testFirst: item.decision.test_first,
+    retired: item.decision.retired,
   });
 }
 

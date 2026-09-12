@@ -24,6 +24,8 @@ import {
   label,
   lovableReplyText,
   proveCostLine,
+  retireReasonSentence,
+  retireSinceLine,
   type StatusCtx,
   versionStatusLine,
   whyFor,
@@ -58,6 +60,12 @@ const RESTORE_TITLE = "Restore the previous Knowledge?";
 const RESTORE_BODY = "Harness will write the earlier text back, as a new version.";
 const NO_INSTRUCTION = "Harness hasn't drafted an instruction yet.";
 const ADD_NOW_HELP = "Harness writes this exact text at the next sync. Uses no credits.";
+const RETIRE_TITLE = "Retire this rule?";
+const RETIRE_BODY = "Harness will rewrite your Knowledge without it at the next sync.";
+const RETIRE_CONSEQUENCES = ["You can re-add it later from Improvements."];
+const RETIRED_TOAST = "Retired — Harness will rewrite your Knowledge at the next sync.";
+const KEPT_TOAST = "Kept — Harness will ask again in 30 days";
+const READDED_TOAST = "Re-added — will be written at the next sync";
 
 const LONG_TEXT = 600;
 
@@ -248,6 +256,91 @@ function SkipConfirm({ item, busy, run }: { item: Improvement; busy: boolean; ru
   );
 }
 
+// ---- Retirement proposals (Task C2 / spec §4b-§5): kind "retire" items ----
+
+// `proposalId` (from an open retire_proposals row, the Inbox item) or
+// `ruleId` (the manual path, from the Instructions page's per-rule Retire
+// button, with no proposal necessarily open) -- exactly one is passed.
+function RetireConfirm({
+  proposalId,
+  ruleId,
+  busy,
+  run,
+  trigger,
+  variant,
+}: {
+  proposalId?: number;
+  ruleId?: number;
+  busy: boolean;
+  run: Run;
+  trigger?: string;
+  variant?: "default" | "outline";
+}) {
+  return (
+    <ConfirmAction
+      trigger={trigger ?? "Retire"}
+      {...(variant ? { variant } : {})}
+      title={RETIRE_TITLE}
+      body={RETIRE_BODY}
+      consequences={RETIRE_CONSEQUENCES}
+      confirmLabel="Retire"
+      disabled={busy}
+      onConfirm={() =>
+        void run(
+          proposalId != null
+            ? { action: "retire", id: -proposalId }
+            : { action: "retire", rule_id: ruleId },
+          RETIRED_TOAST,
+        )
+      }
+    />
+  );
+}
+
+function RetireCard({
+  item,
+  busy,
+  run,
+  titleAs,
+}: {
+  item: Improvement;
+  busy: boolean;
+  run: Run;
+  titleAs: "h1" | "h2";
+}) {
+  const Title = titleAs;
+  const titleId = `improvement-${item.id}`;
+  const retire = item.retire;
+  if (!retire) return null;
+  return (
+    <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      <div className="space-y-2">
+        <p className="text-sm font-semibold">{projectName(item)}</p>
+        <Title
+          id={titleId}
+          className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
+        >
+          {item.title}
+        </Title>
+        <p className="text-sm text-muted-foreground">{retireSinceLine(retire)}</p>
+        <p className="text-sm">{retireReasonSentence(retire)}</p>
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <RetireConfirm proposalId={retire.proposal_id} busy={busy} run={run} />
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full sm:w-auto"
+          disabled={busy}
+          onClick={() => void run({ action: "keep", id: -retire.proposal_id }, KEPT_TOAST)}
+        >
+          Keep
+        </Button>
+      </div>
+    </article>
+  );
+}
+
 // ---- Decided items: where it stands, and how to change your mind ----
 
 function DecidedStatus({
@@ -264,6 +357,7 @@ function DecidedStatus({
   const lovable = lovableOf(item);
   const accepted = item.decision.status === "accepted";
   const skipped = item.decision.status === "skipped";
+  const retired = item.decision.retired;
   const written = lovable.write_status === "written";
   const latestWritten = lovable.versions
     .filter((v) => v.status === "written")
@@ -295,78 +389,95 @@ function DecidedStatus({
         </p>
       ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {accepted &&
-        item.decision.test_first &&
-        lovable.write_status === "none" &&
-        (item.destination === "project" || item.destination === "workspace") ? (
-          <AddConfirm
-            item={item}
-            destination={item.destination}
-            busy={busy}
-            run={run}
-            variant="outline"
-            trigger="Add it now instead"
-          />
-        ) : null}
-        {accepted && !written ? (
-          <>
-            {(["project", "workspace"] as Destination[])
-              .filter((d) => d !== item.destination)
-              .map((d) => (
-                <AddConfirm
-                  key={d}
-                  item={item}
-                  destination={d}
-                  busy={busy}
-                  run={run}
-                  variant="outline"
-                  trigger={`${ADD_LABELS[d]} instead`}
-                />
-              ))}
-            <SkipConfirm item={item} busy={busy} run={run} />
-          </>
-        ) : null}
-        {accepted &&
-        lovable.write_status === "failed" &&
-        (item.destination === "project" || item.destination === "workspace") ? (
-          <AddConfirm
-            item={item}
-            destination={item.destination}
-            busy={busy}
-            run={run}
-            variant="outline"
-            trigger="Try adding again"
-          />
-        ) : null}
-        {accepted && written && latestWritten ? (
-          <ConfirmAction
-            trigger="Restore previous version"
-            variant="outline"
-            title={RESTORE_TITLE}
-            body={RESTORE_BODY}
-            consequences={[]}
-            confirmLabel="Restore"
-            disabled={busy}
-            onConfirm={() =>
-              void run(
-                { action: "restore", id: item.id, version_id: latestWritten.id },
-                "Restore requested — Harness will write the earlier text back",
-              )
-            }
-          />
-        ) : null}
-        {skipped ? (
+        {retired ? (
           <Button
+            type="button"
             variant="outline"
             className="w-full sm:w-auto"
             disabled={busy}
-            onClick={() =>
-              void run({ action: "reopen", id: item.id }, "Reopened — waiting for your decision")
-            }
+            onClick={() => void run({ action: "readd", id: item.id }, READDED_TOAST)}
           >
-            Reopen
+            Re-add
           </Button>
-        ) : null}
+        ) : (
+          <>
+            {accepted &&
+            item.decision.test_first &&
+            lovable.write_status === "none" &&
+            (item.destination === "project" || item.destination === "workspace") ? (
+              <AddConfirm
+                item={item}
+                destination={item.destination}
+                busy={busy}
+                run={run}
+                variant="outline"
+                trigger="Add it now instead"
+              />
+            ) : null}
+            {accepted && !written ? (
+              <>
+                {(["project", "workspace"] as Destination[])
+                  .filter((d) => d !== item.destination)
+                  .map((d) => (
+                    <AddConfirm
+                      key={d}
+                      item={item}
+                      destination={d}
+                      busy={busy}
+                      run={run}
+                      variant="outline"
+                      trigger={`${ADD_LABELS[d]} instead`}
+                    />
+                  ))}
+                <SkipConfirm item={item} busy={busy} run={run} />
+              </>
+            ) : null}
+            {accepted &&
+            lovable.write_status === "failed" &&
+            (item.destination === "project" || item.destination === "workspace") ? (
+              <AddConfirm
+                item={item}
+                destination={item.destination}
+                busy={busy}
+                run={run}
+                variant="outline"
+                trigger="Try adding again"
+              />
+            ) : null}
+            {accepted && written && latestWritten ? (
+              <ConfirmAction
+                trigger="Restore previous version"
+                variant="outline"
+                title={RESTORE_TITLE}
+                body={RESTORE_BODY}
+                consequences={[]}
+                confirmLabel="Restore"
+                disabled={busy}
+                onConfirm={() =>
+                  void run(
+                    { action: "restore", id: item.id, version_id: latestWritten.id },
+                    "Restore requested — Harness will write the earlier text back",
+                  )
+                }
+              />
+            ) : null}
+            {skipped ? (
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={busy}
+                onClick={() =>
+                  void run(
+                    { action: "reopen", id: item.id },
+                    "Reopened — waiting for your decision",
+                  )
+                }
+              >
+                Reopen
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );
@@ -420,6 +531,10 @@ export function DecisionCard({
   const pending = item.decision.status === "pending";
   const Title = titleAs;
   const titleId = `improvement-${item.id}`;
+
+  if (item.kind === "retire") {
+    return <RetireCard item={item} busy={busy} run={run} titleAs={titleAs} />;
+  }
 
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">

@@ -20,6 +20,7 @@ import {
   executorQueryOptions,
   fetchKnowledge,
   postExecutor,
+  postImprovementAction,
   postKnowledge,
   type DiffLine,
   type KnowledgeActiveRule,
@@ -52,6 +53,12 @@ const HARNESS_START = "<!-- harness:start -->";
 const HARNESS_END = "<!-- harness:end -->";
 const COLLAPSE_LINES = 12;
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
+
+// Task C2 / spec §4b-§5: manual Retire from this page uses the same confirm
+// copy as the Inbox's retirement proposal card (improvement.tsx).
+const RETIRE_TITLE = "Retire this rule?";
+const RETIRE_BODY = "Harness will rewrite your Knowledge without it at the next sync.";
+const RETIRE_CONSEQUENCES = ["You can re-add it later from Improvements."];
 
 // ---- Copy for each version's status. Never implies more happened than the
 // record shows -- "written" only when the executor actually wrote it. ----
@@ -206,18 +213,26 @@ function KnowledgeText({
   );
 }
 
-function ActiveRulesList({ rules }: { rules: KnowledgeActiveRule[] }) {
+function ActiveRulesList({
+  rules,
+  retireBusy,
+  onRetire,
+}: {
+  rules: KnowledgeActiveRule[];
+  retireBusy: boolean;
+  onRetire: (ruleId: number) => void;
+}) {
   if (rules.length === 0) {
     return <p className="text-sm text-muted-foreground">No rules yet.</p>;
   }
   return (
-    <ul className="space-y-1">
+    <ul className="space-y-2">
       {rules.map((r) => {
         const text =
           r.text ||
           (r.improvement_id != null ? `Improvement #${r.improvement_id}` : `Rule #${r.id}`);
         return (
-          <li key={r.id} className="text-sm">
+          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
             {r.improvement_id != null ? (
               <Link
                 to="/ledger"
@@ -229,10 +244,58 @@ function ActiveRulesList({ rules }: { rules: KnowledgeActiveRule[] }) {
             ) : (
               <span>{text}</span>
             )}
+            <ConfirmAction
+              trigger="Retire"
+              variant="outline"
+              title={RETIRE_TITLE}
+              body={RETIRE_BODY}
+              consequences={RETIRE_CONSEQUENCES}
+              confirmLabel="Retire"
+              disabled={retireBusy}
+              onConfirm={() => onRetire(r.id)}
+            />
           </li>
         );
       })}
     </ul>
+  );
+}
+
+// Collapsed by default -- a project with no retired rules never shows this
+// at all, and one that does keeps the live rules list the focus.
+function RetiredRulesList({
+  rules,
+  readdBusy,
+  onReadd,
+}: {
+  rules: KnowledgeActiveRule[];
+  readdBusy: boolean;
+  onReadd: (improvementId: number) => void;
+}) {
+  if (rules.length === 0) return null;
+  return (
+    <details className="rounded-md border">
+      <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        Retired rules ({rules.length})
+      </summary>
+      <ul className="space-y-2 border-t px-3 py-3">
+        {rules.map((r) => (
+          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-muted-foreground">{r.text || `Rule #${r.id}`}</span>
+            {r.improvement_id != null ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={readdBusy}
+                onClick={() => onReadd(r.improvement_id!)}
+              >
+                Re-add
+              </Button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -243,6 +306,10 @@ function TargetSection({
   onRestore,
   syncing,
   onSyncNow,
+  retireBusy,
+  onRetire,
+  readdBusy,
+  onReadd,
 }: {
   target: KnowledgeTargetView;
   nextRunAt: string | null | undefined;
@@ -250,6 +317,10 @@ function TargetSection({
   onRestore: (versionId: number) => void;
   syncing: boolean;
   onSyncNow: () => void;
+  retireBusy: boolean;
+  onRetire: (ruleId: number) => void;
+  readdBusy: boolean;
+  onReadd: (improvementId: number) => void;
 }) {
   const statusLine = target.current
     ? `Read from Lovable at ${formatDate(target.current.fetched_at)}`
@@ -273,7 +344,8 @@ function TargetSection({
 
       <div className="space-y-2">
         <h3 className="text-sm font-medium">Rules Harness added</h3>
-        <ActiveRulesList rules={target.active_rules} />
+        <ActiveRulesList rules={target.active_rules} retireBusy={retireBusy} onRetire={onRetire} />
+        <RetiredRulesList rules={target.retired_rules} readdBusy={readdBusy} onReadd={onReadd} />
       </div>
 
       <div className="space-y-2">
@@ -346,6 +418,30 @@ function Page() {
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Sync failed"),
+  });
+
+  // Task C2 / spec §4b-§5: manual Retire and Re-add, the same action path
+  // the Inbox's retirement proposal card uses -- both invalidate the
+  // Improvements list too, since a rule's own card there changes group.
+  const retireRule = useMutation({
+    mutationFn: (ruleId: number) => postImprovementAction({ action: "retire", rule_id: ruleId }),
+    onSuccess: () => {
+      toast.success("Retired — Harness will rewrite your Knowledge at the next sync.");
+      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
+      void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Retire failed"),
+  });
+
+  const readdRule = useMutation({
+    mutationFn: (improvementId: number) =>
+      postImprovementAction({ action: "readd", id: improvementId }),
+    onSuccess: () => {
+      toast.success("Re-added — will be written at the next sync");
+      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
+      void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Re-add failed"),
   });
 
   if (query.isLoading) {
@@ -435,6 +531,10 @@ function Page() {
             onRestore={(versionId) => restore.mutate(versionId)}
             syncing={syncNow.isPending}
             onSyncNow={() => syncNow.mutate()}
+            retireBusy={retireRule.isPending}
+            onRetire={(ruleId) => retireRule.mutate(ruleId)}
+            readdBusy={readdRule.isPending}
+            onReadd={(improvementId) => readdRule.mutate(improvementId)}
           />
         ))
       )}

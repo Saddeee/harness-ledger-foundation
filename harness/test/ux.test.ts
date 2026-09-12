@@ -16,7 +16,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -39,17 +41,32 @@ function detailCopy(): string {
 }
 
 test("enum-to-label mappings: every spec'd example maps to the required plain-language label", () => {
-  assert.equal(ux.label(ux.CLASSIFICATION_LABELS, "constraint_restatement"), "Existing expectation was missed");
-  assert.equal(ux.label(ux.CLASSIFICATION_LABELS, "preference_revision"), "You changed the preferred approach");
-  assert.equal(ux.label(ux.CLASSIFICATION_LABELS, "missing_requirement"), "Part of the request was missed");
-  assert.equal(ux.label(ux.CLASSIFICATION_LABELS, "defect_correction"), "Lovable made an implementation mistake");
+  assert.equal(
+    ux.label(ux.CLASSIFICATION_LABELS, "constraint_restatement"),
+    "Existing expectation was missed",
+  );
+  assert.equal(
+    ux.label(ux.CLASSIFICATION_LABELS, "preference_revision"),
+    "You changed the preferred approach",
+  );
+  assert.equal(
+    ux.label(ux.CLASSIFICATION_LABELS, "missing_requirement"),
+    "Part of the request was missed",
+  );
+  assert.equal(
+    ux.label(ux.CLASSIFICATION_LABELS, "defect_correction"),
+    "Lovable made an implementation mistake",
+  );
   assert.equal(ux.label(ux.SCOPE_LABELS, "workspace"), "Use across my projects");
   assert.equal(ux.label(ux.SCOPE_LABELS, "project"), "Use only in this project");
   assert.equal(ux.label(ux.EVIDENCE_LEVEL_LABELS, "proposed"), "Not tested yet");
   assert.equal(ux.label(ux.VERIFIER_TYPE_LABELS, "structural"), "Automatic check");
   assert.equal(ux.label(ux.VERIFIER_TYPE_LABELS, "ai_rubric"), "AI review");
   assert.equal(ux.label(ux.VERIFIER_STATUS_LABELS, "not_run"), "Not tested");
-  assert.equal(ux.label(ux.EXPERIMENT_TYPE_LABELS, "paired_control_treatment"), "Compare with and without the rule");
+  assert.equal(
+    ux.label(ux.EXPERIMENT_TYPE_LABELS, "paired_control_treatment"),
+    "Compare with and without the rule",
+  );
   assert.equal(ux.label(ux.FIELD_LABELS, "predicted_failure"), "Problem this should prevent");
   assert.deepEqual(Object.values(ux.STAGE_LABELS), ["Found", "Your review", "Proof", "In Lovable"]);
   assert.deepEqual(Object.values(ux.DESTINATION_LABELS), [
@@ -57,26 +74,46 @@ test("enum-to-label mappings: every spec'd example maps to the required plain-la
     "Workspace Knowledge (all my projects)",
     "As a Skill",
   ]);
-  for (const v of ["proposed", "approved", "testing", "supported", "active", "questioned", "disabled", "retired", "rolled_back", "rejected"]) {
+  for (const v of [
+    "proposed",
+    "approved",
+    "testing",
+    "supported",
+    "active",
+    "questioned",
+    "disabled",
+    "retired",
+    "rolled_back",
+    "rejected",
+  ]) {
     assert.notEqual(ux.label(ux.RULE_STATE_LABELS, v), v, `rule state ${v} needs a label`);
   }
   assert.equal(ux.label(ux.SCOPE_LABELS, "galaxy"), "galaxy");
 });
 
 test("lay 'why' templates never invent specifics and always fall back", () => {
-  assert.match(ux.whyFor("constraint_restatement"), /^Lovable missed something you already expected\./);
+  assert.match(
+    ux.whyFor("constraint_restatement"),
+    /^Lovable missed something you already expected\./,
+  );
   assert.match(ux.whyFor("preference_revision"), /^You changed how you want this done\./);
-  assert.match(ux.whyFor("missing_requirement"), /^Part of what you needed wasn't in the request\./);
+  assert.match(
+    ux.whyFor("missing_requirement"),
+    /^Part of what you needed wasn't in the request\./,
+  );
   assert.match(ux.whyFor("defect_correction"), /^Lovable made a mistake you had to fix\./);
   assert.equal(ux.whyFor("other"), ux.whyFor(null));
-  for (const t of Object.values(ux.WHY_TEMPLATES)) assert.ok(!/cron|pg_cron|queue|credit/i.test(t), t);
+  for (const t of Object.values(ux.WHY_TEMPLATES))
+    assert.ok(!/cron|pg_cron|queue|credit/i.test(t), t);
 });
 
 test("default technical sections are collapsed and the detail page wraps them in Details + Developer view", () => {
   const layout = codeOnly(readApp(LAYOUT));
-  for (const tag of layout.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
+  for (const tag of layout.match(/<details[^>]*>/g) ?? [])
+    assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
   const detail = readApp(DETAIL);
-  for (const tag of codeOnly(detail).match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
+  for (const tag of codeOnly(detail).match(/<details[^>]*>/g) ?? [])
+    assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
   assert.match(detail, /<AdvancedDetails title="Details">/);
   assert.ok(!/title="More detail"/.test(detail));
   assert.match(detail, /Developer view/);
@@ -99,29 +136,58 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
   let last = -1;
   for (const marker of order) {
     const at = body.indexOf(marker);
-    assert.ok(at > last, `expected "${marker}" after the previous marker (at ${at}, previous ${last})`);
+    assert.ok(
+      at > last,
+      `expected "${marker}" after the previous marker (at ${at}, previous ${last})`,
+    );
     last = at;
   }
-  assert.match(body, /<DecisionCard\s+item=\{item\}[^>]*busy=\{busy\}[^>]*run=\{run\}[^>]*titleAs="h1"/);
+  assert.match(
+    body,
+    /<DecisionCard\s+item=\{item\}[^>]*busy=\{busy\}[^>]*run=\{run\}[^>]*titleAs="h1"/,
+  );
   const raw = readApp(DETAIL);
   assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="Details"'));
   // proof is hidden until it can run
-  assert.ok(!/Run proof|Prove it first|How Harness would prove this|PROVE_INTRO|proveCostLine/.test(body));
+  assert.ok(
+    !/Run proof|Prove it first|How Harness would prove this|PROVE_INTRO|proveCostLine/.test(body),
+  );
 });
 
 test("decision card: three buttons for pending items, decision buttons shown inline for decided ones, no Skill, no Decide later", () => {
   const detail = codeOnly(readApp(DETAIL));
-  const card = detail.slice(detail.indexOf("export function DecisionCard"), detail.indexOf("export function ImprovementDetail"));
-  assert.match(detail, /const ADD_LABELS: Record<Destination, string> = \{\s*project: "Add to this project",\s*workspace: "Add to all my projects",\s*\};/);
-  assert.match(card, /<AddConfirm item=\{item\} destination="project" busy=\{busy\} run=\{run\} \/>/);
-  assert.match(card, /<AddConfirm item=\{item\} destination="workspace" busy=\{busy\} run=\{run\} variant="outline" \/>/);
+  const card = detail.slice(
+    detail.indexOf("export function DecisionCard"),
+    detail.indexOf("export function ImprovementDetail"),
+  );
+  assert.match(
+    detail,
+    /const ADD_LABELS: Record<Destination, string> = \{\s*project: "Add to this project",\s*workspace: "Add to all my projects",\s*\};/,
+  );
+  assert.match(
+    card,
+    /<AddConfirm item=\{item\} destination="project" busy=\{busy\} run=\{run\} \/>/,
+  );
+  assert.match(
+    card,
+    /<AddConfirm item=\{item\} destination="workspace" busy=\{busy\} run=\{run\} variant="outline" \/>/,
+  );
   assert.match(card, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
   assert.match(card, /\{onOpen \? \(/);
   assert.match(card, /onClick=\{\(\) => onOpen\(item\.id\)\}/);
-  assert.ok(!/>\s*Details\s*<\/button>/.test(card), "no separate Details link; the card opens the item");
+  assert.ok(
+    !/>\s*Details\s*<\/button>/.test(card),
+    "no separate Details link; the card opens the item",
+  );
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
-  const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
-  assert.ok(!/Change decision/.test(decided), "the collapsed wrapper is gone; buttons show directly");
+  const decided = detail.slice(
+    detail.indexOf("function DecidedStatus"),
+    detail.indexOf("export function DecisionCard"),
+  );
+  assert.ok(
+    !/Change decision/.test(decided),
+    "the collapsed wrapper is gone; buttons show directly",
+  );
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
   assert.match(decided, /trigger="Try adding again"/);
   assert.match(decided, /trigger="Restore previous version"/);
@@ -131,11 +197,24 @@ test("decision card: three buttons for pending items, decision buttons shown inl
   // "role=\"radio\"" used to be forbidden here (an earlier deferred-decision
   // design); Task 8 reintroduces it deliberately for the Add-confirmation
   // choice, tested separately in ux-decision.test.ts.
-  for (const gone of ["Skill", "SKILL_NOT_ON", "Decide later", "Decide now", "isDeferred", "setDeferred", "DecisionPanel", "justAccepted", "PENDING_CHIP"]) {
+  for (const gone of [
+    "Skill",
+    "SKILL_NOT_ON",
+    "Decide later",
+    "Decide now",
+    "isDeferred",
+    "setDeferred",
+    "DecisionPanel",
+    "justAccepted",
+    "PENDING_CHIP",
+  ]) {
     assert.ok(!detail.includes(gone), `${gone} should be gone from the detail component`);
   }
   const client = codeOnly(readApp(CLIENT));
-  assert.ok(!/DEFERRED_PREFIX|isDeferred|setDeferred|localStorage/.test(client), "no per-browser state left");
+  assert.ok(
+    !/DEFERRED_PREFIX|isDeferred|setDeferred|localStorage/.test(client),
+    "no per-browser state left",
+  );
   assert.match(client, /export function groupOf\(item: Improvement\): ImprovementGroup \| null/);
   assert.match(detail, /trigger="Skip"\s+variant="ghost"/);
   assert.match(detail, /title="Skip this improvement\?"/);
@@ -150,22 +229,34 @@ test("proof copy stays defined for later but nothing on screen runs or mentions 
   assert.equal(ux.proveCostLine(null), "Uses up to 6 Lovable credits.");
   for (const page of PAGES) {
     const code = codeOnly(readApp(page));
-    assert.ok(!/run_experiment|execute_experiment|remix_project|send_message|"run_proof"|action: "run"|action: "prove"/.test(code), page);
+    assert.ok(
+      !/run_experiment|execute_experiment|remix_project|send_message|"run_proof"|action: "run"|action: "prove"/.test(
+        code,
+      ),
+      page,
+    );
     // Task 8: the Add confirmation's "Test it first" choice legitimately
     // states its cost via proveCostLine -- everything else still shows no
     // proof-running UI.
-    const forbidden = page === DETAIL ? /Run proof|PROVE_INTRO/ : /Run proof|PROVE_INTRO|proveCostLine/;
+    const forbidden =
+      page === DETAIL ? /Run proof|PROVE_INTRO/ : /Run proof|PROVE_INTRO|proveCostLine/;
     assert.ok(!forbidden.test(code), `${page} still shows proof UI`);
   }
 });
 
 test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard, post-accept line", () => {
   const detail = codeOnly(readApp(DETAIL));
-  const confirm = detail.slice(detail.indexOf("function AddConfirm"), detail.indexOf("function SkipConfirm"));
+  const confirm = detail.slice(
+    detail.indexOf("function AddConfirm"),
+    detail.indexOf("function SkipConfirm"),
+  );
   assert.match(confirm, /title=\{`Add to \$\{targetLabel\}\?`\}/);
   assert.match(confirm, /Your existing Knowledge \(unchanged\)/);
   assert.match(confirm, /\{preview\.managed_block\}/);
-  assert.match(confirm, /\{preview\.char_count\} of \{KNOWLEDGE_CHAR_LIMIT\.toLocaleString\("en-US"\)\} characters/);
+  assert.match(
+    confirm,
+    /\{preview\.char_count\} of \{KNOWLEDGE_CHAR_LIMIT\.toLocaleString\("en-US"\)\} characters/,
+  );
   assert.equal(ux.KNOWLEDGE_CHAR_LIMIT, 10000);
   // Task 8: the Add-it-now/Test-it-first choice text now says "Uses no
   // credits" itself, so this line was dropped from PREVIEW_CONSEQUENCES.
@@ -179,7 +270,10 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   );
   // Task 8: confirm label now reflects the two-choice selection, not
   // whether a preview is available.
-  assert.match(confirm, /confirmLabel=\{wantsTest \? "Save for testing" : preview \? "Add" : "Save choice"\}/);
+  assert.match(
+    confirm,
+    /confirmLabel=\{wantsTest \? "Save for testing" : preview \? "Add" : "Save choice"\}/,
+  );
   // over the cap -> the confirm button is disabled and the reason is shown
   assert.match(
     detail,
@@ -207,17 +301,32 @@ test("no per-stage progress bar in the layout (decisionSentence + the group chip
   const layout = readApp(LAYOUT);
   assert.ok(!/ProcessProgress/.test(layout), "the stage bar is gone -- see ux-inbox-logic.test.ts");
   assert.ok(!/you are here/.test(codeOnly(layout)));
-  assert.ok(!/ClickableCard/.test(layout), "whole-card buttons are gone; the buttons are the decision");
+  assert.ok(
+    !/ClickableCard/.test(layout),
+    "whole-card buttons are gone; the buttons are the decision",
+  );
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(detail, /\{pending \? null : <Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>\}/);
+  assert.match(
+    detail,
+    /\{pending \? null : <Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>\}/,
+  );
 });
 
 test("lovableStatusLine / decisionSentence / improvementGroup follow the write lifecycle without implying Lovable changed", () => {
   assert.equal(ux.lovableStatusLine(null), "Will be written at the next sync");
-  assert.equal(ux.lovableStatusLine({ write_status: "none", written_at: null }), "Will be written at the next sync");
-  assert.equal(ux.lovableStatusLine({ write_status: "pending", written_at: null }), "Will be written at the next sync");
   assert.equal(
-    ux.lovableStatusLine({ write_status: "pending", written_at: null }, { nextSyncAt: "2026-09-10T08:00:00Z" }),
+    ux.lovableStatusLine({ write_status: "none", written_at: null }),
+    "Will be written at the next sync",
+  );
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "pending", written_at: null }),
+    "Will be written at the next sync",
+  );
+  assert.equal(
+    ux.lovableStatusLine(
+      { write_status: "pending", written_at: null },
+      { nextSyncAt: "2026-09-10T08:00:00Z" },
+    ),
     "Will be written at the next sync, 10 Sep, 08:00",
   );
   assert.equal(
@@ -228,26 +337,41 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
     ux.lovableStatusLine({ write_status: "none", written_at: null }, { testFirst: true }),
     "Saved for testing — nothing is written until the test runs",
   );
-  assert.equal(ux.lovableStatusLine({ write_status: "written", written_at: "2026-09-10T08:00:00Z" }), "Added to Lovable, 10 Sep");
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "written", written_at: "2026-09-10T08:00:00Z" }),
+    "Added to Lovable, 10 Sep",
+  );
   assert.equal(
     ux.lovableStatusLine({ write_status: "stale", written_at: null, stale_reason: null }),
     "Needs attention: Knowledge changed in Lovable — review the text again",
   );
-  assert.equal(ux.lovableStatusLine({ write_status: "failed", written_at: null }), "Needs attention: adding failed — see Details");
+  assert.equal(
+    ux.lovableStatusLine({ write_status: "failed", written_at: null }),
+    "Needs attention: adding failed — see Details",
+  );
   assert.equal(
     ux.lovableStatusLine({ write_status: "reverted", written_at: "2026-09-10T08:00:00Z" }),
     "Reverted to an earlier version, 10 Sep",
   );
 
-  const pending = ux.decisionSentence({ decision: { status: "pending", decided_at: null }, destination: null });
+  const pending = ux.decisionSentence({
+    decision: { status: "pending", decided_at: null },
+    destination: null,
+  });
   assert.equal(pending, "Waiting for your decision.");
   const accepted = ux.decisionSentence({
     decision: { status: "accepted", decided_at: "2026-09-09T14:38:48Z" },
     destination: "workspace",
     lovable: { write_status: "pending", written_at: null },
   });
-  assert.equal(accepted, "You chose: add to all my projects, on 9 Sep. Will be written at the next sync.");
-  const skipped = ux.decisionSentence({ decision: { status: "skipped", decided_at: null }, destination: null });
+  assert.equal(
+    accepted,
+    "You chose: add to all my projects, on 9 Sep. Will be written at the next sync.",
+  );
+  const skipped = ux.decisionSentence({
+    decision: { status: "skipped", decided_at: null },
+    destination: null,
+  });
   assert.equal(skipped, "You skipped this improvement.");
   const added = ux.decisionSentence({
     decision: { status: "accepted", decided_at: null },
@@ -261,13 +385,29 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
     lovable: { write_status: "none", written_at: null },
     ctx: { testFirst: true },
   });
-  assert.equal(testFirstSentence, "You chose: add to this project only. Saved for testing — nothing is written until the test runs.");
+  assert.equal(
+    testFirstSentence,
+    "You chose: add to this project only. Saved for testing — nothing is written until the test runs.",
+  );
 
-  assert.deepEqual([...ux.IMPROVEMENT_GROUPS], [
-    "Waiting to be written", "Waiting to be tested", "In Lovable", "Reverted", "Needs attention", "Skipped",
-  ]);
-  const g = (status: "pending" | "accepted" | "skipped", writeStatus: ux.LovableWriteStatus | null, testFirst = false) =>
-    ux.improvementGroup({ status, writeStatus, testFirst });
+  assert.deepEqual(
+    [...ux.IMPROVEMENT_GROUPS],
+    [
+      "Waiting to be written",
+      "Waiting to be tested",
+      "In Lovable",
+      "Reverted",
+      "Retired",
+      "Needs attention",
+      "Skipped",
+    ],
+  );
+  const g = (
+    status: "pending" | "accepted" | "skipped",
+    writeStatus: ux.LovableWriteStatus | null,
+    testFirst = false,
+    retired = false,
+  ) => ux.improvementGroup({ status, writeStatus, testFirst, retired });
   assert.equal(g("pending", null), null, "pending items belong in Inbox, not Improvements");
   assert.equal(g("skipped", null), "Skipped");
   assert.equal(g("accepted", "none"), "Waiting to be written");
@@ -277,17 +417,37 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   assert.equal(g("accepted", "stale"), "Needs attention");
   assert.equal(g("accepted", "failed"), "Needs attention");
   assert.equal(g("accepted", "none", true), "Waiting to be tested");
-  assert.equal(g("accepted", "written", true), "In Lovable", "a written version always wins over test_first");
-  assert.equal(g("accepted", "reverted", true), "Reverted", "a reverted version always wins over test_first");
+  assert.equal(
+    g("accepted", "written", true),
+    "In Lovable",
+    "a written version always wins over test_first",
+  );
+  assert.equal(
+    g("accepted", "reverted", true),
+    "Reverted",
+    "a reverted version always wins over test_first",
+  );
+  // Task C2: retired wins over every writeStatus and over test_first.
+  assert.equal(g("accepted", "written", false, true), "Retired");
+  assert.equal(g("accepted", "reverted", true, true), "Retired");
+  assert.equal(g("skipped", null, false, true), "Skipped", "skipped still wins over retired");
 
   assert.ok(!/Waiting for Harness/.test(readApp("lib/harness-ux.ts")));
 
   assert.equal(
-    ux.versionStatusLine({ status: "written", written_at: "2026-09-10T08:00:00Z", restored_from_version_id: null }),
+    ux.versionStatusLine({
+      status: "written",
+      written_at: "2026-09-10T08:00:00Z",
+      restored_from_version_id: null,
+    }),
     "Added to Lovable, 10 Sep",
   );
   assert.equal(
-    ux.versionStatusLine({ status: "written", written_at: "2026-09-10T08:00:00Z", restored_from_version_id: 7 }),
+    ux.versionStatusLine({
+      status: "written",
+      written_at: "2026-09-10T08:00:00Z",
+      restored_from_version_id: 7,
+    }),
     "Reverted to an earlier version, 10 Sep",
     "a written version that restored an earlier one reads as reverted, not written",
   );
@@ -302,24 +462,45 @@ test("Improvements page: contract groups only, non-empty only, decision cards, r
   assert.match(ledger, /IMPROVEMENT_GROUPS\.filter\(/);
   assert.match(ledger, /\(grouped\.get\(g\)\?\.length \?\? 0\) > 0/);
   assert.ok(!/Everything Harness has learned/.test(ledger), "no subtitle on Improvements");
-  assert.ok(!/Needs your decision|Waiting for proof|Ready to add|Decide later/.test(ledger), "old group names are gone");
+  assert.ok(
+    !/Needs your decision|Waiting for proof|Ready to add|Decide later/.test(ledger),
+    "old group names are gone",
+  );
   assert.match(ledger, /<DecisionCard item=\{i\} onChanged=\{refresh\} onOpen=\{open\} \/>/);
-  assert.ok(!/Restore previous version|action: "restore"|ConfirmAction|ImprovementCard|ClickableCard/.test(ledger));
-  assert.ok(!/export function ImprovementCard/.test(readApp(DETAIL)), "the temporary wrapper is gone");
+  assert.ok(
+    !/Restore previous version|action: "restore"|ConfirmAction|ImprovementCard|ClickableCard/.test(
+      ledger,
+    ),
+  );
+  assert.ok(
+    !/export function ImprovementCard/.test(readApp(DETAIL)),
+    "the temporary wrapper is gone",
+  );
   const inbox = codeOnly(readApp(INBOX));
   assert.match(inbox, /i\.decision\.status === "pending"/, "only pending items are in Inbox");
 });
 
 test("wording history: reasons only for changes made in this UI; anything else is 'Updated by Harness'", () => {
   assert.equal(
-    ux.wordingChangeLine({ changed_at: "2026-09-09T10:00:00Z", reason: "tighter", actor: "operator (local UI)" }),
+    ux.wordingChangeLine({
+      changed_at: "2026-09-09T10:00:00Z",
+      reason: "tighter",
+      actor: "operator (local UI)",
+    }),
     "You changed the wording on 9 Sep — tighter.",
   );
   assert.equal(
-    ux.wordingChangeLine({ changed_at: "2026-09-09T10:00:00Z", reason: "internal classifier note", actor: "claude-checkpoint-b" }),
+    ux.wordingChangeLine({
+      changed_at: "2026-09-09T10:00:00Z",
+      reason: "internal classifier note",
+      actor: "claude-checkpoint-b",
+    }),
     "Updated by Harness on 9 Sep.",
   );
-  assert.equal(ux.wordingChangeLine({ changed_at: "2026-09-09T10:00:00Z", reason: "x", actor: "operator" }), "You changed the wording on 9 Sep.");
+  assert.equal(
+    ux.wordingChangeLine({ changed_at: "2026-09-09T10:00:00Z", reason: "x", actor: "operator" }),
+    "You changed the wording on 9 Sep.",
+  );
   assert.match(codeOnly(readApp(DETAIL)), /\{wordingChangeLine\(w\)\}/);
 });
 
@@ -338,7 +519,10 @@ test("Overview is gone: the route only redirects to Inbox and nothing links to /
     "routes/index.tsx",
     "routes/_authenticated/settings.tsx",
   ]) {
-    assert.ok(!/["'`]\/overview["'`]/.test(codeOnly(readApp(page))), `${page} still links to /overview`);
+    assert.ok(
+      !/["'`]\/overview["'`]/.test(codeOnly(readApp(page))),
+      `${page} still links to /overview`,
+    );
   }
 });
 
@@ -376,13 +560,23 @@ test("nav: Inbox, Improvements, Instructions, Skills, Projects, Settings in ever
     assert.ok(at > lastAt, `expected ${marker} after the previous nav item`);
     lastAt = at;
   }
-  assert.ok(!/LOCAL_NAV|runtimeQueryOptions|mode === "local"/.test(shell), "nav never depends on the runtime");
+  assert.ok(
+    !/LOCAL_NAV|runtimeQueryOptions|mode === "local"/.test(shell),
+    "nav never depends on the runtime",
+  );
   assert.ok(!/label: "Ledger"|label: "Overview"|label: "Knowledge"/.test(shell));
   assert.match(shell, /<Link to="\/"[^>]*>\s*How Harness works\s*<\/Link>/);
   const client = codeOnly(readApp(CLIENT));
-  assert.ok(!/HowItWorks|howItWorks|HOW_IT_WORKS/.test(client), "no onboarding state in the client lib");
+  assert.ok(
+    !/HowItWorks|howItWorks|HOW_IT_WORKS/.test(client),
+    "no onboarding state in the client lib",
+  );
   assert.match(client, /staleTime: Infinity/);
-  assert.match(client, /json\.mode === "local" \? "local" : "hosted"/, "anything but a confirmed local answer is hosted");
+  assert.match(
+    client,
+    /json\.mode === "local" \? "local" : "hosted"/,
+    "anything but a confirmed local answer is hosted",
+  );
 });
 
 test("formatDate / formatDay produce '8 Sep, HH:MM' style and pass non-dates through", () => {
@@ -398,7 +592,10 @@ test("lovableReplyText extracts what the user saw in the Lovable chat from a ver
     '<lov-tool-use id="b" name="user_messaging--message_user" integration-id="user_messaging" data="{\\"summary\\": \\"s\\", \\"message\\": \\"Heads up: the worker will wake once a minute (1,440 times a day).\\\\nSecond line.\\", \\"finished\\": false}">\n</lov-tool-use>\n' +
     '<lov-tool-use id="c" name="user_messaging--message_user" integration-id="user_messaging" data="{\\"summary\\": \\"t\\", \\"message\\": \\"The foundation is live.\\", \\"finished\\": true}">\n</lov-tool-use>';
   const text = ux.lovableReplyText(raw);
-  assert.equal(text, "Heads up: the worker will wake once a minute (1,440 times a day).\nSecond line.\n\nThe foundation is live.");
+  assert.equal(
+    text,
+    "Heads up: the worker will wake once a minute (1,440 times a day).\nSecond line.\n\nThe foundation is live.",
+  );
   assert.ok(!text.includes("run_sql"));
   // no message blocks -> readable fallback, not an empty string
   const fallback = ux.lovableReplyText("plain assistant text " + "x".repeat(1000));
@@ -407,12 +604,20 @@ test("lovableReplyText extracts what the user saw in the Lovable chat from a ver
 
 test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness analysis' exactly once, nowhere else", () => {
   const detail = detailCopy();
-  assert.ok(count(detail, "Lovable credits") <= 2, `Lovable credits x${count(detail, "Lovable credits")}`);
+  assert.ok(
+    count(detail, "Lovable credits") <= 2,
+    `Lovable credits x${count(detail, "Lovable credits")}`,
+  );
   assert.equal(count(detail, "Harness analysis"), 1);
   // Task 8 adds one more bare "credit" mention: "Uses no credits." in the
   // Add-it-now choice text (not "Lovable credits", so it isn't counted by
   // either of the other two terms).
-  assert.equal(count(codeOnly(readApp(DETAIL)), "credit"), count(codeOnly(readApp(DETAIL)), "Lovable credits") + count(codeOnly(readApp(DETAIL)), "lovable_credits_max") + 1);
+  assert.equal(
+    count(codeOnly(readApp(DETAIL)), "credit"),
+    count(codeOnly(readApp(DETAIL)), "Lovable credits") +
+      count(codeOnly(readApp(DETAIL)), "lovable_credits_max") +
+      1,
+  );
   for (const page of [INBOX, LEDGER, LAYOUT]) {
     assert.equal(count(codeOnly(readApp(page)), "credit"), 0, `${page} mentions credits`);
   }
@@ -436,7 +641,15 @@ test("no internal vocabulary in user-facing JSX outside the Developer view", () 
   for (const word of ["checkpoint", "message_id", "provenance", "confidence", "classifier"]) {
     assert.ok(!new RegExp(word, "i").test(userFacing), `${word} leaks into the user-facing detail`);
   }
-  for (const page of [INBOX, LEDGER, SHELL, CLIENT, LAYOUT, "lib/harness-ux.ts", "routes/_authenticated/settings.tsx"]) {
+  for (const page of [
+    INBOX,
+    LEDGER,
+    SHELL,
+    CLIENT,
+    LAYOUT,
+    "lib/harness-ux.ts",
+    "routes/_authenticated/settings.tsx",
+  ]) {
     const code = codeOnly(readApp(page));
     for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
       assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into ${page}`);
@@ -449,10 +662,22 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
     const code = codeOnly(readApp(page));
     const targets = [...code.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]);
     for (const t of targets)
-      assert.match(t!, /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects|skills)$/, `${page} fetches ${t}`);
+      assert.match(
+        t!,
+        /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects|skills)$/,
+        `${page} fetches ${t}`,
+      );
     // Allow lovable.dev in href links (D1); forbid API calls and MCP tools
-    const codeWithoutHrefs = code.replace(/href=\{[^}]*lovable\.dev[^}]*\}|href="[^"]*lovable\.dev[^"]*"|href='[^']*lovable\.dev[^']*'/g, "");
-    assert.ok(!/lovable\.dev|set_project_knowledge|setProjectKnowledge|createWorkspaceSkill/i.test(codeWithoutHrefs), page);
+    const codeWithoutHrefs = code.replace(
+      /href=\{[^}]*lovable\.dev[^}]*\}|href="[^"]*lovable\.dev[^"]*"|href='[^']*lovable\.dev[^']*'/g,
+      "",
+    );
+    assert.ok(
+      !/lovable\.dev|set_project_knowledge|setProjectKnowledge|createWorkspaceSkill/i.test(
+        codeWithoutHrefs,
+      ),
+      page,
+    );
   }
   const client = codeOnly(readApp(CLIENT));
   assert.match(client, /fetch\("\/api\/public\/harness\/improvements"/);
@@ -460,8 +685,20 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
   assert.ok(readApp(INBOX).includes("fetchImprovements"));
   assert.ok(readApp(LEDGER).includes("fetchImprovements"));
   // the only actions the UI can send
-  const actions = [...codeOnly(readApp(DETAIL) + readApp(LEDGER)).matchAll(/action: "([a-z_]+)"/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(actions)].sort(), ["accept", "change_wording", "reopen", "restore", "skip"]);
+  const actions = [
+    ...codeOnly(readApp(DETAIL) + readApp(LEDGER)).matchAll(/action: "([a-z_]+)"/g),
+  ].map((m) => m[1]);
+  // Task C2 adds retire/keep/readd (the Retire/Keep/Re-add actions).
+  assert.deepEqual([...new Set(actions)].sort(), [
+    "accept",
+    "change_wording",
+    "keep",
+    "readd",
+    "reopen",
+    "restore",
+    "retire",
+    "skip",
+  ]);
 });
 
 test("Inbox: a count line, then decision cards you can act on without opening them", () => {
@@ -535,17 +772,14 @@ test("harness-runtime.ts never mentions a spec document, and every new route enf
 test("improvements-client.ts fetches exactly the six local harness routes", () => {
   const client = codeOnly(readApp(CLIENT));
   const targets = new Set([...client.matchAll(/fetch\("([^"]+)"/g)].map((m) => m[1]));
-  assert.deepEqual(
-    [...targets].sort(),
-    [
-      "/api/public/harness/executor",
-      "/api/public/harness/improvements",
-      "/api/public/harness/knowledge",
-      "/api/public/harness/projects",
-      "/api/public/harness/runtime",
-      "/api/public/harness/skills",
-    ],
-  );
+  assert.deepEqual([...targets].sort(), [
+    "/api/public/harness/executor",
+    "/api/public/harness/improvements",
+    "/api/public/harness/knowledge",
+    "/api/public/harness/projects",
+    "/api/public/harness/runtime",
+    "/api/public/harness/skills",
+  ]);
 });
 
 // ---- Task 6: Knowledge page and navigation ----

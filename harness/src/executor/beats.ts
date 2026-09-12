@@ -12,6 +12,7 @@ import { stageApprovedWrites } from "../improvements.js";
 import { sha256 } from "../knowledge.js";
 import { redact } from "./redact.js";
 import { recomputeRuleHealth } from "../analysis/health.js";
+import { proposeRetirements } from "../analysis/retire.js";
 import type { LovableClient, LovableReader, LovableWriter } from "./lovable-mcp.js";
 
 const FETCHED_BY = "executor";
@@ -340,6 +341,16 @@ export async function runAll(
       const health = recomputeRuleHealth();
       counts.health_suggested = health.suggested;
       store.insertEvent("executor.sync.health", null, health);
+
+      // Task C2: turn any freshly-suggested retirement into a proposal the
+      // Inbox can show. Idempotent -- a rule with an open proposal already
+      // is skipped -- and deliberately inside the same try/catch as the
+      // recompute it depends on.
+      const retirement = proposeRetirements();
+      counts.retire_proposed = retirement.created;
+      if (retirement.created > 0) {
+        store.insertEvent("executor.sync.retire_proposed", null, retirement);
+      }
     } catch (healthErr) {
       counts.health_error = 1;
       store.insertEvent("executor.sync.health_error", null, { error: errorMessage(healthErr) });

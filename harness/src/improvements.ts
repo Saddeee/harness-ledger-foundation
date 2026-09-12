@@ -42,8 +42,34 @@ export type KnowledgePreview = {
   active_rules_count: number;
   over_rules: boolean;
 };
+// Task C2 / spec §4b: a retirement proposal for a live rule, shown in the
+// Inbox as an item of kind "retire" alongside ordinary improvements. Not a
+// correction_candidate -- its id space is negative (id = -proposal_id) so it
+// never collides with a real improvement's id; the client's search params
+// and action bodies pass it through unchanged (see improvementAction below).
+export type RetireReason = "hurt" | "contradiction" | "unused";
+export type RetireInfo = {
+  proposal_id: number;
+  rule_id: number;
+  reason: RetireReason;
+  health: {
+    applicable_tasks: number;
+    helped: number;
+    hurt: number;
+    last_applicable_at: string | null;
+  };
+  since: string | null;
+  // Only set for reason "contradiction": the other live rule's instruction
+  // text, for "...because it contradicts <other rule text>."
+  contradicts_instruction: string | null;
+};
+
 export type Improvement = {
   id: number;
+  // "retire" items come from an open retire_proposals row, not a
+  // correction_candidate -- see buildRetireItem. Every existing item is
+  // "improvement".
+  kind: "improvement" | "retire";
   project: { id: string; name: string | null };
   title: string;
   proposed_instruction: string | null;
@@ -54,6 +80,10 @@ export type Improvement = {
     decided_at: string | null;
     divergence: string | null;
     test_first: boolean;
+    // True once the rule behind this improvement has been retired --
+    // improvementGroup reads this to group the item under "Retired"
+    // regardless of its (unrelated, historical) Knowledge write status.
+    retired: boolean;
   };
   stage: StageKey;
   stages: Stage[];
@@ -87,6 +117,8 @@ export type Improvement = {
     // sync), but the UI only surfaces it for project-destination items.
     auto_write: boolean;
   };
+  // Set only for kind "retire"; null for an ordinary improvement.
+  retire: RetireInfo | null;
   developer: {
     correction: unknown;
     learning: unknown | null;
@@ -145,7 +177,19 @@ function firstSentence(text: string | null | undefined): string {
 // restored item's decision would read back as "pending" (never decided),
 // dropping it out of Improvements and back into the Inbox, which is exactly
 // the kind of false read Problem 1 is about.
-const ACCEPTED_RULE_STATES = new Set(["approved", "testing", "supported", "active", "rolled_back"]);
+// "retired" belongs here too, for the same reason as "rolled_back": the
+// user's original accept decision still stands after a later Retire -- only
+// the rule's own live/dead status changed. Without it, a retired rule's
+// improvement would read back as "pending" (never decided), which is wrong
+// (and would drop it out of Improvements and back into the Inbox).
+const ACCEPTED_RULE_STATES = new Set([
+  "approved",
+  "testing",
+  "supported",
+  "active",
+  "rolled_back",
+  "retired",
+]);
 const PROOF_DONE_RULE_STATES = new Set(["supported", "active"]);
 const TARGET_LABEL: Record<"project" | "workspace", string> = {
   project: "This project's Knowledge in Lovable",
@@ -378,6 +422,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
 
   return {
     id: c.id,
+    kind: "improvement",
     project: { id: c.project_id ?? "", name: c.project_name ?? null },
     title: title || c.summary,
     proposed_instruction: rule?.instruction ?? null,
@@ -388,6 +433,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
       decided_at: status === "pending" ? null : c.reviewed_at,
       divergence,
       test_first: testFirst,
+      retired: ruleState === "retired",
     },
     stage,
     stages,
@@ -430,6 +476,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
       untested: status === "accepted" && !proofComplete,
       auto_write: c.project_id ? store.getProjectSettings(c.project_id).auto_write : true,
     },
+    retire: null,
     developer: {
       correction: c,
       learning,
@@ -447,8 +494,108 @@ function buildImprovement(c: CorrectionRow): Improvement {
   };
 }
 
+// Task C2: renders one open retire_proposals row as a pending Inbox item.
+// Reads from store.listLiveRulesWithTargets (the same live-rule shape
+// health.ts scores) rather than the correction/rule chain a normal
+// improvement builds from -- a retirement proposal is about the rule as it
+// stands today, not the correction that originally created it. Returns null
+// for a proposal whose rule somehow isn't live any more (e.g. retired or
+// rejected by another path between the proposal being written and this
+// read) rather than throwing -- listImprovements filters these out.
+function buildRetireItem(proposal: store.RetireProposalRow): Improvement | null {
+  const live = store.listLiveRulesWithTargets().find((r) => r.id === proposal.rule_id);
+  if (!live) return null;
+
+  const health = store.getRuleHealth(proposal.rule_id);
+  const projectId = live.project_id ?? "";
+  const projectName =
+    live.scope === "workspace"
+      ? "Workspace"
+      : projectId
+        ? (store.getProjectMeta(projectId)?.name ?? projectId)
+        : projectId;
+
+  const evidenceRows =
+    proposal.reason === "hurt" ? store.listHistoryItemsByIds(proposal.evidence) : [];
+
+  const contradictsInstruction =
+    proposal.reason === "contradiction" && proposal.evidence[0] != null
+      ? ((store.getRule(proposal.evidence[0]) as { rule: { instruction: string } } | null)?.rule
+          .instruction ?? null)
+      : null;
+
+  return {
+    id: -proposal.id,
+    kind: "retire",
+    project: { id: projectId, name: projectName },
+    title: `Retire: ${live.instruction}`,
+    proposed_instruction: null,
+    destination: live.scope,
+    classification: "retire",
+    decision: {
+      status: "pending",
+      decided_at: null,
+      divergence: null,
+      test_first: false,
+      retired: false,
+    },
+    stage: "review",
+    stages: [],
+    evidence: evidenceRows.map((e) => ({
+      id: e.id,
+      author: e.role === "user" ? "you" : "lovable",
+      sent_at: e.occurred_at,
+      text: e.content,
+    })),
+    proof: null,
+    wording_history: [],
+    lovable: {
+      write_status: "none",
+      written_at: null,
+      stale_reason: null,
+      previews: { project: null, workspace: null },
+      versions: [],
+      untested: false,
+      auto_write: true,
+    },
+    retire: {
+      proposal_id: proposal.id,
+      rule_id: proposal.rule_id,
+      reason: proposal.reason,
+      health: health
+        ? {
+            applicable_tasks: health.applicable_tasks,
+            helped: health.helped,
+            hurt: health.hurt,
+            last_applicable_at: health.last_applicable_at,
+          }
+        : { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null },
+      since: live.first_written_at,
+      contradicts_instruction: contradictsInstruction,
+    },
+    developer: {
+      correction: null,
+      learning: null,
+      rule: live,
+      classification_history: [],
+      hidden_evidence: [],
+      verification_plan: null,
+      experiment_plans: [],
+      knowledge_versions: [],
+      audit_events: store.listEventsForRecord(["retire_proposal."], proposal.id),
+    },
+  };
+}
+
 export function listImprovements(): Improvement[] {
-  return (store.listCorrectionCandidates() as unknown as CorrectionRow[]).map(buildImprovement);
+  const improvements = (store.listCorrectionCandidates() as unknown as CorrectionRow[]).map(
+    buildImprovement,
+  );
+  const retirements = store
+    .listOpenRetireProposals()
+    .map(buildRetireItem)
+    .filter((item): item is Improvement => item !== null);
+  return [...improvements, ...retirements];
 }
 
 export function getImprovement(id: number): Improvement | null {
@@ -480,6 +627,19 @@ const actionInput = z.discriminatedUnion("action", [
     destination: z.enum(["workspace", "project", "one_time"]),
   }),
   z.object({ action: z.literal("restore"), id: z.number().int(), version_id: z.number().int() }),
+  // Task C2 / spec §4b-§5. "retire": either `id` (a retire-proposal item's
+  // id, always negative: -proposal_id -- see buildRetireItem) or `rule_id`
+  // (the manual path, from the Instructions page's per-rule Retire button,
+  // with no proposal necessarily open). "keep" always takes a proposal's
+  // negative id. "readd" takes the original improvement's (correction
+  // candidate's) id, same convention as every other action above.
+  z.object({
+    action: z.literal("retire"),
+    id: z.number().int().optional(),
+    rule_id: z.number().int().optional(),
+  }),
+  z.object({ action: z.literal("keep"), id: z.number().int() }),
+  z.object({ action: z.literal("readd"), id: z.number().int() }),
 ]);
 
 // After the user approves "Add", stage the exact write for the executor --
@@ -602,8 +762,125 @@ export function stageApprovedWrites(): { staged: number; skipped: number } {
   return { staged, skipped };
 }
 
+// Task C2 "Retire": sets the rule retired, cancels anything still staged for
+// it, recomposes its target's managed block without it and stages that as a
+// new pending Knowledge version, and decides the open proposal (if any).
+// Returns the ORIGINAL improvement (the rule's correction candidate), now
+// grouped "Retired" -- not a synthetic item, since after this the proposal
+// (if it came from one) no longer exists as an open Inbox item.
+//
+// The recompose write's rule_id is deliberately null, not this rule's id:
+// recordKnowledgeReadback (store.ts) sets `state: "active"` on a written
+// version's rule_id once the executor confirms the write, which would
+// silently un-retire this rule the moment the recompose lands. null makes
+// it a plain target-level write, exactly like any other Knowledge sync.
+function retireRule(ruleId: number): Improvement {
+  const wrapped = store.getRule(ruleId) as { rule: RuleRow } | null;
+  if (!wrapped) throw new Error(`rule ${ruleId} not found`);
+  const rule = wrapped.rule;
+  const proposal = store.openRetireProposalForRule(ruleId);
+
+  store.updateRule({
+    id: ruleId,
+    state: "retired",
+    actor: ACTOR,
+    reason: proposal ? `retired: ${proposal.reason}` : "retired manually",
+  });
+  store.cancelPendingKnowledgeWrites(ruleId, "cancelled: rule retired");
+
+  const correctionId = store.getCorrectionIdForRule(ruleId);
+  if (correctionId == null) throw new Error(`rule ${ruleId} has no linked improvement`);
+  const original = getImprovement(correctionId);
+  const target = rule.scope;
+  const targetId =
+    target === "project"
+      ? (original?.project.id ?? null)
+      : original?.project.id
+        ? (store.getProjectMeta(original.project.id)?.workspace_id ?? null)
+        : null;
+
+  if (targetId) {
+    const snapshot = store.latestKnowledgeSnapshot(target, targetId);
+    // No snapshot yet to compose against -- nothing staged; the rule is
+    // still retired and the proposal still decided, same as a normal
+    // accept before Harness has ever read Knowledge (stagePendingWrite).
+    if (snapshot) {
+      const activeRules = store.activeRulesForTarget(target, targetId) as {
+        id: number;
+        instruction: string;
+      }[];
+      const maxActiveRules =
+        target === "project"
+          ? store.effectiveMaxActiveRules(targetId)
+          : Number(store.getSetting("max_active_rules"));
+      const composed = composeManagedKnowledge(
+        snapshot.content,
+        activeRules.map((r) => ({ id: r.id, instruction: r.instruction })),
+        maxActiveRules,
+      );
+      store.createPendingKnowledgeVersion({
+        rule_id: null,
+        target,
+        ...(target === "project" ? { project_id: targetId } : { workspace_id: targetId }),
+        previous_content: snapshot.content,
+        new_content: composed.final_content,
+        rule_ids: activeRules.map((r) => r.id),
+        actor: ACTOR,
+        reason: `retired rule ${ruleId}`,
+      });
+    }
+  }
+
+  if (proposal) store.decideRetireProposal(proposal.id, "retired");
+
+  const refreshed = getImprovement(correctionId);
+  if (!refreshed)
+    throw new Error(`improvement ${correctionId} not found after retiring rule ${ruleId}`);
+  return refreshed;
+}
+
+// Task C2 "Keep": acknowledges the signal without acting on it, snoozing it
+// for 30 days (store.snoozeRuleHealth upserts a rule_health row if one
+// doesn't exist yet, so this never throws even for a brand-new rule).
+const KEEP_SNOOZE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function keepProposal(proposalId: number): Improvement {
+  const proposal = store.getRetireProposal(proposalId);
+  if (!proposal) throw new Error(`retire proposal ${proposalId} not found`);
+  store.decideRetireProposal(proposalId, "kept");
+  store.snoozeRuleHealth(proposal.rule_id, new Date(Date.now() + KEEP_SNOOZE_MS).toISOString());
+
+  const correctionId = store.getCorrectionIdForRule(proposal.rule_id);
+  const refreshed = correctionId != null ? getImprovement(correctionId) : null;
+  if (!refreshed) throw new Error(`improvement for rule ${proposal.rule_id} not found after keep`);
+  return refreshed;
+}
+
 export function improvementAction(input: unknown): Improvement {
   const a = actionInput.parse(input);
+
+  // "retire"/"keep" address a retire-proposal id (always negative) or a
+  // rule_id directly -- neither is a correction_candidate id, so they must
+  // be resolved before the generic getImprovement/getRuleForCorrection
+  // lookup below (which every other action uses).
+  if (a.action === "retire") {
+    let ruleId: number;
+    if (a.rule_id !== undefined) {
+      ruleId = a.rule_id;
+    } else if (a.id !== undefined) {
+      const proposalId = -a.id;
+      const proposal = store.getRetireProposal(proposalId);
+      if (!proposal) throw new Error(`retire proposal ${proposalId} not found`);
+      ruleId = proposal.rule_id;
+    } else {
+      throw new Error("retire requires an id (a retire proposal) or a rule_id");
+    }
+    return retireRule(ruleId);
+  }
+  if (a.action === "keep") {
+    return keepProposal(-a.id);
+  }
+
   const current = getImprovement(a.id);
   if (!current) throw new Error(`improvement ${a.id} not found`);
   const rule = store.getRuleForCorrection(a.id) as RuleRow | null;
@@ -712,6 +989,22 @@ export function improvementAction(input: unknown): Improvement {
       if (!version || version.rule_id !== rule.id)
         throw new Error(`knowledge version ${a.version_id} does not belong to this improvement`);
       store.createRestoreVersion(a.version_id, ACTOR);
+      break;
+    }
+    case "readd": {
+      // Task C2 "Re-add": the inverse of Retire, from a decided ("Retired")
+      // improvement's own id -- approve the rule again and stage the write
+      // the normal accept path would have staged.
+      if (!rule) throw new Error("This improvement has no rule to re-add");
+      store.updateRule({ id: rule.id, state: "approved", actor: ACTOR });
+      const refreshedForPreview = getImprovement(a.id);
+      if (refreshedForPreview)
+        stagePendingWrite(
+          refreshedForPreview,
+          { ...rule, state: "approved" },
+          rule.scope,
+          `re-added rule ${rule.id}`,
+        );
       break;
     }
   }

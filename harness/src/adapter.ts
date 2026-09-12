@@ -21,6 +21,7 @@ export {
   latestKnowledgeSnapshot,
   listKnowledgeVersions,
   activeRulesForTarget,
+  retiredRulesForTarget,
   listPendingKnowledgeWrites,
   createRestoreVersion,
   getKnowledgeVersion,

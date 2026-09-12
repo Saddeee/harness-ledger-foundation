@@ -2647,3 +2647,337 @@ export function setRuleScopeTags(ruleId: number, tags: string[]): void {
   insertEvent("rule.scope_tags_set", null, { id: ruleId, tags: normalized });
 }
 // ---- end Round 4 A2 ----
+
+// ---- Round 4 C2 ----
+// Retirement proposals (spec §4b/§5): a human-reviewed Inbox item kind,
+// separate from correction_candidates, that proposes retiring an existing
+// live rule. Written by harness/src/analysis/retire.ts's proposeRetirements
+// from `rule_health` rows in status 'retire_suggested'; acted on by
+// harness/src/improvements.ts's retire/keep/readd actions. Pure CRUD over
+// retire_proposals (migration v9) plus two small read helpers the
+// improvements layer needs to render a proposal or a retired rule.
+
+export type RetireReason = "hurt" | "contradiction" | "unused";
+export type RetireProposalStatus = "open" | "retired" | "kept";
+
+export type RetireProposalRow = {
+  id: number;
+  rule_id: number;
+  reason: RetireReason;
+  // Reason 'hurt': up to 5 history_item ids of the hurt corrections.
+  // Reason 'contradiction': a single-element array, the contradicting
+  // rule's id. Reason 'unused': empty.
+  evidence: number[];
+  status: RetireProposalStatus;
+  created_at: string;
+  decided_at: string | null;
+};
+
+type RetireProposalDbRow = {
+  id: number;
+  rule_id: number;
+  reason: string;
+  evidence_json: string;
+  status: string;
+  created_at: string;
+  decided_at: string | null;
+};
+
+function parseRetireProposal(row: RetireProposalDbRow): RetireProposalRow {
+  let evidence: number[] = [];
+  try {
+    const parsed = JSON.parse(row.evidence_json);
+    if (Array.isArray(parsed)) evidence = parsed.filter((n): n is number => typeof n === "number");
+  } catch {
+    evidence = [];
+  }
+  return {
+    id: row.id,
+    rule_id: row.rule_id,
+    reason: row.reason as RetireReason,
+    evidence,
+    status: row.status as RetireProposalStatus,
+    created_at: row.created_at,
+    decided_at: row.decided_at,
+  };
+}
+
+export function createRetireProposal(input: {
+  rule_id: number;
+  reason: RetireReason;
+  evidence: number[];
+}): RetireProposalRow {
+  const row = db
+    .prepare(
+      `INSERT INTO retire_proposals (rule_id, reason, evidence_json)
+       VALUES (@rule_id, @reason, @evidence_json)
+       RETURNING *`,
+    )
+    .get({
+      rule_id: input.rule_id,
+      reason: input.reason,
+      evidence_json: JSON.stringify(input.evidence),
+    }) as RetireProposalDbRow;
+  insertEvent("retire_proposal.created", null, {
+    id: row.id,
+    rule_id: input.rule_id,
+    reason: input.reason,
+  });
+  return parseRetireProposal(row);
+}
+
+export function listOpenRetireProposals(): RetireProposalRow[] {
+  return (
+    db
+      .prepare(`SELECT * FROM retire_proposals WHERE status = 'open' ORDER BY id`)
+      .all() as RetireProposalDbRow[]
+  ).map(parseRetireProposal);
+}
+
+export function getRetireProposal(id: number): RetireProposalRow | null {
+  const row = db.prepare(`SELECT * FROM retire_proposals WHERE id = ?`).get(id) as
+    RetireProposalDbRow | undefined;
+  return row ? parseRetireProposal(row) : null;
+}
+
+// The most recent open proposal for a rule, or null -- used both to keep
+// proposeRetirements idempotent (skip a rule that already has one open) and
+// to resolve the proposal a manual Instructions-page Retire should decide,
+// if one happens to be open.
+export function openRetireProposalForRule(ruleId: number): RetireProposalRow | null {
+  const row = db
+    .prepare(
+      `SELECT * FROM retire_proposals WHERE rule_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1`,
+    )
+    .get(ruleId) as RetireProposalDbRow | undefined;
+  return row ? parseRetireProposal(row) : null;
+}
+
+export function decideRetireProposal(id: number, status: "retired" | "kept"): RetireProposalRow {
+  const existing = getRetireProposal(id);
+  if (!existing) throw new Error(`retire_proposal ${id} not found`);
+  const row = db
+    .prepare(
+      `UPDATE retire_proposals SET status = ?, decided_at = datetime('now') WHERE id = ? RETURNING *`,
+    )
+    .get(status, id) as RetireProposalDbRow;
+  insertEvent("retire_proposal.decided", null, { id, status });
+  return parseRetireProposal(row);
+}
+
+// Retired rules for a target's "Retired rules (N)" list on the Instructions
+// page -- same shape and join as activeRulesForTarget above, filtered to
+// state = 'retired' instead of the live states.
+export function retiredRulesForTarget(target: KnowledgeTarget, targetId: string) {
+  if (target === "project") {
+    return db
+      .prepare(
+        `SELECT r.id, r.instruction, r.state, r.scope FROM rules r
+         JOIN correction_candidates cc ON cc.id = r.correction_candidate_id
+         JOIN task_episodes te ON te.id = cc.task_episode_id
+         WHERE r.scope = 'project' AND r.state = 'retired' AND te.project_id = ?
+         ORDER BY r.id`,
+      )
+      .all(targetId) as { id: number; instruction: string; state: string; scope: string }[];
+  }
+  return db
+    .prepare(
+      `SELECT r.id, r.instruction, r.state, r.scope FROM rules r
+       WHERE r.scope = 'workspace' AND r.state = 'retired'
+       ORDER BY r.id`,
+    )
+    .all() as { id: number; instruction: string; state: string; scope: string }[];
+}
+
+// history_items by id, in the given ids' occurred_at/id order -- the retire
+// item's evidence (the hurt corrections, as messages) is built from this.
+export function listHistoryItemsByIds(ids: number[]): {
+  id: number;
+  role: string | null;
+  content: string;
+  occurred_at: string | null;
+}[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(",");
+  return db
+    .prepare(
+      `SELECT id, role, content, occurred_at FROM history_items
+       WHERE id IN (${placeholders}) ORDER BY occurred_at, id`,
+    )
+    .all(...ids) as {
+    id: number;
+    role: string | null;
+    content: string;
+    occurred_at: string | null;
+  }[];
+}
+// ---- end Round 4 C2 ----
+
+// ---- Round 4 A3 ----
+// Analysis runs and the "Analyse now" trigger (harness/src/analysis/run.ts,
+// harness/src/executor/schedule.ts, harness/src/executor/cli.ts). Mirrors
+// the sync_runs/sync_requests functions above (Checkpoint E) exactly --
+// same coalesced-request shape, same "running" crash-window guard -- but
+// against migration v9's analysis_runs/analysis_requests tables, which are
+// independent of sync_runs/sync_requests and the Lovable connection.
+
+// Coalesced "Analyse now": returns the existing open request instead of
+// stacking a second one, exactly like requestSync.
+export function requestAnalysis(): { id: number; created: boolean } {
+  const existing = db
+    .prepare(`SELECT id FROM analysis_requests WHERE status = 'requested' ORDER BY id ASC LIMIT 1`)
+    .get() as { id: number } | undefined;
+  if (existing) return { id: existing.id, created: false };
+  const row = db.prepare(`INSERT INTO analysis_requests DEFAULT VALUES RETURNING id`).get() as {
+    id: number;
+  };
+  insertEvent("analysis_request.created", null, { id: row.id });
+  return { id: row.id, created: true };
+}
+
+// The scheduler only needs to know that analysis was asked for; taking the
+// request is runAnalysis's job (same split as hasOpenSyncRequest).
+export function hasOpenAnalysisRequest(): boolean {
+  return (
+    db.prepare(`SELECT 1 FROM analysis_requests WHERE status = 'requested' LIMIT 1`).get() !==
+    undefined
+  );
+}
+
+export function takeAnalysisRequest(runId: number): number | null {
+  const existing = db
+    .prepare(`SELECT id FROM analysis_requests WHERE status = 'requested' ORDER BY id ASC LIMIT 1`)
+    .get() as { id: number } | undefined;
+  if (!existing) return null;
+  db.prepare(`UPDATE analysis_requests SET status = 'running', run_id = ? WHERE id = ?`).run(
+    runId,
+    existing.id,
+  );
+  insertEvent("analysis_request.taken", null, { id: existing.id, run_id: runId });
+  return existing.id;
+}
+
+export function completeAnalysisRequest(id: number): void {
+  db.prepare(`UPDATE analysis_requests SET status = 'done' WHERE id = ?`).run(id);
+  insertEvent("analysis_request.completed", null, { id });
+}
+
+export function startAnalysisRun(kind: "manual" | "scheduled" = "manual"): number {
+  const row = db.prepare(`INSERT INTO analysis_runs (kind) VALUES (?) RETURNING id`).get(kind) as {
+    id: number;
+  };
+  insertEvent("analysis_run.started", null, { id: row.id, kind });
+  return row.id;
+}
+
+export function finishAnalysisRun(
+  id: number,
+  result: {
+    ok: boolean;
+    error?: string | null;
+    counts?: Record<string, number>;
+    tokens: number;
+    cost_usd: number | null;
+  },
+): void {
+  db.prepare(
+    `UPDATE analysis_runs SET finished_at = datetime('now'), ok = ?, error = ?, counts_json = ?, tokens = ?, cost_usd = ? WHERE id = ?`,
+  ).run(
+    result.ok ? 1 : 0,
+    result.error ?? null,
+    JSON.stringify(result.counts ?? {}),
+    result.tokens,
+    result.cost_usd,
+    id,
+  );
+  insertEvent("analysis_run.finished", null, { id, ok: result.ok, error: result.error ?? null });
+}
+
+export type AnalysisRunRow = {
+  id: number;
+  kind: string;
+  started_at: string;
+  finished_at: string | null;
+  ok: boolean | null;
+  error: string | null;
+  counts: Record<string, number>;
+  tokens: number;
+  cost_usd: number | null;
+};
+
+function parseAnalysisRunRow(row: {
+  id: number;
+  kind: string;
+  started_at: string;
+  finished_at: string | null;
+  ok: number | null;
+  error: string | null;
+  counts_json: string;
+  tokens: number;
+  cost_usd: number | null;
+}): AnalysisRunRow {
+  return {
+    id: row.id,
+    kind: row.kind,
+    started_at: row.started_at,
+    finished_at: row.finished_at,
+    ok: row.ok === null ? null : row.ok === 1,
+    error: row.error,
+    counts: JSON.parse(row.counts_json) as Record<string, number>,
+    tokens: row.tokens,
+    cost_usd: row.cost_usd,
+  };
+}
+
+export function latestAnalysisRun(): AnalysisRunRow | null {
+  const row = db.prepare(`SELECT * FROM analysis_runs ORDER BY id DESC LIMIT 1`).get() as
+    | {
+        id: number;
+        kind: string;
+        started_at: string;
+        finished_at: string | null;
+        ok: number | null;
+        error: string | null;
+        counts_json: string;
+        tokens: number;
+        cost_usd: number | null;
+      }
+    | undefined;
+  return row ? parseAnalysisRunRow(row) : null;
+}
+
+// finished_at IS NULL and started within the last 15 minutes -- a run that
+// has been "running" longer than that is treated as stuck/crashed, not
+// blocking a fresh one. Same crash window as runningSyncRun.
+export function runningAnalysisRun(): { id: number; started_at: string } | null {
+  const row = db
+    .prepare(
+      `SELECT id, started_at FROM analysis_runs
+       WHERE finished_at IS NULL AND started_at >= datetime('now', '-15 minutes')
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get() as { id: number; started_at: string } | undefined;
+  return row ?? null;
+}
+
+// Real tokens/cost actually spent by one analysis run, read back from the
+// llm_calls rows it produced (harness/src/llm/index.ts stamps every call,
+// success or failure, with run_id) -- independent of analysis_runs.tokens/
+// cost_usd, which is only written once at finishAnalysisRun time from
+// exactly these two sums.
+export function sumLlmTokensForRun(runId: number): number {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(tokens_in + tokens_out), 0) as total FROM llm_calls WHERE run_id = ?`,
+    )
+    .get(runId) as { total: number };
+  return row.total;
+}
+
+export function sumLlmCostForRun(runId: number): number {
+  const row = db
+    .prepare(`SELECT COALESCE(SUM(cost_usd), 0) as total FROM llm_calls WHERE run_id = ?`)
+    .get(runId) as { total: number };
+  return row.total;
+}
+// ---- end Round 4 A3 ----

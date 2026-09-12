@@ -17,7 +17,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -42,9 +44,10 @@ test("Decided status: buttons render directly in a row, using outline/ghost vari
   );
   assert.ok(!/<details/.test(decided), "no <details> wrapper left in DecidedStatus");
   assert.ok(!/<summary/.test(decided), "no <summary> wrapper left in DecidedStatus");
-  // Add(s), Restore and Reopen are outline; Skip is ghost (baked into
-  // SkipConfirm itself, so it doesn't need a variant at the call site here).
-  assert.equal(count(decided, 'variant="outline"'), 5);
+  // Add(s), Restore, Reopen and Re-add (Task C2) are outline; Skip is ghost
+  // (baked into SkipConfirm itself, so it doesn't need a variant at the call
+  // site here).
+  assert.equal(count(decided, 'variant="outline"'), 6);
   assert.match(decided, /trigger="Add it now instead"/);
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
   assert.match(decided, /trigger="Try adding again"/);
@@ -89,7 +92,10 @@ test("DecisionCard: lists (onOpen present) never receive editable, so no Edit bu
 
 test("Detail header: back link plus 'N of M' and Previous/Next, disabled at the ends", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(detail, /position\?\s*:\s*\{\s*index:\s*number;\s*total:\s*number\s*\}\s*\|\s*undefined/);
+  assert.match(
+    detail,
+    /position\?\s*:\s*\{\s*index:\s*number;\s*total:\s*number\s*\}\s*\|\s*undefined/,
+  );
   assert.match(detail, /onPrev\?\s*:\s*\(\(\) => void\)\s*\|\s*undefined/);
   assert.match(detail, /onNext\?\s*:\s*\(\(\) => void\)\s*\|\s*undefined/);
   assert.match(detail, /\{position\.index\} of \{position\.total\}/);
@@ -118,7 +124,10 @@ test("Detail: ArrowLeft/ArrowRight navigate, ignored in text fields, contentedit
 test("Inbox: passes the pending list's order to Previous/Next", () => {
   const inbox = codeOnly(readApp(INBOX));
   assert.match(inbox, /const order = pending\.map\(\(i\) => i\.id\);/);
-  assert.match(inbox, /position=\{idx >= 0 \? \{ index: idx \+ 1, total: order\.length \} : undefined\}/);
+  assert.match(
+    inbox,
+    /position=\{idx >= 0 \? \{ index: idx \+ 1, total: order\.length \} : undefined\}/,
+  );
   assert.match(inbox, /onPrev=\{idx > 0 \? \(\) => open\(order\[idx - 1\]!\) : undefined\}/);
   assert.match(
     inbox,
@@ -128,8 +137,14 @@ test("Inbox: passes the pending list's order to Previous/Next", () => {
 
 test("Improvements: passes the grouped order (IMPROVEMENT_GROUPS order) to Previous/Next", () => {
   const ledger = codeOnly(readApp(LEDGER));
-  assert.match(ledger, /const order = IMPROVEMENT_GROUPS\.flatMap\(\(g\) => grouped\.get\(g\) \?\? \[\]\)\.map\(\(i\) => i\.id\);/);
-  assert.match(ledger, /position=\{idx >= 0 \? \{ index: idx \+ 1, total: order\.length \} : undefined\}/);
+  assert.match(
+    ledger,
+    /const order = IMPROVEMENT_GROUPS\.flatMap\(\(g\) => grouped\.get\(g\) \?\? \[\]\)\.map\(\(i\) => i\.id\);/,
+  );
+  assert.match(
+    ledger,
+    /position=\{idx >= 0 \? \{ index: idx \+ 1, total: order\.length \} : undefined\}/,
+  );
   assert.match(ledger, /onPrev=\{idx > 0 \? \(\) => open\(order\[idx - 1\]!\) : undefined\}/);
   assert.match(
     ledger,
@@ -137,14 +152,17 @@ test("Improvements: passes the grouped order (IMPROVEMENT_GROUPS order) to Previ
   );
 });
 
-test("role=\"radio\" count is untouched by Round 3 (still exactly two, from AddConfirm)", () => {
+test('role="radio" count is untouched by Round 3 (still exactly two, from AddConfirm)', () => {
   const detail = codeOnly(readApp(DETAIL));
   assert.equal(count(detail, 'role="radio"'), 2);
 });
 
 test("cost wording stays honest: 'Lovable credits' <= 2 and 'Harness analysis' == 1 on improvement.tsx", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.ok(count(detail, "Lovable credits") <= 2, `Lovable credits x${count(detail, "Lovable credits")}`);
+  assert.ok(
+    count(detail, "Lovable credits") <= 2,
+    `Lovable credits x${count(detail, "Lovable credits")}`,
+  );
   assert.equal(count(detail, "Harness analysis"), 1);
 });
 

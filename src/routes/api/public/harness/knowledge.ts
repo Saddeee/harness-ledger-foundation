@@ -99,6 +99,10 @@ async function buildKnowledgeResponse(adapter: Adapter) {
       id: number;
       instruction: string;
     }[];
+    const retiredRules = adapter.retiredRulesForTarget(t.target, t.id) as {
+      id: number;
+      instruction: string;
+    }[];
     const versions = allVersions
       .filter((v) => versionMatchesTarget(v, t))
       .map((v) => {
@@ -134,6 +138,11 @@ async function buildKnowledgeResponse(adapter: Adapter) {
         : null,
       managed_block_present: current ? current.content.includes(HARNESS_START_MARKER) : false,
       active_rules: activeRules.map((r) => ({
+        id: r.id,
+        text: r.instruction,
+        improvement_id: adapter.getCorrectionIdForRule(r.id),
+      })),
+      retired_rules: retiredRules.map((r) => ({
         id: r.id,
         text: r.instruction,
         improvement_id: adapter.getCorrectionIdForRule(r.id),

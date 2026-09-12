@@ -14,6 +14,7 @@ export const CLASSIFICATION_LABELS: Record<string, string> = {
   question: "A question, not a correction",
   approval: "An approval, not a correction",
   other: "Other",
+  retire: "A retirement proposal, not a correction",
 };
 
 export const SCOPE_LABELS: Record<string, string> = {
@@ -102,6 +103,8 @@ export const WHY_TEMPLATES: Record<string, string> = {
     "Lovable made a mistake you had to fix. Harness thinks a standing instruction would prevent it.",
   scope_extension:
     "The request grew beyond its original scope. Harness thinks a standing instruction would set clearer expectations.",
+  retire:
+    "Harness found a signal that this rule may be doing more harm than good. You can retire it, keep it and be asked again later, or edit it directly.",
 };
 
 const WHY_GENERIC =
@@ -318,6 +321,7 @@ export const IMPROVEMENT_GROUPS = [
   "Waiting to be tested",
   "In Lovable",
   "Reverted",
+  "Retired",
   "Needs attention",
   "Skipped",
 ] as const;
@@ -327,9 +331,14 @@ export function improvementGroup(input: {
   status: "pending" | "accepted" | "skipped";
   writeStatus: LovableWriteStatus | null | undefined;
   testFirst: boolean;
+  // True once the rule behind this improvement has been retired (Task C2).
+  // Checked before writeStatus so a retired rule always reads "Retired",
+  // never "In Lovable"/"Reverted" from its own (now-historical) write.
+  retired?: boolean | undefined;
 }): ImprovementGroup | null {
   if (input.status === "skipped") return "Skipped";
   if (input.status === "pending") return null;
+  if (input.retired) return "Retired";
   if (input.writeStatus === "stale" || input.writeStatus === "failed") return "Needs attention";
   if (input.writeStatus === "written") return "In Lovable";
   if (input.writeStatus === "reverted") return "Reverted";
@@ -386,4 +395,50 @@ export function wordingChangeLine(entry: {
     return `You changed the wording on ${day}.`;
   }
   return `Updated by Harness on ${day}.`;
+}
+
+// ---- Retirement proposals (Task C2 / spec §4b-§5) ----
+
+export type RetireReason = "hurt" | "contradiction" | "unused";
+export type RetireLike = {
+  reason: RetireReason;
+  health: {
+    applicable_tasks: number;
+    helped: number;
+    hurt: number;
+    last_applicable_at: string | null;
+  };
+  since: string | null;
+  contradicts_instruction?: string | null;
+};
+
+// "Harness suggests retiring this rule because ..." -- the fixed sentence
+// per reason (spec §4b), never invents specifics beyond the other rule's own
+// wording for a contradiction.
+export function retireReasonSentence(input: RetireLike): string {
+  if (input.reason === "contradiction") {
+    return `Harness suggests retiring this rule because it contradicts ${input.contradicts_instruction ?? "another rule"}.`;
+  }
+  if (input.reason === "unused") {
+    return "Harness suggests retiring this rule because it has not applied in 60 days.";
+  }
+  return "Harness suggests retiring this rule because it hurt more than it helped.";
+}
+
+// The one-line health summary under a retirement proposal's title -- the
+// stats line for "hurt", and a plainer sentence for "contradiction"/"unused"
+// where applicable/helped/hurt counts are often all zero and wouldn't read
+// as evidence of anything.
+export function retireSinceLine(input: RetireLike): string {
+  if (input.reason === "contradiction") {
+    return "This rule is still live, but a newer rule now says the opposite.";
+  }
+  if (input.reason === "unused") {
+    const since = input.since ? `, ${formatDay(input.since)}` : "";
+    return `Since it was added${since}, this rule has not applied to any task in over 60 days.`;
+  }
+  const last = input.health.last_applicable_at
+    ? formatDay(input.health.last_applicable_at)
+    : "never";
+  return `Since it was added: ${input.health.applicable_tasks} tasks · ${input.health.helped} helped · ${input.health.hurt} repeat corrections · last used ${last}`;
 }
