@@ -135,6 +135,18 @@ export type { LockOwner, LockHolder, LockAcquireResult } from "./executor/lock.j
 export { createLovableRest, LovableRestError } from "./executor/lovable-rest.js";
 export type { LovableRest, RestMessage, RestBuildStatus } from "./executor/lovable-rest.js";
 
+// Round 6 Task 2: writes to Lovable immediately when connected (spec §2) --
+// improvementActionAndWrite wraps improvements.ts's own improvementAction
+// and, for the actions that stage a real Knowledge write, runs it right
+// away via executor/beats.ts's executeVersionNow. Lives in beats.ts, not
+// improvements.ts, because improvements.ts must never import anything
+// Lovable-related (see its own "no Lovable import" test) -- re-exported
+// here the same way createLovableRest just above is: adapter.ts's own
+// source never imports Lovable code directly, only re-exports factories/
+// functions the executor/ modules define.
+export { improvementActionAndWrite, retryKnowledgeWrite } from "./executor/beats.js";
+export type { WriteOutcome, WriteOutcomeKind } from "./executor/beats.js";
+
 // Round 3: per-provider LLM API keys, stored in their own 0600 file, never in
 // SQLite and never returned beyond has_key/last4 (see llm-keys.ts).
 export {

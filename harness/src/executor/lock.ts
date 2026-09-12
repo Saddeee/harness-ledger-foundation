@@ -208,3 +208,16 @@ export function releaseLock(path: string = defaultLockPath()): void {
   if (existing && existing.pid !== process.pid) return;
   rmSync(path, { force: true });
 }
+
+// ---- Round 6 Task 2 ----
+/** Read-only: who currently holds the lock, for a status display (the GET
+ * executor route, the Projects page's "Schedule: running in..." line) --
+ * never acquires or mutates the file. A stale holder (heartbeat older than
+ * STALE_AFTER_MS) reads as unheld, same as acquireLock would treat it. */
+export function currentLockHolder(path: string = defaultLockPath()): LockHolder | null {
+  const existing = readLock(path);
+  if (!existing) return null;
+  if (isStale(existing, Date.now())) return null;
+  return existing;
+}
+// ---- end Round 6 Task 2 ----

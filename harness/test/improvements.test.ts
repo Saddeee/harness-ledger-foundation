@@ -2174,3 +2174,147 @@ test("performance: getImprovement(id) calls tagAcceptanceRates exactly once", ()
     "tagAcceptanceRates must be prepared exactly once per getImprovement() call",
   );
 });
+
+// ---- Round 6 Task 2: peekActionKind / prepareWordingChangeRewrite ----
+// The write-wiring itself (improvementActionAndWrite) lives in
+// executor/beats.ts and is tested there (harness/test/executor.test.ts) --
+// this file only owns the two small, Lovable-free exports that wrapper
+// calls into (see the "no Lovable import" test above, which is exactly why
+// the wrapper cannot live in this file).
+
+test("peekActionKind: reads the action name, and test_first only for accept", () => {
+  const project = "improvements-test-peek";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Peek Project" });
+  const { cc } = mkRule({
+    project,
+    externalIdPrefix: "peek",
+    content: "please always do P",
+    summary: "s",
+    desired: "d",
+    instruction: "Always do P.",
+    scope: "project",
+  });
+
+  assert.deepEqual(imp.peekActionKind({ action: "accept", id: cc.id, destination: "project" }), {
+    kind: "accept",
+    testFirst: false,
+  });
+  assert.deepEqual(
+    imp.peekActionKind({
+      action: "accept",
+      id: cc.id,
+      destination: "project",
+      test_first: true,
+    }),
+    { kind: "accept", testFirst: true },
+  );
+  assert.deepEqual(imp.peekActionKind({ action: "skip", id: cc.id }), {
+    kind: "skip",
+    testFirst: false,
+  });
+  assert.deepEqual(imp.peekActionKind({ action: "retire", rule_id: 1 }), {
+    kind: "retire",
+    testFirst: false,
+  });
+  assert.throws(() => imp.peekActionKind({ action: "not_a_real_action" }));
+});
+
+test("prepareWordingChangeRewrite: a no-op thunk for every action but change_wording, and for change_wording of an unwritten rule", () => {
+  const project = "improvements-test-wording-noop";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Wording Noop Project" });
+  const { cc, rule } = mkRule({
+    project,
+    externalIdPrefix: "wording-noop",
+    content: "please always do Q",
+    summary: "s",
+    desired: "d",
+    instruction: "Always do Q.",
+    scope: "project",
+  });
+  // Scoped to this test's own rule -- the shared test DB already carries
+  // pending versions from earlier tests in this file.
+  const pendingForRule = () =>
+    store.listKnowledgeVersions(rule.id).filter((v) => v.status === "pending").length;
+
+  // Not change_wording at all.
+  const thunk1 = imp.prepareWordingChangeRewrite({ action: "skip", id: cc.id });
+  imp.improvementAction({ action: "skip", id: cc.id });
+  thunk1();
+  assert.equal(pendingForRule(), 0);
+  imp.improvementAction({ action: "reopen", id: cc.id });
+
+  // change_wording, but this rule has never been written -- nothing to
+  // rewrite yet (stageApprovedWrites/an ordinary accept picks it up later).
+  const thunk2 = imp.prepareWordingChangeRewrite({
+    action: "change_wording",
+    id: cc.id,
+    instruction: "Always do Q, differently.",
+  });
+  imp.improvementAction({
+    action: "change_wording",
+    id: cc.id,
+    instruction: "Always do Q, differently.",
+  });
+  thunk2();
+  assert.equal(pendingForRule(), 0);
+});
+
+test("prepareWordingChangeRewrite: stages a rewrite when the rule being reworded was already written", () => {
+  const project = "improvements-test-wording-written";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Wording Written Project" });
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "Existing Knowledge.",
+    fetched_by: "test",
+  });
+  const { cc, rule } = mkRule({
+    project,
+    externalIdPrefix: "wording-written",
+    content: "please always do R",
+    summary: "s",
+    desired: "d",
+    instruction: "Always do R.",
+    scope: "project",
+  });
+  store.updateRule({ id: rule.id, state: "active", actor: "test" });
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: project,
+    previous_content: "Existing Knowledge.",
+    new_content: "Existing Knowledge.\n\n- Always do R.",
+    rule_ids: [rule.id],
+    actor: "test",
+  });
+  store.recordKnowledgeReadback(v.id, "Existing Knowledge.\n\n- Always do R.");
+  assert.equal(imp.getImprovement(cc.id)!.lovable.write_status, "written");
+
+  const thunk = imp.prepareWordingChangeRewrite({
+    action: "change_wording",
+    id: cc.id,
+    instruction: "Always do R, updated.",
+  });
+  imp.improvementAction({
+    action: "change_wording",
+    id: cc.id,
+    instruction: "Always do R, updated.",
+  });
+  thunk();
+
+  const versions = store.listKnowledgeVersions(rule.id);
+  assert.equal(versions[0]!.status, "pending", "change_wording's own rewrite was re-staged");
+  assert.match(versions[0]!.new_content, /Always do R, updated\./);
+});

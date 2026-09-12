@@ -4030,3 +4030,49 @@ export function countEditsSince(iso: string, editsIsoDates: string[]): number {
   return editsIsoDates.filter((d) => new Date(d).getTime() > cutoff).length;
 }
 // ---- end Round 6 Task 1 ----
+
+// ---- Round 6 Task 2 ----
+// Support for executeVersionNow (executor/beats.ts): writing a pending
+// version immediately, from the request that staged it, rather than waiting
+// for the next sync pass.
+
+// A pending version was composed against `previous_content`; when the live
+// Knowledge has drifted only outside the Harness-managed block,
+// executeVersionNow recomposes the same rule set on the fresh base and
+// needs to write THAT text, not the one recorded when the version was
+// staged. recordKnowledgeReadback verifies a write against new_sha256, so
+// the stored new_content/new_sha256 must be updated first, or a genuinely
+// successful write would read back as a hash mismatch.
+export function updatePendingKnowledgeVersionContent(versionId: number, newContent: string) {
+  requirePendingVersion(versionId);
+  db.prepare(`UPDATE knowledge_versions SET new_content = ?, new_sha256 = ? WHERE id = ?`).run(
+    newContent,
+    knowledgeSha256(newContent),
+    versionId,
+  );
+  return getKnowledgeVersion(versionId);
+}
+
+// "Try again" (the improvement card's action for a stale/failed write):
+// reopens a terminal stale/failed version back to pending so
+// executeVersionNow can attempt it fresh -- a full re-read, and a recompose
+// if the base has moved on again. A no-op on an already-pending version (so
+// a caller never has to check status first); refuses on any other status,
+// since only stale/failed are meant to be retried this way (a written
+// version is done, a cancelled one was deliberately superseded).
+export function reopenKnowledgeVersionForRetry(versionId: number): KnowledgeVersionRow {
+  const v = getKnowledgeVersion(versionId);
+  if (!v) throw new Error(`knowledge_version ${versionId} not found`);
+  if (v.status === "pending") return v;
+  if (v.status !== "stale" && v.status !== "failed") {
+    throw new Error(
+      `knowledge_version ${versionId} is ${v.status}; only a stale or failed version can be retried`,
+    );
+  }
+  db.prepare(`UPDATE knowledge_versions SET status = 'pending', error = NULL WHERE id = ?`).run(
+    versionId,
+  );
+  insertEvent("knowledge_version.pending", null, { id: versionId, retried: true });
+  return getKnowledgeVersion(versionId)!;
+}
+// ---- end Round 6 Task 2 ----

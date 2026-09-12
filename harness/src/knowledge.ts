@@ -95,3 +95,22 @@ export function composeManagedKnowledge(
     over_rules: maxActiveRules !== undefined && rules.length > maxActiveRules,
   };
 }
+
+// ---- Round 6 Task 2 ----
+// The raw Harness-managed block as it stands in a piece of Knowledge text
+// right now (markers included), or null when there isn't exactly one
+// well-formed pair -- used by executeVersionNow (executor/beats.ts) to tell
+// "the surrounding text changed" (safe to recompose) apart from "someone
+// edited inside the markers" (never safe to overwrite). Deliberately
+// tolerant: malformed markers just read as "no block" here rather than
+// throwing -- composeManagedKnowledge above is the one place that must
+// refuse outright, since it is the one about to write.
+export function extractManagedBlock(content: string): string | null {
+  const starts = countOccurrences(content, HARNESS_START);
+  const ends = countOccurrences(content, HARNESS_END);
+  if (starts !== 1 || ends !== 1) return null;
+  const startIdx = content.indexOf(HARNESS_START);
+  const endIdx = content.indexOf(HARNESS_END);
+  if (endIdx < startIdx) return null;
+  return content.slice(startIdx, endIdx + HARNESS_END.length);
+}

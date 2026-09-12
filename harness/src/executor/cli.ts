@@ -4,6 +4,7 @@
  */
 import { connect, disconnect, status } from "./lovable-auth.js";
 import { loop, runOnce, nextRunAt, scheduleFromSettings } from "./schedule.js";
+import { currentLockHolder } from "./lock.js";
 import { getSettings, latestSyncRun } from "../store.js";
 import { runAnalyseCommand } from "../analysis/run.js";
 import { createCallLlm } from "../llm/index.js";
@@ -26,6 +27,10 @@ function printStatus(): void {
         schedule,
         last_run: last,
         next_run_at: nextRunAt(new Date(), lastStarted, schedule)?.toISOString() ?? null,
+        // Round 6 Task 2: who currently drives the schedule, if anyone --
+        // "app" is the web server's own in-app scheduler, "cli" is a
+        // `npm run harness:executor` loop (this process, or another one).
+        schedule_holder: currentLockHolder(),
       },
       null,
       2,
@@ -34,7 +39,10 @@ function printStatus(): void {
 }
 
 if (command === "" || command === "loop") {
-  await loop();
+  // Round 6 Task 2: claims the executor lock as "cli" -- if the app (the
+  // web server's own in-app scheduler) already holds it, loop() logs that
+  // once and returns immediately without touching Lovable.
+  await loop({ owner: "cli" });
 } else if (command === "status") {
   printStatus();
 } else if (command === "once") {

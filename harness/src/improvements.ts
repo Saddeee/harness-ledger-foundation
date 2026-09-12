@@ -1803,3 +1803,61 @@ function sortForInbox(items: Improvement[]): Improvement[] {
   return [...pending, ...rest];
 }
 // ---- end Round 5 Task 5 ----
+
+// ---- Round 6 Task 2 ----
+// The actual wiring to Lovable (spec §2: a decision the user just pressed
+// writes immediately, not "at the next sync") lives in
+// executor/beats.ts's improvementActionAndWrite -- this file must never
+// import anything Lovable-related (enforced by the "no Lovable import"
+// test just above). The two small exports below are everything that
+// wrapper needs from here: which action a request names (without exposing
+// the full internal action schema), and change_wording's own re-stage
+// (which needs stagePendingWrite, private to this file) for a rule that
+// was already written.
+
+export type ActionKind = z.infer<typeof actionInput>["action"];
+
+/** Reads which action a POST body names, and (for "accept") whether
+ * test_first was set -- everything executor/beats.ts's
+ * improvementActionAndWrite needs to decide whether this action writes to
+ * Lovable, without this file exposing its full action schema. Throws
+ * exactly like improvementAction does on invalid input; a caller always
+ * calls improvementAction with the same input right after, so an invalid
+ * body fails in the same place either way. */
+export function peekActionKind(input: unknown): { kind: ActionKind; testFirst: boolean } {
+  const parsed = actionInput.parse(input);
+  return {
+    kind: parsed.action,
+    testFirst: parsed.action === "accept" ? Boolean(parsed.test_first) : false,
+  };
+}
+
+/**
+ * improvementAction's own "change_wording" case cancels any pending write
+ * for the rule but never stages a fresh one (a rule that was never written
+ * has nothing live to rewrite yet, and stageApprovedWrites picks it back up
+ * on the next sync either way -- see that case's own comment). Only a rule
+ * that was already WRITTEN needs its live Knowledge rewritten right now,
+ * the same way accept/readd already stage via stagePendingWrite.
+ *
+ * Must be called with the SAME raw input, BEFORE improvementAction runs (it
+ * reads the rule's current write_status, which improvementAction is about
+ * to change) -- returns a thunk that stages the rewrite if it turns out to
+ * be needed; call it AFTER improvementAction returns. A no-op thunk for
+ * every action other than change_wording, and for change_wording when the
+ * rule wasn't written yet.
+ */
+export function prepareWordingChangeRewrite(input: unknown): () => void {
+  const parsed = actionInput.parse(input);
+  if (parsed.action !== "change_wording") return () => {};
+  const wasWritten = getImprovement(parsed.id)?.lovable.write_status === "written";
+  return () => {
+    if (!wasWritten) return;
+    const rule = store.getRuleForCorrection(parsed.id) as RuleRow | null;
+    const refreshed = getImprovement(parsed.id);
+    if (rule && refreshed) {
+      stagePendingWrite(refreshed, rule, rule.scope, "wording changed after it was written");
+    }
+  };
+}
+// ---- end Round 6 Task 2 ----

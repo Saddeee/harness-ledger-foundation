@@ -11,6 +11,7 @@ import { status } from "./lovable-auth.js";
 import { openLovableClient, type LovableClient } from "./lovable-mcp.js";
 import { runAnalysis } from "../analysis/run.js";
 import { createCallLlm } from "../llm/index.js";
+import { acquireLock, defaultLockPath, heartbeat, releaseLock, type LockOwner } from "./lock.js";
 
 export type ScheduleSettings = {
   enabled: boolean;
@@ -119,14 +120,47 @@ async function maybeRunAnalysis(): Promise<void> {
   }
 }
 
+// Round 6 Task 2: the pretty name for the OTHER owner, for both directions
+// of the "someone else already has the schedule" message (the CLI's loop
+// refused because the app holds it, and vice versa).
+function otherOwnerLabel(owner: LockOwner): string {
+  return owner === "app" ? "the app" : "the executor process";
+}
+
 /**
  * The scheduler. One tick decides at most one sync run: an explicit "Sync
  * now" beats the schedule, and a sync run already in flight beats both. The
  * Lovable client is opened lazily on the first run and reused afterwards.
  * Analysis (above) is checked every tick too, independent of all of this.
+ *
+ * Round 6 Task 2: driving Lovable at all requires holding the executor
+ * process lock (executor/lock.ts) under `owner` ("cli" for a plain `npm run
+ * harness:executor`, "app" for the web server's own in-app scheduler --
+ * see startInAppScheduler below). A lock already held by the OTHER owner
+ * means a second driver is not allowed to run at all: this call logs once
+ * and returns immediately, touching neither Lovable nor the lock file.
+ * Once acquired, the lock is heartbeated every tick and released when the
+ * loop exits for any reason (including the lock being lost to someone else
+ * mid-run, which this loop treats as its own cue to stop).
  */
-export async function loop(opts: { tickMs?: number; once?: boolean } = {}): Promise<void> {
+export async function loop(
+  opts: { tickMs?: number; once?: boolean; owner?: LockOwner } = {},
+): Promise<void> {
   const tickMs = opts.tickMs ?? DEFAULT_TICK_MS;
+  const owner = opts.owner ?? "cli";
+  const lockPath = defaultLockPath();
+
+  const acquired = acquireLock(lockPath, owner);
+  if (!acquired.held) {
+    const holder = acquired.holder;
+    console.log(
+      holder
+        ? `${otherOwnerLabel(holder.owner)} is already running the schedule (pid ${holder.pid})`
+        : "the schedule lock is already held; not starting a second driver",
+    );
+    return;
+  }
+
   let client: LovableClient | null = null;
   let lastNotConnectedLog = 0;
 
@@ -139,6 +173,16 @@ export async function loop(opts: { tickMs?: number; once?: boolean } = {}): Prom
 
   try {
     for (;;) {
+      const hb = heartbeat(lockPath);
+      if (!hb.ok) {
+        console.log(
+          hb.holder
+            ? `Lost the schedule lock to ${otherOwnerLabel(hb.holder.owner)} (pid ${hb.holder.pid}) -- stopping.`
+            : "Lost the schedule lock -- stopping.",
+        );
+        return;
+      }
+
       await maybeRunAnalysis();
 
       const connected = status().connected;
@@ -191,8 +235,48 @@ export async function loop(opts: { tickMs?: number; once?: boolean } = {}): Prom
     }
   } finally {
     await closeClient();
+    releaseLock(lockPath);
   }
 }
+
+// ---- Round 6 Task 2 ----
+/** Guards a single `startInAppScheduler()` call per server process --
+ * `loadHarnessExecutor()` (the web app's local-runtime bridge) calls this
+ * once, the first time it successfully loads the executor bundle; this flag
+ * stops a second call (e.g. a later cache-miss retry) from starting a
+ * second background loop in the same process. */
+let inAppSchedulerStarted = false;
+
+/**
+ * Starts the schedule inside the web server's own process, so a separately
+ * started `npm run harness:executor` is never required for syncing to run
+ * (spec §2). Acquires the executor lock as "app" and, if won, runs `loop()`
+ * in the background (not awaited -- this call returns immediately once the
+ * lock has been claimed or refused, since acquireLock itself is
+ * synchronous). If the lock is already held by a `cli` driver, this logs
+ * once and does nothing further: the app simply does not sync until that
+ * CLI process exits or its heartbeat goes stale.
+ *
+ * SIGTERM releases the lock explicitly (`loop()`'s own `finally` only runs
+ * if the process unwinds normally; a container/orchestrator SIGTERM does
+ * not wait for that) so a restarted app, or a `npm run harness:executor`
+ * started right after, does not have to wait out the 3-minute staleness
+ * window for a lock its own previous instance is done with.
+ */
+export function startInAppScheduler(opts: { tickMs?: number } = {}): void {
+  if (inAppSchedulerStarted) return;
+  inAppSchedulerStarted = true;
+
+  const lockPath = defaultLockPath();
+  void loop({ tickMs: opts.tickMs ?? 60_000, owner: "app" }).catch((err) => {
+    console.error(
+      `The in-app schedule stopped: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+
+  process.once("SIGTERM", () => releaseLock(lockPath));
+}
+// ---- end Round 6 Task 2 ----
 
 /** One pass regardless of the window, for `--once` and crontab use. */
 export async function runOnce(): Promise<{ ok: boolean; ran: boolean; error?: string }> {
