@@ -55,14 +55,16 @@ function ConfirmationRow({
         {message}
       </p>
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          disabled={busy}
-          className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          onClick={onUndo}
-        >
-          Undo
-        </button>
+        {item.kind === "retire" ? null : (
+          <button
+            type="button"
+            disabled={busy}
+            className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            onClick={onUndo}
+          >
+            Undo
+          </button>
+        )}
         <button
           type="button"
           className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

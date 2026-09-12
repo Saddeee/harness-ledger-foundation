@@ -77,7 +77,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   assert.equal(
     contradiction,
-    "Harness suggests retiring this rule because it contradicts Always use dark mode by default..",
+    "Harness suggests retiring this rule because it contradicts Always use dark mode by default.",
   );
 
   const unused = ux.retireReasonSentence({
@@ -158,6 +158,21 @@ test("instructions.tsx: a Retire button under each live rule, and retired rules 
   for (const tag of code.match(/<details[^>]*>/g) ?? []) {
     assert.ok(!/\sopen\b/.test(tag), `details tag must not be open: ${tag}`);
   }
+});
+
+test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows the message and View in Improvements)", () => {
+  const code = codeOnly(readApp("routes/_authenticated/inbox.tsx"));
+  const row = code.slice(code.indexOf("function ConfirmationRow"), code.indexOf("function Page"));
+  const guardStart = row.indexOf('item.kind === "retire" ? null : (');
+  assert.ok(guardStart >= 0, "Undo must be guarded on item.kind");
+  const guardEnd = row.indexOf(")}", guardStart);
+  assert.ok(guardEnd > guardStart);
+  // Search from guardStart, not 0 -- "Undo" is a substring of the earlier
+  // `onUndo` prop type declaration above the guard.
+  const undoIdx = row.indexOf("Undo", guardStart);
+  const viewIdx = row.indexOf("View in Improvements");
+  assert.ok(undoIdx > guardStart && undoIdx < guardEnd, "Undo must live inside the kind guard");
+  assert.ok(viewIdx > guardEnd, "View in Improvements must render unconditionally, after the guard");
 });
 
 test("the improvements API's action set now includes retire, keep, readd", () => {

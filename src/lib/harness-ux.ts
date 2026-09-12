@@ -104,7 +104,7 @@ export const WHY_TEMPLATES: Record<string, string> = {
   scope_extension:
     "The request grew beyond its original scope. Harness thinks a standing instruction would set clearer expectations.",
   retire:
-    "Harness found a signal that this rule may be doing more harm than good. You can retire it, keep it and be asked again later, or edit it directly.",
+    "Harness found a signal that this rule may be doing more harm than good. You can retire it, or keep it and be asked again later.",
 };
 
 const WHY_GENERIC =
@@ -417,7 +417,8 @@ export type RetireLike = {
 // wording for a contradiction.
 export function retireReasonSentence(input: RetireLike): string {
   if (input.reason === "contradiction") {
-    return `Harness suggests retiring this rule because it contradicts ${input.contradicts_instruction ?? "another rule"}.`;
+    const other = (input.contradicts_instruction ?? "another rule").replace(/\.+$/, "");
+    return `Harness suggests retiring this rule because it contradicts ${other}.`;
   }
   if (input.reason === "unused") {
     return "Harness suggests retiring this rule because it has not applied in 60 days.";
