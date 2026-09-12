@@ -2038,6 +2038,249 @@ export function listSkillSnapshots(
 }
 // ---- end round 3 Task 2 ----
 
+// ---- Round 4 C1 ----
+// Rule health (spec §4b): applicable/helped/hurt counts and a retirement
+// signal for each live rule, recomputed by harness/src/analysis/health.ts
+// after every sync/analysis run (see executor/beats.ts runAll). Pure
+// data-layer only -- the thresholds and the computation itself live in
+// health.ts; this block is CRUD over rule_health plus the two read-shapes
+// health.ts needs: live rules with their Knowledge target and first write
+// date, and task episodes after a given date with their classification
+// tags/corrections.
+
+export type RuleHealthStatus = "healthy" | "watch" | "retire_suggested" | "snoozed";
+
+export type RuleHealthRow = {
+  rule_id: number;
+  applicable_tasks: number;
+  helped: number;
+  hurt: number;
+  last_applicable_at: string | null;
+  contradicted_by_rule_id: number | null;
+  unused_since: string | null;
+  status: RuleHealthStatus;
+  snoozed_until: string | null;
+  computed_at: string;
+};
+
+export function getRuleHealth(ruleId: number): RuleHealthRow | null {
+  return (db.prepare(`SELECT * FROM rule_health WHERE rule_id = ?`).get(ruleId) ??
+    null) as RuleHealthRow | null;
+}
+
+export function listRuleHealth(): RuleHealthRow[] {
+  return db.prepare(`SELECT * FROM rule_health ORDER BY rule_id`).all() as RuleHealthRow[];
+}
+
+export function upsertRuleHealth(row: {
+  rule_id: number;
+  applicable_tasks: number;
+  helped: number;
+  hurt: number;
+  last_applicable_at: string | null;
+  contradicted_by_rule_id: number | null;
+  unused_since: string | null;
+  status: RuleHealthStatus;
+  snoozed_until: string | null;
+}): RuleHealthRow {
+  const result = db
+    .prepare(
+      `INSERT INTO rule_health
+         (rule_id, applicable_tasks, helped, hurt, last_applicable_at, contradicted_by_rule_id,
+          unused_since, status, snoozed_until, computed_at)
+       VALUES (@rule_id, @applicable_tasks, @helped, @hurt, @last_applicable_at, @contradicted_by_rule_id,
+               @unused_since, @status, @snoozed_until, datetime('now'))
+       ON CONFLICT(rule_id) DO UPDATE SET
+         applicable_tasks = excluded.applicable_tasks,
+         helped = excluded.helped,
+         hurt = excluded.hurt,
+         last_applicable_at = excluded.last_applicable_at,
+         contradicted_by_rule_id = excluded.contradicted_by_rule_id,
+         unused_since = excluded.unused_since,
+         status = excluded.status,
+         snoozed_until = excluded.snoozed_until,
+         computed_at = excluded.computed_at
+       RETURNING *`,
+    )
+    .get(row) as RuleHealthRow;
+  insertEvent("rule_health.upserted", null, { rule_id: row.rule_id, status: row.status });
+  return result;
+}
+
+// A human "Keep" decision on a retirement proposal (Task C2): the signal is
+// acknowledged but not acted on for a while (30 days, per the spec). There
+// is nothing to snooze on a rule rule_health has never scored, so this
+// requires a prior recomputeRuleHealth to have run for it.
+export function snoozeRuleHealth(ruleId: number, untilIso: string): RuleHealthRow {
+  const existing = getRuleHealth(ruleId);
+  if (!existing) {
+    throw new Error(`rule_health for rule ${ruleId} not found -- run recomputeRuleHealth first`);
+  }
+  const result = db
+    .prepare(
+      `UPDATE rule_health SET snoozed_until = ?, status = 'snoozed', computed_at = datetime('now')
+       WHERE rule_id = ? RETURNING *`,
+    )
+    .get(untilIso, ruleId) as RuleHealthRow;
+  insertEvent("rule_health.snoozed", null, { rule_id: ruleId, until: untilIso });
+  return result;
+}
+
+export type LiveRuleWithTarget = {
+  id: number;
+  instruction: string;
+  scope: "project" | "workspace";
+  project_id: string | null;
+  workspace_id: string | null;
+  failure_signature: string;
+  prediction: string;
+  scope_tags: string[];
+  first_written_at: string | null;
+};
+
+// Live = state 'active'. A rule with no written Knowledge version (never
+// actually landed in Lovable) has no "since added" baseline, so the inner
+// join below excludes it rather than health.ts having to special-case a
+// null first_written_at. first_written_at/project_id/workspace_id come from
+// the EARLIEST 'written' knowledge_versions row for that rule -- SQLite's
+// documented bare-column behaviour ("when a query has exactly one min() or
+// max(), bare columns in the result take their value from the input row
+// that produced it") makes the aggregate below pull project_id/workspace_id
+// from that same earliest row, not an arbitrary one in the group.
+export function listLiveRulesWithTargets(): LiveRuleWithTarget[] {
+  const rows = db
+    .prepare(
+      `SELECT r.id, r.instruction, r.scope, r.predicted_failure as prediction, r.scope_tags_json,
+              kv.project_id, kv.workspace_id, kv.first_written_at
+       FROM rules r
+       JOIN (
+         SELECT rule_id, MIN(written_at) as first_written_at, project_id, workspace_id
+         FROM knowledge_versions
+         WHERE status = 'written' AND rule_id IS NOT NULL AND written_at IS NOT NULL
+         GROUP BY rule_id
+       ) kv ON kv.rule_id = r.id
+       WHERE r.state = 'active'
+       ORDER BY r.id`,
+    )
+    .all() as {
+    id: number;
+    instruction: string;
+    scope: "project" | "workspace";
+    prediction: string;
+    scope_tags_json: string;
+    project_id: string | null;
+    workspace_id: string | null;
+    first_written_at: string | null;
+  }[];
+
+  const failureSignatureStmt = db.prepare(
+    `SELECT failure_signature FROM verification_plans WHERE rule_id = ? ORDER BY id DESC LIMIT 1`,
+  );
+
+  return rows.map((r) => {
+    const plan = failureSignatureStmt.get(r.id) as { failure_signature: string } | undefined;
+    let parsedTags: unknown = null;
+    try {
+      parsedTags = JSON.parse(r.scope_tags_json);
+    } catch {
+      parsedTags = null;
+    }
+    const scopeTags =
+      Array.isArray(parsedTags) && parsedTags.length > 0 ? (parsedTags as string[]) : ["general"];
+    return {
+      id: r.id,
+      instruction: r.instruction,
+      scope: r.scope,
+      project_id: r.project_id,
+      workspace_id: r.workspace_id,
+      failure_signature: plan?.failure_signature ?? "",
+      prediction: r.prediction,
+      scope_tags: scopeTags,
+      first_written_at: r.first_written_at,
+    };
+  });
+}
+
+export type EpisodeAfter = {
+  id: number;
+  project_id: string | null;
+  started_at: string;
+  tags: string[];
+  corrections: { history_item_id: number; summary: string }[];
+};
+
+// Episodes started strictly after sinceIso, in one project (project scope)
+// or every project (workspace scope, projectId === null). tags is the union
+// of message_classifications.tags_json across the episode's evidence
+// messages; corrections is that same evidence filtered to
+// classification = 'correction', with each one's summary taken from
+// message_classifications.summary, falling back to the first 200 chars of
+// the message itself when the classifier left no summary.
+export function listEpisodesAfter(projectId: string | null, sinceIso: string): EpisodeAfter[] {
+  const episodes = (
+    projectId == null
+      ? db
+          .prepare(
+            `SELECT id, project_id, started_at FROM task_episodes
+             WHERE started_at IS NOT NULL AND started_at > ?
+             ORDER BY started_at`,
+          )
+          .all(sinceIso)
+      : db
+          .prepare(
+            `SELECT id, project_id, started_at FROM task_episodes
+             WHERE started_at IS NOT NULL AND started_at > ? AND project_id = ?
+             ORDER BY started_at`,
+          )
+          .all(sinceIso, projectId)
+  ) as { id: number; project_id: string | null; started_at: string }[];
+
+  const tagsStmt = db.prepare(
+    `SELECT mc.tags_json FROM task_episode_evidence tee
+     JOIN message_classifications mc ON mc.history_item_id = tee.history_item_id
+     WHERE tee.task_episode_id = ?`,
+  );
+  const correctionsStmt = db.prepare(
+    `SELECT hi.id as history_item_id, mc.summary as summary, hi.content as content
+     FROM task_episode_evidence tee
+     JOIN history_items hi ON hi.id = tee.history_item_id
+     JOIN message_classifications mc ON mc.history_item_id = hi.id
+     WHERE tee.task_episode_id = ? AND mc.classification = 'correction'
+     ORDER BY hi.id`,
+  );
+
+  return episodes.map((ep) => {
+    const tagRows = tagsStmt.all(ep.id) as { tags_json: string }[];
+    const tagSet = new Set<string>();
+    for (const row of tagRows) {
+      try {
+        const parsed = JSON.parse(row.tags_json);
+        if (Array.isArray(parsed)) {
+          for (const t of parsed) if (typeof t === "string") tagSet.add(t);
+        }
+      } catch {
+        // malformed tags_json contributes no tags rather than failing the whole read
+      }
+    }
+    const correctionRows = correctionsStmt.all(ep.id) as {
+      history_item_id: number;
+      summary: string;
+      content: string;
+    }[];
+    return {
+      id: ep.id,
+      project_id: ep.project_id,
+      started_at: ep.started_at,
+      tags: [...tagSet],
+      corrections: correctionRows.map((c) => ({
+        history_item_id: c.history_item_id,
+        summary: c.summary && c.summary.length > 0 ? c.summary : c.content.slice(0, 200),
+      })),
+    };
+  });
+}
+// ---- end Round 4 C1 ----
+
 // ---- Round 4 A1 ----
 // Data access for harness/src/analysis/classify.ts and segment.ts. These
 // are deliberately separate from countHistoryItemsAwaitingAnalysis's

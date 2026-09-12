@@ -11,6 +11,7 @@ import * as store from "../store.js";
 import { stageApprovedWrites } from "../improvements.js";
 import { sha256 } from "../knowledge.js";
 import { redact } from "./redact.js";
+import { recomputeRuleHealth } from "../analysis/health.js";
 import type { LovableClient, LovableReader, LovableWriter } from "./lovable-mcp.js";
 
 const FETCHED_BY = "executor";
@@ -329,6 +330,13 @@ export async function runAll(
     counts.failed = writes.failed;
     counts.skipped_auto_write = writes.skipped_auto_write;
     store.insertEvent("executor.sync.writes", null, writes);
+
+    // Round 4 Task C1 / spec §4b: outcome tracking, recomputed after every
+    // run so "Since added" and retirement suggestions stay current without
+    // needing their own schedule.
+    const health = recomputeRuleHealth();
+    counts.health_suggested = health.suggested;
+    store.insertEvent("executor.sync.health", null, health);
   } catch (err) {
     ok = false;
     error = errorMessage(err);
