@@ -94,7 +94,23 @@ export type ImprovementHealth = {
     quotes: { verdict: store.AdherenceVerdict; quote: string; created_at: string }[];
   } | null;
   sources: { observed: boolean; adherence: boolean; verdicts: boolean };
+  // Round 6 Task 4 / spec §4: set only on the direct response to a
+  // just-recorded verdict (recordVerdict below) -- what that one click
+  // changed in this rule's health, for the compact VerdictControl
+  // (src/components/harness/improvement.tsx) to show immediately instead
+  // of waiting for a refetch to guess from the raw counts. Always null from
+  // computeHealth's own ordinary build below -- a persisted health row
+  // never remembers "what the last verdict did".
+  verdict_effect: VerdictEffect | null;
 };
+
+// Round 6 Task 4 / spec §4: what recording a verdict actually changed --
+// "counted_hurt" (a fresh did_not_help, with verdicts counted as an
+// evidence source, fed into rule_health.hurt), "snoozed" (a fresh helped on
+// a rule Harness had suggested retiring, snoozing it 30 days), or "none"
+// for every other case (not_sure, a duplicate click that changed nothing,
+// or a did_not_help/helped that didn't meet its own condition above).
+export type VerdictEffect = "counted_hurt" | "snoozed" | "none";
 
 export type Improvement = {
   id: number;
@@ -163,6 +179,12 @@ export type Improvement = {
     // rule really is gone from Lovable's Knowledge now). Null for every
     // non-retired item.
     retirement_write_status: KnowledgeWriteStatus | null;
+    // Round 6 Task 3 fix 1 / spec §3: computed server-side (see isRuleLive
+    // and the "undo"/"cancel_write" actions themselves, which enforce the
+    // exact same rule) so no page has to re-derive when either control is
+    // safe -- true iff calling that action right now would not throw.
+    can_undo: boolean;
+    can_cancel_write: boolean;
   };
   // Set only for kind "retire"; null for an ordinary improvement.
   retire: RetireInfo | null;
@@ -348,6 +370,7 @@ function computeHealth(
       adherence: adherenceRows.length > 0,
       verdicts: latestVerdict != null,
     },
+    verdict_effect: null,
   };
 }
 
@@ -635,6 +658,7 @@ function buildImprovement(
       auto_write: c.project_id ? store.getProjectSettings(c.project_id).auto_write : true,
       retirement_write_status:
         rule && ruleState === "retired" ? retirementWriteStatus(rule.id) : null,
+      ...controlFlags(rule, ruleState, writeStatus),
     },
     retire: null,
     rule_id: rule?.id ?? null,
@@ -727,6 +751,11 @@ function buildRetireItem(
       untested: false,
       auto_write: true,
       retirement_write_status: null,
+      // A retire proposal is always pending -- Undo/Cancel are decided-item
+      // controls, neither applies here (Retire/Keep are the proposal's own
+      // actions).
+      can_undo: false,
+      can_cancel_write: false,
     },
     retire: {
       proposal_id: proposal.id,
@@ -1280,6 +1309,15 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
     // delimited block at the end of this file). Refused, with a clear
     // reason, once the rule (or its removal) really has been written --
     // "Remove from Knowledge" / "Re-add" are the levers from there.
+    //
+    // Round 6 Task 3 fix 1: liveness is checked via isRuleLive (rule.state
+    // === "active"), NOT lovable.write_status -- write_status reads the
+    // LATEST version for the rule, which a later pending/stale/failed
+    // rewrite (a wording change made while disconnected, e.g.) leaves as
+    // "pending"/"stale"/"failed" even though the rule's earlier write is
+    // still exactly what's live in Lovable right now. Undo must never
+    // demote a rule that's still live -- see isRuleLive's own comment for
+    // why rule.state alone already answers this correctly.
     case "undo": {
       // Same "no rule yet" tolerance as "reopen" above -- a correction can
       // be skipped before any rule exists for it (rule-writing hasn't run
@@ -1293,13 +1331,8 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
         undoRetirement(rule.id);
         break;
       }
-      if (
-        rule &&
-        (current.lovable.write_status === "written" || current.lovable.write_status === "reverted")
-      ) {
-        throw new Error(
-          "This rule is already written to Lovable — Undo isn't available; use Remove from Knowledge instead.",
-        );
+      if (rule && isRuleLive(rule.id)) {
+        throw new Error("This rule is live in Lovable — use Remove from Knowledge instead.");
       }
       store.reviewCorrectionCandidate({ id: a.id, action: "include", reviewer: ACTOR });
       if (rule) {
@@ -1486,9 +1519,17 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
   // ---- external_change nodes: knowledge_snapshots for this target, oldest
   // first -- a snapshot whose content differs from both the previous
   // snapshot's and every version's new_content was a change Lovable saw
-  // that Harness itself never wrote ----
+  // that Harness itself never wrote. Round 6 Task 5 review: demo snapshots
+  // (fetched_by = 'demo') are filtered out entirely here, not just skipped
+  // when deciding whether to push a node -- otherwise a demo snapshot still
+  // counts as "the previous one" for the real snapshot right after it,
+  // and/or the History page reads a demo-only write as something Lovable
+  // itself changed on a real target (spec §5: demo must never leak into a
+  // real target's own history). ----
   const versionShas = new Set(versionsForTarget.map((v) => sha256(v.new_content)));
-  const snapshots = store.listKnowledgeSnapshots(target, targetId);
+  const snapshots = store
+    .listKnowledgeSnapshots(target, targetId)
+    .filter((s) => s.fetched_by !== "demo");
   let prevSnapshotSha: string | null = null;
   snapshots.forEach((s, i) => {
     const shaNow = sha256(s.content);
@@ -1689,7 +1730,22 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
 // suggested retiring (the user's word overrides the signal for 30 days,
 // the same snooze keepProposal above already uses), but leaves any other
 // status alone.
-function recordVerdict(ruleId: number, verdict: store.RuleVerdict, note?: string): Improvement {
+// ---- Round 6 Task 4 ----
+// recordVerdict's own return grows `changed`/`effect` (spec §4): the
+// compact VerdictControl needs to know, from THIS response alone, whether
+// the click was a no-op ("Already recorded") and, when it wasn't, which
+// line to show under the control ("Counted as one repeat correction..." /
+// "Retirement snoozed for 30 days" / "Recorded; no effect on health") --
+// waiting for the next GET to re-derive it from the raw counts would be
+// both slower and, for "snoozed" (a status flip with no visible counter),
+// impossible to infer at all. `health.verdict_effect` mirrors the same
+// value on the returned item's own health, for a caller that only has the
+// item at hand.
+function recordVerdict(
+  ruleId: number,
+  verdict: store.RuleVerdict,
+  note?: string,
+): Improvement & { changed: boolean; effect: VerdictEffect } {
   // Round 6 Task 1: recordRuleVerdict now returns { id, changed } (an
   // upsert -- see its own header comment in store.ts). `changed` is false
   // only when this is the exact same verdict already on file, in which case
@@ -1701,9 +1757,11 @@ function recordVerdict(ruleId: number, verdict: store.RuleVerdict, note?: string
   const { changed } = store.recordRuleVerdict({ rule_id: ruleId, verdict, note: note ?? null });
 
   const health = changed ? store.getRuleHealth(ruleId) : null;
+  let effect: VerdictEffect = "none";
   if (health) {
     if (verdict === "did_not_help" && store.getEvidenceSources().verdicts) {
       recomputeRuleHealth();
+      effect = "counted_hurt";
     } else if (verdict === "helped" && health.status === "retire_suggested") {
       store.upsertRuleHealth({
         rule_id: health.rule_id,
@@ -1717,14 +1775,21 @@ function recordVerdict(ruleId: number, verdict: store.RuleVerdict, note?: string
         snoozed_until: new Date(Date.now() + KEEP_SNOOZE_MS).toISOString(),
         baseline_at: health.baseline_at,
       });
+      effect = "snoozed";
     }
   }
 
   const correctionId = store.getCorrectionIdForRule(ruleId);
   const refreshed = correctionId != null ? getImprovement(correctionId) : null;
   if (!refreshed) throw new Error(`improvement for rule ${ruleId} not found after verdict`);
-  return refreshed;
+  return {
+    ...refreshed,
+    changed,
+    effect,
+    health: refreshed.health ? { ...refreshed.health, verdict_effect: effect } : refreshed.health,
+  };
 }
+// ---- end Round 6 Task 4 ----
 // ---- end Round 5 Task 3 ----
 
 // ---- Round 5 Task 5 ----
@@ -1950,19 +2015,79 @@ export function prepareWordingChangeRewrite(input: unknown): () => void {
 // switch case above needs for the retired-not-yet-removed case, and
 // "cancel_write"'s own top-level handler.
 
+// Round 6 Task 3 fix 1: the exact reason string retireRule stages its
+// removal rewrite with, and its own inverse -- centralized so the
+// correlation lives in exactly one place (it used to be hand-rolled three
+// times: retirementWriteStatus, undoRetirement, and cancelPendingVersion's
+// own regex).
+function retiredRuleReason(ruleId: number): string {
+  return `retired rule ${ruleId}`;
+}
+function parseRetiredRuleId(reason: string | null): number | null {
+  const match = reason?.match(/^retired rule (\d+)$/);
+  return match?.[1] != null ? Number(match[1]) : null;
+}
+
 // retireRule's own removal rewrite carries rule_id: null (deliberately --
-// see retireRule's own comment above) and this exact reason string, so it's
-// found by reason rather than rule_id. "none" once nothing matches: already
-// written, already cancelled, or never staged in the first place (no
-// snapshot existed to compose against at retire time -- the same edge case
-// stagePendingWrite's own "no snapshot" path leaves an ordinary accept in).
-function retirementWriteStatus(ruleId: number): KnowledgeWriteStatus {
-  const reason = `retired rule ${ruleId}`;
-  const latest =
+// see retireRule's own comment above), so it's found by this exact reason
+// string rather than rule_id. Returns the newest non-cancelled one (store.
+// listKnowledgeVersions()'s own id-descending order), or null once none
+// remains (already written, already cancelled, or never staged in the
+// first place -- no snapshot existed to compose against at retire time,
+// the same edge case stagePendingWrite's own "no snapshot" path leaves an
+// ordinary accept in).
+function findRetirementRewrite(ruleId: number): store.KnowledgeVersionRow | null {
+  const reason = retiredRuleReason(ruleId);
+  return (
     (store.listKnowledgeVersions() as store.KnowledgeVersionRow[]).find(
       (v) => v.rule_id === null && v.reason === reason && v.status !== "cancelled",
-    ) ?? null;
+    ) ?? null
+  );
+}
+
+function retirementWriteStatus(ruleId: number): KnowledgeWriteStatus {
+  const latest = findRetirementRewrite(ruleId);
   return latest ? latest.status : "none";
+}
+
+// Round 6 Task 3 fix 1: whether Lovable's Knowledge right now actually
+// carries this rule's own written text -- NOT the same question as "is the
+// latest knowledge_versions row for this rule written" (lovable.write_status
+// / buildImprovement's own `writeStatus`), which can read "pending"/
+// "stale"/"failed" for a rule that is still fully live, if a LATER rewrite
+// for the same rule (a wording change made while disconnected, e.g.) hasn't
+// finished yet. The rule state machine only ever sets "active" from a
+// verified, non-restore write for this exact rule_id
+// (store.recordKnowledgeReadback), and only ever moves off "active" via a
+// verified restore ("rolled_back") or a retire decision ("retired") -- both
+// set synchronously by their own call sites, never by a write merely being
+// staged or failing. So rule.state alone answers "is it live" correctly,
+// where write_status does not.
+function isRuleLive(ruleId: number): boolean {
+  const wrapped = store.getRule(ruleId) as { rule: { state: string } } | null;
+  return wrapped?.rule.state === "active";
+}
+
+function cancellable(status: KnowledgeWriteStatus): boolean {
+  return status === "pending" || status === "stale" || status === "failed";
+}
+
+// Round 6 Task 3 fix 1: lovable.can_undo/can_cancel_write, mirroring
+// exactly what the "undo"/"cancel_write" actions themselves enforce, so the
+// UI never has to re-derive (and never has to know the isRuleLive
+// distinction above). Read at buildImprovement's own call site: `rule`,
+// `ruleState`, and `writeStatus` are already computed there.
+function controlFlags(
+  rule: RuleRow | null,
+  ruleState: string | null,
+  writeStatus: KnowledgeWriteStatus,
+): { can_undo: boolean; can_cancel_write: boolean } {
+  if (!rule) return { can_undo: true, can_cancel_write: false };
+  if (ruleState === "retired") {
+    const rewriteStatus = retirementWriteStatus(rule.id);
+    return { can_undo: rewriteStatus !== "written", can_cancel_write: cancellable(rewriteStatus) };
+  }
+  return { can_undo: !isRuleLive(rule.id), can_cancel_write: cancellable(writeStatus) };
 }
 
 // The inverse of retireRule, for a retirement whose removal never actually
@@ -1972,10 +2097,7 @@ function retirementWriteStatus(ruleId: number): KnowledgeWriteStatus {
 // "proposed": this rule was already live and reviewed; only its removal is
 // being undone, there is nothing new here for the user to decide.
 function undoRetirement(ruleId: number): void {
-  const reason = `retired rule ${ruleId}`;
-  const rewrite = (store.listKnowledgeVersions() as store.KnowledgeVersionRow[]).find(
-    (v) => v.rule_id === null && v.reason === reason && v.status !== "cancelled",
-  );
+  const rewrite = findRetirementRewrite(ruleId);
   if (rewrite && rewrite.status !== "written") {
     const pending =
       rewrite.status === "pending" ? rewrite : store.reopenKnowledgeVersionForRetry(rewrite.id);
@@ -1992,17 +2114,28 @@ function undoRetirement(ruleId: number): void {
   });
 }
 
+// Round 6 Task 3 fix 2: the exact toast text a caller should show instead
+// of the generic "cancelled" one once it can read this off the response --
+// instructions.tsx's own pending-write banner (the only caller today) still
+// shows its static default for now, since this fix round may not touch
+// that file; whichever page next revises that toast should read
+// `improvement.cancel_note` (see cancelPendingVersion below) when present.
+const CANCEL_KEPT_LIVE_NOTE =
+  "Cancelled — the staged change was dropped; the rule stays as written";
+
 // The Instructions page's pending-write banner "Cancel": cancels the one
 // staged version (reopening a stale/failed one first, so this always ends
 // on a genuinely cancelled row rather than throwing) and reopens whatever
 // decision staged it. A rule-scoped write (accept/readd/restore/
-// change_wording) reopens that rule's own improvement, the same plain
-// reopen "undo" itself falls back to above; retireRule's own target-level
-// rewrite (rule_id null) has no single rule's *decision* to reopen that way
-// -- it undoes the retirement that staged it instead, bringing the rule
-// back to "active" (never written, so there is nothing to roll back in
-// Lovable itself).
-function cancelPendingVersion(versionId: number): Improvement {
+// change_wording) reopens that rule's own improvement -- UNLESS the rule is
+// still live (Round 6 Task 3 fix 2: a wording-change rewrite going stale/
+// failed/pending must not demote an otherwise-live rule to "proposed"; only
+// the staged rewrite itself is dropped, and the rule stays "active" exactly
+// as it reads today). retireRule's own target-level rewrite (rule_id null)
+// has no single rule's *decision* to reopen that way -- it undoes the
+// retirement that staged it instead, bringing the rule back to "active"
+// (never written, so there is nothing to roll back in Lovable itself).
+function cancelPendingVersion(versionId: number): Improvement & { cancel_note?: string } {
   let row = store.getKnowledgeVersion(versionId);
   if (!row) throw new Error(`knowledge version ${versionId} not found`);
   if (row.status === "stale" || row.status === "failed") {
@@ -2013,14 +2146,17 @@ function cancelPendingVersion(versionId: number): Improvement {
   store.markKnowledgeWriteCancelled(versionId, "cancelled: write cancelled by the owner");
 
   let correctionId: number | null = null;
+  let keptLive = false;
   if (row.rule_id != null) {
-    store.updateRule({ id: row.rule_id, state: "proposed", actor: ACTOR });
+    keptLive = isRuleLive(row.rule_id);
+    if (!keptLive) {
+      store.updateRule({ id: row.rule_id, state: "proposed", actor: ACTOR });
+    }
     correctionId = store.getCorrectionIdForRule(row.rule_id);
     if (correctionId != null)
       store.reviewCorrectionCandidate({ id: correctionId, action: "include", reviewer: ACTOR });
   } else {
-    const match = row.reason?.match(/^retired rule (\d+)$/);
-    const retiredRuleId = match?.[1] != null ? Number(match[1]) : null;
+    const retiredRuleId = parseRetiredRuleId(row.reason);
     if (retiredRuleId != null) {
       store.updateRule({
         id: retiredRuleId,
@@ -2036,6 +2172,6 @@ function cancelPendingVersion(versionId: number): Improvement {
     throw new Error(`knowledge version ${versionId} was cancelled, but has no linked improvement`);
   const refreshed = getImprovement(correctionId);
   if (!refreshed) throw new Error(`improvement ${correctionId} not found after cancel_write`);
-  return refreshed;
+  return keptLive ? { ...refreshed, cancel_note: CANCEL_KEPT_LIVE_NOTE } : refreshed;
 }
 // ---- end Round 6 Task 3 ----

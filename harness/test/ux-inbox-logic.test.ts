@@ -49,13 +49,15 @@ test("Inbox: a decided item becomes a confirmation row with Undo and Open", () =
   const inbox = codeOnly(readApp(INBOX));
   assert.match(inbox, /Undo/);
   assert.match(inbox, /Open/);
-  // Undo reopens through the shared postImprovementAction helper, not a
-  // fetch call authored directly in inbox.tsx.
+  // Undo posts through the shared postImprovementAction helper, not a
+  // fetch call authored directly in inbox.tsx. Round 6 Task 3 fix 1: the
+  // guarded "undo" action, never the plain "reopen" -- reopen has no check
+  // against demoting a rule Accept already wrote to Lovable inline.
   assert.match(
     inbox,
     /import\s*\{[^}]*\bpostImprovementAction\b[^}]*\}\s*from\s*"@\/lib\/improvements-client"/,
   );
-  assert.match(inbox, /postImprovementAction\(\{\s*action:\s*"reopen",\s*id\s*\}\)/);
+  assert.match(inbox, /postImprovementAction\(\{\s*action:\s*"undo",\s*id\s*\}\)/);
   assert.ok(
     !/fetch\(/.test(inbox),
     "inbox.tsx must not call fetch directly -- it goes through the shared client",
@@ -67,19 +69,20 @@ test("Inbox: a decided item becomes a confirmation row with Undo and Open", () =
   );
 });
 
-test('Inbox: action "reopen" is only ever posted through postImprovementAction, never a raw fetch', () => {
+test('Inbox: action "undo" is only ever posted through postImprovementAction, never a raw fetch, and "reopen" is gone entirely (Round 6 Task 3 fix 1)', () => {
   const inbox = readApp(INBOX);
+  assert.ok(!/action:\s*"reopen"/.test(inbox), "inbox.tsx must never post the unguarded 'reopen'");
   const lines = inbox.split("\n");
-  const reopenLines = lines
+  const undoLines = lines
     .map((line, i) => ({ line, i }))
-    .filter(({ line }) => /action:\s*"reopen"/.test(line));
-  assert.ok(reopenLines.length > 0, "expected at least one reopen call site in inbox.tsx");
-  for (const { line, i } of reopenLines) {
+    .filter(({ line }) => /action:\s*"undo"/.test(line));
+  assert.ok(undoLines.length > 0, "expected at least one undo call site in inbox.tsx");
+  for (const { line, i } of undoLines) {
     const windowText = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
     assert.match(
       windowText,
       /postImprovementAction\(/,
-      `"action: \\"reopen\\"" (line ${i + 1}: ${line.trim()}) must be posted via postImprovementAction`,
+      `"action: \\"undo\\"" (line ${i + 1}: ${line.trim()}) must be posted via postImprovementAction`,
     );
   }
 });

@@ -9,8 +9,11 @@ import {
   type LovableWriteStatus,
   type RetireReason,
   type Stage,
+  type VerdictEffect,
   type WriteOutcome,
 } from "@/lib/harness-ux";
+
+export type { VerdictEffect };
 
 export type { WriteOutcome };
 
@@ -93,6 +96,14 @@ export type LovableInfo = {
   // whether the card offers Undo (the removal never reached Lovable) or
   // Re-add (it did -- the rule really is gone now). Null otherwise.
   retirement_write_status: LovableWriteStatus | null;
+  // Round 6 Task 3 fix 1: computed server-side (harness/src/improvements.ts's
+  // own controlFlags, the exact same rule the "undo"/"cancel_write" actions
+  // enforce) so no page has to re-derive whether either control is safe --
+  // in particular, never from write_status alone (a live rule's LATER
+  // rewrite can read pending/stale/failed while the rule itself is still
+  // exactly what's live in Lovable).
+  can_undo: boolean;
+  can_cancel_write: boolean;
 };
 
 // A retirement proposal (Task C2 / spec §4b-§5), shown as an item of kind
@@ -141,6 +152,13 @@ export type ImprovementHealth = {
     }[];
   } | null;
   sources: { observed: boolean; adherence: boolean; verdicts: boolean };
+  // Round 6 Task 4 / spec §4: set only on the direct response to a
+  // just-recorded verdict (the "verdict" action) -- what that one click
+  // changed in this rule's health, read by the compact VerdictControl to
+  // show the effect line right away instead of waiting for a refetch to
+  // guess from the raw counts. Null on every ordinary GET (a persisted
+  // health row never remembers "what the last verdict did").
+  verdict_effect?: VerdictEffect | null;
 };
 
 export type Improvement = {
@@ -201,6 +219,15 @@ export type Improvement = {
   // Round 5 Task 5 / spec §4: confidence x tag acceptance rate -- the Inbox
   // sort order for pending items only; every other view ignores it.
   rank: number;
+  // Round 6 Task 4 / spec §4: present only on the direct response to the
+  // "verdict" action -- store.recordRuleVerdict's own upsert result
+  // (`changed: false` only when this is the exact same verdict already on
+  // file -- VerdictControl's cue for the "Already recorded" toast instead
+  // of a fresh effect line) and which of the two health-affecting branches
+  // fired, mirrored on health.verdict_effect above for a caller that only
+  // has the item's health at hand. Absent from every ordinary GET.
+  changed?: boolean;
+  effect?: VerdictEffect;
   developer: {
     correction: unknown;
     learning: unknown | null;
@@ -687,6 +714,10 @@ export function lovableOf(item: Improvement): LovableInfo {
       untested: false,
       auto_write: true,
       retirement_write_status: null,
+      // Fail closed: an old/legacy payload with no `lovable` at all gives
+      // no evidence either control is safe.
+      can_undo: false,
+      can_cancel_write: false,
     }
   );
 }

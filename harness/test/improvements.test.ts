@@ -1229,6 +1229,61 @@ test("buildTimeline: a target with 3 versions (one a restore) + 1 external chang
   assert.equal(new Set(nodes.map((n) => n.id)).size, nodes.length);
 });
 
+// Round 6 Task 5 review (addendum picked up while fixing Task 3): a demo
+// Knowledge snapshot (fetched_by = 'demo') must never surface on the
+// History page as "Changed in Lovable (outside Harness)" for a real
+// target, and must not silently become "the previous snapshot" a later
+// real one is compared against either -- buildTimeline's own
+// external_change detection now filters demo snapshots out of the
+// sequence entirely before doing either comparison.
+test("buildTimeline: a demo snapshot never produces an external_change node, and is not counted as 'the previous snapshot' for the real one that follows it", () => {
+  const project = "improvements-test-timeline-demo-snapshot";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: "Timeline Demo Snapshot Project" });
+
+  const REAL_CONTENT = "# Knowledge\n\nReal content.";
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: REAL_CONTENT,
+    fetched_by: "test",
+  });
+
+  // A demo snapshot, newer, that genuinely differs from the real one.
+  const DEMO_CONTENT = `${REAL_CONTENT}\n\n- Demo: always do something fake.`;
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: DEMO_CONTENT,
+    fetched_by: "demo",
+  });
+
+  assert.equal(
+    imp.buildTimeline("project", project).filter((n) => n.kind === "external_change").length,
+    0,
+    "a demo snapshot must never surface as an external Lovable change",
+  );
+
+  // A later REAL snapshot identical to the first real one (Lovable's actual
+  // Knowledge never changed) must not be flagged either -- if the demo
+  // snapshot had counted as "the previous one" in the comparison, this
+  // would wrongly read as a change back to the earlier text.
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: REAL_CONTENT,
+    fetched_by: "test",
+  });
+  assert.equal(
+    imp.buildTimeline("project", project).filter((n) => n.kind === "external_change").length,
+    0,
+    "the demo snapshot must not count as the 'previous' real snapshot either",
+  );
+});
+
 test("buildTimeline: an automatically-accepted candidate reads 'Accepted automatically (confidence 0.86)'", () => {
   const TL_PROJECT2 = "timeline-test-project-auto";
   db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
@@ -2545,6 +2600,9 @@ test("undo: reopens an accepted-but-unwritten item back to pending, cancelling t
     store.listPendingKnowledgeWrites() as { id: number; rule_id: number | null }[]
   ).filter((w) => w.rule_id === rule.id);
   assert.equal(stagedBefore.length, 1, "accept stages one pending write");
+  const beforeUndo = imp.getImprovement(cc.id)!;
+  assert.equal(beforeUndo.lovable.can_undo, true, "not live -- Undo is available");
+  assert.equal(beforeUndo.lovable.can_cancel_write, true, "a pending write exists to cancel");
 
   const item = imp.improvementAction({ action: "undo", id: cc.id });
   assert.equal(item.decision.status, "pending");
@@ -2615,6 +2673,8 @@ test("undo: a retired rule whose removal was never written comes back to 'active
     "pending",
     "the removal rewrite is staged but not yet written",
   );
+  assert.equal(retiredItem.lovable.can_undo, true, "the removal never reached Lovable");
+  assert.equal(retiredItem.lovable.can_cancel_write, true, "the removal rewrite is still pending");
 
   const undone = imp.improvementAction({ action: "undo", id: cc.id });
   assert.equal(
@@ -2666,6 +2726,7 @@ test("cancel_write: cancels the staged version and reopens the item it belongs t
   const staged = (
     store.listPendingKnowledgeWrites() as { id: number; rule_id: number | null }[]
   ).find((w) => w.rule_id === rule.id)!;
+  assert.equal(imp.getImprovement(cc.id)!.lovable.can_cancel_write, true);
 
   const item = imp.improvementAction({ action: "cancel_write", version_id: staged.id });
   assert.equal(item.id, cc.id);
@@ -2721,11 +2782,14 @@ test("undo: refused for a written (not retired) rule, with a clear reason pointi
     }[]
   ).find((w) => w.rule_id === rule.id)!;
   store.recordKnowledgeReadback(staged.id, staged.new_content);
-  assert.equal(imp.getImprovement(cc.id)!.lovable.write_status, "written");
+  const written = imp.getImprovement(cc.id)!;
+  assert.equal(written.lovable.write_status, "written");
+  assert.equal(written.lovable.can_undo, false, "live -- Undo is not offered");
+  assert.equal(written.lovable.can_cancel_write, false, "nothing pending to cancel");
 
   assert.throws(
     () => imp.improvementAction({ action: "undo", id: cc.id }),
-    /Remove from Knowledge/,
+    /This rule is live in Lovable — use Remove from Knowledge instead\./,
   );
 
   // Refused cleanly -- nothing about the item changed.
@@ -2734,4 +2798,147 @@ test("undo: refused for a written (not retired) rule, with a clear reason pointi
   assert.equal(after.lovable.write_status, "written");
   assert.equal((store.getRule(rule.id) as { rule: { state: string } }).rule.state, "active");
 });
+
+// ---- Round 6 Task 3 fix 1: liveness (isRuleLive), not write_status, gates
+// undo/cancel_write. write_status reads the LATEST version for a rule --
+// once a live rule's wording is changed while Harness is disconnected, that
+// latest version is pending/stale/failed even though the rule's earlier
+// write is still exactly what's live in Lovable; the old check let Undo
+// demote it to "proposed" (and drop it out of Instructions), while a
+// recompose for any OTHER rule would then silently write Lovable's
+// Knowledge without it. ----
+
+// Shared setup for both fixtures below: a rule accepted, written for real,
+// then reworded through the exact production path (executor/beats.ts's own
+// prepareWordingChangeRewrite + improvementAction + the returned thunk) --
+// the same sequence a live "Change wording" press makes, staging a fresh
+// pending rewrite for the SAME rule without ever touching rule.state.
+function mkLiveRuleWithPendingRewrite(idPrefix: string) {
+  const project = `improvements-test-${idPrefix}`;
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    project,
+    "test",
+  );
+  store.upsertProject({ lovable_project_id: project, name: idPrefix });
+  store.recordKnowledgeSnapshot({
+    target: "project",
+    project_id: project,
+    content: "# Knowledge\n\nExisting text.",
+    fetched_by: "test",
+  });
+
+  const { cc, rule } = mkRule({
+    project,
+    externalIdPrefix: idPrefix,
+    content: "please always do the thing",
+    summary: "s",
+    desired: "d",
+    instruction: "Always do the thing.",
+    scope: "project",
+  });
+
+  imp.improvementAction({ action: "accept", id: cc.id, destination: "project" });
+  const firstWrite = (
+    store.listPendingKnowledgeWrites() as {
+      id: number;
+      rule_id: number | null;
+      new_content: string;
+    }[]
+  ).find((w) => w.rule_id === rule.id)!;
+  store.recordKnowledgeReadback(firstWrite.id, firstWrite.new_content);
+  assert.equal((store.getRule(rule.id) as { rule: { state: string } }).rule.state, "active");
+
+  const thunk = imp.prepareWordingChangeRewrite({
+    action: "change_wording",
+    id: cc.id,
+    instruction: "Always do the thing, updated.",
+  });
+  imp.improvementAction({
+    action: "change_wording",
+    id: cc.id,
+    instruction: "Always do the thing, updated.",
+  });
+  thunk();
+
+  const rewrite = (store.listKnowledgeVersions(rule.id) as { id: number; status: string }[]).find(
+    (v) => v.status === "pending",
+  )!;
+  assert.ok(rewrite, "the reworded rule must have a freshly staged rewrite");
+  return { cc, rule, rewriteVersionId: rewrite.id };
+}
+
+test("undo: refused for a live rule even though its later wording-change rewrite is only pending (fix 1)", () => {
+  const { cc, rule } = mkLiveRuleWithPendingRewrite("undo-live-pending-rewrite");
+
+  const midway = imp.getImprovement(cc.id)!;
+  assert.equal(midway.lovable.write_status, "pending", "the rewrite itself reads pending");
+  assert.equal(
+    (store.getRule(rule.id) as { rule: { state: string } }).rule.state,
+    "active",
+    "the rule is still live -- only a later rewrite is unwritten",
+  );
+  assert.equal(midway.lovable.can_undo, false, "isRuleLive must win over write_status");
+  assert.equal(midway.lovable.can_cancel_write, true, "the pending rewrite can still be cancelled");
+
+  assert.throws(
+    () => imp.improvementAction({ action: "undo", id: cc.id }),
+    /This rule is live in Lovable — use Remove from Knowledge instead\./,
+  );
+  assert.equal(
+    (store.getRule(rule.id) as { rule: { state: string } }).rule.state,
+    "active",
+    "undo must never demote a rule that is still live",
+  );
+  assert.equal(
+    store.listKnowledgeVersions(rule.id).some((v) => v.status === "pending"),
+    true,
+    "the refused undo must not touch the staged rewrite either",
+  );
+});
+
+test("undo: refused for a live rule when its wording-change rewrite has gone failed instead of pending (fix 1)", () => {
+  const { cc, rule, rewriteVersionId } = mkLiveRuleWithPendingRewrite("undo-live-failed-rewrite");
+  store.markKnowledgeWriteFailed(rewriteVersionId, "simulated failure");
+
+  const midway = imp.getImprovement(cc.id)!;
+  assert.equal(midway.lovable.write_status, "failed");
+  assert.equal(midway.lovable.can_undo, false);
+  assert.equal(midway.lovable.can_cancel_write, true);
+
+  assert.throws(
+    () => imp.improvementAction({ action: "undo", id: cc.id }),
+    /This rule is live in Lovable — use Remove from Knowledge instead\./,
+  );
+  assert.equal((store.getRule(rule.id) as { rule: { state: string } }).rule.state, "active");
+});
+
+test("cancel_write: on a live rule's own pending rewrite, drops only the rewrite -- the rule stays 'active' and the response carries the kept-live toast text (fix 2)", () => {
+  const { cc, rule, rewriteVersionId } = mkLiveRuleWithPendingRewrite("cancel-write-live-rewrite");
+
+  const result = imp.improvementAction({ action: "cancel_write", version_id: rewriteVersionId });
+  assert.equal(
+    (store.getRule(rule.id) as { rule: { state: string } }).rule.state,
+    "active",
+    "the rule stays active -- only the staged rewrite is dropped",
+  );
+  assert.equal(store.getKnowledgeVersion(rewriteVersionId)!.status, "cancelled");
+  assert.equal(
+    result.lovable.write_status,
+    "written",
+    "the item reads back to its earlier written version",
+  );
+  assert.equal(
+    (result as { cancel_note?: string }).cancel_note,
+    "Cancelled — the staged change was dropped; the rule stays as written",
+  );
+
+  // The correction itself is still "accepted", never bounced back to
+  // pending -- cancel_write only reopens the rule's decision when the rule
+  // is NOT live (see the plain cancel_write test above).
+  const after = imp.getImprovement(cc.id)!;
+  assert.equal(after.decision.status, "accepted");
+  assert.equal(after.lovable.can_undo, false);
+  assert.equal(after.lovable.can_cancel_write, false, "nothing left to cancel");
+});
+// ---- end Round 6 Task 3 fix 1 ----
 // ---- end Round 6 Task 3 ----

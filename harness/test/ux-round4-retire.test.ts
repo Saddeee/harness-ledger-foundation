@@ -173,18 +173,22 @@ test("instructions.tsx: a Retire button under each live rule, and retired rules 
   }
 });
 
-test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows the message and Open)", () => {
+test("inbox.tsx: Undo is not offered for a retirement confirmation, nor once the item is already written (still shows the message and Open) -- Round 6 Task 3 fix 1", () => {
   const code = codeOnly(readApp(INBOX));
   const row = code.slice(code.indexOf("function ConfirmationRow"), code.indexOf("function Page"));
-  const guardStart = row.indexOf('item.kind === "retire" ? null : (');
-  assert.ok(guardStart >= 0, "Undo must be guarded on item.kind");
-  const guardEnd = row.indexOf(")}", guardStart);
+  // can_undo is server-computed (harness/src/improvements.ts's own
+  // controlFlags) and already false for a retire-kind item; the explicit
+  // `item.kind !== "retire"` here is belt-and-suspenders, not the only guard.
+  assert.match(row, /const canUndo = item\.kind !== "retire" && lovable\.can_undo;/);
+  const guardStart = row.indexOf("{!written && canUndo ? (");
+  assert.ok(guardStart >= 0, "Undo must be guarded on both !written and can_undo");
+  const guardEnd = row.indexOf(") : null}", guardStart);
   assert.ok(guardEnd > guardStart);
   // Search from guardStart, not 0 -- "Undo" is a substring of the earlier
   // `onUndo` prop type declaration above the guard.
   const undoIdx = row.indexOf("Undo", guardStart);
   const openIdx = row.indexOf("Open", guardStart);
-  assert.ok(undoIdx > guardStart && undoIdx < guardEnd, "Undo must live inside the kind guard");
+  assert.ok(undoIdx > guardStart && undoIdx < guardEnd, "Undo must live inside the guard");
   assert.ok(openIdx > guardEnd, "Open must render unconditionally, after the guard");
 });
 
@@ -213,14 +217,16 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     "keep",
     "mark_seen",
     "readd",
-    "reopen",
     "retire",
     // Round 6 Task 2: "Try again" on a not-written outcome.
     "retry_write",
     "skip",
     // Round 6 Task 3: a plain, no-dialog reopen for anything not yet
     // written -- "restore" is gone from this set: it moved to the History
-    // page only (see ux-round6-controls.test.ts).
+    // page only (see ux-round6-controls.test.ts). Round 6 Task 3 fix 1:
+    // "reopen" is gone too -- inbox.tsx's own Undo now posts "undo" (the
+    // guarded action), the only place in this scan that ever posted
+    // "reopen" in the first place.
     "undo",
     "verdict",
   ]);

@@ -7,6 +7,7 @@ import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import {
   executorQueryOptions,
   fetchImprovements,
+  lovableOf,
   postImprovementAction,
 } from "@/lib/improvements-client";
 
@@ -48,15 +49,27 @@ function ConfirmationRow({
   onUndo: () => void;
   onView: () => void;
 }) {
+  // Round 6 Task 3 fix 1: Accept can write to Lovable inline (Round 6 Task
+  // 2), so a just-decided item shown here may already be live by the time
+  // this row renders (or become live later, from a background refetch) --
+  // Undo must never be offered for a live item (posting it would demote a
+  // rule that's still in Lovable's Knowledge; see improvements.ts's own
+  // "undo" guard, which lovable.can_undo mirrors exactly, computed
+  // server-side so this page never re-derives it). `message` is whatever
+  // the toast said at decision time; once the item reads back "written",
+  // that live status wins over that possibly-stale text.
+  const lovable = lovableOf(item);
+  const written = lovable.write_status === "written";
+  const canUndo = item.kind !== "retire" && lovable.can_undo;
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card p-4">
       <p className="min-w-0 flex-1 text-sm">
         <span className="font-medium">{item.title}</span>
         {" — "}
-        {message}
+        {written ? "Written to Lovable" : message}
       </p>
       <div className="flex items-center gap-3">
-        {item.kind === "retire" ? null : (
+        {!written && canUndo ? (
           <button
             type="button"
             disabled={busy}
@@ -65,7 +78,7 @@ function ConfirmationRow({
           >
             Undo
           </button>
-        )}
+        ) : null}
         <button
           type="button"
           className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -132,13 +145,18 @@ function Page() {
       return next;
     });
   };
-  // Reopens the item through the shared action helper, then waits for the
-  // refetch to land before dropping the confirmation row -- so the item
-  // turns straight into a pending card instead of briefly disappearing.
+  // Round 6 Task 3 fix 1: "undo", never the plain "reopen" -- reopen has no
+  // guard against demoting a rule that Accept already wrote to Lovable
+  // inline (Round 6 Task 2). The row itself only ever offers this button
+  // when lovable.can_undo said it was safe, but the action here must still
+  // be the guarded one, in case the item went live between that check and
+  // this click. Waits for the refetch to land before dropping the
+  // confirmation row -- so the item turns straight into a pending card
+  // instead of briefly disappearing.
   const undo = async (id: number) => {
     setUndoing((prev) => new Set(prev).add(id));
     try {
-      await postImprovementAction({ action: "reopen", id });
+      await postImprovementAction({ action: "undo", id });
       await refresh();
       setConfirmed((prev) => {
         if (!prev.has(id)) return prev;
