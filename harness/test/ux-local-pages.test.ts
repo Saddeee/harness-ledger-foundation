@@ -129,7 +129,8 @@ test("local-projects.tsx: connection card, sync card, allowed switch, connect fl
   assert.match(code, /counts(\?\.\["messages"\]|\?\.messages|\.messages)/);
   assert.match(code, /knowledge_snapshots/);
   assert.match(code, /Last sync failed/);
-  assert.match(code, /Next sync/);
+  // Round 6 Task 2: "Next sync" (the banned phrase) became "Syncs again at".
+  assert.match(code, /Syncs again at/);
   assert.match(code, /Syncing…/);
 
   // connect flow

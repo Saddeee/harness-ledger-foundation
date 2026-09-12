@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { SETTINGS_DEFAULTS } from "@/lib/settings-defaults";
 import { Button } from "@/components/ui/button";
-import { fetchImprovements } from "@/lib/improvements-client";
+import { executorQueryOptions, fetchImprovements } from "@/lib/improvements-client";
+import { formatTime } from "@/lib/harness-ux";
 import { isNotifyEnabled } from "@/lib/browser-prefs";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -107,6 +108,16 @@ function AuthedLayout() {
   const counts = improvementsQuery.data?.counts;
   const badgeCount = counts ? counts.pending + counts.retire : 0;
 
+  // Round 6 Task 2 / spec §2: connection truth on every page -- one line in
+  // the sidebar footer, from the same executor status the pages already
+  // poll (no separate fetch of its own).
+  const executorQuery = useQuery(executorQueryOptions);
+  const connection = executorQuery.data?.connection;
+  const lastRun = executorQuery.data?.last_run;
+  const connectionLine = connection?.connected
+    ? `Connected to Lovable${lastRun?.finished_at ? ` · last sync ${formatTime(lastRun.finished_at)}` : ""}`
+    : "Not connected — connect on Projects";
+
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="w-56 shrink-0 border-r bg-muted/30 p-4">
@@ -131,6 +142,9 @@ function AuthedLayout() {
           ))}
         </nav>
         <div className="mt-6 border-t pt-4">
+          <p className="mb-2 truncate text-xs text-muted-foreground" role="status">
+            {connectionLine}
+          </p>
           <Link to="/" className={HOW_IT_WORKS_LINK_CLASS}>
             How Harness works
           </Link>

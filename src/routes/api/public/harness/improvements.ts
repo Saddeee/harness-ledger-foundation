@@ -75,9 +75,34 @@ async function handlePost({ request }: { request: Request }) {
     }
   }
 
+  // Round 6 Task 2: "Try again" on a not-written outcome -- re-runs
+  // executeVersionNow on the exact version that didn't write (reopening it
+  // first if it's stale/failed), addressed by version id alone. Not an
+  // improvementAction (there is no new decision), so it's handled here
+  // too, before the discriminated-union action below; `id` (the
+  // improvement whose card is asking) is only used to refetch it for the
+  // response.
+  if (body["action"] === "retry_write") {
+    try {
+      const versionId = Number(body["version_id"]);
+      if (!Number.isInteger(versionId)) throw new Error("version_id must be an integer");
+      const write = await adapter.retryKnowledgeWrite(versionId);
+      const id = Number(body["id"]);
+      const improvement = Number.isInteger(id) ? adapter.getImprovement(id) : null;
+      return Response.json({ available: true, ...(improvement ? { improvement } : {}), write });
+    } catch (e) {
+      return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+    }
+  }
+
   try {
-    const improvement = adapter.improvementAction(body);
-    return Response.json({ available: true, improvement });
+    // Round 6 Task 2 / spec §2: a decision the user just pressed writes to
+    // Lovable in this same request when Harness is connected -- see
+    // improvementActionAndWrite's own header comment
+    // (harness/src/executor/beats.ts). Every response now carries `write`
+    // alongside the item for the actions that attempt one.
+    const improvement = await adapter.improvementActionAndWrite(body);
+    return Response.json({ available: true, improvement, write: improvement.write });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }

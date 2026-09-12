@@ -67,7 +67,10 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
 
 test("AddConfirm help text: exact copy for each choice", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(detail, /Harness writes this exact text at the next sync\. Uses no credits\./);
+  assert.match(
+    detail,
+    /Harness writes this exact text now, when you press Add\. Uses no credits\./,
+  );
   assert.match(
     detail,
     /Harness runs the same request with and without this instruction in a temporary copy of the project and shows you the difference before anything is written\./,
@@ -81,7 +84,7 @@ test("AddConfirm help text: exact copy for each choice", () => {
 
 test("SAVED_LINE and the new toasts", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(detail, /const SAVED_LINE = "Added — will be written at the next sync\.";/);
+  assert.match(detail, /const SAVED_LINE = "Added\.";/);
   assert.match(detail, /"Skipped"/);
   assert.ok(!/Uses no Lovable credits/.test(detail), "the old consequence line is gone");
   assert.match(detail, /"You can restore the previous version at any time\."/);
@@ -100,17 +103,19 @@ test("Change decision: a test_first item with no pending write offers 'Add it no
   assert.match(decided, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
 });
 
-test("Status ctx: DecisionCard reads executorQueryOptions and forwards next_run_at / connected / test_first to decisionSentence", () => {
+test("Status ctx: DecisionCard reads executorQueryOptions and forwards connected / test_first to decisionSentence", () => {
   const detail = codeOnly(readApp(DETAIL));
   const card = detail.slice(
     detail.indexOf("export function DecisionCard"),
     detail.indexOf("// ---- Detail pieces"),
   );
   assert.match(card, /useQuery\(executorQueryOptions\)/);
-  assert.match(card, /executor\.data\?\.next_run_at \?\? null/);
   assert.match(card, /executor\.data\?\.connection\?\.connected/);
   assert.match(card, /testFirst: item\.decision\.test_first/);
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
+  // Round 6 Task 2: a pressed decision writes in the same request -- there
+  // is no "next sync" ETA left for the card to forward.
+  assert.ok(!/nextSyncAt/.test(card));
 });
 
 test("ConfirmAction accepts an optional onOpenChange and forwards it to AlertDialog", () => {

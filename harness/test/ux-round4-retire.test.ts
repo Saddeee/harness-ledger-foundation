@@ -124,7 +124,7 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
 
   // Retire confirm: same copy shape as the spec.
   assert.ok(raw.includes("Retire this rule?"));
-  assert.ok(raw.includes("Harness will rewrite your Knowledge without it at the next sync."));
+  assert.ok(raw.includes("Harness rewrites your Knowledge without it right away."));
   assert.ok(raw.includes("You can re-add it later from Suggestions."));
 
   // Keep is a ghost button with its own toast, not a confirm dialog.
@@ -154,7 +154,7 @@ test("instructions.tsx: a Retire button under each live rule, and retired rules 
   const code = codeOnly(raw);
 
   assert.ok(raw.includes("Retire this rule?"));
-  assert.ok(raw.includes("Harness will rewrite your Knowledge without it at the next sync."));
+  assert.ok(raw.includes("Harness rewrites your Knowledge without it right away."));
   assert.ok(raw.includes("You can re-add it later from Suggestions."));
   assert.match(code, /Retired rules \(\{rules\.length\}\)/);
   assert.match(code, /action: "retire", rule_id: ruleId/);
@@ -188,7 +188,7 @@ test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows 
   assert.ok(openIdx > guardEnd, "Open must render unconditionally, after the guard");
 });
 
-test("the improvements API's action set now includes retire, keep, readd, mark_seen, verdict", () => {
+test("the improvements API's action set now includes retire, keep, readd, mark_seen, verdict, retry_write", () => {
   const detailAndLedger = codeOnly(
     readApp(DETAIL) + readApp("routes/_authenticated/ledger.tsx") + readApp(INBOX),
   );
@@ -202,6 +202,8 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     "reopen",
     "restore",
     "retire",
+    // Round 6 Task 2: "Try again" on a not-written outcome.
+    "retry_write",
     "skip",
     "verdict",
   ]);

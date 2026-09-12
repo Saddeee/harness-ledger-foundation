@@ -1,9 +1,9 @@
 // Projects page for the local runtime: connect/disconnect Lovable, see the
-// last and next sync, run a sync now, and choose which projects Harness is
-// allowed to read. Only talks to the local Harness routes
+// last sync and the schedule, run a sync now, and choose which projects
+// Harness is allowed to read. Only talks to the local Harness routes
 // (fetchExecutor/postExecutor/fetchProjects/postProjects) -- the browser
-// never reaches Lovable itself; syncing and Knowledge writes happen in the
-// executor process.
+// never reaches Lovable itself; syncing and Knowledge writes now run inline
+// from the app process (Round 6 Task 2), started with the server itself.
 import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ import {
   fetchProjects,
   postExecutor,
   postProjects,
+  syncResultText,
   type ProjectSettings,
   type ProjectsResponse,
 } from "@/lib/improvements-client";
@@ -191,8 +192,8 @@ export function LocalProjects() {
 
   const syncNow = useMutation({
     mutationFn: () => postExecutor({ action: "sync_now" }),
-    onSuccess: () => {
-      toast.success("Sync requested");
+    onSuccess: (data) => {
+      toast.success(syncResultText(data));
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
       void qc.invalidateQueries({ queryKey: PROJECTS_KEY });
     },
@@ -249,6 +250,15 @@ export function LocalProjects() {
   const lastRun = executor.data?.last_run ?? null;
   const nextRunAt = executor.data?.next_run_at ?? null;
   const running = Boolean(executor.data?.running);
+  // Round 6 Task 2 / spec §2: which process is currently driving the
+  // schedule -- the app itself (started with the server) or a separately
+  // running `npm run harness:executor` loop.
+  const scheduleHolder = executor.data?.schedule_holder ?? null;
+  const scheduleHolderLine = scheduleHolder
+    ? scheduleHolder.owner === "app"
+      ? "Schedule: running in the app"
+      : "Schedule: running in the executor process"
+    : "Schedule: not running";
 
   const defaultMaxActiveRules =
     executor.data?.defaults?.max_active_rules ?? DEFAULT_MAX_ACTIVE_RULES;
@@ -314,10 +324,11 @@ export function LocalProjects() {
           <div className="space-y-1 text-sm">
             <p>{lastSyncLine(lastRun)}</p>
             {nextRunAt ? (
-              <p className="text-muted-foreground">Next sync {formatDate(nextRunAt)}</p>
+              <p className="text-muted-foreground">Syncs again at {formatDate(nextRunAt)}</p>
             ) : schedule && !schedule.enabled ? (
               <p className="text-muted-foreground">Scheduled sync is off.</p>
             ) : null}
+            <p className="text-muted-foreground">{scheduleHolderLine}</p>
           </div>
           <Button onClick={() => syncNow.mutate()} disabled={running || syncNow.isPending}>
             {running || syncNow.isPending ? "Syncing…" : "Sync now"}

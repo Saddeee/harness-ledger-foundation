@@ -17,6 +17,7 @@ import {
   fetchKnowledge,
   fetchTimeline,
   postKnowledge,
+  writeToastText,
 } from "@/lib/improvements-client";
 
 type HistorySearch = { target?: "project" | "workspace"; id?: string };
@@ -80,8 +81,10 @@ function Page() {
 
   const restore = useMutation({
     mutationFn: (versionId: number) => postKnowledge({ action: "restore", version_id: versionId }),
-    onSuccess: () => {
-      toast.success("Restore staged — it will be written at the next sync");
+    onSuccess: (data) => {
+      // Round 6 Task 2 / spec §2: restore writes immediately when Harness
+      // is connected -- the toast reads the real outcome.
+      toast.success(writeToastText(data.write, "Restore staged."));
       void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
       void qc.invalidateQueries({ queryKey: ["harness-timeline"] });
     },

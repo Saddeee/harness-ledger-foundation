@@ -4,11 +4,44 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
   improvementGroup,
+  writeOutcomeLine,
   type ImprovementGroup,
   type LovableWriteStatus,
   type RetireReason,
   type Stage,
+  type WriteOutcome,
 } from "@/lib/harness-ux";
+
+export type { WriteOutcome };
+
+// Round 6 Task 2 / spec §2: the toast text for any write-eligible action's
+// response -- the real write outcome ("Written to Lovable 19:05" / the
+// reason) when the response carries one, else the caller's own static
+// fallback (used only for actions that never write, e.g. skip/reopen, or
+// as a last-resort default if a response somehow carries no `write`).
+export function writeToastText(write: WriteOutcome | undefined, fallback: string): string {
+  return writeOutcomeLine(write) ?? fallback;
+}
+
+// Round 6 Task 2 / spec §2: "Sync now" runs inline and the button shows the
+// real result, not just "requested" -- one line built from syncNow's own
+// counts (harness/src/executor/beats.ts).
+export function syncResultText(result: {
+  ok?: boolean;
+  counts?: Record<string, number>;
+  error?: string;
+}): string {
+  if (result.ok === false) return result.error ? `Sync failed: ${result.error}` : "Sync failed";
+  const messages = result.counts?.["messages"] ?? 0;
+  const snapshots = result.counts?.["knowledge_snapshots"] ?? 0;
+  const written = result.counts?.["written"] ?? 0;
+  const parts = [
+    `${messages} message${messages === 1 ? "" : "s"}`,
+    `${snapshots} Knowledge snapshot${snapshots === 1 ? "" : "s"}`,
+  ];
+  if (written > 0) parts.push(`${written} write${written === 1 ? "" : "s"}`);
+  return `Synced: ${parts.join(", ")}`;
+}
 
 // ---- Contract (matches GET/POST /api/public/harness/improvements) ----
 
@@ -207,13 +240,29 @@ export async function fetchImprovements(): Promise<ImprovementsResponse> {
   return (await res.json()) as ImprovementsResponse;
 }
 
-export async function postImprovementAction(body: Record<string, unknown>) {
+export async function postImprovementAction(body: Record<string, unknown>): Promise<{
+  available?: boolean;
+  error?: string;
+  reason?: string;
+  improvement?: Improvement;
+  // Round 6 Task 2 / spec §2: present whenever the action just attempted a
+  // Knowledge write (accept unless test_first, retire, readd, restore,
+  // change_wording of a written rule, retry_write) -- absent for every
+  // other action (skip, reopen, set_destination, verdict, keep).
+  write?: WriteOutcome;
+}> {
   const res = await fetch("/api/public/harness/improvements", {
     method: "POST",
     headers: await authHeaders(),
     body: JSON.stringify(body),
   });
-  const json = (await res.json()) as { available?: boolean; error?: string; reason?: string };
+  const json = (await res.json()) as {
+    available?: boolean;
+    error?: string;
+    reason?: string;
+    improvement?: Improvement;
+    write?: WriteOutcome;
+  };
   if (!res.ok) throw new Error(json.error ?? "request failed");
   if (json.available === false) throw new Error(json.reason ?? "local runtime unavailable");
   return json;
@@ -350,13 +399,27 @@ export async function fetchTimeline(
   return (await res.json()) as TimelineResponse;
 }
 
-export async function postKnowledge(body: Record<string, unknown>) {
+export async function postKnowledge(body: Record<string, unknown>): Promise<{
+  available?: boolean;
+  error?: string;
+  reason?: string;
+  version_id?: number;
+  // Round 6 Task 2 / spec §2: "restore" writes immediately when Harness is
+  // connected, same as every other write-eligible action.
+  write?: WriteOutcome;
+}> {
   const res = await fetch("/api/public/harness/knowledge", {
     method: "POST",
     headers: await authHeaders(),
     body: JSON.stringify(body),
   });
-  const json = (await res.json()) as { available?: boolean; error?: string; reason?: string };
+  const json = (await res.json()) as {
+    available?: boolean;
+    error?: string;
+    reason?: string;
+    version_id?: number;
+    write?: WriteOutcome;
+  };
   if (!res.ok) throw new Error(json.error ?? "request failed");
   if (json.available === false) throw new Error(json.reason ?? "local runtime unavailable");
   return json;
@@ -499,6 +562,11 @@ export type ExecutorAnalysis = {
   provider_ready: ExecutorProviderReady;
 };
 
+// Round 6 Task 2: which process currently drives the schedule -- "app" (the
+// in-app scheduler, started with the server) or "cli" (a `npm run
+// harness:executor` loop); null when neither currently holds the lock.
+export type ScheduleHolder = { owner: "app" | "cli"; pid: number } | null;
+
 export type ExecutorResponse = {
   available: boolean;
   reason?: string;
@@ -507,6 +575,7 @@ export type ExecutorResponse = {
   settings?: ExecutorSettings;
   last_run?: ExecutorLastRun;
   next_run_at?: string | null;
+  schedule_holder?: ScheduleHolder;
   running?: boolean;
   llm?: ExecutorLlm;
   analysis?: ExecutorAnalysis;
@@ -519,13 +588,29 @@ export async function fetchExecutor(): Promise<ExecutorResponse> {
   return (await res.json()) as ExecutorResponse;
 }
 
-export async function postExecutor(body: Record<string, unknown>) {
+export async function postExecutor(body: Record<string, unknown>): Promise<{
+  available?: boolean;
+  error?: string;
+  reason?: string;
+  url?: string;
+  // Round 6 Task 2 / spec §2: sync_now's own inline result -- the button
+  // shows this, not just "requested".
+  ok?: boolean;
+  counts?: Record<string, number>;
+}> {
   const res = await fetch("/api/public/harness/executor", {
     method: "POST",
     headers: await authHeaders(),
     body: JSON.stringify(body),
   });
-  const json = (await res.json()) as { available?: boolean; error?: string; reason?: string };
+  const json = (await res.json()) as {
+    available?: boolean;
+    error?: string;
+    reason?: string;
+    url?: string;
+    ok?: boolean;
+    counts?: Record<string, number>;
+  };
   if (!res.ok) throw new Error(json.error ?? "request failed");
   if (json.available === false) throw new Error(json.reason ?? "local runtime unavailable");
   return json;

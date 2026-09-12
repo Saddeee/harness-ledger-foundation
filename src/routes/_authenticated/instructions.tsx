@@ -39,6 +39,8 @@ import {
   fetchKnowledge,
   postExecutor,
   postImprovementAction,
+  syncResultText,
+  writeToastText,
   type KnowledgeActiveRule,
   type KnowledgeTargetView,
 } from "@/lib/improvements-client";
@@ -69,7 +71,7 @@ const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
 // Task C2 / spec §4b-§5: manual Retire from this page uses the same confirm
 // copy as the Inbox's retirement proposal card (improvement.tsx).
 const RETIRE_TITLE = "Retire this rule?";
-const RETIRE_BODY = "Harness will rewrite your Knowledge without it at the next sync.";
+const RETIRE_BODY = "Harness rewrites your Knowledge without it right away.";
 const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
 
 // Round 5 Task 3/4 / spec §3a: the rules table's Status column.
@@ -302,7 +304,6 @@ function RetiredRulesList({
 
 function TargetSection({
   target,
-  nextRunAt,
   syncing,
   onSyncNow,
   retireBusy,
@@ -311,7 +312,6 @@ function TargetSection({
   onReadd,
 }: {
   target: KnowledgeTargetView;
-  nextRunAt: string | null | undefined;
   syncing: boolean;
   onSyncNow: () => void;
   retireBusy: boolean;
@@ -345,11 +345,11 @@ function TargetSection({
 
       {target.pending_write ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3 text-sm">
-          <p>
-            {nextRunAt
-              ? `One change is staged. It will be written at the next sync, ${formatDate(nextRunAt)}.`
-              : "One change is staged. It will be written at the next sync."}
-          </p>
+          {/* Round 6 Task 2 / spec §2, §3: pressing a decision writes
+              immediately when Harness is connected -- reaching this staged
+              state at all now means the write failed or Harness was
+              disconnected at accept time. Sync now retries it. */}
+          <p>One change is staged, not yet written to Lovable.</p>
           <Button size="sm" onClick={onSyncNow} disabled={syncing}>
             {syncing ? "Syncing…" : "Sync now"}
           </Button>
@@ -366,8 +366,8 @@ function Page() {
 
   const syncNow = useMutation({
     mutationFn: () => postExecutor({ action: "sync_now" }),
-    onSuccess: () => {
-      toast.success("Sync requested");
+    onSuccess: (data) => {
+      toast.success(syncResultText(data));
       void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
@@ -379,8 +379,8 @@ function Page() {
   // Improvements list too, since a rule's own card there changes group.
   const retireRule = useMutation({
     mutationFn: (ruleId: number) => postImprovementAction({ action: "retire", rule_id: ruleId }),
-    onSuccess: () => {
-      toast.success("Retired — Harness will rewrite your Knowledge at the next sync.");
+    onSuccess: (data) => {
+      toast.success(writeToastText(data.write, "Retired."));
       void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
       void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
     },
@@ -390,8 +390,8 @@ function Page() {
   const readdRule = useMutation({
     mutationFn: (improvementId: number) =>
       postImprovementAction({ action: "readd", id: improvementId }),
-    onSuccess: () => {
-      toast.success("Re-added — will be written at the next sync");
+    onSuccess: (data) => {
+      toast.success(writeToastText(data.write, "Re-added."));
       void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
       void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
     },
@@ -470,7 +470,6 @@ function Page() {
           <TargetSection
             key={`${t.target}-${t.id}`}
             target={t}
-            nextRunAt={executor.data?.next_run_at}
             syncing={syncNow.isPending}
             onSyncNow={() => syncNow.mutate()}
             retireBusy={retireRule.isPending}

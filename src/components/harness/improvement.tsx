@@ -43,6 +43,7 @@ import {
   lovableOf,
   postImprovementAction as post,
   projectName,
+  writeToastText,
   type Improvement,
   type Message,
 } from "@/lib/improvements-client";
@@ -51,8 +52,12 @@ export type { Improvement, Message };
 
 // ---- Shared copy (kept in one place so the tests can count it) ----
 
+// Round 6 Task 2 / spec §2: pressing "Add" always attempts to write
+// immediately when Harness is connected -- reaching this body at all means
+// there's no Knowledge snapshot yet to compose against (Harness has never
+// read this target), which Sync now fixes.
 const NO_SNAPSHOT_BODY =
-  "Harness hasn't read your current Knowledge yet. Your choice is saved; at the next sync Harness reads it, then writes this exact text. You can see the result on the Instructions page.";
+  "Harness hasn't read your current Knowledge yet. Your choice is saved; press Sync now on the Projects page, then Harness reads it and writes this exact text. You can see the result on the Instructions page.";
 const PREVIEW_BODY = "This is the exact text Harness will write to your Lovable Knowledge.";
 const PREVIEW_CONSEQUENCES = ["You can restore the previous version at any time."];
 const OVER_CAP_LINE =
@@ -60,17 +65,20 @@ const OVER_CAP_LINE =
 function overRulesLine(activeRulesCount: number): string {
   return `This project already has ${activeRulesCount} active rules. Retire one on the Instructions page first.`;
 }
-const SAVED_LINE = "Added — will be written at the next sync.";
+// Round 6 Task 2: the real toast text comes from the write outcome
+// (writeToastText, below) -- these four are only the defensive fallback for
+// a response that somehow carries no `write` field at all.
+const SAVED_LINE = "Added.";
 const RESTORE_TITLE = "Restore the previous Knowledge?";
 const RESTORE_BODY = "Harness will write the earlier text back, as a new version.";
 const NO_INSTRUCTION = "Harness hasn't drafted an instruction yet.";
-const ADD_NOW_HELP = "Harness writes this exact text at the next sync. Uses no credits.";
+const ADD_NOW_HELP = "Harness writes this exact text now, when you press Add. Uses no credits.";
 const RETIRE_TITLE = "Retire this rule?";
-const RETIRE_BODY = "Harness will rewrite your Knowledge without it at the next sync.";
+const RETIRE_BODY = "Harness rewrites your Knowledge without it right away.";
 const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
-const RETIRED_TOAST = "Retired — Harness will rewrite your Knowledge at the next sync.";
+const RETIRED_TOAST = "Retired.";
 const KEPT_TOAST = "Kept — Harness will ask again in 30 days";
-const READDED_TOAST = "Re-added — will be written at the next sync";
+const READDED_TOAST = "Re-added.";
 
 const LONG_TEXT = 600;
 
@@ -86,14 +94,20 @@ type Run = (body: Record<string, unknown>, msg: string) => Promise<boolean>;
 // One busy flag and one toast pattern per card (or per wording editor).
 // onChanged also receives the exact toast text, so a caller (the Inbox) can
 // show that same sentence in a confirmation row instead of just refetching.
+// Round 6 Task 2: when the response carries a `write` outcome (every
+// write-eligible action does -- accept unless test_first, retire, readd,
+// restore, change_wording of a written rule, retry_write), the toast reads
+// that outcome ("Written to Lovable 19:05" or the plain-language reason)
+// instead of the caller's static `msg` -- see writeToastText.
 function useRun(onChanged: (msg: string) => void): { busy: boolean; run: Run } {
   const [busy, setBusy] = useState(false);
   const run: Run = async (body, msg) => {
     setBusy(true);
     try {
-      await post(body);
-      toast.success(msg);
-      onChanged(msg);
+      const result = await post(body);
+      const text = writeToastText(result.write, msg);
+      toast.success(text);
+      onChanged(text);
       return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "action failed");
@@ -517,6 +531,12 @@ function DecidedStatus({
   const latestWritten = lovable.versions
     .filter((v) => v.status === "written")
     .sort((a, b) => b.id - a.id)[0];
+  // Round 6 Task 2: "Try again" (Needs attention) re-runs executeVersionNow
+  // on this exact version -- the one whose status is why the card reads
+  // stale/failed in the first place.
+  const retryableVersion = lovable.versions.find(
+    (v) => v.status === "stale" || v.status === "failed",
+  );
 
   // spec §5.2: verdict buttons for a live (accepted + written) rule --
   // replaced by "You said: ..." with a "Change" link once a verdict
@@ -626,16 +646,22 @@ function DecidedStatus({
               </>
             ) : null}
             {accepted &&
-            lovable.write_status === "failed" &&
-            (item.destination === "project" || item.destination === "workspace") ? (
-              <AddConfirm
-                item={item}
-                destination={item.destination}
-                busy={busy}
-                run={run}
+            (lovable.write_status === "stale" || lovable.write_status === "failed") &&
+            retryableVersion ? (
+              <Button
+                type="button"
                 variant="outline"
-                trigger="Try adding again"
-              />
+                className="w-full sm:w-auto"
+                disabled={busy}
+                onClick={() =>
+                  void run(
+                    { action: "retry_write", id: item.id, version_id: retryableVersion.id },
+                    "Trying again…",
+                  )
+                }
+              >
+                Try again
+              </Button>
             ) : null}
             {accepted && written && latestWritten ? (
               <ConfirmAction
@@ -787,7 +813,6 @@ export function DecisionCard({
   const run = runProp ?? own.run;
   const executor = useQuery(executorQueryOptions);
   const ctx = {
-    nextSyncAt: executor.data?.next_run_at ?? null,
     connected: executor.data?.connection?.connected,
     testFirst: item.decision.test_first,
     // A workspace write isn't gated by one project's flag, so this only

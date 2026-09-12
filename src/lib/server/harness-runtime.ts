@@ -28,24 +28,34 @@ export async function loadHarnessAdapter(): Promise<HarnessAdapter | null> {
   return cached;
 }
 
-// Same guard and caching shape as loadHarnessAdapter, but for the four
-// executor modules the knowledge/executor/projects routes need: connecting
-// to Lovable, computing the next scheduled run, checking whether the
+// Same guard and caching shape as loadHarnessAdapter, but for the executor
+// modules the knowledge/executor/projects routes need: connecting to
+// Lovable, computing the next scheduled run, checking whether the
 // configured AI-analysis provider is actually usable (Round 4 Task A3 --
 // harness/src/analysis/run.ts's providerReady, itself never calling
-// Lovable), and (only for the cached project list) reading Lovable's
-// project list. Everything else Lovable touches stays in the executor
-// process (harness/src/executor/beats.ts), never here; the analysis run
-// itself (classify/segment/mine) stays in that same process too -- this
-// route only ever asks whether it *could* run.
+// Lovable), running a sync/single-version write inline from a request
+// (Round 6 Task 2 -- beats.js), and reading who currently holds the
+// executor process lock (lock.js). Everything else Lovable touches stays
+// server-side, driven from this same process now (see
+// startInAppScheduler below) rather than a separate `npm run
+// harness:executor`; the analysis run itself (classify/segment/mine) is
+// the one piece that still only ever gets asked "could this run?" here.
 type HarnessExecutor = {
   auth: typeof import("../../../harness/dist/executor/lovable-auth.js");
   schedule: typeof import("../../../harness/dist/executor/schedule.js");
   mcp: typeof import("../../../harness/dist/executor/lovable-mcp.js");
   analysis: typeof import("../../../harness/dist/analysis/run.js");
+  beats: typeof import("../../../harness/dist/executor/beats.js");
+  lock: typeof import("../../../harness/dist/executor/lock.js");
 };
 
 let cachedExecutor: HarnessExecutor | null | undefined;
+
+// Round 6 Task 2: startInAppScheduler() (harness/src/executor/schedule.ts)
+// is started at most once per server process -- guarded here, not inside
+// that function alone, so a later loadHarnessExecutor() call (once
+// cachedExecutor is already set) never even reaches it again.
+let inAppSchedulerStarted = false;
 
 export async function loadHarnessExecutor(): Promise<HarnessExecutor | null> {
   if (cachedExecutor !== undefined) return cachedExecutor;
@@ -54,13 +64,32 @@ export async function loadHarnessExecutor(): Promise<HarnessExecutor | null> {
     return cachedExecutor;
   }
   try {
-    const [auth, schedule, mcp, analysis] = await Promise.all([
+    const [auth, schedule, mcp, analysis, beats, lock] = await Promise.all([
       import(/* @vite-ignore */ "../../../harness/dist/executor/lovable-auth.js"),
       import(/* @vite-ignore */ "../../../harness/dist/executor/schedule.js"),
       import(/* @vite-ignore */ "../../../harness/dist/executor/lovable-mcp.js"),
       import(/* @vite-ignore */ "../../../harness/dist/analysis/run.js"),
+      import(/* @vite-ignore */ "../../../harness/dist/executor/beats.js"),
+      import(/* @vite-ignore */ "../../../harness/dist/executor/lock.js"),
     ]);
-    cachedExecutor = { auth, schedule, mcp, analysis };
+    cachedExecutor = { auth, schedule, mcp, analysis, beats, lock };
+
+    // The app drives the sync schedule itself now (spec §2) -- started
+    // once the executor bundle is confirmed loadable, guarded so a second
+    // call (or a route hit again after the first) never starts a second
+    // background loop in this same process. startInAppScheduler itself
+    // does nothing further if a `npm run harness:executor` CLI process
+    // already holds the schedule lock.
+    if (!inAppSchedulerStarted) {
+      inAppSchedulerStarted = true;
+      try {
+        schedule.startInAppScheduler();
+      } catch (err) {
+        console.error(
+          `Could not start the in-app schedule: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   } catch {
     cachedExecutor = null;
   }

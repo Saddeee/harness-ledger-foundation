@@ -165,6 +165,19 @@ export function formatDate(iso: string | null | undefined): string {
   return `${formatDay(iso)}, ${hh}:${mm}`;
 }
 
+// "19:05" (local time, no date) -- Round 6 Task 2: a write that just
+// happened is reported by the time alone ("Written to Lovable 19:05"), not
+// the day -- the whole point of an inline write is that it happened just
+// now, in this same request.
+export function formatTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 // ---- Lovable reply extraction ----
 // A Lovable assistant message is stored verbatim, including its tool-use
 // log. The part a user actually saw in the Lovable chat is the "message"
@@ -239,14 +252,37 @@ export type LovableStatusLike = {
   stale_reason?: string | null;
 };
 
+// Round 6 Task 2 / spec §2: the outcome of one write-to-Lovable attempt --
+// the executor's own type (harness/src/executor/beats.ts's WriteOutcome),
+// mirrored here so the client never has to import from harness/src/*.
+export type WriteOutcome =
+  | { written: true; at: string; version_id: number }
+  | {
+      written: false;
+      version_id: number | null;
+      reason: string;
+      kind: "not_connected" | "stale" | "rejected" | "no_snapshot" | "error";
+    };
+
+// The line a toast (or a just-completed action's own status line) shows for
+// one write attempt: "Written to Lovable 19:05" for a written outcome, the
+// plain-language reason otherwise. Every write-eligible action
+// (accept/retire/readd/restore/change_wording) returns a WriteOutcome
+// alongside the item -- this is what turns it into the sentence the user
+// reads, never a claim of a future sync.
+export function writeOutcomeLine(write: WriteOutcome | null | undefined): string | null {
+  if (!write) return null;
+  if (write.written) return `Written to Lovable ${formatTime(write.at)}`;
+  return write.reason;
+}
+
 // What the local executor knows, for the status line and decision sentence:
-// when it next runs, whether Lovable is connected, and whether the user
-// chose to test the instruction first. Every field (and the object itself)
-// is allowed to be `undefined` explicitly, not just absent -- callers build
-// this from optional-chained query data (e.g. `executor.data?.connection`),
-// so the value itself, not just the key, is routinely undefined.
+// whether Lovable is connected, and whether the user chose to test the
+// instruction first. Every field (and the object itself) is allowed to be
+// `undefined` explicitly, not just absent -- callers build this from
+// optional-chained query data (e.g. `executor.data?.connection`), so the
+// value itself, not just the key, is routinely undefined.
 export type StatusCtx = {
-  nextSyncAt?: string | null | undefined;
   connected?: boolean | undefined;
   testFirst?: boolean | undefined;
   // Round 3 §5: this project's "write approved changes automatically" is
@@ -257,9 +293,9 @@ export type StatusCtx = {
 
 // One line describing where the instruction stands in Lovable. Never claims
 // it was added unless a verified write exists. `ctx` carries what the local
-// executor knows (when it next runs, whether Lovable is connected) and
-// whether the user chose to test the instruction first -- all optional, so
-// existing single-argument callers keep working unchanged.
+// executor knows (whether Lovable is connected) and whether the user chose
+// to test the instruction first -- all optional, so existing single-
+// argument callers keep working unchanged.
 export function lovableStatusLine(
   input: LovableStatusLike | null | undefined,
   ctx?: StatusCtx | undefined,
@@ -278,9 +314,11 @@ export function lovableStatusLine(
       if (ctx?.connected === false)
         return "Connect Lovable on the Projects page to let Harness write this";
       if (ctx?.autoWriteOff) return "Waiting for you to turn on automatic writes for this project";
-      return ctx?.nextSyncAt
-        ? `Will be written at the next sync, ${formatDate(ctx.nextSyncAt)}`
-        : "Will be written at the next sync";
+      // Round 6 Task 2: a decision the user presses writes in the same
+      // request (see writeOutcomeLine above) -- reaching here at all means
+      // Harness hasn't read this project's Knowledge from Lovable yet (no
+      // snapshot to compose against), so pressing Sync now is what unblocks it.
+      return "Not written yet — press Sync now on the Projects page";
   }
 }
 

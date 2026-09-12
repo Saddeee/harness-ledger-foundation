@@ -535,7 +535,7 @@ test("lovableStatusLine: autoWriteOff explains a pending/none write ahead of the
   // unaffected when off
   assert.equal(
     ux.lovableStatusLine({ write_status: "none", written_at: null }, { autoWriteOff: false }),
-    "Will be written at the next sync",
+    "Not written yet — press Sync now on the Projects page",
   );
 });
 

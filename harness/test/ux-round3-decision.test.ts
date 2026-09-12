@@ -54,7 +54,7 @@ test("Decided status: buttons render directly in a row, using outline/ghost vari
   assert.equal(count(decided, 'variant="outline"'), 6);
   assert.match(decided, /trigger="Add it now instead"/);
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
-  assert.match(decided, /trigger="Try adding again"/);
+  assert.match(decided, /action: "retry_write", id: item\.id, version_id: retryableVersion\.id/);
   assert.match(decided, /trigger="Restore previous version"/);
   assert.match(decided, /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} \/>/);
 });

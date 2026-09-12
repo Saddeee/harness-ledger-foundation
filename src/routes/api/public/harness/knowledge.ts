@@ -3,9 +3,10 @@
 // project/workspace and which rules are active in each. The full write
 // history moved to the History page's timeline (Round 5 Task 3/4, see the
 // `timeline=` branch below and harness/src/improvements.ts's buildTimeline).
-// Skills moved to skills.ts (Round 3 Task 2). Nothing here writes to
-// Lovable directly -- "restore" only stages a new pending version; the
-// executor process performs the actual write.
+// Skills moved to skills.ts (Round 3 Task 2). Round 6 Task 2 / spec §2:
+// "restore" stages a new pending version, same as before, then writes it
+// immediately (via the executor bundle's beats.js) when Harness is
+// connected -- the response's `write` field carries the outcome.
 import { createFileRoute } from "@tanstack/react-router";
 import {
   hostedPreviewBody,
@@ -55,8 +56,8 @@ function ruleStatus(
     return "testing";
   // No version yet and not test-first: e.g. accepted before Harness had
   // ever read a Knowledge snapshot to compose against (stagePendingWrite /
-  // stageApprovedWrites in improvements.ts) -- a real write is expected at
-  // the next sync, so "pending" is the closest honest status.
+  // stageApprovedWrites in improvements.ts) -- a write is staged the moment
+  // a snapshot exists, so "pending" is the closest honest status meanwhile.
   return "pending";
 }
 
@@ -281,7 +282,40 @@ async function handlePost({ request }: { request: Request }) {
     const version = adapter.createRestoreVersion(versionId, "operator (local UI)") as {
       id: number;
     };
-    return Response.json({ available: true, version_id: version.id });
+
+    // Round 6 Task 2 / spec §2: a restore the user just pressed writes
+    // immediately when Harness is connected, exactly like accept/retire/
+    // readd -- the executor bundle (not the plain adapter) carries the
+    // Lovable-touching pieces (auth status, the MCP client, beats.ts's
+    // executeVersionNow).
+    let write: { written: boolean; [key: string]: unknown };
+    try {
+      const executor = await loadHarnessExecutor();
+      if (executor && executor.auth.status().connected) {
+        const client = await executor.mcp.openLovableClient();
+        try {
+          write = await executor.beats.executeVersionNow(version.id, client);
+        } finally {
+          await client.close().catch(() => {});
+        }
+      } else {
+        write = {
+          written: false,
+          version_id: version.id,
+          reason: "Harness is not connected — connect on the Projects page.",
+          kind: "not_connected",
+        };
+      }
+    } catch (e) {
+      write = {
+        written: false,
+        version_id: version.id,
+        reason: e instanceof Error ? e.message : String(e),
+        kind: "error",
+      };
+    }
+
+    return Response.json({ available: true, version_id: version.id, write });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }

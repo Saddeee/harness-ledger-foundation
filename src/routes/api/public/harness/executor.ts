@@ -140,6 +140,20 @@ async function handleGet({ request }: { request: Request }) {
       }
     }
 
+    // Round 6 Task 2: which process currently drives the schedule, for the
+    // sidebar/Projects-page line ("Schedule: running in the app" / "in the
+    // executor process" / "not running") -- null means neither an in-app
+    // scheduler nor a `npm run harness:executor` loop currently holds it.
+    let schedule_holder: { owner: "app" | "cli"; pid: number } | null = null;
+    if (executor) {
+      try {
+        const holder = executor.lock.currentLockHolder();
+        schedule_holder = holder ? { owner: holder.owner, pid: holder.pid } : null;
+      } catch {
+        schedule_holder = null;
+      }
+    }
+
     const keyStatus = adapter.llmKeyStatus();
 
     // Round 4 Task A3: "Analyse now" status -- independent of the Lovable
@@ -188,6 +202,7 @@ async function handleGet({ request }: { request: Request }) {
       },
       last_run,
       next_run_at,
+      schedule_holder,
       running: adapter.runningSyncRun() != null,
       llm: {
         provider: settings.llm_provider,
@@ -228,8 +243,21 @@ async function handlePost({ request }: { request: Request }) {
     const action = body["action"];
 
     if (action === "sync_now") {
-      const result = adapter.requestSync();
-      return Response.json({ available: true, id: result.id, created: result.created });
+      // Round 6 Task 2 / spec §2: runs the sync in THIS request, not a
+      // separate executor process -- the button shows progress and the
+      // result line, not just "requested". syncNow() (harness/src/
+      // executor/beats.ts) refuses cleanly (without opening a client) when
+      // Harness is disconnected or a sync is already running; either way
+      // the response always carries real counts or the reason.
+      const executor = await loadHarnessExecutor();
+      if (!executor) throw new Error("the local executor is not available");
+      const result = await executor.beats.syncNow();
+      return Response.json({
+        available: true,
+        ok: result.ok,
+        counts: result.counts,
+        ...(result.error ? { error: result.error } : {}),
+      });
     }
 
     // Round 4 Task A3: "Analyse now" -- queues an analysis_requests row the

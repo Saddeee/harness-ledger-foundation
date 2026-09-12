@@ -56,12 +56,13 @@ test("local-settings.tsx: the radio pair uses the spec's exact copy, and the def
     ),
   );
 
-  // spec §4's help text, verbatim.
+  // spec §4's help text -- Round 6 Task 2 dropped "at the next sync" (the
+  // phrase is banned from UI copy repo-wide now), keeping the rest verbatim.
   assert.ok(
     raw.includes(
-      "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge at the next sync if that project allows automatic writes (Projects page). Everything Harness does automatically is listed in the Instructions page history, and you can retire or restore any of it.",
+      "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge the next time Harness syncs, if that project allows automatic writes (Projects page). Everything Harness does automatically is listed in the Instructions page history, and you can retire or restore any of it.",
     ),
-    "the automatic-mode help text must match spec §4 verbatim",
+    "the automatic-mode help text must match spec §4 (minus the banned 'next sync' phrase)",
   );
 
   assert.match(code, /DEFAULT_DECISION_MODE:\s*"ask"\s*\|\s*"automatic"\s*=\s*"ask"/);

@@ -189,7 +189,7 @@ test("decision card: three buttons for pending items, decision buttons shown inl
     "the collapsed wrapper is gone; buttons show directly",
   );
   assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
-  assert.match(decided, /trigger="Try adding again"/);
+  assert.match(decided, /action: "retry_write", id: item\.id, version_id: retryableVersion\.id/);
   assert.match(decided, /trigger="Restore previous version"/);
   assert.match(decided, /\{ action: "restore", id: item\.id, version_id: latestWritten\.id \}/);
   assert.match(decided, /\{ action: "reopen", id: item\.id \}/);
@@ -268,7 +268,7 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   // no snapshot yet -> save the choice, say so, and promise the read-back
   assert.match(
     detail,
-    /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; at the next sync Harness reads it, then writes this exact text\. You can see the result on the Instructions page\.";/,
+    /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; press Sync now on the Projects page, then Harness reads it and writes this exact text\. You can see the result on the Instructions page\.";/,
   );
   // Task 8: confirm label now reflects the two-choice selection, not
   // whether a preview is available.
@@ -291,7 +291,10 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   assert.match(confirm, /action: "accept",\s*id: item\.id,\s*destination,/);
   assert.match(confirm, /wantsTest \? "Saved for testing\." : SAVED_LINE/);
   // afterwards: a toast says where it went; the card re-renders as decided
-  assert.match(detail, /const SAVED_LINE = "Added — will be written at the next sync\.";/);
+  // -- Round 6 Task 2: the real toast text now comes from the write outcome
+  // (see writeToastText/useRun), this constant is only the defensive
+  // fallback for a response that somehow carries no `write` at all.
+  assert.match(detail, /const SAVED_LINE = "Added\.";/);
   assert.ok(!/useNavigate/.test(detail), "the component never navigates");
   // the layout supports the preview slot and a disabled confirm
   const layout = codeOnly(readApp(LAYOUT));
@@ -320,22 +323,18 @@ test("no per-stage progress bar in the layout (decisionSentence + the group chip
 });
 
 test("lovableStatusLine / decisionSentence / improvementGroup follow the write lifecycle without implying Lovable changed", () => {
-  assert.equal(ux.lovableStatusLine(null), "Will be written at the next sync");
+  assert.equal(ux.lovableStatusLine(null), "Not written yet — press Sync now on the Projects page");
   assert.equal(
     ux.lovableStatusLine({ write_status: "none", written_at: null }),
-    "Will be written at the next sync",
+    "Not written yet — press Sync now on the Projects page",
   );
   assert.equal(
     ux.lovableStatusLine({ write_status: "pending", written_at: null }),
-    "Will be written at the next sync",
+    "Not written yet — press Sync now on the Projects page",
   );
-  assert.equal(
-    ux.lovableStatusLine(
-      { write_status: "pending", written_at: null },
-      { nextSyncAt: "2026-09-10T08:00:00Z" },
-    ),
-    "Will be written at the next sync, 10 Sep, 08:00",
-  );
+  // Round 6 Task 2: a pressed decision writes in the same request (see
+  // writeOutcomeLine) -- there is no "next sync" ETA left to show, so
+  // StatusCtx no longer carries a nextSyncAt field at all.
   assert.equal(
     ux.lovableStatusLine({ write_status: "none", written_at: null }, { connected: false }),
     "Connect Lovable on the Projects page to let Harness write this",
@@ -373,7 +372,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   });
   assert.equal(
     accepted,
-    "You chose: add to all my projects, on 9 Sep. Will be written at the next sync.",
+    "You chose: add to all my projects, on 9 Sep. Not written yet — press Sync now on the Projects page.",
   );
   const skipped = ux.decisionSentence({
     decision: { status: "skipped", decided_at: null },
@@ -460,7 +459,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   );
   assert.equal(
     ux.versionStatusLine({ status: "pending", written_at: null, restored_from_version_id: null }),
-    "Will be written at the next sync",
+    "Not written yet — press Sync now on the Projects page",
   );
 });
 
@@ -710,7 +709,8 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
     ...codeOnly(readApp(DETAIL) + readApp(LEDGER)).matchAll(/action: "([a-z_]+)"/g),
   ].map((m) => m[1]);
   // Task C2 adds retire/keep/readd (the Retire/Keep/Re-add actions); Round 5
-  // Task 7 adds verdict (the "Did this rule help?" buttons).
+  // Task 7 adds verdict (the "Did this rule help?" buttons); Round 6 Task 2
+  // adds retry_write ("Try again" on a not-written outcome).
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
     "change_wording",
@@ -719,6 +719,7 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
     "reopen",
     "restore",
     "retire",
+    "retry_write",
     "skip",
     "verdict",
   ]);
