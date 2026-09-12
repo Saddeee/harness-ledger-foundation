@@ -62,8 +62,13 @@ export function AnalyseNotice() {
   const runningLine = `Analysing… (started ${formatTime(startedAt)})`;
 
   const lastRunLine = (() => {
-    if (!lastRun) return null;
-    if (lastRun.ok === false) {
+    // Only ever describes a *finished* run: while running, the "last run"
+    // row read back is the in-flight one itself (ok null, zero counts), so
+    // showing it here would print a fake "0 messages classified" summary
+    // right under "Analysing…". ok === null (crashed/never finished) is
+    // treated the same as ok === false -- never as success.
+    if (running || !lastRun) return null;
+    if (lastRun.ok !== true) {
       return `Last analysis failed: ${lastRun.error ?? "unknown error"}`;
     }
     const counts = lastRun.counts ?? {};
@@ -93,11 +98,15 @@ export function AnalyseNotice() {
       </div>
       {!providerReady.ok ? (
         <p className="text-xs text-muted-foreground">
-          Add an API key or install Claude Code in Settings.
-          {providerReady.reason ? ` ${providerReady.reason}` : ""}
+          {/* The server's own reason already says where to fix it (e.g. "No
+              API key saved for openai. Add one in Settings."); the fixed
+              prefix is only a fallback for when there's no reason at all. */}
+          {providerReady.reason || "Add an API key or install Claude Code in Settings."}
         </p>
       ) : null}
-      {lastRunLine ? <p className="text-xs text-muted-foreground">{lastRunLine}</p> : null}
+      {!running && lastRunLine ? (
+        <p className="text-xs text-muted-foreground">{lastRunLine}</p>
+      ) : null}
     </div>
   );
 }

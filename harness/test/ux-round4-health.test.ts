@@ -55,7 +55,15 @@ test("harness-ux.ts: healthLine -- no row, zero tasks, no last_applicable_at, an
       hurt: 1,
       last_applicable_at: "2026-09-01T00:00:00Z",
     }),
-    "Since added: 4 tasks · 3 helped · 1 repeat corrections · last used 1 Sep · from real builds",
+    "Since added: 4 tasks · 3 helped · 1 repeat correction · last used 1 Sep · from real builds",
+    "singular 'repeat correction' when hurt === 1",
+  );
+  // Fix round 1 (C3 minor): applicable_tasks/hurt both pluralize correctly
+  // at 1; helped has no plural form to get wrong.
+  assert.equal(
+    ux.healthLine({ applicable_tasks: 1, helped: 1, hurt: 0, last_applicable_at: null }),
+    "Since added: 1 task · 1 helped · 0 repeat corrections · from real builds",
+    "singular 'task' when applicable_tasks === 1",
   );
 });
 

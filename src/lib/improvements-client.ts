@@ -494,9 +494,3 @@ export function groupOf(item: Improvement): ImprovementGroup | null {
     retired: item.decision.retired,
   });
 }
-
-// ---- Browser notifications (Task D2) ----
-
-export function pendingCount(items: Improvement[]): number {
-  return items.filter((item) => item.decision.status === "pending").length;
-}

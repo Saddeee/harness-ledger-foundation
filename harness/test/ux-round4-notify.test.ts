@@ -22,7 +22,6 @@ function count(haystack: string, needle: string): number {
 
 const SETTINGS = "components/harness/local-settings.tsx";
 const ROUTE = "routes/_authenticated/route.tsx";
-const CLIENT = "lib/improvements-client.ts";
 
 test("local-settings.tsx: Notifications section present with required strings", () => {
   const src = readApp(SETTINGS);
@@ -43,11 +42,6 @@ test("browser-prefs.ts: Exports NOTIFY_KEY and helper functions", () => {
   assert(src.includes('NOTIFY_KEY = "harness.notifyInBrowser"'), "Missing NOTIFY_KEY definition");
   assert(src.includes("isNotifyEnabled"), "Missing isNotifyEnabled function");
   assert(src.includes("setNotifyEnabled"), "Missing setNotifyEnabled function");
-});
-
-test("improvements-client.ts: Exports pendingCount (no notification functions)", () => {
-  const src = readApp(CLIENT);
-  assert(src.includes("pendingCount"), "Missing pendingCount function");
 });
 
 test("pages only fetch from local harness routes", () => {

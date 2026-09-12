@@ -47,6 +47,24 @@ test("analyse-notice.tsx: Analyse now, analyse_now, running/last-run/not-ready c
   assert.match(code, /action:\s*"analyse_now"/);
 
   for (const tag of code.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag));
+
+  // Fix round 1 (Important #1): the last-run summary line is a *finished*
+  // run's summary only -- while running, `last_run` is the in-flight row
+  // itself (ok null, zero counts), so it must never render underneath
+  // "Analysing…". Gated in both the computation and the render, and
+  // ok === null is never treated as success.
+  assert.match(code, /if\s*\(\s*running\s*\|\|\s*!lastRun\s*\)\s*return null/);
+  assert.match(code, /lastRun\.ok\s*!==\s*true/);
+  assert.match(code, /!running\s*&&\s*lastRunLine/);
+  assert.ok(!/lastRun\.ok === false/.test(code), "ok === null must not fall through as success");
+
+  // Fix round 1 (Minor #4): the fixed prefix is a fallback only for when the
+  // server gave no reason -- when it did, the reason alone is shown (it
+  // already says where to fix it).
+  assert.match(
+    code,
+    /providerReady\.reason \|\| "Add an API key or install Claude Code in Settings\."/,
+  );
 });
 
 test("instructions.tsx and inbox.tsx render the shared AnalyseNotice", () => {
@@ -58,6 +76,15 @@ test("instructions.tsx and inbox.tsx render the shared AnalyseNotice", () => {
       `${page} should render <AnalyseNotice`,
     );
   }
+});
+
+test("inbox.tsx: isNew treats a never-visited last_seen_at as nothing New, not everything New", () => {
+  const code = codeOnly(readApp(INBOX_PAGE));
+  assert.match(
+    code,
+    /if\s*\(\s*!previous\s*\)\s*return false/,
+    "a first-ever visit (no previous last_seen_at) must not flag the whole backlog as New",
+  );
 });
 
 test("local-settings.tsx: Claude Code provider, token budget, honest run-only-on-press line", () => {
@@ -81,6 +108,20 @@ test("local-settings.tsx: Claude Code provider, token budget, honest run-only-on
   assert.ok(raw.includes("Claude Code found"));
   assert.ok(raw.includes("Claude Code not found on this machine"));
   assert.match(code, /provider_ready/);
+
+  // Fix round 1 (Important #2): the found/not-found label is only accurate
+  // when provider_ready is actually about Claude Code -- ok, or a reason
+  // that names Claude Code. Any other not-ready reason (e.g. a different
+  // role's missing API key) is shown verbatim instead of being mislabelled.
+  assert.match(code, /function claudeCodeStatusLine/);
+  assert.match(code, /providerReady\?\.ok\)\s*return "Claude Code found"/);
+  assert.match(code, /\/claude code\/i\.test\(providerReady\.reason\)/);
+  assert.match(code, /return providerReady\?\.reason \?\?/);
+
+  // Fix round 1 (Important #3): the dollar estimate is shown whenever
+  // spent_usd > 0, regardless of the selected provider dropdown.
+  assert.match(code, /spentUsd\s*>\s*0/);
+  assert.match(code, /this month \(API providers\)/);
 
   // budget bounds (100,000-50,000,000) and the tokens-used line.
   assert.match(code, /min=\{100000\}/);

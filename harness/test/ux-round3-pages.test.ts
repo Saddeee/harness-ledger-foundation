@@ -198,13 +198,16 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
     assert.ok(raw.includes(roleLabel), `local-settings.tsx missing role label "${roleLabel}"`);
   }
 
-  // Round 4 Task A4 / spec §2: budget is in tokens (100,000-50,000,000), not
-  // dollars -- "used this month" from tokens_this_month, with the dollar
-  // estimate only for API providers.
+  // Round 4 Task A4 / spec §2 (fix round 1): budget is in tokens
+  // (100,000-50,000,000), not dollars -- "used this month" from
+  // tokens_this_month; the dollar estimate is shown whenever spent_usd > 0,
+  // regardless of the currently selected provider dropdown (not gated on
+  // isApiProvider any more).
   assert.match(code, /Monthly token budget/);
   assert.match(code, /id="llm-budget"[\s\S]*?min=\{100000\}[\s\S]*?max=\{50000000\}/);
   assert.match(code, /Used this month: \{tokensThisMonth\.toLocaleString\(\)\} tokens/);
-  assert.match(code, /isApiProvider\(llmProvider\)[\s\S]*?spentUsd\.toFixed\(2\)/);
+  assert.match(code, /spentUsd\s*>\s*0[\s\S]*?spentUsd\.toFixed\(2\)/);
+  assert.match(code, /this month \(API providers\)/);
 
   // posts
   assert.match(code, /action: "llm_settings"/);

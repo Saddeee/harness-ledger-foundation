@@ -464,5 +464,8 @@ export function healthLine(health: HealthLike | null | undefined): string | null
   const last = health.last_applicable_at
     ? ` · last used ${formatDay(health.last_applicable_at)}`
     : "";
-  return `Since added: ${health.applicable_tasks} tasks · ${health.helped} helped · ${health.hurt} repeat corrections${last} · from real builds`;
+  const tasks = health.applicable_tasks === 1 ? "1 task" : `${health.applicable_tasks} tasks`;
+  const corrections =
+    health.hurt === 1 ? "1 repeat correction" : `${health.hurt} repeat corrections`;
+  return `Since added: ${tasks} · ${health.helped} helped · ${corrections}${last} · from real builds`;
 }

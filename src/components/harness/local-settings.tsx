@@ -25,6 +25,7 @@ import {
   executorQueryOptions,
   postExecutor,
   type ApiLlmProvider,
+  type ExecutorProviderReady,
   type ExecutorSchedule,
   type LlmModels,
   type LlmProvider,
@@ -58,6 +59,20 @@ const LLM_PROVIDERS: { value: LlmProvider; label: string }[] = [
 ];
 function isApiProvider(p: LlmProvider): p is ApiLlmProvider {
   return p !== "claude_code";
+}
+// provider_ready checks whichever provider the classifier/miner roles
+// actually use, not specifically the "Key for" dropdown above -- so it only
+// tells us about Claude Code when it's ready, or when it's the provider the
+// reason itself names (e.g. "Claude Code was not found on this machine.").
+// Any other not-ready reason (a missing API key for a different role's
+// provider, say) is shown verbatim rather than mislabelled as a Claude Code
+// problem.
+function claudeCodeStatusLine(providerReady: ExecutorProviderReady | undefined): string {
+  if (providerReady?.ok) return "Claude Code found";
+  if (providerReady?.reason && /claude code/i.test(providerReady.reason)) {
+    return "Claude Code not found on this machine";
+  }
+  return providerReady?.reason ?? "Claude Code not found on this machine";
 }
 const LLM_ROLES: { key: LlmRole; label: string; hint: string }[] = [
   {
@@ -383,9 +398,7 @@ export function LocalSettings() {
         {llmProvider === "claude_code" ? (
           <div className="space-y-1">
             <p className="text-sm font-medium">Claude Code</p>
-            <p className="text-sm">
-              {providerReady?.ok ? "Claude Code found" : "Claude Code not found on this machine"}
-            </p>
+            <p className="text-sm">{claudeCodeStatusLine(providerReady)}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -482,8 +495,12 @@ export function LocalSettings() {
           />
           <p className="text-sm text-muted-foreground">
             Used this month: {tokensThisMonth.toLocaleString()} tokens
-            {isApiProvider(llmProvider) ? ` (≈ $${spentUsd.toFixed(2)})` : ""}
           </p>
+          {spentUsd > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              ≈ ${spentUsd.toFixed(2)} this month (API providers)
+            </p>
+          ) : null}
         </div>
 
         <p className="text-sm text-muted-foreground">{AI_ANALYSIS_LINE}</p>

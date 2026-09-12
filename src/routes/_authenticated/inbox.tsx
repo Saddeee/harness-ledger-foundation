@@ -96,8 +96,8 @@ function Page() {
   // marking the Inbox seen (which updates that same setting to now) --
   // frozen in a ref for the rest of this visit, so later refetches (the
   // sidebar's 60s poll shares this query) don't move the goalposts while
-  // the page stays open. "" (never visited) reads as the beginning of time,
-  // so a first-ever visit marks everything new.
+  // the page stays open. "" (never visited) has no "since" to compare
+  // against, so a first-ever visit marks nothing as New (see isNew below).
   const previousLastSeenAt = useRef<string | null>(null);
   const markedSeen = useRef(false);
   useEffect(() => {
@@ -109,7 +109,10 @@ function Page() {
   }, [query.data]);
   const isNew = (item: Improvement): boolean => {
     const previous = previousLastSeenAt.current;
-    if (!previous) return true;
+    // Never visited before -- there is no "since your last visit" to compare
+    // against, so nothing is New (a first-ever visit shouldn't flag the
+    // entire backlog).
+    if (!previous) return false;
     const createdAt = new Date(item.created_at).getTime();
     const previousAt = new Date(previous).getTime();
     return !Number.isNaN(createdAt) && !Number.isNaN(previousAt) && createdAt > previousAt;
