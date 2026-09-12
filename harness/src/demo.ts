@@ -1011,6 +1011,8 @@ export function addDemoData(): AddDemoResult {
     reason: "demo: initial Knowledge write (accepted automatically)",
     hoursAgo: 2,
   });
+  // Fix round 2 (optional polish): matches the other written demo rules.
+  store.setRuleEvidenceLevel(autoSeed.ruleId, "human_grounded", "demo");
 
   // ---- Reverted: written, then restored -> "Reverted". ----
   const revertedSeed = demoImprovementSeed({
@@ -1326,12 +1328,26 @@ export function removeDemoData(): RemoveDemoResult {
   // titles are kept as an unconditional OR-branch, with no provenance
   // check, for backward compatibility with a demo already loaded by an
   // older version of this module (before source_ref was relied on here).
+  //
+  // Controller fix round 2 (important): the NOT EXISTS(bad evidence) check
+  // alone is vacuously true for an episode with ZERO evidence rows -- a
+  // real, evidence-less episode (store.createTaskEpisode /
+  // create_task_episode both allow evidence_history_item_ids: []) would
+  // still be swept. Now also requires an EXISTS(at least one demo-seed
+  // evidence row), so an evidence-less "Demo:"-titled episode fails the
+  // LIKE branch and is left alone.
   const episodes = db
     .prepare(
       `SELECT id, project_id FROM task_episodes
        WHERE title IN (?, ?)
           OR (
             title LIKE 'Demo:%'
+            AND EXISTS (
+              SELECT 1 FROM task_episode_evidence tee
+              JOIN history_items hi ON hi.id = tee.history_item_id
+              WHERE tee.task_episode_id = task_episodes.id
+                AND hi.source_ref = 'demo-seed'
+            )
             AND NOT EXISTS (
               SELECT 1 FROM task_episode_evidence tee
               JOIN history_items hi ON hi.id = tee.history_item_id

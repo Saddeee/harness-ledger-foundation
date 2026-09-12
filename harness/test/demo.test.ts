@@ -130,6 +130,45 @@ const fakeDemoVersion = store.createPendingKnowledgeVersion({
 }) as { id: number };
 store.recordKnowledgeReadback(fakeDemoVersion.id, fakeDemoNextDoc);
 
+// Controller fix round 2 (important): a real, EVIDENCE-LESS "Demo:"-titled
+// episode -- store.createTaskEpisode / the create_task_episode MCP tool
+// both allow evidence_history_item_ids: [] -- must also survive removal.
+// The old NOT EXISTS(bad evidence)-only check was vacuously true for zero
+// evidence rows, so this specifically exercises the added
+// EXISTS(demo-seed evidence) requirement.
+const noEvidenceEpisode = store.createTaskEpisode({
+  project_id: REAL_PROJECT,
+  title: "Demo: build a demo mode toggle",
+  provenance: "manual",
+  evidence_history_item_ids: [],
+}) as { id: number };
+const noEvidenceCandidate = store.createCorrectionCandidate({
+  task_episode_id: noEvidenceEpisode.id,
+  classification: "other",
+  is_correction: true,
+  summary: "a real, evidence-less 'Demo:'-titled item, not part of the seed",
+  evidence_history_item_ids: [],
+}) as { id: number };
+const noEvidenceLearning = store.createLearning({
+  correction_candidate_id: noEvidenceCandidate.id,
+  observed_problem: "p",
+  desired_behavior: "d",
+  reuse_rationale: "r",
+  proposed_scope: "project",
+  provenance: "manual",
+  created_by: "real-user",
+}) as { id: number };
+const noEvidenceRule = store.createRule({
+  learning_id: noEvidenceLearning.id,
+  correction_candidate_id: noEvidenceCandidate.id,
+  instruction: "A real rule for an evidence-less 'Demo:'-titled episode, not part of the seed.",
+  scope: "project",
+  applies_when: "always",
+  predicted_failure: "f",
+  ownership: "harness",
+  created_by: "real-user",
+}) as { id: number };
+
 function tableCount(table: string): number {
   return (db.prepare(`SELECT COUNT(*) as n FROM ${table}`).get() as { n: number }).n;
 }
@@ -447,6 +486,20 @@ test("removeDemoData: every table returns to its pre-add count; real rows untouc
   assert.ok(db.prepare(`SELECT 1 FROM rules WHERE id = ?`).get(fakeDemoRule.id));
   assert.ok(db.prepare(`SELECT 1 FROM knowledge_versions WHERE id = ?`).get(fakeDemoVersion.id));
   assert.ok(db.prepare(`SELECT 1 FROM history_items WHERE id = ?`).get(fakeDemoItem.id));
+
+  // Controller fix round 2 (important): a real, evidence-less "Demo:"-
+  // titled episode (and its candidate/learning/rule) survives untouched --
+  // the old NOT EXISTS(bad evidence)-only check was vacuously true for
+  // zero evidence rows.
+  assert.ok(
+    db.prepare(`SELECT 1 FROM task_episodes WHERE id = ?`).get(noEvidenceEpisode.id),
+    "a real user's own evidence-less 'Demo:'-titled episode must survive removal",
+  );
+  assert.ok(
+    db.prepare(`SELECT 1 FROM correction_candidates WHERE id = ?`).get(noEvidenceCandidate.id),
+  );
+  assert.ok(db.prepare(`SELECT 1 FROM learnings WHERE id = ?`).get(noEvidenceLearning.id));
+  assert.ok(db.prepare(`SELECT 1 FROM rules WHERE id = ?`).get(noEvidenceRule.id));
 });
 
 test("removeDemoData with nothing loaded is a harmless no-op", () => {
