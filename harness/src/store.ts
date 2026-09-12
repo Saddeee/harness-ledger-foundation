@@ -2037,3 +2037,162 @@ export function listSkillSnapshots(
   }[];
 }
 // ---- end round 3 Task 2 ----
+
+// ---- Round 4 A1 ----
+// Data access for harness/src/analysis/classify.ts and segment.ts. These
+// are deliberately separate from countHistoryItemsAwaitingAnalysis's
+// task_episode_evidence-based predicate above (a UI counter that predates
+// this table): message_classifications (migration v9) is the pipeline's own
+// per-message record, one row per classified user history_item.
+
+export type MessageClassificationValue =
+  "new_task" | "correction" | "question" | "approval" | "other";
+
+export type UnclassifiedUserMessage = {
+  id: number;
+  project_id: string | null;
+  content: string;
+  occurred_at: string | null;
+  external_id: string | null;
+};
+
+/** Oldest-first, kind='message'/role='user' history_items with no
+ * message_classifications row yet -- what classifyPending works through. */
+export function listUnclassifiedUserMessages(limit: number): UnclassifiedUserMessage[] {
+  return db
+    .prepare(
+      `SELECT hi.id, hi.project_id, hi.content, hi.occurred_at, hi.external_id
+       FROM history_items hi
+       WHERE hi.kind = 'message' AND hi.role = 'user'
+         AND NOT EXISTS (SELECT 1 FROM message_classifications mc WHERE mc.history_item_id = hi.id)
+       ORDER BY hi.occurred_at ASC, hi.id ASC
+       LIMIT ?`,
+    )
+    .all(limit) as UnclassifiedUserMessage[];
+}
+
+export type ContextMessage = {
+  id: number;
+  project_id: string | null;
+  role: "user" | "assistant" | "system" | "operator" | null;
+  content: string;
+  occurred_at: string | null;
+};
+
+/** The `n` messages (any role, same project, kind='message') immediately
+ * before `historyItemId` in occurred_at/id order, returned oldest-first --
+ * the context window classifyPending assembles into the classifier prompt.
+ * Row-value comparison on (occurred_at, id) so ties on occurred_at (or a
+ * null occurred_at, via `IS`) still resolve strictly by insertion order. */
+export function listContextBefore(historyItemId: number, n = 3): ContextMessage[] {
+  const target = db
+    .prepare(`SELECT project_id, occurred_at, id FROM history_items WHERE id = ?`)
+    .get(historyItemId) as
+    { project_id: string | null; occurred_at: string | null; id: number } | undefined;
+  if (!target) return [];
+  const rows = db
+    .prepare(
+      `SELECT id, project_id, role, content, occurred_at
+       FROM history_items
+       WHERE kind = 'message'
+         AND project_id IS ?
+         AND (occurred_at, id) < (?, ?)
+       ORDER BY occurred_at DESC, id DESC
+       LIMIT ?`,
+    )
+    .all(target.project_id, target.occurred_at, target.id, n) as ContextMessage[];
+  return rows.reverse();
+}
+
+/** Inserts one message_classifications row (PK history_item_id -- callers
+ * only pass ids from listUnclassifiedUserMessages, so this never conflicts
+ * in normal use). `tags` is stored as JSON; validation/clamping of the raw
+ * LLM output happens in classify.ts before this is called. */
+export function insertMessageClassification(input: {
+  history_item_id: number;
+  classification: MessageClassificationValue;
+  tags: string[];
+  summary: string;
+  run_id?: number | null;
+}) {
+  return db
+    .prepare(
+      `INSERT INTO message_classifications (history_item_id, classification, tags_json, summary, run_id)
+       VALUES (@history_item_id, @classification, @tags_json, @summary, @run_id)
+       RETURNING *`,
+    )
+    .get({
+      history_item_id: input.history_item_id,
+      classification: input.classification,
+      tags_json: JSON.stringify(input.tags),
+      summary: input.summary,
+      run_id: input.run_id ?? null,
+    });
+}
+
+export type ClassifiedUserMessage = {
+  history_item_id: number;
+  occurred_at: string | null;
+  classification: MessageClassificationValue;
+  tags: string[];
+  summary: string;
+};
+
+/** Every classified user message for a project, oldest first -- what
+ * segmentEpisodes walks to reconstruct task episodes. */
+export function listClassifiedUserMessages(projectId: string): ClassifiedUserMessage[] {
+  const rows = db
+    .prepare(
+      `SELECT hi.id as history_item_id, hi.occurred_at, mc.classification, mc.tags_json, mc.summary
+       FROM history_items hi
+       JOIN message_classifications mc ON mc.history_item_id = hi.id
+       WHERE hi.project_id = ? AND hi.kind = 'message' AND hi.role = 'user'
+       ORDER BY hi.occurred_at ASC, hi.id ASC`,
+    )
+    .all(projectId) as {
+    history_item_id: number;
+    occurred_at: string | null;
+    classification: MessageClassificationValue;
+    tags_json: string;
+    summary: string;
+  }[];
+  return rows.map((row) => ({
+    history_item_id: row.history_item_id,
+    occurred_at: row.occurred_at,
+    classification: row.classification,
+    tags: JSON.parse(row.tags_json) as string[],
+    summary: row.summary,
+  }));
+}
+
+/** The task_episode a history_item is already linked to as evidence, or
+ * null -- segmentEpisodes' idempotency check (task_episode_evidence, v2,
+ * already carries history_item_id; no separate link table needed here). */
+export function episodeForHistoryItem(historyItemId: number): number | null {
+  const row = db
+    .prepare(`SELECT task_episode_id FROM task_episode_evidence WHERE history_item_id = ? LIMIT 1`)
+    .get(historyItemId) as { task_episode_id: number } | undefined;
+  return row ? row.task_episode_id : null;
+}
+
+/** Links a history_item as evidence for a task_episode (insert-or-ignore,
+ * so re-running segmentEpisodes is idempotent). task_episode_evidence has no
+ * `role` column (v2's shape, unchanged here per the v9 migration note), so
+ * `role` is recorded only on the emitted event, for audit/debugging -- the
+ * evidence link itself is role-agnostic, matching every other evidence
+ * table in this schema. */
+export function addEpisodeEvidence(
+  episodeId: number,
+  historyItemId: number,
+  role: "request" | "correction" | "other",
+): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO task_episode_evidence (task_episode_id, history_item_id) VALUES (?, ?)`,
+  ).run(episodeId, historyItemId);
+  insertEvent("task_episode.evidence_added", null, {
+    task_episode_id: episodeId,
+    history_item_id: historyItemId,
+    role,
+  });
+}
+// ---- end Round 4 A1 ----
