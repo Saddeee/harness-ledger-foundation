@@ -13,6 +13,8 @@ import { segmentAllProjects } from "./segment.js";
 import { proposeRules } from "./propose.js";
 import { autoAcceptProposals } from "./auto-accept.js";
 import { judgeAdherence } from "./adherence.js";
+import { recomputeRuleHealth } from "./health.js";
+import { proposeRetirements } from "./retire.js";
 import { keyStatus } from "../llm-keys.js";
 import { defaultExec, type Exec } from "../llm/claude-code.js";
 
@@ -237,6 +239,28 @@ export async function runAnalysis(
         const judgeResult = await judgeAdherence(callLlm, { limit: judgeLimit, runId });
         counts.judged = judgeResult.judged;
         counts.judge_failed = judgeResult.failed;
+      }
+
+      // Fix round 1 item 3 (controller ruling): new rule_adherence rows
+      // from the judge above -- and any rule_verdicts/corrections a
+      // previous run or the user added since the last recompute -- must
+      // affect a rule's health promptly, the same way executor/beats.ts's
+      // runAll recomputes health at the end of every sync rather than
+      // waiting for the next one. Mirrors that function's own pattern
+      // exactly: isolated in its own try/catch (a bug here must never flip
+      // an otherwise-successful analysis run to ok:false -- classify/mine/
+      // judge already ran and should still be recorded as ok), logged via
+      // insertEvent rather than thrown.
+      try {
+        const health = recomputeRuleHealth();
+        store.insertEvent("analysis.health", null, health);
+
+        const retirement = proposeRetirements();
+        if (retirement.created > 0) {
+          store.insertEvent("analysis.retire_proposed", null, retirement);
+        }
+      } catch (healthErr) {
+        store.insertEvent("analysis.health_error", null, { error: errorMessage(healthErr) });
       }
     }
   } catch (err) {

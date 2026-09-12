@@ -82,9 +82,11 @@ function matchesFailure(
  * otherwise -- unless Settings › Evidence has the "observed" source turned
  * off, in which case a correction never counts as hurt. With the "AI
  * adherence check" source on (Round 5 Task 7 / spec §5 item 3), a `broke`
- * rule_adherence row inside the same window adds one more hurt, and a
- * `followed` row adds one more applicable/helped when its episode wasn't
- * already counted by the tag-based scan. contradicted_by_rule_id (written
+ * rule_adherence row inside the same window adds one more hurt (at most
+ * once per episode, whatever the source -- an episode already scored hurt
+ * by the tag-based scan is left alone), and a `followed` row adds one more
+ * applicable/helped when its episode wasn't already counted by the
+ * tag-based scan. contradicted_by_rule_id (written
  * elsewhere, by the miner) and snoozed_until (a human "Keep" decision, Task
  * C2) are carried forward from whatever rule_health already has for the
  * rule rather than recomputed here -- this function only ever produces the
@@ -133,6 +135,11 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
     // above -- an adherence "followed" row for one of these must not add a
     // second "build without a repeat" for the same episode below.
     const countedApplicable = new Set<number>();
+    // Fix round 1 item 1: episodes already counted as hurt, from ANY source
+    // -- a `broke` adherence row for an episode the tag-scan already scored
+    // hurt (a matching correction) must not add a second hurt for the same
+    // episode.
+    const countedHurt = new Set<number>();
 
     for (const episode of episodes) {
       if (!isApplicable(episode.tags, rule.scope_tags)) continue;
@@ -149,23 +156,42 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
         episode.corrections.some((c) =>
           matchesFailure(c.summary, rule.failure_signature, rule.prediction),
         );
-      if (wasHurt) hurt += 1;
-      else helped += 1;
+      if (wasHurt) {
+        hurt += 1;
+        countedHurt.add(episode.id);
+      } else {
+        helped += 1;
+      }
     }
 
     // spec §5 item 3: with the AI adherence check enabled, a `broke` row
     // inside this same window counts as one more hurt signal for
-    // retirement; a `followed` row counts as one more "build without a
-    // repeat" only for an episode the tag-based scan above didn't already
-    // count (the judge, unlike isApplicable, can find a build applicable
-    // that the scope-tag heuristic missed).
+    // retirement -- but at most once per episode, whatever the source (Fix
+    // round 1 item 1): an episode already scored hurt by the tag-based scan
+    // above is left alone. A `broke` row for an episode the tag-based scan
+    // didn't already count as applicable (mirrors the `followed` case
+    // below) adds one applicable_tasks too. A `followed` row counts as one
+    // more "build without a repeat" only for an episode the tag-based scan
+    // above didn't already count (the judge, unlike isApplicable, can find
+    // a build applicable that the scope-tag heuristic missed).
     if (sources.adherence) {
       const adherenceRows = store
         .listRuleAdherence(rule.id)
         .filter((a) => episodeById.has(a.task_episode_id));
       for (const row of adherenceRows) {
         if (row.verdict === "broke") {
-          hurt += 1;
+          if (!countedApplicable.has(row.task_episode_id)) {
+            const episode = episodeById.get(row.task_episode_id)!;
+            applicableTasks += 1;
+            countedApplicable.add(row.task_episode_id);
+            if (!lastApplicableAt || episode.started_at > lastApplicableAt) {
+              lastApplicableAt = episode.started_at;
+            }
+          }
+          if (!countedHurt.has(row.task_episode_id)) {
+            hurt += 1;
+            countedHurt.add(row.task_episode_id);
+          }
         } else if (row.verdict === "followed" && !countedApplicable.has(row.task_episode_id)) {
           const episode = episodeById.get(row.task_episode_id)!;
           applicableTasks += 1;

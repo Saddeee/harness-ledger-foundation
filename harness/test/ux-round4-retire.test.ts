@@ -73,7 +73,12 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
     health: { applicable_tasks: 4, helped: 1, hurt: 3, last_applicable_at: "2026-09-01T00:00:00Z" },
     since: "2026-08-01T00:00:00Z",
   });
-  assert.equal(hurt, "Harness suggests retiring this rule because it hurt more than it helped.");
+  // Fix round 1 item 2: "helped" left the retire reason sentence too --
+  // same honest vocabulary as healthLine.
+  assert.equal(
+    hurt,
+    "Harness suggests retiring this rule because more of its builds had a repeat correction than didn't.",
+  );
 
   const contradiction = ux.retireReasonSentence({
     reason: "contradiction",
@@ -101,9 +106,11 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
     health: { applicable_tasks: 4, helped: 1, hurt: 3, last_applicable_at: "2026-09-01T00:00:00Z" },
     since: "2026-08-01T00:00:00Z",
   });
+  // Fix round 1 item 2: retireSinceLine's "hurt" case now reuses healthLine
+  // itself, so the wording (and honesty guarantee) can never drift apart.
   assert.equal(
     sinceLine,
-    "Since it was added: 4 tasks · 1 helped · 3 repeat corrections · last used 1 Sep · from real builds",
+    "Since added: 4 builds in this area · 3 repeat corrections · last used 1 Sep · observed from your real builds",
   );
 });
 

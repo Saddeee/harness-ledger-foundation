@@ -417,7 +417,9 @@ export type RetireLike = {
 
 // "Harness suggests retiring this rule because ..." -- the fixed sentence
 // per reason (spec §4b), never invents specifics beyond the other rule's own
-// wording for a contradiction.
+// wording for a contradiction. Fix round 1 item 2: the "hurt" case no longer
+// says "helped" -- same honest vocabulary as healthLine below (an applicable
+// build without a repeat correction is not proof the rule helped).
 export function retireReasonSentence(input: RetireLike): string {
   if (input.reason === "contradiction") {
     const other = (input.contradicts_instruction ?? "another rule").replace(/\.+$/, "");
@@ -426,15 +428,16 @@ export function retireReasonSentence(input: RetireLike): string {
   if (input.reason === "unused") {
     return "Harness suggests retiring this rule because it has not applied in 60 days.";
   }
-  return "Harness suggests retiring this rule because it hurt more than it helped.";
+  return "Harness suggests retiring this rule because more of its builds had a repeat correction than didn't.";
 }
 
 // The one-line health summary under a retirement proposal's title -- the
 // stats line for "hurt", and a plainer sentence for "contradiction"/"unused"
 // where applicable/helped/hurt counts are often all zero and wouldn't read
-// as evidence of anything. The "hurt" stats line labels its source the same
-// way healthLine below does -- these are real counts from real builds, not
-// a model's guess.
+// as evidence of anything. Fix round 1 item 2: the "hurt" stats line now
+// reuses healthLine itself (defined below) rather than its own copy of the
+// same counts, so the two can never say different things about the same
+// rule -- and, by construction, "helped" never appears here either.
 export function retireSinceLine(input: RetireLike): string {
   if (input.reason === "contradiction") {
     return "This rule is still live, but a newer rule now says the opposite.";
@@ -443,10 +446,7 @@ export function retireSinceLine(input: RetireLike): string {
     const since = input.since ? `, ${formatDay(input.since)}` : "";
     return `Since it was added${since}, this rule has not applied to any task in over 60 days.`;
   }
-  const last = input.health.last_applicable_at
-    ? formatDay(input.health.last_applicable_at)
-    : "never";
-  return `Since it was added: ${input.health.applicable_tasks} tasks · ${input.health.helped} helped · ${input.health.hurt} repeat corrections · last used ${last} · from real builds`;
+  return healthLine(input.health) ?? "No builds in this area yet";
 }
 
 // ---- Outcome tracking (Task C3 / spec §4 v1-lite + §4b display; Round 5

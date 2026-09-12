@@ -455,3 +455,70 @@ test("runAnalyseCommand: refuses to overlap a run already in flight, without cal
 
   store.finishAnalysisRun(runningId, { ok: true, counts: {}, tokens: 0, cost_usd: 0 });
 });
+
+// ---- Fix round 1 item 3 (controller ruling): runAnalysis must recompute
+// rule_health (and propose retirements) at the end of a run, exactly as
+// executor/beats.ts's runAll does at the end of a sync -- otherwise a fresh
+// rule_adherence row the judge just wrote wouldn't affect health until the
+// next sync happened to run. ----
+
+test("runAnalysis: recomputes rule_health at the end of a run, for a live rule that had none before", async () => {
+  llmKeys.setKey("openai", "sk-test-not-a-real-key");
+
+  const PROJECT = "proj-run-health-recompute";
+  store.allowProject(PROJECT, "Run Health Recompute");
+
+  // A live rule (active, with a written Knowledge version), built the same
+  // way rule-health.test.ts's own makeLiveRule fixture does -- with no
+  // rule_health row yet.
+  const seedEpisode = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: "seed episode",
+    provenance: "llm_derived",
+    started_at: "2026-08-01T00:00:00Z",
+    evidence_history_item_ids: [],
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: seedEpisode.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "seed correction",
+    evidence_history_item_ids: [],
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "seed",
+    desired_behavior: "seed",
+    reuse_rationale: "seed",
+    proposed_scope: "project",
+    provenance: "llm_derived",
+    created_by: "test",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "Always confirm before deleting data.",
+    scope: "project",
+    applies_when: "n/a",
+    predicted_failure: "n/a",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+  store.updateRule({ id: rule.id, state: "active", actor: "test" });
+  db.prepare(
+    `INSERT INTO knowledge_versions
+       (rule_id, target, project_id, previous_content, new_content, previous_sha256, new_sha256, rule_ids_json, status, actor, written_at)
+     VALUES (?, 'project', ?, '', '', '', '', '[]', 'written', 'test', ?)`,
+  ).run(rule.id, PROJECT, "2026-08-01T00:00:00Z");
+
+  assert.equal(store.getRuleHealth(rule.id), null, "precondition: no rule_health row yet");
+
+  const result = await run.runAnalysis(fakeCallLlm({}));
+  assert.equal(result.ok, true, result.error);
+
+  const health = store.getRuleHealth(rule.id);
+  assert.ok(health, "runAnalysis must recompute rule_health for the live rule before it finishes");
+  assert.equal(health!.rule_id, rule.id);
+});

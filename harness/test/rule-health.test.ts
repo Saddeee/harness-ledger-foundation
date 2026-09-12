@@ -581,3 +581,93 @@ test("verdict action: a did_not_help verdict bumps rule_health.hurt only when ev
 
   resetEvidenceSources();
 });
+
+// ---- Fix round 1 item 1: a broke adherence row must count hurt at most
+// once per episode, whatever the source. ----
+
+test("recomputeRuleHealth: a broke adherence row counts hurt at most once per episode, whatever the source", () => {
+  // Case 1: an episode with BOTH a matching correction (tag-scan hurt) AND
+  // a broke adherence row -- must still be hurt exactly once, not twice.
+  const ruleId = makeLiveRule({
+    predictedFailure: "a regression judged both by the correction match and the AI adherence check",
+    failureSignature: "double-count-signature",
+    scopeTags: ["double-count-tag"],
+    writtenAt: RULE_WRITTEN_AT,
+  });
+  const req = message("Ship the double-counted feature.", "2026-09-10T00:00:00Z");
+  classify(req, "new_task", ["double-count-tag"]);
+  const corr = message("Same double-count regression as before.", "2026-09-10T01:00:00Z");
+  classify(corr, "correction", ["double-count-tag"], "double-count-signature");
+  const epId = episode("2026-09-10T00:00:00Z", [req, corr]);
+  store.recordRuleAdherence({
+    rule_id: ruleId,
+    task_episode_id: epId,
+    verdict: "broke",
+    quote: "still broken",
+    llm_call_id: null,
+    run_id: null,
+  });
+
+  recomputeRuleHealth(NOW);
+  let health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 1);
+  assert.equal(
+    health.hurt,
+    1,
+    "the matching correction and the broke row are the same episode -- hurt must not double-count it",
+  );
+
+  // Case 2: a broke row for an episode the tag-based scan never counted at
+  // all (its tags don't overlap the rule's scope) -- mirrors the `followed`
+  // guard: adds exactly one applicable_tasks and one hurt, not zero.
+  const onlyBrokeRuleId = makeLiveRule({
+    predictedFailure: "a regression only the AI adherence check ever caught",
+    failureSignature: "only-broke-signature",
+    scopeTags: ["only-broke-tag"],
+    writtenAt: RULE_WRITTEN_AT,
+  });
+  const unrelatedReq = message(
+    "Touch something this rule's tag doesn't cover.",
+    "2026-09-10T02:00:00Z",
+  );
+  classify(unrelatedReq, "new_task", ["some-other-tag"]);
+  const onlyBrokeEpId = episode("2026-09-10T02:00:00Z", [unrelatedReq]);
+  store.recordRuleAdherence({
+    rule_id: onlyBrokeRuleId,
+    task_episode_id: onlyBrokeEpId,
+    verdict: "broke",
+    quote: "broke it, even though the tags never overlapped",
+    llm_call_id: null,
+    run_id: null,
+  });
+
+  recomputeRuleHealth(NOW);
+  const onlyBrokeHealth = store.getRuleHealth(onlyBrokeRuleId)!;
+  assert.equal(
+    onlyBrokeHealth.applicable_tasks,
+    1,
+    "the broke row alone adds one applicable_tasks, mirroring the followed guard",
+  );
+  assert.equal(onlyBrokeHealth.hurt, 1);
+
+  // Case 3: with adherence evidence disabled, the broke row from case 1
+  // changes nothing -- hurt still comes only from the matching correction.
+  store.setSettings({
+    evidence_sources: JSON.stringify({
+      observed: true,
+      adherence: false,
+      verdicts: true,
+      paired: false,
+    }),
+  });
+  recomputeRuleHealth(NOW);
+  health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 1);
+  assert.equal(
+    health.hurt,
+    1,
+    "the broke row is ignored with adherence disabled; the correction alone still counts",
+  );
+
+  resetEvidenceSources();
+});

@@ -54,6 +54,48 @@ test("healthLine: never says 'helped', for a scripted range of health inputs", (
   );
 });
 
+// Fix round 1 item 2: retireSinceLine/retireReasonSentence leaked "helped"
+// too (a different UI, the same honesty problem) -- extended here to cover
+// all three retire reasons, never just the "hurt" one.
+test("retireSinceLine and retireReasonSentence: never say 'helped', for all three retire reasons", () => {
+  const scripts: ux.RetireLike[] = [
+    {
+      reason: "hurt",
+      health: {
+        applicable_tasks: 4,
+        helped: 1,
+        hurt: 3,
+        last_applicable_at: "2026-09-01T00:00:00Z",
+      },
+      since: "2026-08-01T00:00:00Z",
+    },
+    {
+      reason: "hurt",
+      health: { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null },
+      since: null,
+    },
+    {
+      reason: "contradiction",
+      health: { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null },
+      since: null,
+      contradicts_instruction: "Always use dark mode by default.",
+    },
+    {
+      reason: "unused",
+      health: { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null },
+      since: "2026-01-01T00:00:00Z",
+    },
+  ];
+  for (const input of scripts) {
+    for (const line of [ux.retireReasonSentence(input), ux.retireSinceLine(input)]) {
+      assert.ok(
+        !/helped/i.test(line),
+        `retire copy leaked "helped" for reason "${input.reason}": ${line}`,
+      );
+    }
+  }
+});
+
 // ---- verdictLine / adherenceLine (spec §5.2, §5 item 3) ----
 
 test("verdictLine: 'You said: <verdict>, <day>', mapping helped/did_not_help/not_sure", () => {
