@@ -2,6 +2,11 @@
 // call them directly. mcp-server.ts is a thin wrapper around this module.
 import { db, dbPath } from "./db.js";
 import { sha256 as knowledgeSha256 } from "./knowledge.js";
+// Round 4 A2's listMinableEpisodes needs to render assistant replies the
+// same human-visible way classify.ts does -- a pure, dependency-free helper
+// (no import back into store.ts's own surface), so pulling it in here is no
+// different from the knowledge.js import just above.
+import { humanVisibleText } from "./analysis/reply-text.js";
 
 export class NotAllowedProjectError extends Error {
   constructor(projectId: string) {
@@ -2444,3 +2449,201 @@ export function addEpisodeEvidence(
   });
 }
 // ---- end Round 4 A1 ----
+
+// ---- Round 4 A2 ----
+// Data access for harness/src/analysis/mine.ts (Task A2): selecting
+// corrected-but-unmined task episodes for the miner LLM call, and the live
+// rule instruction texts it dedupes proposed instructions against.
+
+/** One message the miner sees, keyed by external_id (Lovable's own message
+ * id, shown in the prompt) rather than the internal numeric history_item_id
+ * -- external_id is what evidence_message_ids cites back. */
+export type MinableMessage = {
+  history_item_id: number;
+  external_id: string | null;
+  text: string;
+};
+
+export type MinableCorrection = MinableMessage & { summary: string };
+
+export type MinableEpisode = {
+  id: number;
+  project_id: string | null;
+  project_name: string | null;
+  title: string;
+  request: MinableMessage;
+  corrections: MinableCorrection[];
+  assistant_summaries: string[];
+};
+
+const MINABLE_TEXT_CHAR_LIMIT = 1500;
+const MINABLE_ASSISTANT_SUMMARY_CHAR_LIMIT = 800;
+
+function truncateText(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, max);
+}
+
+/**
+ * Episodes with >=1 correction-classified message and no correction_candidates
+ * row yet -- Task A2's selection query, oldest-first by started_at/id, what
+ * mineEpisodes works through.
+ *
+ * `request` is the episode's earliest evidence message (the new_task message
+ * segmentEpisodes opened it with -- evidence role isn't a stored column, see
+ * addEpisodeEvidence's own note above, so "earliest by occurred_at/id" is
+ * how this reconstructs it). `corrections` are its evidence messages
+ * classified 'correction', oldest first, each carrying the classifier's own
+ * summary. `assistant_summaries` are every assistant reply in the same
+ * project strictly after the episode started and at/before it ended --
+ * assistant replies are never themselves task_episode_evidence rows
+ * (classify.ts only classifies role='user' messages), so this is a
+ * time-window read, not an evidence join -- rendered via humanVisibleText
+ * and truncated to 800 chars so the miner sees what Lovable told the user,
+ * never raw tool-use markup.
+ */
+export function listMinableEpisodes(limit: number): MinableEpisode[] {
+  const episodeRows = db
+    .prepare(
+      `SELECT te.id, te.project_id, te.title, te.started_at, te.ended_at
+       FROM task_episodes te
+       WHERE EXISTS (
+         SELECT 1 FROM task_episode_evidence tee
+         JOIN message_classifications mc ON mc.history_item_id = tee.history_item_id
+         WHERE tee.task_episode_id = te.id AND mc.classification = 'correction'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM correction_candidates cc WHERE cc.task_episode_id = te.id
+       )
+       ORDER BY te.started_at ASC, te.id ASC
+       LIMIT ?`,
+    )
+    .all(limit) as {
+    id: number;
+    project_id: string | null;
+    title: string;
+    started_at: string | null;
+    ended_at: string | null;
+  }[];
+
+  const requestStmt = db.prepare(
+    `SELECT hi.id as history_item_id, hi.external_id, hi.content
+     FROM task_episode_evidence tee
+     JOIN history_items hi ON hi.id = tee.history_item_id
+     WHERE tee.task_episode_id = ?
+     ORDER BY hi.occurred_at ASC, hi.id ASC
+     LIMIT 1`,
+  );
+  const correctionsStmt = db.prepare(
+    `SELECT hi.id as history_item_id, hi.external_id, hi.content, mc.summary as summary
+     FROM task_episode_evidence tee
+     JOIN history_items hi ON hi.id = tee.history_item_id
+     JOIN message_classifications mc ON mc.history_item_id = hi.id
+     WHERE tee.task_episode_id = ? AND mc.classification = 'correction'
+     ORDER BY hi.occurred_at ASC, hi.id ASC`,
+  );
+  const assistantStmt = db.prepare(
+    `SELECT hi.content as content
+     FROM history_items hi
+     WHERE hi.project_id IS ? AND hi.kind = 'message' AND hi.role = 'assistant'
+       AND hi.occurred_at IS NOT NULL
+       AND hi.occurred_at > ?
+       AND (? IS NULL OR hi.occurred_at <= ?)
+     ORDER BY hi.occurred_at ASC, hi.id ASC`,
+  );
+
+  return episodeRows.map((ep) => {
+    const reqRow = requestStmt.get(ep.id) as
+      { history_item_id: number; external_id: string | null; content: string } | undefined;
+    const correctionRows = correctionsStmt.all(ep.id) as {
+      history_item_id: number;
+      external_id: string | null;
+      content: string;
+      summary: string;
+    }[];
+    const assistantRows = ep.started_at
+      ? (assistantStmt.all(ep.project_id, ep.started_at, ep.ended_at, ep.ended_at) as {
+          content: string;
+        }[])
+      : [];
+    const projectMeta = ep.project_id ? getProjectMeta(ep.project_id) : null;
+
+    return {
+      id: ep.id,
+      project_id: ep.project_id,
+      project_name: projectMeta?.name ?? null,
+      title: ep.title,
+      request: reqRow
+        ? {
+            history_item_id: reqRow.history_item_id,
+            external_id: reqRow.external_id,
+            text: truncateText(reqRow.content, MINABLE_TEXT_CHAR_LIMIT),
+          }
+        : { history_item_id: ep.id, external_id: null, text: "" },
+      corrections: correctionRows.map((c) => ({
+        history_item_id: c.history_item_id,
+        external_id: c.external_id,
+        text: truncateText(c.content, MINABLE_TEXT_CHAR_LIMIT),
+        summary: c.summary,
+      })),
+      assistant_summaries: assistantRows.map((a) =>
+        truncateText(humanVisibleText(a.content), MINABLE_ASSISTANT_SUMMARY_CHAR_LIMIT),
+      ),
+    };
+  });
+}
+
+/** Rule instruction texts the miner dedupes proposed instructions against:
+ * every rule not yet retired/rejected/rolled_back (project- and
+ * workspace-scoped alike -- this deliberately takes no project id, matching
+ * the plan's no-argument signature). */
+export function listLiveRuleTexts(): { id: number; instruction: string }[] {
+  return db
+    .prepare(
+      `SELECT id, instruction FROM rules
+       WHERE state NOT IN ('retired', 'rejected', 'rolled_back')
+       ORDER BY id ASC`,
+    )
+    .all() as { id: number; instruction: string }[];
+}
+
+/** Union of message_classifications.tags_json across every evidence message
+ * linked to an episode (any classification -- matches listEpisodesAfter's
+ * tag-union semantics from Task C1), falling back to ["general"] when the
+ * episode has no tags at all. What the miner sets a newly-created rule's
+ * scope_tags_json to, via setRuleScopeTags below. */
+export function episodeScopeTags(episodeId: number): string[] {
+  const rows = db
+    .prepare(
+      `SELECT mc.tags_json as tags_json
+       FROM task_episode_evidence tee
+       JOIN message_classifications mc ON mc.history_item_id = tee.history_item_id
+       WHERE tee.task_episode_id = ?`,
+    )
+    .all(episodeId) as { tags_json: string }[];
+  const tagSet = new Set<string>();
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.tags_json);
+      if (Array.isArray(parsed)) {
+        for (const t of parsed) if (typeof t === "string") tagSet.add(t);
+      }
+    } catch {
+      // malformed tags_json contributes no tags rather than failing the read
+    }
+  }
+  return tagSet.size > 0 ? [...tagSet] : ["general"];
+}
+
+/** createRule (Checkpoint B) has no scope_tags_json parameter -- that column
+ * was added later by migration v9 with a DEFAULT of '["general"]' -- so the
+ * miner sets it in a second, explicit step right after creating the rule,
+ * rather than this task reaching into createRule's long-shared insert. */
+export function setRuleScopeTags(ruleId: number, tags: string[]): void {
+  const normalized = tags.length > 0 ? tags : ["general"];
+  db.prepare(`UPDATE rules SET scope_tags_json = ?, updated_at = datetime('now') WHERE id = ?`).run(
+    JSON.stringify(normalized),
+    ruleId,
+  );
+  insertEvent("rule.scope_tags_set", null, { id: ruleId, tags: normalized });
+}
+// ---- end Round 4 A2 ----
