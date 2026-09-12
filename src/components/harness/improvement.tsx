@@ -833,7 +833,13 @@ export function DecisionCard({
             <Badge variant="default">New</Badge>
           ) : null
         ) : (
-          <Badge variant="secondary">{groupOf(item)}</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{groupOf(item)}</Badge>
+            {/* Round 5 Task 6: automatic mode's own visibility requirement -- marked wherever a decided item shows. */}
+            {item.decided_by === "automatic" ? (
+              <Badge variant="outline">Accepted automatically</Badge>
+            ) : null}
+          </div>
         )}
       </div>
 

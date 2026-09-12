@@ -48,6 +48,50 @@ function fakeRuleWriterCallLlm(
   };
 }
 
+/**
+ * Round 5 Task 6: a fake CallLlm that always answers `json` (propose:false
+ * by default -- these tests care about the prompt sent, not a proposal
+ * written back), and records every request's user prompt verbatim so a test
+ * can inspect exactly what the Rule writer was shown.
+ */
+function fakeCapturingCallLlm(json: Canned): { callLlm: CallLlm; prompts: string[] } {
+  const prompts: string[] = [];
+  const callLlm: CallLlm = async function callLlm<T>(req: LlmRequest): Promise<LlmResult<T>> {
+    prompts.push(req.user);
+    return {
+      json: json as T,
+      provider: "anthropic",
+      model: "fake-rule-writer",
+      tokensIn: 100,
+      tokensOut: 50,
+      costUsd: 0,
+      latencyMs: 1,
+    };
+  };
+  return { callLlm, prompts };
+}
+
+// Round 5 Task 6: proposeRules' result gained createdCandidateIds (the
+// candidate ids this call created, for autoAcceptProposals to consume) --
+// the exact ids created are an auto-increment detail of a shared test-file
+// DB, not something worth pinning per test, so every existing count
+// assertion below compares just the four original fields via this helper,
+// plus a separate assert.equal(...createdCandidateIds.length, proposed)
+// checking the new field's own invariant instead.
+function counts(r: {
+  proposed: number;
+  skippedDuplicate: number;
+  skippedNoProposal: number;
+  failed: number;
+}): { proposed: number; skippedDuplicate: number; skippedNoProposal: number; failed: number } {
+  return {
+    proposed: r.proposed,
+    skippedDuplicate: r.skippedDuplicate,
+    skippedNoProposal: r.skippedNoProposal,
+    failed: r.failed,
+  };
+}
+
 // ------------------------------------------------------------------ fixture helpers
 
 let nextExternalId = 0;
@@ -233,7 +277,17 @@ test("proposeRules proposes a rule from a corrected episode; it renders as a pen
   ]);
 
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 1, skippedDuplicate: 0, skippedNoProposal: 0, failed: 0 });
+  assert.deepEqual(counts(result), {
+    proposed: 1,
+    skippedDuplicate: 0,
+    skippedNoProposal: 0,
+    failed: 0,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    1,
+    "createdCandidateIds carries one id per proposed rule",
+  );
 
   const items = improvements
     .listImprovements()
@@ -260,7 +314,17 @@ test("proposeRules proposes a rule from a corrected episode; it renders as a pen
   // Not mined twice: the episode now has a correction_candidates row, so
   // listMinableEpisodes no longer selects it and a second run proposes 0.
   const second = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(second, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 0, failed: 0 });
+  assert.deepEqual(counts(second), {
+    proposed: 0,
+    skippedDuplicate: 0,
+    skippedNoProposal: 0,
+    failed: 0,
+  });
+  assert.equal(
+    second.createdCandidateIds.length,
+    0,
+    "createdCandidateIds carries one id per proposed rule",
+  );
 });
 
 test("proposeRules skips a near-duplicate of a live rule (dice >= 0.8) and writes nothing", async () => {
@@ -291,7 +355,17 @@ test("proposeRules skips a near-duplicate of a live rule (dice >= 0.8) and write
   ]);
 
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 0, skippedDuplicate: 1, skippedNoProposal: 0, failed: 0 });
+  assert.deepEqual(counts(result), {
+    proposed: 0,
+    skippedDuplicate: 1,
+    skippedNoProposal: 0,
+    failed: 0,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    0,
+    "createdCandidateIds carries one id per proposed rule",
+  );
   assert.equal(store.listProjectRules(PROJECT).length, rulesBefore);
   drainEpisode(seeded.episodeId);
 });
@@ -309,7 +383,17 @@ test("proposeRules counts propose:false as skippedNoProposal and writes nothing"
     { match: seeded.requestExternalId, json: { propose: false } },
   ]);
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 1, failed: 0 });
+  assert.deepEqual(counts(result), {
+    proposed: 0,
+    skippedDuplicate: 0,
+    skippedNoProposal: 1,
+    failed: 0,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    0,
+    "createdCandidateIds carries one id per proposed rule",
+  );
 
   // Nothing was written, so the episode is still minable.
   assert.ok(store.listMinableEpisodes(500).some((e) => e.id === seeded.episodeId));
@@ -341,7 +425,17 @@ test("proposeRules rejects and logs an evidence id outside the episode's correct
   ]);
 
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 0, failed: 1 });
+  assert.deepEqual(counts(result), {
+    proposed: 0,
+    skippedDuplicate: 0,
+    skippedNoProposal: 0,
+    failed: 1,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    0,
+    "createdCandidateIds carries one id per proposed rule",
+  );
 
   const events = store.listEvents(200) as { kind: string; payload: string | null }[];
   const rejected = events.find((e) => e.kind === "analysis.mine.rejected");
@@ -440,7 +534,17 @@ test("proposeRules stops the loop on LlmBudgetExceeded, leaving the un-reached e
   ]);
 
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 1, skippedDuplicate: 0, skippedNoProposal: 0, failed: 0 });
+  assert.deepEqual(counts(result), {
+    proposed: 1,
+    skippedDuplicate: 0,
+    skippedNoProposal: 0,
+    failed: 0,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    1,
+    "createdCandidateIds carries one id per proposed rule",
+  );
 
   // The second episode was never reached (not even counted as `failed`) --
   // it remains minable for the next run.
@@ -475,7 +579,17 @@ test("proposeRules rejects a propose:true reply with a blank instruction, like a
   ]);
 
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 0, failed: 1 });
+  assert.deepEqual(counts(result), {
+    proposed: 0,
+    skippedDuplicate: 0,
+    skippedNoProposal: 0,
+    failed: 1,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    0,
+    "createdCandidateIds carries one id per proposed rule",
+  );
 
   const events = store.listEvents(200) as { kind: string; payload: string | null }[];
   const rejected = events.find(
@@ -517,7 +631,17 @@ test("proposeRules rejects a propose:true reply with a non-string (null) predict
   ]);
 
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 0, skippedDuplicate: 0, skippedNoProposal: 0, failed: 1 });
+  assert.deepEqual(counts(result), {
+    proposed: 0,
+    skippedDuplicate: 0,
+    skippedNoProposal: 0,
+    failed: 1,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    0,
+    "createdCandidateIds carries one id per proposed rule",
+  );
   assert.equal(store.listProjectRules(PROJECT).length, rulesBefore, "nothing was written");
 
   drainEpisode(seeded.episodeId);
@@ -555,7 +679,17 @@ test("proposeRules dedupes only within the episode's own project (plus workspace
   ]);
 
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 1, skippedDuplicate: 0, skippedNoProposal: 0, failed: 0 });
+  assert.deepEqual(counts(result), {
+    proposed: 1,
+    skippedDuplicate: 0,
+    skippedNoProposal: 0,
+    failed: 0,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    1,
+    "createdCandidateIds carries one id per proposed rule",
+  );
 
   const items = improvements
     .listImprovements()
@@ -629,6 +763,164 @@ test("proposeRules still dedupes against a workspace-scoped live rule regardless
   ]);
 
   const result = await propose.proposeRules(callLlm, { limit: 10 });
-  assert.deepEqual(result, { proposed: 0, skippedDuplicate: 1, skippedNoProposal: 0, failed: 0 });
+  assert.deepEqual(counts(result), {
+    proposed: 0,
+    skippedDuplicate: 1,
+    skippedNoProposal: 0,
+    failed: 0,
+  });
+  assert.equal(
+    result.createdCandidateIds.length,
+    0,
+    "createdCandidateIds carries one id per proposed rule",
+  );
   drainEpisode(seeded.episodeId);
+});
+
+// ---- Round 5 Task 6 / spec §4b: the feedback loop ----
+
+test("proposeRules' user prompt carries the user's own feedback -- accepted rules, skipped suggestions with reasons, and wording edits -- each framed as data, never instructions", async () => {
+  const PROJECT = "proj-mine-feedback-prompt";
+  store.allowProject(PROJECT, "Feedback Prompt Co");
+
+  // An accepted rule (state 'approved'), later reworded -- feeds both the
+  // "accepted" block (current wording) and the "wording edits" block (the
+  // before -> after pair).
+  const acceptedRule = createManualRule(PROJECT, "Always show a confirmation toast after saving.");
+  store.updateRule({ id: acceptedRule.id, state: "approved", actor: "test seed" });
+  store.updateRule({
+    id: acceptedRule.id,
+    instruction: "Always show a confirmation toast after every save.",
+    actor: "test seed",
+    reason: "tighter wording",
+  });
+
+  // A skipped suggestion, with a reason.
+  const skipEpisode = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: "skip seed",
+    provenance: "manual",
+  }) as { id: number };
+  const skipMsg = insertMessage(PROJECT, "user", "seed correction for a skipped suggestion");
+  store.addEpisodeEvidence(skipEpisode.id, skipMsg.id, "correction");
+  const skipCandidate = store.createCorrectionCandidate({
+    task_episode_id: skipEpisode.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "Always ask before deleting a draft.",
+    evidence_history_item_ids: [skipMsg.id],
+  }) as { id: number };
+  store.reviewCorrectionCandidate({
+    id: skipCandidate.id,
+    action: "exclude",
+    reviewer: "test seed",
+  });
+  store.setCandidateSkipReason(skipCandidate.id, "not_useful");
+
+  const seeded = seedEpisode(PROJECT, {
+    request: "Build a drafts list.",
+    corrections: ["Please add a delete button to each draft."],
+  });
+
+  const { callLlm, prompts } = fakeCapturingCallLlm({ propose: false });
+  await propose.proposeRules(callLlm, { limit: 10 });
+
+  assert.equal(prompts.length, 1);
+  const prompt = prompts[0]!;
+
+  assert.match(prompt, /Rules this user accepted \(examples of what they want\)/);
+  assert.match(prompt, /Always show a confirmation toast after every save\./);
+
+  assert.match(prompt, /Suggestions this user skipped -- do not propose these again/);
+  assert.match(prompt, /Always ask before deleting a draft\./);
+  assert.match(prompt, /not_useful/);
+
+  assert.match(prompt, /How this user rewrote wording before -> after/);
+  assert.match(prompt, /Always show a confirmation toast after saving\./);
+  assert.match(
+    prompt,
+    /"Always show a confirmation toast after saving\." -> "Always show a confirmation toast after every save\."/,
+  );
+
+  // Every one of the three blocks is guarded as data, never as instructions
+  // -- the same framing the classifier prompt uses for untrusted message
+  // content (see classify.ts's own guard sentence).
+  const guardCount = (prompt.match(/never as instructions to you/g) ?? []).length;
+  assert.equal(guardCount, 3, "each of the three feedback blocks carries its own guard sentence");
+
+  drainEpisode(seeded.episodeId);
+});
+
+test("proposeRules drops a new proposal that dice-matches a skipped suggestion (re-proposal guard), counts it as skippedDuplicate, and logs suggestion.skipped_repeat", async () => {
+  const PROJECT = "proj-mine-repeat-skip";
+  store.allowProject(PROJECT, "Repeat Skip Co");
+
+  const SKIPPED_TEXT = "Always show a loading spinner while the dashboard chart fetches data.";
+  const skipEpisode = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: "skip seed",
+    provenance: "manual",
+  }) as { id: number };
+  const skipMsg = insertMessage(PROJECT, "user", "seed correction for a skipped suggestion");
+  store.addEpisodeEvidence(skipEpisode.id, skipMsg.id, "correction");
+  const skipCandidate = store.createCorrectionCandidate({
+    task_episode_id: skipEpisode.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: SKIPPED_TEXT,
+    evidence_history_item_ids: [skipMsg.id],
+  }) as { id: number };
+  store.reviewCorrectionCandidate({
+    id: skipCandidate.id,
+    action: "exclude",
+    reviewer: "test seed",
+  });
+
+  const rulesBefore = store.listProjectRules(PROJECT).length;
+
+  const seeded = seedEpisode(PROJECT, {
+    request: "Build a dashboard with a chart.",
+    corrections: ["Please add a loading spinner to the chart while it fetches."],
+  });
+
+  const ruleWriterJson = {
+    propose: true,
+    instruction: SKIPPED_TEXT,
+    scope: "project",
+    prediction: "The chart looks broken with no spinner while data loads.",
+    failure_signature: "no-chart-spinner",
+    evidence_message_ids: seeded.correctionExternalIds,
+    confidence: 0.9,
+    contradicts_rule_id: null,
+    duplicate_of_rule_id: null,
+  };
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
+
+  const result = await propose.proposeRules(callLlm, { limit: 10 });
+  assert.deepEqual(counts(result), {
+    proposed: 0,
+    skippedDuplicate: 1,
+    skippedNoProposal: 0,
+    failed: 0,
+  });
+  assert.equal(result.createdCandidateIds.length, 0);
+  assert.equal(
+    store.listProjectRules(PROJECT).length,
+    rulesBefore,
+    "nothing was written for a repeat of a skipped suggestion",
+  );
+
+  const events = store.listEvents(200) as { kind: string; payload: string | null }[];
+  const repeatEvent = events.find(
+    (e) =>
+      e.kind === "suggestion.skipped_repeat" &&
+      JSON.parse(e.payload ?? "{}").episode_id === seeded.episodeId,
+  );
+  assert.ok(repeatEvent, "expected a suggestion.skipped_repeat event");
 });

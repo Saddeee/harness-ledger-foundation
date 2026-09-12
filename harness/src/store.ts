@@ -3644,3 +3644,42 @@ export function listReaddEventsForRule(ruleId: number): { id: number; created_at
     .all(ruleId) as { id: number; created_at: string }[];
 }
 // ---- end Round 5 Task 3 ----
+
+// ---- Round 5 Task 6 ----
+// spec §4: the Inbox's own automatic-mode empty state ("Harness accepted N
+// suggestions automatically since your last visit") -- a single read helper
+// the improvements route composes with the inbox_last_seen_at setting it
+// already reads for last_seen_at.
+
+/** How many candidates decision_mode='automatic' accepted without asking
+ * (correction_candidates.decided_by = 'automatic', set by
+ * harness/src/analysis/auto-accept.ts) since sinceIso, exclusive. Compared
+ * against reviewed_at (set the moment the accept itself ran -- see
+ * store.recordHumanCorrectionDecision, called by improvementAction's
+ * "accept" case for both the human and the automatic path), not
+ * created_at, so a candidate the analysis proposed earlier but only
+ * auto-accepted later still counts against the right visit.
+ *
+ * inbox_last_seen_at is written as a JS `Date#toISOString()` value
+ * ("...T...Z"); reviewed_at is written by SQLite's own datetime('now')
+ * ("... ..." -- a space, no zone marker). Comparing those two string shapes
+ * directly would sort wrong (' ' < 'T' in every case, regardless of the
+ * actual instants), so `sinceIso` is normalised through SQLite's own
+ * datetime() first -- the same "YYYY-MM-DD HH:MM:SS" shape reviewed_at
+ * already has -- before the string comparison. Callers pass a non-empty,
+ * already-validated ISO date (see setSettings' assertIsoDateOrEmpty for
+ * inbox_last_seen_at); "" (never visited) is the caller's job to treat as
+ * "0 automatic accepts", not this function's -- datetime('') is not a valid
+ * instant.
+ */
+export function countAutoAcceptedSince(sinceIso: string): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) as n FROM correction_candidates
+         WHERE decided_by = 'automatic' AND reviewed_at IS NOT NULL AND reviewed_at > datetime(?)`,
+      )
+      .get(sinceIso) as { n: number }
+  ).n;
+}
+// ---- end Round 5 Task 6 ----

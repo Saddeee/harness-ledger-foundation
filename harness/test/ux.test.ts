@@ -310,8 +310,13 @@ test("no per-stage progress bar in the layout (decisionSentence + the group chip
   const detail = codeOnly(readApp(DETAIL));
   // Round 4 Task C3: the pending branch also renders a "New" badge (isNew)
   // now, but a decided item's group chip -- this assertion's own subject --
-  // is unchanged: still the final "else" of the same ternary.
-  assert.match(detail, /\) : \(\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>\s*\)/);
+  // is unchanged: still the final "else" of the same ternary. Round 5 Task
+  // 6 wraps the chip in a row div alongside the new "Accepted
+  // automatically" marker -- the chip is still that row's first child.
+  assert.match(
+    detail,
+    /\) : \(\s*<div className="flex flex-wrap items-center gap-2">\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>/,
+  );
 });
 
 test("lovableStatusLine / decisionSentence / improvementGroup follow the write lifecycle without implying Lovable changed", () => {
@@ -657,7 +662,17 @@ test("no internal vocabulary in user-facing JSX outside the Developer view", () 
     "routes/_authenticated/settings.tsx",
   ]) {
     const code = codeOnly(readApp(page));
-    for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
+    // CLIENT (improvements-client.ts) drops "confidence" from its own ban:
+    // Round 5 Task 6 / spec §4 gives it a real, typed field
+    // (ExecutorSettings.decision_auto_confidence, mirroring the setting
+    // local-settings.tsx now shows as "Confidence needed") -- the client's
+    // own honest contract, not a leak. Every other page here keeps the
+    // full ban.
+    const words =
+      page === CLIENT
+        ? ["checkpoint", "message_id", "provenance"]
+        : ["checkpoint", "message_id", "provenance", "confidence"];
+    for (const word of words) {
       assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into ${page}`);
     }
   }

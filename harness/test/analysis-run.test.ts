@@ -129,6 +129,7 @@ test("runAnalysis: provider not ready (no API key) finishes ok:false with the re
     proposed: 0,
     skipped_duplicate: 0,
     rejected: 0,
+    auto_accepted: 0,
   });
   assert.equal(result.tokens, 0);
   assert.equal(result.costUsd, 0);
@@ -204,6 +205,10 @@ test("runAnalysis: main path -- consumes an open request, classifies, segments, 
     proposed: 1,
     skipped_duplicate: 0,
     rejected: 0,
+    // decision_mode defaults to "ask" -- this run's own proposal is left
+    // for the user, never auto-accepted (see the dedicated
+    // analysis-auto-accept.test.ts for the automatic-mode path).
+    auto_accepted: 0,
   });
 
   // Three real calls were made (2 classify + 1 rule_writer), each logging

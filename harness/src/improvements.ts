@@ -997,7 +997,16 @@ function keepProposal(proposalId: number): Improvement {
   return refreshed;
 }
 
-export function improvementAction(input: unknown): Improvement {
+// Round 5 Task 6 / spec §4: `actor` overrides ACTOR for the "accept" case's
+// own recordHumanCorrectionDecision/updateRule calls only -- autoAcceptProposals
+// (harness/src/analysis/auto-accept.ts) passes "harness (automatic)" so the
+// accept is attributed correctly wherever these two calls already made it
+// visible (the human_decision_recorded event's reviewer field, and the
+// rule_revisions/rule.scope_changed actor). Every other action, and every
+// other call inside "accept" itself (setRuleEvidenceLevel, the experiment
+// plan status calls), still uses the plain ACTOR -- the brief scopes this to
+// exactly those two calls, not a blanket "who is calling" override.
+export function improvementAction(input: unknown, actor: string = ACTOR): Improvement {
   const a = actionInput.parse(input);
 
   // "retire"/"keep" address a retire-proposal id (always negative) or a
@@ -1044,10 +1053,16 @@ export function improvementAction(input: unknown): Improvement {
         final_classification: current.classification as never,
         reusable: true,
         proposed_scope: destination,
-        reviewer: ACTOR,
+        reviewer: actor,
       });
+      // Round 5 Task 6 / spec §4: who decided this -- 'user' for this plain
+      // accept path; autoAcceptProposals overwrites it to 'automatic' right
+      // after calling this same action with actor="harness (automatic)"
+      // (see auto-accept.ts), so the final value on record is always
+      // whichever one actually decided.
+      store.setCandidateDecidedBy(a.id, "user");
       if (rule) {
-        store.updateRule({ id: rule.id, state: "approved", scope: destination, actor: ACTOR });
+        store.updateRule({ id: rule.id, state: "approved", scope: destination, actor });
         // Added without a completed proof: grounded in the user's own decision only.
         if (!(current.proof?.outcome === "passed"))
           store.setRuleEvidenceLevel(rule.id, "human_grounded", ACTOR);

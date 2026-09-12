@@ -4,7 +4,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { DecisionCard, type Improvement } from "@/components/harness/improvement";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
-import { fetchImprovements, postImprovementAction } from "@/lib/improvements-client";
+import {
+  executorQueryOptions,
+  fetchImprovements,
+  postImprovementAction,
+} from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   // Round 5 Task 5 / spec §2: the Inbox has no detail view of its own any
@@ -85,6 +89,10 @@ function Page() {
 
   const query = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
   const refresh = () => qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+  // Round 5 Task 6 / spec §4: same executor query every DecisionCard
+  // already reads (react-query dedupes/caches it) -- only decision_mode is
+  // needed here, to pick the empty-state copy below.
+  const executor = useQuery(executorQueryOptions);
 
   // Task C3 / spec §5 "new since your last visit": read the *previous*
   // last_seen_at from the first successful load of this visit, before
@@ -188,6 +196,16 @@ function Page() {
   const pending = all.filter((i) => i.decision.status === "pending");
   const list = all.filter((i) => i.decision.status === "pending" || confirmed.has(i.id));
 
+  // Round 5 Task 6 / spec §4: automatic mode's own empty state -- only once
+  // it actually did something since the last visit (autoAcceptedSince > 0);
+  // otherwise the plain "everything's decided" line still applies, in
+  // automatic mode exactly as in ask mode.
+  const autoAcceptedSince = query.data?.counts?.auto_accepted_since_seen ?? 0;
+  const nothingPendingLine =
+    executor.data?.settings?.decision_mode === "automatic" && autoAcceptedSince > 0
+      ? `Nothing needs your decision. Harness accepted ${autoAcceptedSince} suggestion${autoAcceptedSince === 1 ? "" : "s"} automatically since your last visit; see Suggestions.`
+      : "Nothing needs your decision. Everything you've decided on is under Suggestions.";
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Inbox</h1>
@@ -196,7 +214,7 @@ function Page() {
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
             ? "Suggestions Harness finds in your Lovable chats will appear here."
-            : "Nothing needs your decision. Everything you've decided on is under Suggestions."}
+            : nothingPendingLine}
         </div>
       ) : (
         <>

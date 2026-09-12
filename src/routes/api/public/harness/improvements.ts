@@ -24,6 +24,7 @@ async function handleGet({ request }: { request: Request }) {
   const adapter = await loadHarnessAdapter();
   if (!adapter) return Response.json(hostedPreviewBody());
   try {
+    const settings = adapter.getSettings();
     return Response.json({
       available: true,
       improvements: adapter.listImprovements(),
@@ -31,8 +32,17 @@ async function handleGet({ request }: { request: Request }) {
       // count (pending improvements + open retirement proposals) for the
       // sidebar badge, and when the Inbox was last opened, for the "New"
       // marker. Additive -- the improvements list itself is unchanged.
-      counts: adapter.countInboxItems(),
-      last_seen_at: adapter.getSettings().inbox_last_seen_at,
+      counts: {
+        ...adapter.countInboxItems(),
+        // Round 5 Task 6 / spec §4: the Inbox's automatic-mode empty state
+        // ("Harness accepted N suggestions automatically since your last
+        // visit") -- 0 when the setting is "" (never visited), same
+        // convention as the "New" marker above.
+        auto_accepted_since_seen: settings.inbox_last_seen_at
+          ? adapter.countAutoAcceptedSince(settings.inbox_last_seen_at)
+          : 0,
+      },
+      last_seen_at: settings.inbox_last_seen_at,
     });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });

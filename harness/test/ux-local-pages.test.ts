@@ -172,10 +172,15 @@ test("local-settings.tsx: five sections with the exact sentences, schedule and c
   assert.match(code, /onError:/);
   assert.match(code, /toast\.error\(/);
 
-  // save buttons per section: schedule, cap, one combined AI analysis save
-  // (settings + key when typed), key remove, and project defaults (Round 3 §4)
+  // save buttons per section: decisions (Round 5 Task 6), schedule, cap, one
+  // combined AI analysis save (settings + key when typed), key remove, and
+  // project defaults (Round 3 §4)
   assert.match(code, /useMutation\(/);
-  assert.equal(count(code, "useMutation("), 5, "schedule, cap, ai analysis save, llm key remove, defaults");
+  assert.equal(
+    count(code, "useMutation("),
+    6,
+    "decisions, schedule, cap, ai analysis save, llm key remove, defaults",
+  );
 
   // only the local Harness client helpers
   assert.ok(!/\bfetch\(/.test(code), "local-settings.tsx must not call fetch directly");
@@ -192,8 +197,13 @@ test("local-settings.tsx: five sections with the exact sentences, schedule and c
   // leaked implementation term. "Claude Code" is dropped too: Round 4 Task
   // A4 / spec §2 adds it as a real provider choice ("Claude Code (your
   // subscription)"), the one sanctioned exception to the no-Claude-Code-
-  // mentions rule, since it's the provider's own name.
-  for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
+  // mentions rule, since it's the provider's own name. "confidence" is
+  // dropped too: Round 5 Task 6 / spec §4 makes it real, approved
+  // user-facing vocabulary in the new Decisions section ("Confidence
+  // needed", and the automatic-mode help text's own "a confidence of at
+  // least 0.8", verbatim from the spec) plus the decision_auto_confidence
+  // wire key that section actually posts.
+  for (const word of ["checkpoint", "message_id", "provenance"]) {
     assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into local-settings.tsx`);
   }
   assert.ok(!/\bspec\b/i.test(code));

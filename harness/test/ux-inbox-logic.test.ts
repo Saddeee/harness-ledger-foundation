@@ -96,8 +96,15 @@ test("Detail view for a just-decided item still renders the decided card (chip +
   );
   // Round 4 Task C3: the pending branch now also renders a "New" badge
   // (isNew), but a decided item's group chip (the assertion's own subject)
-  // is unchanged -- still the final "else" of the same ternary.
-  assert.match(card, /\) : \(\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>\s*\)/);
+  // is unchanged -- still the final "else" of the same ternary. Round 5
+  // Task 6 wraps the chip in a row div alongside the new "Accepted
+  // automatically" marker (see the badge-placement test in
+  // ux-round5-settings.test.ts) -- the chip itself is still that row's
+  // first child, immediately after the "else".
+  assert.match(
+    card,
+    /\) : \(\s*<div className="flex flex-wrap items-center gap-2">\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>/,
+  );
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
   const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
   assert.match(decided, /decisionSentence\(/, "the status sentence is decisionSentence's output");

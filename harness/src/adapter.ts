@@ -82,6 +82,9 @@ export {
   listWordingEdits,
   tagAcceptanceRates,
   getLlmModels,
+  // Round 5 Task 6 / spec §4: the Inbox's own automatic-mode empty-state
+  // count ("Harness accepted N suggestions... since your last visit").
+  countAutoAcceptedSince,
 } from "./store.js";
 export type {
   SkipReason,

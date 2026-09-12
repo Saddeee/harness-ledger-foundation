@@ -11,6 +11,7 @@ import type { CallLlm, LlmProvider } from "../llm/types.js";
 import { classifyPending } from "./classify.js";
 import { segmentAllProjects } from "./segment.js";
 import { proposeRules } from "./propose.js";
+import { autoAcceptProposals } from "./auto-accept.js";
 import { keyStatus } from "../llm-keys.js";
 import { defaultExec, type Exec } from "../llm/claude-code.js";
 
@@ -121,6 +122,10 @@ export type AnalysisCounts = {
   proposed: number;
   skipped_duplicate: number;
   rejected: number;
+  // Round 5 Task 6 / spec §4: how many of this run's own proposals
+  // decision_mode='automatic' accepted without asking -- 0 in 'ask' mode,
+  // and 0 whenever nothing was proposed this run.
+  auto_accepted: number;
 };
 
 export type RunAnalysisResult = {
@@ -139,6 +144,7 @@ const EMPTY_COUNTS: AnalysisCounts = {
   proposed: 0,
   skipped_duplicate: 0,
   rejected: 0,
+  auto_accepted: 0,
 };
 
 /**
@@ -191,6 +197,14 @@ export async function runAnalysis(
         counts.skipped_duplicate = mineResult.skippedDuplicate;
         counts.rejected = mineResult.skippedNoProposal;
         counts.failed += mineResult.failed;
+
+        // Round 5 Task 6 / spec §4: only ever considers the candidates THIS
+        // run just wrote (mineResult.createdCandidateIds) -- an older still-
+        // pending proposal from a previous run was already offered this
+        // chance and left for the user, and must stay that way. A no-op
+        // (and free) call in decision_mode='ask' or when nothing proposed.
+        const autoAccept = autoAcceptProposals(mineResult.createdCandidateIds, runId);
+        counts.auto_accepted = autoAccept.accepted;
       }
     }
   } catch (err) {

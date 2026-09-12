@@ -152,7 +152,10 @@ export type Improvement = {
 
 // Task C3 / spec §4b display + §5 notifications: a server-computed count
 // (never re-derived client-side) for the sidebar badge and the Inbox page.
-export type InboxCounts = { pending: number; retire: number };
+// Round 5 Task 6 / spec §4: auto_accepted_since_seen feeds the Inbox's own
+// automatic-mode empty state ("Harness accepted N suggestions
+// automatically since your last visit").
+export type InboxCounts = { pending: number; retire: number; auto_accepted_since_seen: number };
 
 export type ImprovementsResponse = {
   available: boolean;
@@ -422,6 +425,33 @@ export type ExecutorLlm = {
 
 export type ExecutorDefaults = { max_active_rules: number };
 
+// Round 5 Task 6 / spec §4/§4b: Settings > Decisions. FeedbackStats mirrors
+// harness/src/store.ts's own type exactly (accepted/skipped/verdicts feed
+// the "From your decisions so far" line; automatic is read but not shown
+// there -- it's the same count decision.status/decided_by already expose
+// per item). EvidenceSources mirrors store.ts's EvidenceSources -- read
+// here, not written by this page (Task 6 owns only the Decisions section;
+// the evidence-source toggles live elsewhere).
+export type FeedbackStats = {
+  accepted: number;
+  skipped: number;
+  verdicts: number;
+  automatic: number;
+};
+export type EvidenceSources = {
+  observed: boolean;
+  adherence: boolean;
+  verdicts: boolean;
+  paired: boolean;
+};
+export type ExecutorSettings = {
+  knowledge_char_cap: number;
+  decision_mode: "ask" | "automatic";
+  decision_auto_confidence: number;
+  evidence_sources: EvidenceSources;
+  feedback: FeedbackStats;
+};
+
 // Round 4 Task A3 (spec §2): "Analyse now" status, independent of the
 // Lovable connection above -- an analysis run has its own last_run/running
 // pair and its own readiness check (provider_ready), since it can run
@@ -450,7 +480,7 @@ export type ExecutorResponse = {
   reason?: string;
   connection?: ExecutorConnection;
   schedule?: ExecutorSchedule;
-  settings?: { knowledge_char_cap: number };
+  settings?: ExecutorSettings;
   last_run?: ExecutorLastRun;
   next_run_at?: string | null;
   running?: boolean;

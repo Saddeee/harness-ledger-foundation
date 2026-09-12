@@ -241,8 +241,15 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
   for (const tag of code.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag));
 
   // "classifier" is the one legitimate exception (a role label); the rest
-  // of the internal-vocabulary ban still holds
-  for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
+  // of the internal-vocabulary ban still holds. "confidence" was banned
+  // here too at Round 3 (purely an internal/backend term back then) --
+  // Round 5 Task 6 / spec §4 makes it real, approved user-facing vocabulary
+  // ("Confidence needed", and the automatic-mode help text's own "a
+  // confidence of at least 0.8", verbatim from the spec) plus the
+  // decision_auto_confidence wire key the Decisions section actually posts,
+  // so it is no longer a leak and is dropped from this ban with intent, not
+  // loosened carelessly -- every other word here is still banned.
+  for (const word of ["checkpoint", "message_id", "provenance"]) {
     assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into local-settings.tsx`);
   }
 
@@ -366,13 +373,16 @@ test("no internal vocabulary or spec/Claude Code mentions in the Round 3 Task 3b
     assert.ok(!/claude code/i.test(code), `${page} mentions Claude Code`);
   }
   // local-settings.tsx keeps the same ban minus "classifier" (a legitimate
-  // AI-analysis role label there -- see the local-pages test file) and minus
+  // AI-analysis role label there -- see the local-pages test file), minus
   // "Claude Code" (Round 4 Task A4 / spec §2 adds it as a real provider
   // choice -- "Claude Code" is the one sanctioned exception to the
   // no-spec/no-Claude-Code-mentions rule, since it's the provider's own
-  // name, same as "OpenAI"/"Anthropic"/"Google" above it).
+  // name, same as "OpenAI"/"Anthropic"/"Google" above it), and minus
+  // "confidence" (Round 5 Task 6 / spec §4 makes it real, approved
+  // user-facing vocabulary in the new Decisions section -- see the local-
+  // pages test file's own note on the same drop).
   const settingsCode = codeOnly(readApp(LOCAL_SETTINGS));
-  for (const word of ["checkpoint", "message_id", "provenance", "confidence"]) {
+  for (const word of ["checkpoint", "message_id", "provenance"]) {
     assert.ok(!new RegExp(word, "i").test(settingsCode), `${word} leaks into local-settings.tsx`);
   }
   assert.ok(!/\bspec\b/i.test(settingsCode));

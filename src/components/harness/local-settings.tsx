@@ -1,12 +1,15 @@
-// Settings page for the local runtime: the sync schedule, the Knowledge
-// character cap, AI analysis (provider/key or Claude Code/per-role
-// models/monthly token budget -- Round 4 Task A4, spec §2: analysis itself
-// only runs when the user presses "Analyse now", from the Inbox or
-// Instructions page), the defaults new projects get, and a read-only note
-// about approval. Only talks to the executor route (fetchExecutor/
-// postExecutor) -- nothing on this page ever writes to Lovable itself; it
-// only changes what the executor does on its own schedule, and what an
-// analysis run (once triggered elsewhere) uses.
+// Settings page for the local runtime: Decisions (Round 5 Task 6, spec §4/
+// §4b: manual vs automatic mode, the confidence threshold, and the
+// feedback-loop line), the sync schedule, the Knowledge character cap, AI
+// analysis (provider/key, one model applied to every analysis role by
+// default with a collapsed per-role Advanced view, or Claude Code/monthly
+// token budget -- Round 4 Task A4, spec §2: analysis itself only runs when
+// the user presses "Analyse now", from the Inbox or Instructions page), the
+// defaults new projects get, and a read-only note about approval. Only
+// talks to the executor route (fetchExecutor/postExecutor) -- nothing on
+// this page ever writes to Lovable itself; it only changes what the
+// executor does on its own schedule, and what an analysis run (once
+// triggered elsewhere) uses.
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -47,6 +51,21 @@ const SCHEDULE_LINE =
   "Syncing reads your Lovable chats and Knowledge. It uses no Lovable credits and no AI.";
 const CAP_LINE = "Lovable allows 10,000 characters; Harness keeps a margin.";
 const APPROVAL_LINE = "Nothing is written to Lovable until you approve it here.";
+
+// ---- Decisions (Round 5 Task 6 / spec §4, §4b). decision_mode defaults to
+// "ask" -- automatic is opt-in, and switching to it never changes anything
+// already decided. Copy below is verbatim from the spec. ----
+const ASK_LABEL = "Ask me about every suggestion";
+const AUTOMATIC_LABEL =
+  "Automatic: accept suggestions Harness is confident about; ask me about the rest.";
+const AUTOMATIC_HELP =
+  "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge at the next sync if that project allows automatic writes (Projects page). Everything Harness does automatically is listed in the Instructions page history, and you can retire or restore any of it.";
+const DEFAULT_DECISION_MODE: "ask" | "automatic" = "ask";
+const DEFAULT_AUTO_CONFIDENCE = 0.8;
+
+function feedbackLine(feedback: { accepted: number; skipped: number; verdicts: number }): string {
+  return `From your decisions so far: ${feedback.accepted} accepted, ${feedback.skipped} skipped, ${feedback.verdicts} verdicts. Harness shows the Rule writer what you accepted and skipped, and won't re-propose what you skipped.`;
+}
 
 // ---- AI analysis (Round 3 §4, Round 4 Task A4 / spec §2). Analysis only
 // ever runs when the user presses "Analyse now" (see analyse-notice.tsx); it
@@ -114,6 +133,21 @@ const DEFAULT_LLM_MODELS: LlmModels = {
 const DEFAULT_TOKEN_BUDGET = 2_000_000;
 const AI_ANALYSIS_LINE =
   "Analysis runs only when you press Analyse now. Chat text is sent to the provider you chose.";
+const MODEL_FOR_ANALYSIS_LINE =
+  "Used for every analysis role (classifier, rule writer, judge, reviewer, proposer) unless you set one per role below.";
+
+// spec §1: "one provider and one model by default" -- the Rule writer's own
+// entry is the single source of truth the primary Select/Input above the
+// Advanced details read and write; saveAiAnalysis below copies it onto
+// every other role at save time (see its own comment for why that has to
+// happen unconditionally, not just when the simple fields are the only
+// ones touched).
+function rolesDiffer(models: LlmModels): boolean {
+  const base = models.rule_writer;
+  return (Object.keys(models) as LlmRole[]).some(
+    (role) => models[role].provider !== base.provider || models[role].model !== base.model,
+  );
+}
 
 // The store's own default (harness/src/store.ts SETTING_DEFAULTS), used only
 // until GET executor answers with the default actually in force.
@@ -123,16 +157,33 @@ export function LocalSettings() {
   const qc = useQueryClient();
   const executor = useQuery(executorQueryOptions);
 
+  const [decisionMode, setDecisionMode] = useState<"ask" | "automatic">(DEFAULT_DECISION_MODE);
+  const [autoConfidence, setAutoConfidence] = useState(DEFAULT_AUTO_CONFIDENCE);
+
   const [schedule, setSchedule] = useState<ExecutorSchedule>(DEFAULT_SCHEDULE);
   const [cap, setCap] = useState(DEFAULT_CAP);
 
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(DEFAULT_LLM_PROVIDER);
   const [llmModels, setLlmModels] = useState<LlmModels>(DEFAULT_LLM_MODELS);
+  // Whether "Advanced: different models per role" has been opened this
+  // visit -- see saveAiAnalysis below for why this changes what a save
+  // writes.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [budget, setBudget] = useState(DEFAULT_TOKEN_BUDGET);
   const [keyInput, setKeyInput] = useState("");
   const [maxActiveRules, setMaxActiveRules] = useState(DEFAULT_MAX_ACTIVE_RULES);
   const [notifyEnabled, setNotifyEnabled] = useState(isNotifyEnabled());
   const [notifyBlocked, setNotifyBlocked] = useState(false);
+
+  useEffect(() => {
+    const mode = executor.data?.settings?.decision_mode;
+    if (mode != null) setDecisionMode(mode);
+  }, [executor.data?.settings?.decision_mode]);
+
+  useEffect(() => {
+    const threshold = executor.data?.settings?.decision_auto_confidence;
+    if (threshold != null) setAutoConfidence(threshold);
+  }, [executor.data?.settings?.decision_auto_confidence]);
 
   useEffect(() => {
     if (executor.data?.schedule) setSchedule(executor.data.schedule);
@@ -165,6 +216,26 @@ export function LocalSettings() {
   const spentUsd = executor.data?.llm?.spent_usd ?? 0;
   const tokensThisMonth = executor.data?.llm?.tokens_this_month ?? 0;
   const providerReady = executor.data?.analysis?.provider_ready;
+  const feedback = executor.data?.settings?.feedback ?? {
+    accepted: 0,
+    skipped: 0,
+    verdicts: 0,
+    automatic: 0,
+  };
+
+  const saveDecisions = useMutation({
+    mutationFn: () =>
+      postExecutor({
+        action: "settings",
+        decision_mode: decisionMode,
+        decision_auto_confidence: autoConfidence,
+      }),
+    onSuccess: () => {
+      toast.success("Decisions setting saved");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
+  });
 
   const saveSchedule = useMutation({
     mutationFn: () =>
@@ -210,10 +281,29 @@ export function LocalSettings() {
 
       let settingsError: string | null = null;
       try {
+        // spec §1: "one provider and one model by default" -- the primary
+        // Select/Input above the Advanced details edit only
+        // llmModels.rule_writer. Saving from the simple view (Advanced
+        // never opened this visit) writes that one choice to every role --
+        // the simple view has no per-role fields at all, so that is the
+        // only honest reading of "this is the model Harness uses". Once the
+        // owner has opened Advanced -- a deliberate look at (or edit of)
+        // the five separate rows -- save respects whatever is in each row
+        // instead, so opening it to check never silently collapses a
+        // genuinely different per-role setup back to one model.
+        const modelsToSave: LlmModels = advancedOpen
+          ? llmModels
+          : {
+              classifier: { ...llmModels.rule_writer },
+              rule_writer: { ...llmModels.rule_writer },
+              judge: { ...llmModels.rule_writer },
+              reviewer: { ...llmModels.rule_writer },
+              proposer: { ...llmModels.rule_writer },
+            };
         await postExecutor({
           action: "llm_settings",
           llm_provider: llmProvider,
-          llm_models: llmModels,
+          llm_models: modelsToSave,
           monthly_token_budget: budget,
         });
       } catch (e) {
@@ -292,6 +382,53 @@ export function LocalSettings() {
   return (
     <div className="max-w-xl space-y-8">
       <h1 className="text-2xl font-semibold">Settings</h1>
+
+      <section className="space-y-4 rounded-md border p-4">
+        <h2 className="text-lg font-medium">Decisions</h2>
+
+        <RadioGroup
+          value={decisionMode}
+          onValueChange={(v) => setDecisionMode(v as "ask" | "automatic")}
+          className="space-y-3"
+        >
+          <div className="flex items-start gap-2">
+            <RadioGroupItem value="ask" id="decision-mode-ask" className="mt-0.5" />
+            <Label htmlFor="decision-mode-ask" className="font-normal">
+              {ASK_LABEL}
+            </Label>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-start gap-2">
+              <RadioGroupItem value="automatic" id="decision-mode-automatic" className="mt-0.5" />
+              <Label htmlFor="decision-mode-automatic" className="font-normal">
+                {AUTOMATIC_LABEL}
+              </Label>
+            </div>
+            <p className="pl-6 text-xs text-muted-foreground">{AUTOMATIC_HELP}</p>
+            {decisionMode === "automatic" ? (
+              <div className="space-y-1 pl-6">
+                <Label htmlFor="decision-auto-confidence">Confidence needed</Label>
+                <Input
+                  id="decision-auto-confidence"
+                  type="number"
+                  min={0.5}
+                  max={1}
+                  step={0.05}
+                  value={autoConfidence}
+                  onChange={(e) => setAutoConfidence(Number(e.target.value))}
+                  className="w-28"
+                />
+              </div>
+            ) : null}
+          </div>
+        </RadioGroup>
+
+        <p className="text-sm text-muted-foreground">{feedbackLine(feedback)}</p>
+
+        <Button onClick={() => saveDecisions.mutate()} disabled={saveDecisions.isPending}>
+          {saveDecisions.isPending ? "Saving…" : "Save decisions"}
+        </Button>
+      </section>
 
       <section className="space-y-4 rounded-md border p-4">
         <h2 className="text-lg font-medium">Sync schedule</h2>
@@ -438,56 +575,112 @@ export function LocalSettings() {
           </div>
         )}
 
-        <div className="space-y-3">
-          <p className="text-sm font-medium">Model per role</p>
-          {LLM_ROLES.map(({ key, label: roleLabel, hint }) => (
-            <div key={key} className="space-y-2">
-              <div>
-                <p className="text-sm">{roleLabel}</p>
-                <p className="text-xs text-muted-foreground">{hint}</p>
-              </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor={`llm-role-provider-${key}`}>{roleLabel} provider</Label>
-                  <Select
-                    value={llmModels[key].provider}
-                    onValueChange={(v) =>
-                      setLlmModels((m) => ({
-                        ...m,
-                        [key]: { ...m[key], provider: v as LlmProvider },
-                      }))
-                    }
-                  >
-                    <SelectTrigger id={`llm-role-provider-${key}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LLM_PROVIDERS.map((p) => (
-                        <SelectItem key={p.value} value={p.value}>
-                          {p.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor={`llm-role-model-${key}`}>{roleLabel} model</Label>
-                  <Input
-                    id={`llm-role-model-${key}`}
-                    placeholder={llmModels[key].provider === "claude_code" ? "sonnet" : undefined}
-                    value={llmModels[key].model}
-                    onChange={(e) =>
-                      setLlmModels((m) => ({
-                        ...m,
-                        [key]: { ...m[key], model: e.target.value },
-                      }))
-                    }
-                  />
-                </div>
-              </div>
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Model for analysis</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="llm-model-provider">Provider</Label>
+              <Select
+                value={llmModels.rule_writer.provider}
+                onValueChange={(v) =>
+                  setLlmModels((m) => ({
+                    ...m,
+                    rule_writer: { ...m.rule_writer, provider: v as LlmProvider },
+                  }))
+                }
+              >
+                <SelectTrigger id="llm-model-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LLM_PROVIDERS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          ))}
+            <div className="space-y-1">
+              <Label htmlFor="llm-model-model">Model</Label>
+              <Input
+                id="llm-model-model"
+                placeholder={
+                  llmModels.rule_writer.provider === "claude_code" ? "sonnet" : undefined
+                }
+                value={llmModels.rule_writer.model}
+                onChange={(e) =>
+                  setLlmModels((m) => ({
+                    ...m,
+                    rule_writer: { ...m.rule_writer, model: e.target.value },
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">{MODEL_FOR_ANALYSIS_LINE}</p>
         </div>
+
+        <details
+          className="rounded-md border"
+          onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
+        >
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Advanced: different models per role
+          </summary>
+          <div className="space-y-3 border-t p-3">
+            {rolesDiffer(llmModels) ? (
+              <p className="text-xs text-muted-foreground">Roles use different models.</p>
+            ) : null}
+            {LLM_ROLES.map(({ key, label: roleLabel, hint }) => (
+              <div key={key} className="space-y-2">
+                <div>
+                  <p className="text-sm">{roleLabel}</p>
+                  <p className="text-xs text-muted-foreground">{hint}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor={`llm-role-provider-${key}`}>{roleLabel} provider</Label>
+                    <Select
+                      value={llmModels[key].provider}
+                      onValueChange={(v) =>
+                        setLlmModels((m) => ({
+                          ...m,
+                          [key]: { ...m[key], provider: v as LlmProvider },
+                        }))
+                      }
+                    >
+                      <SelectTrigger id={`llm-role-provider-${key}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LLM_PROVIDERS.map((p) => (
+                          <SelectItem key={p.value} value={p.value}>
+                            {p.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`llm-role-model-${key}`}>{roleLabel} model</Label>
+                    <Input
+                      id={`llm-role-model-${key}`}
+                      placeholder={llmModels[key].provider === "claude_code" ? "sonnet" : undefined}
+                      value={llmModels[key].model}
+                      onChange={(e) =>
+                        setLlmModels((m) => ({
+                          ...m,
+                          [key]: { ...m[key], model: e.target.value },
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
 
         <div className="space-y-2">
           <Label htmlFor="llm-budget">Monthly token budget</Label>

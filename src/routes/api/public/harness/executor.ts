@@ -174,7 +174,18 @@ async function handleGet({ request }: { request: Request }) {
       available: true,
       connection,
       schedule,
-      settings: { knowledge_char_cap: Number(settings.knowledge_char_cap) },
+      settings: {
+        knowledge_char_cap: Number(settings.knowledge_char_cap),
+        // Round 5 Task 6 / spec §4/§4b: Settings > Decisions -- the current
+        // mode/threshold, the parsed evidence-source flags, and the
+        // feedback-loop line's own counts (accepted/skipped/verdicts/
+        // automatic), all read straight off the settings row and
+        // feedbackStats() so the client never has to parse either itself.
+        decision_mode: settings.decision_mode as "ask" | "automatic",
+        decision_auto_confidence: Number(settings.decision_auto_confidence),
+        evidence_sources: JSON.parse(settings.evidence_sources) as Record<string, boolean>,
+        feedback: adapter.feedbackStats(),
+      },
       last_run,
       next_run_at,
       running: adapter.runningSyncRun() != null,
@@ -261,6 +272,22 @@ async function handlePost({ request }: { request: Request }) {
       const patch: Partial<Record<string, string>> = {};
       if (body["knowledge_char_cap"] !== undefined)
         patch["knowledge_char_cap"] = String(body["knowledge_char_cap"]);
+      // Round 5 Task 6 / spec §4: Settings > Decisions writes these three
+      // through the same "settings" action -- adapter.setSettings (via
+      // store.ts's own assertDecisionMode/assertDecisionAutoConfidence/
+      // assertEvidenceSources) is where the real validation happens, so
+      // nothing here re-checks the mode enum or the confidence range.
+      // evidence_sources always lands here as a string: pass a caller's own
+      // JSON string through unchanged, else stringify the object body gave.
+      if (body["decision_mode"] !== undefined)
+        patch["decision_mode"] = String(body["decision_mode"]);
+      if (body["decision_auto_confidence"] !== undefined)
+        patch["decision_auto_confidence"] = String(body["decision_auto_confidence"]);
+      if (body["evidence_sources"] !== undefined)
+        patch["evidence_sources"] =
+          typeof body["evidence_sources"] === "string"
+            ? body["evidence_sources"]
+            : JSON.stringify(body["evidence_sources"]);
       const settings = adapter.setSettings(patch);
       return Response.json({ available: true, settings });
     }
