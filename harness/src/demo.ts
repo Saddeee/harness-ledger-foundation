@@ -18,6 +18,26 @@
  * idempotent and `--remove` deletes exactly those rows -- nothing a real
  * user created is ever touched.
  *
+ * Controller fix round 1 (critical): after `--add`, the demo must leave
+ * NOTHING the executor's own beats (harness/src/executor/beats.ts) would
+ * act on against the owner's real Lovable project -- no `pending`
+ * knowledge_versions row, and `stageApprovedWrites()` (improvements.ts)
+ * must return `{ staged: 0 }`. Concretely: every rule this module leaves
+ * in state 'approved' either already has a written version (safe) or has
+ * an approved, unwritten experiment plan (`test_first`, which
+ * stageApprovedWrites skips outright) -- never an 'approved' rule with no
+ * pending/written version and no test_first plan, which is exactly what
+ * stageApprovedWrites re-stages on the next real sync. This is why
+ * "accepted automatically" is demoed as an already-WRITTEN rule (the
+ * `decided_by = 'automatic'` marker still shows it apart from a normal
+ * accept) rather than a rule left pending, and why the "needing attention"
+ * (stale) rule's state is moved to 'testing' once its write goes stale --
+ * NOT left 'approved', which would otherwise make stageApprovedWrites
+ * silently recompose and re-stage a fresh write for it. As a direct
+ * consequence, the "Waiting to be written" IMPROVEMENT_GROUPS value is not
+ * demoed at all: there is no way to show it without leaving exactly the
+ * pending-write footprint the executor would act on.
+ *
  * This module writes nothing to Lovable and makes no LLM call -- it is pure
  * local bookkeeping, exactly like the rest of the store.ts pipeline it
  * drives.
@@ -884,7 +904,7 @@ export function addDemoData(): AddDemoResult {
   // carries the same agent_actions(role='rule_writer', structured_output)
   // shape propose.ts writes, including the explicit
   // duplicate_of_rule_id/contradicts_rule_id: null fields. ----
-  demoImprovementSeed({
+  const p3Seed = demoImprovementSeed({
     projectId,
     idBase: "p3",
     episodeTitle: "Demo: formatted a date inline instead of using the shared helper",
@@ -924,9 +944,28 @@ export function addDemoData(): AddDemoResult {
       },
     },
   });
+  // Mirrors propose.ts's own createVerificationPlan call for every mined
+  // rule (same failure_signature/failure_condition/created_by shape) --
+  // read-only decoration for the Instructions/Improvement detail views;
+  // this rule is never written, so it has no effect on rule_health.
+  store.createVerificationPlan({
+    rule_id: p3Seed.ruleId,
+    failure_signature: "inline-date-formatting",
+    failure_condition: RULE_P3_PREDICTED_FAILURE,
+    created_by: "harness rule writer",
+    verification_definition_ids: [],
+  });
 
-  // ---- Accepted automatically: decided_by='automatic', confidence 0.91,
-  // staged (never written) -> "Waiting to be written". ----
+  // ---- Accepted automatically: decided_by='automatic', confidence 0.91.
+  // Controller fix round 1 (critical): WRITTEN, not left staged/pending --
+  // a pending version here would be exactly what the executor's
+  // executeWrites() picks up and writes to the owner's real Lovable
+  // project at the next sync, and stageApprovedWrites() would find an
+  // 'approved' rule with no written/pending version and re-stage one on
+  // its own. "Accepted automatically" is still distinguishable from a
+  // normal accept via decided_by='automatic' on an already-written rule
+  // -- see the module header comment for why "Waiting to be written" is
+  // therefore not demoed at all. ----
   const autoSeed = demoImprovementSeed({
     projectId,
     idBase: "auto",
@@ -950,12 +989,28 @@ export function addDemoData(): AddDemoResult {
     appliesWhen: "setting any margin, padding, or gap value",
     predictedFailure: "spacing drifts away from the design system, one hardcoded value at a time",
   });
-  improvementAction(
-    { action: "accept", id: autoSeed.candidateId, destination: "project" },
-    "harness (automatic)",
-  );
+  store.recordHumanCorrectionDecision({
+    id: autoSeed.candidateId,
+    final_classification: "constraint_restatement",
+    reusable: true,
+    proposed_scope: "project",
+    reviewer: "harness (automatic)",
+  });
   store.setCandidateDecidedBy(autoSeed.candidateId, "automatic");
-  backdateVersionCreatedAt(latestPendingVersionId(autoSeed.ruleId), 2);
+  const autoBaseDoc = BASE_KNOWLEDGE_DOC;
+  const autoV1 = composeManagedKnowledge(autoBaseDoc, [
+    { id: autoSeed.ruleId, instruction: RULE_AUTO_INSTRUCTION },
+  ]);
+  writeDemoVersion({
+    target: "project",
+    projectId,
+    ruleId: autoSeed.ruleId,
+    ruleIds: [autoSeed.ruleId],
+    previous: autoBaseDoc,
+    next: autoV1.final_content,
+    reason: "demo: initial Knowledge write (accepted automatically)",
+    hoursAgo: 2,
+  });
 
   // ---- Reverted: written, then restored -> "Reverted". ----
   const revertedSeed = demoImprovementSeed({
@@ -1039,7 +1094,17 @@ export function addDemoData(): AddDemoResult {
   store.setCandidateSkipReason(skippedSeed.candidateId, "wrong_wording");
   store.updateRule({ id: skippedSeed.ruleId, state: "rejected", actor: "demo" });
 
-  // ---- Needs attention: staged, then marked stale. ----
+  // ---- Needs attention: staged, then marked stale. Controller fix round 1
+  // (critical): once the version is stale, the rule's state is moved off
+  // 'approved' -- an 'approved' rule with no pending/written version is
+  // exactly what stageApprovedWrites() recomposes and re-stages a fresh
+  // write for on the next real sync (that's its intended recovery
+  // behavior for a genuinely live stale write; here it would just write
+  // demo text into the owner's real project). 'testing' keeps
+  // decision.status "accepted" (so the item still reads "Needs attention"
+  // via its write_status) without being in activeRulesForTarget's
+  // ('approved','supported','active') set either, so it's never composed
+  // into a future real write. ----
   const staleSeed = demoImprovementSeed({
     projectId,
     idBase: "stale",
@@ -1071,6 +1136,12 @@ export function addDemoData(): AddDemoResult {
     stalePendingId,
     "demo: Knowledge changed in Lovable before Harness could write this",
   );
+  store.updateRule({
+    id: staleSeed.ruleId,
+    state: "testing",
+    actor: "demo",
+    reason: "demo: moved off 'approved' so the executor never auto-retries this stale write",
+  });
 
   // ---- Retired: written, then retired directly (rule.state='retired'). ----
   const retiredSeed = demoImprovementSeed({
@@ -1245,9 +1316,31 @@ export function removeDemoData(): RemoveDemoResult {
   // title/instruction/name carries (global rule), so the cascade below
   // (episodes -> candidates -> learnings -> rules -> versions -> ...) picks
   // up every improvement this module ever seeds, not just the original two.
+  //
+  // Controller fix round 1 (important): a bare "title starts with Demo:"
+  // match is not provenance-checked -- a real user could title their own
+  // episode "Demo: ..." and have it swept. Tightened to also require every
+  // one of that episode's evidence history items to carry
+  // source_ref = 'demo-seed' (every demoMessage() call in this file sets
+  // it); a real episode's evidence never does. The two original exact
+  // titles are kept as an unconditional OR-branch, with no provenance
+  // check, for backward compatibility with a demo already loaded by an
+  // older version of this module (before source_ref was relied on here).
   const episodes = db
-    .prepare(`SELECT id, project_id FROM task_episodes WHERE title LIKE 'Demo:%'`)
-    .all() as {
+    .prepare(
+      `SELECT id, project_id FROM task_episodes
+       WHERE title IN (?, ?)
+          OR (
+            title LIKE 'Demo:%'
+            AND NOT EXISTS (
+              SELECT 1 FROM task_episode_evidence tee
+              JOIN history_items hi ON hi.id = tee.history_item_id
+              WHERE tee.task_episode_id = task_episodes.id
+                AND (hi.source_ref IS NULL OR hi.source_ref != 'demo-seed')
+            )
+          )`,
+    )
+    .all(EPISODE_TITLE_PENDING, EPISODE_TITLE_WRITTEN) as {
     id: number;
     project_id: string | null;
   }[];
@@ -1378,6 +1471,14 @@ export function removeDemoData(): RemoveDemoResult {
           .all(...ruleIds) as { id: number }[]
       ).map((r) => r.id)
     : [];
+  // Fix round 1 (optional minor): the "wasn't sure" item's verification_plan.
+  const verificationPlanIds = ruleIds.length
+    ? (
+        db
+          .prepare(`SELECT id FROM verification_plans WHERE rule_id IN (${placeholders(ruleIds)})`)
+          .all(...ruleIds) as { id: number }[]
+      ).map((r) => r.id)
+    : [];
 
   const counts: Record<string, number> = {};
   const run = db.transaction(() => {
@@ -1410,6 +1511,16 @@ export function removeDemoData(): RemoveDemoResult {
       ? db
           .prepare(`DELETE FROM experiment_plans WHERE id IN (${placeholders(experimentPlanIds)})`)
           .run(...experimentPlanIds).changes
+      : 0;
+    // No verification_plan_items are ever created for the demo (every
+    // createVerificationPlan call above passes verification_definition_ids:
+    // []), so the plan row itself has nothing else pointing at it.
+    counts.verification_plans = verificationPlanIds.length
+      ? db
+          .prepare(
+            `DELETE FROM verification_plans WHERE id IN (${placeholders(verificationPlanIds)})`,
+          )
+          .run(...verificationPlanIds).changes
       : 0;
     counts.message_classifications = historyIdList.length
       ? db
@@ -1536,6 +1647,7 @@ export function removeDemoData(): RemoveDemoResult {
       { prefixes: ["rule_health."], ids: ruleIds, field: "rule_id" },
       { prefixes: ["retire_proposal."], ids: retireProposalIds },
       { prefixes: ["experiment_plan."], ids: experimentPlanIds },
+      { prefixes: ["verification_plan."], ids: verificationPlanIds },
     ]);
     counts.events = eventIds.length
       ? db.prepare(`DELETE FROM events WHERE id IN (${placeholders(eventIds)})`).run(...eventIds)

@@ -66,6 +66,70 @@ store.recordSkillSnapshot({
   fetched_by: "real-executor",
 });
 
+// Controller fix round 1 (important): a real user's own episode that merely
+// happens to START with "Demo:" -- e.g. asking Lovable to build a demo
+// mode. Its evidence carries a real source_ref (not 'demo-seed'), so
+// removeDemoData's provenance-checked cascade must never touch it, unlike
+// a bare `title LIKE 'Demo:%'` match, which would.
+const fakeDemoItem = store.upsertHistoryItem({
+  project_id: REAL_PROJECT,
+  kind: "message",
+  external_id: "real-demo-titled-msg-1",
+  role: "user",
+  content: "Please add a demo mode toggle to the settings page.",
+  provenance: "lovable_mcp",
+  source_ref: "lovable_mcp_sync",
+}) as { id: number };
+const fakeDemoEpisode = store.createTaskEpisode({
+  project_id: REAL_PROJECT,
+  title: "Demo: real thing",
+  provenance: "manual",
+  evidence_history_item_ids: [fakeDemoItem.id],
+}) as { id: number };
+const fakeDemoCandidate = store.createCorrectionCandidate({
+  task_episode_id: fakeDemoEpisode.id,
+  classification: "other",
+  is_correction: true,
+  summary: "a real 'Demo:'-titled item, not part of the seed",
+  evidence_history_item_ids: [fakeDemoItem.id],
+}) as { id: number };
+const fakeDemoLearning = store.createLearning({
+  correction_candidate_id: fakeDemoCandidate.id,
+  observed_problem: "p",
+  desired_behavior: "d",
+  reuse_rationale: "r",
+  proposed_scope: "project",
+  provenance: "manual",
+  created_by: "real-user",
+}) as { id: number };
+const fakeDemoRule = store.createRule({
+  learning_id: fakeDemoLearning.id,
+  correction_candidate_id: fakeDemoCandidate.id,
+  // Deliberately does NOT start with "Demo:" -- only the episode's title
+  // does (that's the collision under test); the rule's own instruction
+  // must stay out of this file's "Demo:"-prefix accounting below, or it
+  // would be double-counted as one of the seed's own items.
+  instruction: "A real rule for a 'Demo:'-titled episode, not part of the seed.",
+  scope: "project",
+  applies_when: "always",
+  predicted_failure: "f",
+  ownership: "harness",
+  created_by: "real-user",
+}) as { id: number };
+const fakeDemoBaseDoc = "# Project Knowledge\n\nReal, user-written content.\n";
+const fakeDemoNextDoc = `${fakeDemoBaseDoc}\n<!-- a real user's own managed block -->\n`;
+const fakeDemoVersion = store.createPendingKnowledgeVersion({
+  rule_id: fakeDemoRule.id,
+  target: "project",
+  project_id: REAL_PROJECT,
+  previous_content: fakeDemoBaseDoc,
+  new_content: fakeDemoNextDoc,
+  rule_ids: [fakeDemoRule.id],
+  actor: "real-user",
+  reason: "real: not part of the demo",
+}) as { id: number };
+store.recordKnowledgeReadback(fakeDemoVersion.id, fakeDemoNextDoc);
+
 function tableCount(table: string): number {
   return (db.prepare(`SELECT COUNT(*) as n FROM ${table}`).get() as { n: number }).n;
 }
@@ -94,6 +158,7 @@ const TABLES = [
   "rule_health",
   "retire_proposals",
   "experiment_plans",
+  "verification_plans",
   "events",
 ];
 
@@ -148,6 +213,27 @@ test("addDemoData: counts rise, uses the first allowed project, every state from
   assert.ok(db.prepare(`SELECT 1 FROM rules WHERE id = ?`).get(realRule.id));
   assert.ok(db.prepare(`SELECT 1 FROM task_episodes WHERE id = ?`).get(realEpisode.id));
   assert.ok(db.prepare(`SELECT 1 FROM correction_candidates WHERE id = ?`).get(realCandidate.id));
+
+  // Controller fix round 1 (critical): the demo must leave NOTHING the
+  // executor would act on against the owner's real Lovable project.
+  // (a) no pending knowledge_versions row at all --
+  const pendingVersions = db
+    .prepare(`SELECT id, rule_id FROM knowledge_versions WHERE status = 'pending'`)
+    .all() as { id: number; rule_id: number | null }[];
+  assert.deepEqual(
+    pendingVersions,
+    [],
+    "no knowledge_versions row may be left 'pending' after --add -- executeWrites would write it to the real project at the next sync",
+  );
+  // (b) stageApprovedWrites() -- the same function the executor's runAll
+  // calls every sync pass -- must find nothing to stage: no rule is left
+  // 'approved' with no written/pending version and no test_first plan.
+  const stage = improvements.stageApprovedWrites();
+  assert.equal(
+    stage.staged,
+    0,
+    "stageApprovedWrites() must stage nothing after --add -- it would compose and stage a fresh write for any 'approved' rule with no written/pending version",
+  );
 });
 
 test("listImprovements(): every demo-created item, every IMPROVEMENT_GROUPS value covered, 'wasn't sure' shown in automatic mode", () => {
@@ -178,12 +264,18 @@ test("listImprovements(): every demo-created item, every IMPROVEMENT_GROUPS valu
   assert.equal(retireItems[0]!.retire!.reason, "hurt");
 
   // Every decided (non-pending, non-retire) demo item maps to a real
-  // IMPROVEMENT_GROUPS value, and the union of those groups covers all 7.
+  // IMPROVEMENT_GROUPS value. Controller fix round 1 (critical): "Waiting
+  // to be written" is deliberately NOT demoed -- that group means an
+  // 'approved' rule with a pending (or no) knowledge_version, which is
+  // exactly the footprint stageApprovedWrites()/executeWrites() would act
+  // on against the owner's real project at the next sync (see the
+  // executor-safety assertions in the --add test above, and demo.ts's
+  // header comment). Every OTHER group is still covered.
   const decided = demoItems.filter(
     (i: { kind: string; decision: { status: string } }) =>
       i.kind !== "retire" && i.decision.status !== "pending",
   );
-  assert.ok(decided.length >= 8, "at least 8 decided demo items");
+  assert.equal(decided.length, 9, "9 decided demo items");
   const groups = new Set(
     decided.map(
       (i: {
@@ -198,7 +290,12 @@ test("listImprovements(): every demo-created item, every IMPROVEMENT_GROUPS valu
         }),
     ),
   );
-  for (const g of IMPROVEMENT_GROUPS) {
+  assert.ok(
+    !groups.has("Waiting to be written"),
+    '"Waiting to be written" must never appear in the demo -- see the executor-safety comment above',
+  );
+  const expectedGroups = IMPROVEMENT_GROUPS.filter((g) => g !== "Waiting to be written");
+  for (const g of expectedGroups) {
     assert.ok(groups.has(g), `no demo item produced the "${g}" group`);
   }
 
@@ -273,8 +370,44 @@ test("removeDemoData: every table returns to its pre-add count; real rows untouc
 
   const after = Object.fromEntries(TABLES.map((t) => [t, tableCount(t)]));
   for (const table of TABLES) {
+    // rule_health is handled separately below: addDemoData's one
+    // recomputeRuleHealth() call is global (the same thing the real
+    // executor's own hourly sync does for every live rule, not just demo
+    // ones), so by the time it ran, fakeDemoRule -- a real, non-demo rule
+    // this file itself gave a written knowledge_version -- had also become
+    // 'active' with a written version and legitimately got its own fresh
+    // rule_health row. That's correct, expected behavior (not a demo
+    // leftover), so it's excluded from the blanket per-table comparison.
+    // events, likewise: upsertRuleHealth logs one "rule_health.upserted"
+    // event (payload {rule_id, status}, no "id") per rule it touches,
+    // including fakeDemoRule's legitimate one -- same reasoning as
+    // rule_health below.
+    if (table === "rule_health" || table === "events") continue;
     assert.equal(after[table], before[table], `${table} must return to its exact pre-add count`);
   }
+  assert.equal(
+    after.rule_health,
+    before.rule_health! + 1,
+    "every demo rule_health row must be gone, leaving only the real, non-demo fakeDemoRule's own freshly-computed row",
+  );
+  assert.ok(
+    db.prepare(`SELECT 1 FROM rule_health WHERE rule_id = ?`).get(fakeDemoRule.id),
+    "fakeDemoRule's own rule_health row (a side effect of addDemoData's global recompute, not a demo row) must survive",
+  );
+  assert.equal(
+    after.events,
+    before.events! + 1,
+    "every demo event must be gone, leaving only fakeDemoRule's own rule_health.upserted event",
+  );
+  const fakeDemoRuleHealthEvent = db
+    .prepare(
+      `SELECT COUNT(*) as n FROM events WHERE kind = 'rule_health.upserted' AND payload LIKE ?`,
+    )
+    .get(`%"rule_id":${fakeDemoRule.id}%`) as { n: number };
+  assert.ok(
+    fakeDemoRuleHealthEvent.n >= 1,
+    "fakeDemoRule's own rule_health.upserted event must survive removal",
+  );
 
   assert.equal(demo.demoLoaded(), false);
   assert.equal(demo.demoStatus().loaded, false);
@@ -297,6 +430,23 @@ test("removeDemoData: every table returns to its pre-add count; real rows untouc
     .prepare(`SELECT COUNT(*) as n FROM events WHERE kind = 'rule.created' AND payload LIKE ?`)
     .get(`%"id":${realRule.id}%`) as { n: number };
   assert.ok(realRuleEvents.n >= 1, "the real rule's own event must survive removal");
+
+  // Controller fix round 1 (important): a user's own "Demo: real thing"
+  // episode -- title-collides with the "Demo:" prefix, but its evidence's
+  // source_ref is not 'demo-seed' -- survives untouched: episode,
+  // candidate, learning, rule, and its knowledge_version are all still
+  // present.
+  assert.ok(
+    db.prepare(`SELECT 1 FROM task_episodes WHERE id = ?`).get(fakeDemoEpisode.id),
+    "a real user's own 'Demo:'-titled episode must survive removal",
+  );
+  assert.ok(
+    db.prepare(`SELECT 1 FROM correction_candidates WHERE id = ?`).get(fakeDemoCandidate.id),
+  );
+  assert.ok(db.prepare(`SELECT 1 FROM learnings WHERE id = ?`).get(fakeDemoLearning.id));
+  assert.ok(db.prepare(`SELECT 1 FROM rules WHERE id = ?`).get(fakeDemoRule.id));
+  assert.ok(db.prepare(`SELECT 1 FROM knowledge_versions WHERE id = ?`).get(fakeDemoVersion.id));
+  assert.ok(db.prepare(`SELECT 1 FROM history_items WHERE id = ?`).get(fakeDemoItem.id));
 });
 
 test("removeDemoData with nothing loaded is a harmless no-op", () => {
