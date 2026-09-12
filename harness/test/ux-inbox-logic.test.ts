@@ -94,7 +94,10 @@ test("Detail view for a just-decided item still renders the decided card (chip +
     detail.indexOf("export function DecisionCard"),
     detail.indexOf("export function ImprovementDetail"),
   );
-  assert.match(card, /pending \? null : <Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>/);
+  // Round 4 Task C3: the pending branch now also renders a "New" badge
+  // (isNew), but a decided item's group chip (the assertion's own subject)
+  // is unchanged -- still the final "else" of the same ternary.
+  assert.match(card, /\) : \(\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>\s*\)/);
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
   const decided = detail.slice(detail.indexOf("function DecidedStatus"), detail.indexOf("export function DecisionCard"));
   assert.match(decided, /decisionSentence\(/, "the status sentence is decisionSentence's output");

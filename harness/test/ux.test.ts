@@ -306,10 +306,10 @@ test("no per-stage progress bar in the layout (decisionSentence + the group chip
     "whole-card buttons are gone; the buttons are the decision",
   );
   const detail = codeOnly(readApp(DETAIL));
-  assert.match(
-    detail,
-    /\{pending \? null : <Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>\}/,
-  );
+  // Round 4 Task C3: the pending branch also renders a "New" badge (isNew)
+  // now, but a decided item's group chip -- this assertion's own subject --
+  // is unchanged: still the final "else" of the same ternary.
+  assert.match(detail, /\) : \(\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>\s*\)/);
 });
 
 test("lovableStatusLine / decisionSentence / improvementGroup follow the write lifecycle without implying Lovable changed", () => {
@@ -704,10 +704,12 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
 test("Inbox: a count line, then decision cards you can act on without opening them", () => {
   const inbox = codeOnly(readApp(INBOX));
   // onChanged also turns the item into a confirmation row (see
-  // ux-inbox-logic.test.ts), so it's no longer bare `refresh`.
+  // ux-inbox-logic.test.ts), so it's no longer bare `refresh`. Round 4 Task
+  // C3 adds an `isNew` prop after onOpen (see ux-round4-health.test.ts), so
+  // this no longer requires the tag to close right after onOpen.
   assert.match(
     inbox,
-    /<DecisionCard\s+item=\{i\}\s+onChanged=\{\(msg\)\s*=>\s*confirmDecision\(i\.id,\s*msg\)\}\s+onOpen=\{open\}\s*\/>/,
+    /<DecisionCard\s+item=\{i\}\s+onChanged=\{\(msg\)\s*=>\s*confirmDecision\(i\.id,\s*msg\)\}\s+onOpen=\{open\}/,
   );
   assert.match(inbox, /"One improvement is waiting for your decision\."/);
   assert.match(inbox, /`\$\{pending\.length\} improvements are waiting for your decision\.`/);

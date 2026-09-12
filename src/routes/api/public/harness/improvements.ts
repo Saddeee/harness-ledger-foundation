@@ -24,7 +24,16 @@ async function handleGet({ request }: { request: Request }) {
   const adapter = await loadHarnessAdapter();
   if (!adapter) return Response.json(hostedPreviewBody());
   try {
-    return Response.json({ available: true, improvements: adapter.listImprovements() });
+    return Response.json({
+      available: true,
+      improvements: adapter.listImprovements(),
+      // Task C3 / spec §4b display + §5 notifications: a server-computed
+      // count (pending improvements + open retirement proposals) for the
+      // sidebar badge, and when the Inbox was last opened, for the "New"
+      // marker. Additive -- the improvements list itself is unchanged.
+      counts: adapter.countInboxItems(),
+      last_seen_at: adapter.getSettings().inbox_last_seen_at,
+    });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
@@ -42,6 +51,18 @@ async function handlePost({ request }: { request: Request }) {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+
+  // Task C3: "mark_seen" records that the Inbox was just opened -- not an
+  // Improvement mutation (it returns no improvement), so it's handled here
+  // rather than going through improvementAction's discriminated union.
+  if (body["action"] === "mark_seen") {
+    try {
+      adapter.setSettings({ inbox_last_seen_at: new Date().toISOString() });
+      return Response.json({ available: true, ok: true });
+    } catch (e) {
+      return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+    }
   }
 
   try {

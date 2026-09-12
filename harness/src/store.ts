@@ -1403,7 +1403,11 @@ export type SettingKey =
   | "llm_models"
   | "llm_monthly_token_budget"
   | "rule_unused_after_days"
-  | "max_active_rules";
+  | "max_active_rules"
+  // Task C3 / spec §5 "new since your last visit": when the Inbox was last
+  // opened, as an ISO date string -- "" (never visited) counts as the
+  // beginning of time, so a first-ever visit reads every item as new.
+  | "inbox_last_seen_at";
 
 // AI analysis (Round 4): these keys give the Settings page and the analysis
 // pipeline (harness/src/llm/) something to read and validate. Budget is in
@@ -1436,6 +1440,7 @@ export const SETTING_DEFAULTS: Record<SettingKey, string> = {
   llm_monthly_token_budget: "2000000",
   rule_unused_after_days: "60",
   max_active_rules: "12",
+  inbox_last_seen_at: "",
 };
 
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
@@ -1463,6 +1468,16 @@ function assertIntInRange(key: SettingKey, raw: string, min: number, max: number
 function assertBooleanSetting(key: SettingKey, raw: string): void {
   if (raw !== "true" && raw !== "false") {
     throw new Error(`${key} must be true or false`);
+  }
+}
+
+// Task C3: inbox_last_seen_at is either "" (never visited) or a real,
+// parseable date/timestamp -- written as new Date().toISOString() by the
+// "mark_seen" action, so this only ever rejects a malformed value.
+function assertIsoDateOrEmpty(key: SettingKey, raw: string): void {
+  if (raw === "") return;
+  if (Number.isNaN(new Date(raw).getTime())) {
+    throw new Error(`${key} must be an ISO date string or empty`);
   }
 }
 
@@ -1532,6 +1547,8 @@ export function setSettings(
       assertIntInRange(key, value, 7, 365);
     } else if (key === "max_active_rules") {
       assertIntInRange(key, value, 1, 50);
+    } else if (key === "inbox_last_seen_at") {
+      assertIsoDateOrEmpty(key, value);
     } else {
       // sync_window_start_hour / sync_window_end_hour
       assertIntInRange(key, value, 0, 24);
@@ -2981,3 +2998,60 @@ export function sumLlmCostForRun(runId: number): number {
   return row.total;
 }
 // ---- end Round 4 A3 ----
+
+// ---- Round 4 C3 ----
+// Inbox notifications (spec §4b display / §5 "new since your last visit"):
+// a single server-computed count for the sidebar badge and the Inbox page,
+// so both read the same number the API returns rather than re-deriving it
+// from the full listImprovements()/buildImprovement() pass in
+// improvements.ts (store.ts has no dependency on that module, by design).
+// inbox_last_seen_at itself needs no dedicated read/write helpers -- it is a
+// plain SettingKey (see SETTING_DEFAULTS/setSettings above), read via
+// getSetting("inbox_last_seen_at")/getSettings() and written via
+// setSettings({ inbox_last_seen_at }).
+//
+// "pending" mirrors improvements.ts's buildImprovement decision.status
+// derivation exactly (excluded/rejected -> skipped; reviewed + one of
+// ACCEPTED_RULE_STATES -> accepted; anything else -> pending), including its
+// "earliest rule per correction_candidate" convention (getRuleForCorrection
+// orders by rule id ASC) -- keep the two in sync if either changes.
+// "retire" counts open retire_proposals whose rule is still live, matching
+// buildRetireItem's own live-rule filter (state 'active' with at least one
+// written Knowledge version -- see listLiveRulesWithTargets above) so the
+// count never leads the actual Inbox item list.
+export function countInboxItems(): { pending: number; retire: number } {
+  const pending = (
+    db
+      .prepare(
+        `SELECT COUNT(*) as n
+         FROM correction_candidates cc
+         LEFT JOIN rules r
+           ON r.id = (
+             SELECT id FROM rules WHERE correction_candidate_id = cc.id ORDER BY id ASC LIMIT 1
+           )
+         WHERE cc.excluded_from_learning = 0
+           AND (r.state IS NULL OR r.state != 'rejected')
+           AND NOT (
+             cc.reviewed = 1
+             AND r.state IN ('approved','testing','supported','active','rolled_back','retired')
+           )`,
+      )
+      .get() as { n: number }
+  ).n;
+  const retire = (
+    db
+      .prepare(
+        `SELECT COUNT(*) as n
+         FROM retire_proposals rp
+         JOIN rules r ON r.id = rp.rule_id
+         WHERE rp.status = 'open'
+           AND r.state = 'active'
+           AND EXISTS (
+             SELECT 1 FROM knowledge_versions kv WHERE kv.rule_id = r.id AND kv.status = 'written'
+           )`,
+      )
+      .get() as { n: number }
+  ).n;
+  return { pending, retire };
+}
+// ---- end Round 4 C3 ----

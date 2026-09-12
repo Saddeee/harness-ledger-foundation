@@ -17,6 +17,7 @@ import {
 import {
   CLASSIFICATION_LABELS,
   DESTINATION_LABELS,
+  healthLine,
   KNOWLEDGE_CHAR_LIMIT,
   decisionSentence,
   formatDate,
@@ -302,11 +303,13 @@ function RetireCard({
   busy,
   run,
   titleAs,
+  isNew,
 }: {
   item: Improvement;
   busy: boolean;
   run: Run;
   titleAs: "h1" | "h2";
+  isNew?: boolean | undefined;
 }) {
   const Title = titleAs;
   const titleId = `improvement-${item.id}`;
@@ -315,7 +318,10 @@ function RetireCard({
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <div className="space-y-2">
-        <p className="text-sm font-semibold">{projectName(item)}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold">{projectName(item)}</p>
+          {isNew ? <Badge variant="default">New</Badge> : null}
+        </div>
         <Title
           id={titleId}
           className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
@@ -373,6 +379,9 @@ function DecidedStatus({
           ctx,
         })}
       </p>
+      {item.health ? (
+        <p className="text-xs text-muted-foreground">{healthLine(item.health)}</p>
+      ) : null}
       {accepted && lovable.write_status === "none" ? (
         <p className="text-xs text-muted-foreground">
           Waiting for Harness to read your current Knowledge. You'll see the exact text before
@@ -507,6 +516,7 @@ export function DecisionCard({
   busy: busyProp,
   run: runProp,
   editable,
+  isNew,
 }: {
   item: Improvement;
   onChanged: (msg: string) => void;
@@ -515,6 +525,11 @@ export function DecisionCard({
   busy?: boolean;
   run?: Run;
   editable?: EditableState;
+  // Task C3 / spec §5: found after the Inbox was last opened (the caller
+  // compares item.created_at against the last_seen_at read before this
+  // visit's "mark_seen" updated it) -- Inbox-only; the ledger and detail
+  // pages never pass it.
+  isNew?: boolean;
 }) {
   const own = useRun(onChanged);
   const busy = busyProp ?? own.busy;
@@ -533,7 +548,7 @@ export function DecisionCard({
   const titleId = `improvement-${item.id}`;
 
   if (item.kind === "retire") {
-    return <RetireCard item={item} busy={busy} run={run} titleAs={titleAs} />;
+    return <RetireCard item={item} busy={busy} run={run} titleAs={titleAs} isNew={isNew} />;
   }
 
   return (
@@ -632,7 +647,13 @@ export function DecisionCard({
             <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
           )}
         </div>
-        {pending ? null : <Badge variant="secondary">{groupOf(item)}</Badge>}
+        {pending ? (
+          isNew ? (
+            <Badge variant="default">New</Badge>
+          ) : null
+        ) : (
+          <Badge variant="secondary">{groupOf(item)}</Badge>
+        )}
       </div>
 
       {pending ? (

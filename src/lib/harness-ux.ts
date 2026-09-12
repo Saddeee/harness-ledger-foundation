@@ -443,3 +443,26 @@ export function retireSinceLine(input: RetireLike): string {
     : "never";
   return `Since it was added: ${input.health.applicable_tasks} tasks · ${input.health.helped} helped · ${input.health.hurt} repeat corrections · last used ${last}`;
 }
+
+// ---- Outcome tracking (Task C3 / spec §4 v1-lite + §4b display) ----
+// The muted health line shown under a *live* rule -- on its Improvement
+// card and on the Instructions page -- distinct from retireSinceLine above
+// (which is for a retirement proposal and never labels its source, since a
+// proposal's own reason sentence already says why Harness is asking).
+// Every number here comes from real builds users actually ran, never a
+// model's guess -- "from real builds" says so on every line.
+export type HealthLike = {
+  applicable_tasks: number;
+  helped: number;
+  hurt: number;
+  last_applicable_at: string | null;
+};
+
+export function healthLine(health: HealthLike | null | undefined): string | null {
+  if (!health) return null;
+  if (health.applicable_tasks === 0) return "Since added: no matching tasks yet · from real builds";
+  const last = health.last_applicable_at
+    ? ` · last used ${formatDay(health.last_applicable_at)}`
+    : "";
+  return `Since added: ${health.applicable_tasks} tasks · ${health.helped} helped · ${health.hurt} repeat corrections${last} · from real builds`;
+}

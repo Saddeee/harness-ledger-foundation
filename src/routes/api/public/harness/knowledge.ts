@@ -93,6 +93,16 @@ async function buildKnowledgeResponse(adapter: Adapter) {
     created_at: string;
   }[];
 
+  // Task C3 / spec §4/§4b: each live rule's "since added" health line.
+  // first_written_at comes from listLiveRulesWithTargets (the same live-rule
+  // scan rule_health itself is computed from); looked up once here rather
+  // than per rule below.
+  const firstWrittenAtByRuleId = new Map(
+    (adapter.listLiveRulesWithTargets() as { id: number; first_written_at: string | null }[]).map(
+      (r) => [r.id, r.first_written_at],
+    ),
+  );
+
   const targetsOut = targets.map((t) => {
     const current = adapter.latestKnowledgeSnapshot(t.target, t.id);
     const activeRules = adapter.activeRulesForTarget(t.target, t.id) as {
@@ -137,11 +147,28 @@ async function buildKnowledgeResponse(adapter: Adapter) {
         ? { content: current.content, sha256: current.sha256, fetched_at: current.fetched_at }
         : null,
       managed_block_present: current ? current.content.includes(HARNESS_START_MARKER) : false,
-      active_rules: activeRules.map((r) => ({
-        id: r.id,
-        text: r.instruction,
-        improvement_id: adapter.getCorrectionIdForRule(r.id),
-      })),
+      active_rules: activeRules.map((r) => {
+        const health = adapter.getRuleHealth(r.id) as {
+          applicable_tasks: number;
+          helped: number;
+          hurt: number;
+          last_applicable_at: string | null;
+        } | null;
+        return {
+          id: r.id,
+          text: r.instruction,
+          improvement_id: adapter.getCorrectionIdForRule(r.id),
+          health: health
+            ? {
+                applicable_tasks: health.applicable_tasks,
+                helped: health.helped,
+                hurt: health.hurt,
+                last_applicable_at: health.last_applicable_at,
+                since: firstWrittenAtByRuleId.get(r.id) ?? null,
+              }
+            : null,
+        };
+      }),
       retired_rules: retiredRules.map((r) => ({
         id: r.id,
         text: r.instruction,

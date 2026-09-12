@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { SETTINGS_DEFAULTS } from "@/lib/settings-defaults";
 import { Button } from "@/components/ui/button";
-import { fetchImprovements, pendingCount } from "@/lib/improvements-client";
+import { fetchImprovements } from "@/lib/improvements-client";
 import { isNotifyEnabled } from "@/lib/browser-prefs";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -97,6 +97,15 @@ function AuthedLayout() {
     previousPendingIds.current = currentPendingIds;
   }, [improvementsQuery.data?.improvements]);
 
+  // Task C3 / spec §4b display: the sidebar badge is the server's own count
+  // (pending improvements + open retirement proposals), not re-derived from
+  // the full items list -- the notification effect above still watches every
+  // item's own decision.status (its id set already includes retire items'
+  // negative ids, so a new retire proposal notifies exactly like a new
+  // improvement, with no extra logic needed here).
+  const counts = improvementsQuery.data?.counts;
+  const badgeCount = counts ? counts.pending + counts.retire : 0;
+
   return (
     <div className="flex min-h-screen bg-background">
       <aside className="w-56 shrink-0 border-r bg-muted/30 p-4">
@@ -111,13 +120,11 @@ function AuthedLayout() {
             >
               <div className="flex items-center justify-between">
                 <span>{item.label}</span>
-                {item.to === "/inbox" &&
-                  improvementsQuery.data?.improvements &&
-                  pendingCount(improvementsQuery.data.improvements) > 0 && (
-                    <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-                      {pendingCount(improvementsQuery.data.improvements)}
-                    </span>
-                  )}
+                {item.to === "/inbox" && badgeCount > 0 && (
+                  <span className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+                    {badgeCount}
+                  </span>
+                )}
               </div>
             </Link>
           ))}

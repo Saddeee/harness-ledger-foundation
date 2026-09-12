@@ -64,12 +64,32 @@ export type RetireInfo = {
   contradicts_instruction: string | null;
 };
 
+// Task C3 / spec §4 (v1-lite) + §4b (display): the same free, no-LLM
+// "since added" counters as RetireInfo.health above, but attached to every
+// ordinary improvement whose rule is live (state 'active') -- not just the
+// ones a retirement proposal has been raised for. `since` is the rule's own
+// first_written_at (see store.listLiveRulesWithTargets), separate from
+// `last_applicable_at` (the most recent applicable task, which may be
+// long after the write, or null if none yet).
+export type ImprovementHealth = {
+  applicable_tasks: number;
+  helped: number;
+  hurt: number;
+  last_applicable_at: string | null;
+  since: string | null;
+};
+
 export type Improvement = {
   id: number;
   // "retire" items come from an open retire_proposals row, not a
   // correction_candidate -- see buildRetireItem. Every existing item is
   // "improvement".
   kind: "improvement" | "retire";
+  // When this item was found -- the correction_candidate's created_at for
+  // an ordinary improvement, the retire_proposals row's created_at for a
+  // retirement proposal. Task C3: the Inbox page's "New" marker compares
+  // this against the inbox_last_seen_at setting from before this visit.
+  created_at: string;
   project: { id: string; name: string | null };
   title: string;
   proposed_instruction: string | null;
@@ -119,6 +139,12 @@ export type Improvement = {
   };
   // Set only for kind "retire"; null for an ordinary improvement.
   retire: RetireInfo | null;
+  // Task C3 / spec §4/§4b: set only for kind "improvement" whose rule is
+  // live (state 'active') and has a rule_health row yet (recomputeRuleHealth
+  // runs after every sync/analysis run -- a brand-new active rule may not
+  // have one until the next one). Null otherwise, including for every
+  // "retire" item (which carries the equivalent counts under retire.health).
+  health: ImprovementHealth | null;
   developer: {
     correction: unknown;
     learning: unknown | null;
@@ -142,6 +168,7 @@ type CorrectionRow = {
   proposed_scope: "workspace" | "project" | "one_time" | null;
   excluded_from_learning: number;
   summary: string;
+  created_at: string;
 };
 type RuleRow = { id: number; instruction: string; state: string; scope: "workspace" | "project" };
 type LearningRow = { id: number; desired_behavior: string };
@@ -202,6 +229,34 @@ function proofOutcome(items: PlanItem[]): "not_run" | "passed" | "failed" | "unc
   if (items.some((i) => i.status === "unclear")) return "unclear";
   if (items.every((i) => i.status === "passed")) return "passed";
   return "not_run";
+}
+
+// Task C3 / spec §4/§4b: the "since added" line for a live rule. `versions`
+// is the rule's own knowledge_versions (already loaded by buildImprovement
+// for the Lovable write history), reused here rather than re-querying --
+// `since` is the earliest 'written' version's written_at, the same
+// first_written_at definition store.listLiveRulesWithTargets uses for
+// rule_health's own live-rule scan. Returns null when rule_health hasn't
+// scored this rule yet (recomputeRuleHealth runs after every sync/analysis
+// run, so a rule that just went active may have no row until the next one).
+function computeHealth(
+  ruleId: number,
+  versions: { status: string; written_at: string | null }[],
+): ImprovementHealth | null {
+  const row = store.getRuleHealth(ruleId);
+  if (!row) return null;
+  let since: string | null = null;
+  for (const v of versions) {
+    if (v.status !== "written" || !v.written_at) continue;
+    if (since === null || v.written_at < since) since = v.written_at;
+  }
+  return {
+    applicable_tasks: row.applicable_tasks,
+    helped: row.helped,
+    hurt: row.hurt,
+    last_applicable_at: row.last_applicable_at,
+    since,
+  };
 }
 
 // The rules that would be in the managed block for a target if this rule
@@ -420,9 +475,12 @@ function buildImprovement(c: CorrectionRow): Improvement {
       ? firstSentence(learning.desired_behavior)
       : firstSentence(c.summary);
 
+  const health = rule && ruleState === "active" ? computeHealth(rule.id, versions) : null;
+
   return {
     id: c.id,
     kind: "improvement",
+    created_at: c.created_at,
     project: { id: c.project_id ?? "", name: c.project_name ?? null },
     title: title || c.summary,
     proposed_instruction: rule?.instruction ?? null,
@@ -477,6 +535,7 @@ function buildImprovement(c: CorrectionRow): Improvement {
       auto_write: c.project_id ? store.getProjectSettings(c.project_id).auto_write : true,
     },
     retire: null,
+    health,
     developer: {
       correction: c,
       learning,
@@ -527,6 +586,7 @@ function buildRetireItem(proposal: store.RetireProposalRow): Improvement | null 
   return {
     id: -proposal.id,
     kind: "retire",
+    created_at: proposal.created_at,
     project: { id: projectId, name: projectName },
     title: `Retire: ${live.instruction}`,
     proposed_instruction: null,
@@ -573,6 +633,7 @@ function buildRetireItem(proposal: store.RetireProposalRow): Improvement | null 
       since: live.first_written_at,
       contradicts_instruction: contradictsInstruction,
     },
+    health: null,
     developer: {
       correction: null,
       learning: null,

@@ -73,9 +73,25 @@ export type RetireInfo = {
   contradicts_instruction: string | null;
 };
 
+// Task C3 / spec §4 (v1-lite) + §4b (display): the "since added" counters for
+// an ordinary (kind "improvement") item whose rule is live, mirroring
+// RetireInfo.health above but with its own `since` (the rule's first written
+// date). Null when the rule isn't live yet or rule_health hasn't scored it.
+export type ImprovementHealth = {
+  applicable_tasks: number;
+  helped: number;
+  hurt: number;
+  last_applicable_at: string | null;
+  since: string | null;
+};
+
 export type Improvement = {
   id: number;
   kind: "improvement" | "retire";
+  // When this item was found (the correction's or the retire proposal's own
+  // created_at) -- Task C3's Inbox "New" marker compares this against the
+  // last_seen_at read before mark_seen updates it for this visit.
+  created_at: string;
   project: { id: string; name: string | null };
   title: string;
   proposed_instruction: string | null;
@@ -109,6 +125,10 @@ export type Improvement = {
   // so an older payload still renders (status falls back to "none").
   lovable?: LovableInfo;
   retire: RetireInfo | null;
+  // Task C3: set only for a live (rule state 'active') "improvement" item
+  // with a rule_health row; null otherwise (including every "retire" item,
+  // which carries the equivalent counts under retire.health).
+  health: ImprovementHealth | null;
   developer: {
     correction: unknown;
     learning: unknown | null;
@@ -121,10 +141,18 @@ export type Improvement = {
   };
 };
 
+// Task C3 / spec §4b display + §5 notifications: a server-computed count
+// (never re-derived client-side) for the sidebar badge and the Inbox page.
+export type InboxCounts = { pending: number; retire: number };
+
 export type ImprovementsResponse = {
   available: boolean;
   reason?: string;
   improvements?: Improvement[];
+  counts?: InboxCounts;
+  // When the Inbox was last opened, before this GET's own "mark_seen" (if
+  // any) updates it -- "" means never. Absent on a hosted-preview response.
+  last_seen_at?: string;
 };
 
 export type RuntimeMode = "local" | "hosted";
@@ -202,7 +230,15 @@ export type KnowledgeVersionSummary = {
   changes: KnowledgeChanges;
 };
 
-export type KnowledgeActiveRule = { id: number; text: string; improvement_id: number | null };
+export type KnowledgeActiveRule = {
+  id: number;
+  text: string;
+  improvement_id: number | null;
+  // Task C3 / spec §4/§4b: set for a live rule with a rule_health row;
+  // absent/null on a retired rule (retired_rules never carries this) or a
+  // live one rule_health hasn't scored yet.
+  health?: ImprovementHealth | null;
+};
 
 export type KnowledgeTargetView = {
   target: "project" | "workspace";

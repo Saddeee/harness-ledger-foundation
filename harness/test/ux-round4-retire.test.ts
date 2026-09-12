@@ -26,6 +26,12 @@ function codeOnly(source: string): string {
 const DETAIL = "components/harness/improvement.tsx";
 const INSTRUCTIONS_PAGE = "routes/_authenticated/instructions.tsx";
 const CLIENT = "lib/improvements-client.ts";
+// Task C3: the Inbox page's own "mark_seen" POST (see
+// ux-round4-health.test.ts) is not an Improvement action -- it's read into
+// the same action-set test below only so the one enumeration test in this
+// file stays the single source of truth for every `action: "..."` literal
+// across the pages that talk to /api/public/harness/improvements.
+const INBOX = "routes/_authenticated/inbox.tsx";
 
 test("harness-ux.ts: IMPROVEMENT_GROUPS gains 'Retired' after 'Reverted'; improvementGroup(retired) wins over writeStatus", () => {
   assert.deepEqual(
@@ -161,7 +167,7 @@ test("instructions.tsx: a Retire button under each live rule, and retired rules 
 });
 
 test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows the message and View in Improvements)", () => {
-  const code = codeOnly(readApp("routes/_authenticated/inbox.tsx"));
+  const code = codeOnly(readApp(INBOX));
   const row = code.slice(code.indexOf("function ConfirmationRow"), code.indexOf("function Page"));
   const guardStart = row.indexOf('item.kind === "retire" ? null : (');
   assert.ok(guardStart >= 0, "Undo must be guarded on item.kind");
@@ -175,13 +181,16 @@ test("inbox.tsx: Undo is not offered for a retirement confirmation (still shows 
   assert.ok(viewIdx > guardEnd, "View in Improvements must render unconditionally, after the guard");
 });
 
-test("the improvements API's action set now includes retire, keep, readd", () => {
-  const detailAndLedger = codeOnly(readApp(DETAIL) + readApp("routes/_authenticated/ledger.tsx"));
+test("the improvements API's action set now includes retire, keep, readd, mark_seen", () => {
+  const detailAndLedger = codeOnly(
+    readApp(DETAIL) + readApp("routes/_authenticated/ledger.tsx") + readApp(INBOX),
+  );
   const actions = [...detailAndLedger.matchAll(/action: "([a-z_]+)"/g)].map((m) => m[1]);
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
     "change_wording",
     "keep",
+    "mark_seen",
     "readd",
     "reopen",
     "restore",

@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import { ConfirmAction, DetailSection } from "@/components/harness/decision-layout";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/harness-ux";
+import { formatDate, healthLine } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
   fetchKnowledge,
@@ -232,29 +232,33 @@ function ActiveRulesList({
         const text =
           r.text ||
           (r.improvement_id != null ? `Improvement #${r.improvement_id}` : `Rule #${r.id}`);
+        const health = healthLine(r.health ?? null);
         return (
-          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            {r.improvement_id != null ? (
-              <Link
-                to="/ledger"
-                search={{ improvement: r.improvement_id }}
-                className="text-primary underline underline-offset-2"
-              >
-                {text}
-              </Link>
-            ) : (
-              <span>{text}</span>
-            )}
-            <ConfirmAction
-              trigger="Retire"
-              variant="outline"
-              title={RETIRE_TITLE}
-              body={RETIRE_BODY}
-              consequences={RETIRE_CONSEQUENCES}
-              confirmLabel="Retire"
-              disabled={retireBusy}
-              onConfirm={() => onRetire(r.id)}
-            />
+          <li key={r.id} className="space-y-1 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {r.improvement_id != null ? (
+                <Link
+                  to="/ledger"
+                  search={{ improvement: r.improvement_id }}
+                  className="text-primary underline underline-offset-2"
+                >
+                  {text}
+                </Link>
+              ) : (
+                <span>{text}</span>
+              )}
+              <ConfirmAction
+                trigger="Retire"
+                variant="outline"
+                title={RETIRE_TITLE}
+                body={RETIRE_BODY}
+                consequences={RETIRE_CONSEQUENCES}
+                confirmLabel="Retire"
+                disabled={retireBusy}
+                onConfirm={() => onRetire(r.id)}
+              />
+            </div>
+            {health ? <p className="text-xs text-muted-foreground">{health}</p> : null}
           </li>
         );
       })}

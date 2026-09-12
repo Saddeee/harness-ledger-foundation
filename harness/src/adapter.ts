@@ -43,6 +43,15 @@ export {
   sumLlmCostThisMonth,
   sumLlmTokensThisMonth,
   listSkillSnapshots,
+  // Task C3: the Inbox badge/notification count (pending improvements + open
+  // retirement proposals) and the "new since last visit" setting, read via
+  // the getSettings/setSettings above (key "inbox_last_seen_at").
+  countInboxItems,
+  // Task C3 / spec §4/§4b: the Instructions page's per-rule health line --
+  // getRuleHealth for the counts, listLiveRulesWithTargets for each live
+  // rule's first_written_at ("since").
+  getRuleHealth,
+  listLiveRulesWithTargets,
 } from "./store.js";
 
 // Round 3: per-provider LLM API keys, stored in their own 0600 file, never in
