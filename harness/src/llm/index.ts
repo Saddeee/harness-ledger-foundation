@@ -13,11 +13,13 @@ import { callOpenAi } from "./openai.js";
 import { callAnthropic } from "./anthropic.js";
 import { callGoogle } from "./google.js";
 import { callClaudeCode, defaultExec, type Exec } from "./claude-code.js";
+import { assertStrictCompatible } from "./schema.js";
 
 export * from "./types.js";
 export { priceFor, costUsd, PRICE_TABLE_USD_PER_1M } from "./prices.js";
 export { estimateTokens, assertWithinBudget } from "./budget.js";
 export { defaultExec, type Exec } from "./claude-code.js";
+export { assertStrictCompatible } from "./schema.js";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 1500;
 const RETRY_SUFFIX = "\n\nReturn only JSON matching the schema.";
@@ -79,6 +81,12 @@ export function createCallLlm(deps?: {
   const sleep = deps?.sleep ?? realSleep;
 
   return async function callLlm<T>(req: LlmRequest): Promise<LlmResult<T>> {
+    // Fix wave item 1: every schema dispatched through here must already be
+    // strict-mode compatible (OpenAI Structured Outputs / Anthropic strict
+    // tools both require it) -- checked before anything else so a bad schema
+    // fails loudly at the call site, never silently at the provider.
+    assertStrictCompatible(req.schema, req.schemaName);
+
     const { provider, model } = resolveRoleModel(req.role);
 
     let apiKey = "";

@@ -2610,17 +2610,36 @@ export function listMinableEpisodes(limit: number): MinableEpisode[] {
 }
 
 /** Rule instruction texts the miner dedupes proposed instructions against:
- * every rule not yet retired/rejected/rolled_back (project- and
- * workspace-scoped alike -- this deliberately takes no project id, matching
- * the plan's no-argument signature). */
-export function listLiveRuleTexts(): { id: number; instruction: string }[] {
+ * every rule not yet retired/rejected/rolled_back. Fix wave item 3: scoped
+ * per target when `target.project_id` is given -- a project-scoped rule
+ * only counts when it belongs to that same project (via the same
+ * correction_candidate -> task_episode -> project_id chain
+ * activeRulesForTarget/retiredRulesForTarget already use), while a
+ * workspace-scoped rule always counts (it applies everywhere). Called with
+ * no target, this is the pre-fix global behavior (every live rule,
+ * regardless of project) -- kept for callers that genuinely want that. */
+export function listLiveRuleTexts(target?: {
+  project_id: string;
+}): { id: number; instruction: string }[] {
+  if (!target) {
+    return db
+      .prepare(
+        `SELECT id, instruction FROM rules
+         WHERE state NOT IN ('retired', 'rejected', 'rolled_back')
+         ORDER BY id ASC`,
+      )
+      .all() as { id: number; instruction: string }[];
+  }
   return db
     .prepare(
-      `SELECT id, instruction FROM rules
-       WHERE state NOT IN ('retired', 'rejected', 'rolled_back')
-       ORDER BY id ASC`,
+      `SELECT r.id, r.instruction FROM rules r
+       JOIN correction_candidates cc ON cc.id = r.correction_candidate_id
+       JOIN task_episodes te ON te.id = cc.task_episode_id
+       WHERE r.state NOT IN ('retired', 'rejected', 'rolled_back')
+         AND (r.scope = 'workspace' OR (r.scope = 'project' AND te.project_id = ?))
+       ORDER BY r.id ASC`,
     )
-    .all() as { id: number; instruction: string }[];
+    .all(target.project_id) as { id: number; instruction: string }[];
 }
 
 /** Union of message_classifications.tags_json across every evidence message

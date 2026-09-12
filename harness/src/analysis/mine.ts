@@ -58,18 +58,37 @@ function toKebabCase(s: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+// Strict-mode compatible (fix wave item 1): OpenAI/Anthropic strict schemas
+// require every property in `required` (an absent key is not allowed, even
+// for a logically-optional value) and reject length/range keywords
+// (maxLength/minimum/maximum). Every field the model doesn't need to fill in
+// when propose is false (everything but `propose` itself) is instead typed
+// nullable -- the model emits `null` for it -- and every bound the old
+// schema keywords enforced (instruction <= 300 chars, confidence in [0,1])
+// is kept purely in this file's post-hoc validation below (clampText,
+// clampConfidence), unchanged.
 export const MINER_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["propose"],
+  required: [
+    "propose",
+    "instruction",
+    "scope",
+    "prediction",
+    "failure_signature",
+    "evidence_message_ids",
+    "confidence",
+    "contradicts_rule_id",
+    "duplicate_of_rule_id",
+  ],
   properties: {
     propose: { type: "boolean" },
-    instruction: { type: "string", maxLength: INSTRUCTION_CHAR_LIMIT },
-    scope: { enum: ["project", "workspace"] },
-    prediction: { type: "string" },
-    failure_signature: { type: "string" },
-    evidence_message_ids: { type: "array", items: { type: "string" } },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
+    instruction: { type: ["string", "null"] },
+    scope: { type: ["string", "null"], enum: ["project", "workspace", null] },
+    prediction: { type: ["string", "null"] },
+    failure_signature: { type: ["string", "null"] },
+    evidence_message_ids: { type: ["array", "null"], items: { type: "string" } },
+    confidence: { type: ["number", "null"] },
     contradicts_rule_id: { type: ["integer", "null"] },
     duplicate_of_rule_id: { type: ["integer", "null"] },
   },
@@ -213,7 +232,6 @@ export async function mineEpisodes(
   failed: number;
 }> {
   const episodes = store.listMinableEpisodes(opts.limit);
-  const liveRules = store.listLiveRuleTexts();
 
   let proposed = 0;
   let skippedDuplicate = 0;
@@ -221,6 +239,16 @@ export async function mineEpisodes(
   let failed = 0;
 
   for (const episode of episodes) {
+    // Fix wave item 3: scoped per episode, not computed once for the whole
+    // batch -- episodes here can span multiple projects, and a project-
+    // scoped rule from a DIFFERENT project must never suppress (dedupe
+    // against) or appear in the prompt for this one. Falls back to the
+    // (pre-fix) global list only for the defensive case of an episode with
+    // no project_id at all.
+    const liveRules = episode.project_id
+      ? store.listLiveRuleTexts({ project_id: episode.project_id })
+      : store.listLiveRuleTexts();
+
     let result;
     try {
       result = await callLlm<RawMinerOutput>({
@@ -271,6 +299,21 @@ export async function mineEpisodes(
       );
       const scope: "project" | "workspace" = parsed.scope === "workspace" ? "workspace" : "project";
       const prediction = typeof parsed.prediction === "string" ? parsed.prediction : "";
+
+      // Fix wave item 2: a propose:true reply with a blank (or non-string,
+      // already folded to "" above) instruction or prediction is not a
+      // usable proposal -- reject it the same way an invalid evidence id is
+      // rejected above, rather than writing a rule with an empty
+      // instruction or predicted_failure.
+      if (!instruction.trim() || !prediction.trim()) {
+        store.insertEvent("analysis.mine.rejected", episode.project_id, {
+          episode_id: episode.id,
+          reason: "instruction and prediction must both be non-empty when propose is true",
+        });
+        failed++;
+        continue;
+      }
+
       const failureSignature = toKebabCase(
         typeof parsed.failure_signature === "string" ? parsed.failure_signature : "",
       );

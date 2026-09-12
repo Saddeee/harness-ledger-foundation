@@ -33,6 +33,11 @@ const CLASSIFICATION_VALUES: readonly MessageClassificationValue[] = [
   "other",
 ];
 
+// Strict-mode compatible (fix wave item 1): every property is already
+// required (nothing here is optional) and no length/range keyword appears
+// -- summary's SUMMARY_CHAR_LIMIT bound is enforced purely in post-hoc
+// validation below (validateClassifierOutput's truncate), same as it always
+// was; the schema itself now just says "string".
 export const CLASSIFIER_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -40,7 +45,7 @@ export const CLASSIFIER_JSON_SCHEMA = {
   properties: {
     classification: { enum: CLASSIFICATION_VALUES },
     tags: { type: "array", items: { enum: SCOPE_TAGS } },
-    summary: { type: "string", maxLength: SUMMARY_CHAR_LIMIT },
+    summary: { type: "string" },
   },
 } as const;
 
