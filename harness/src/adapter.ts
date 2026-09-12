@@ -311,3 +311,16 @@ export function updateRuleAction(input: unknown) {
   const parsed = updateRuleInput.parse(input);
   return store.updateRule(parsed);
 }
+
+// ---- Round 6 Task 6a ----
+// The paired-test runner (spec §6): startExperiment (refusals, then a
+// queued experiment_runs row), runExperiment (the six Run steps over a
+// LovableRest client -- copy, Knowledge, build, record, cleanup, hand off
+// to the owner; never throws), cleanupCopy (delete the copy unless
+// keep_test_copies, else private + a note). Re-exported here the same way
+// createLovableRest above is, so the web app's local-runtime route can wire
+// "Test this rule" (Task 6b) without importing across the executor/
+// boundary directly. No route calls runExperiment except from the owner's
+// own button press.
+export { startExperiment, runExperiment, cleanupCopy } from "./executor/experiments.js";
+// ---- end Round 6 Task 6a ----
