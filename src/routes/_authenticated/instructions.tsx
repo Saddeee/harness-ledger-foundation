@@ -335,10 +335,24 @@ function TargetSection({
     : "Not read yet — press Sync now";
   const content = target.current?.content ?? "";
 
+  // Round 6c part A / item 2: the workspace target's heading gets a plain-
+  // language retitle and a one-line explanation of what it actually is --
+  // the owner asked "what is Workspace?" and "Workspace" alone (Lovable's
+  // own name for the target) didn't answer that.
+  const isWorkspace = target.target === "workspace";
+
   return (
     <section className="space-y-4 rounded-md border p-4">
       <div>
-        <h2 className="text-lg font-semibold">{target.name}</h2>
+        <h2 className="text-lg font-semibold">
+          {isWorkspace ? "All your projects (workspace Knowledge)" : target.name}
+        </h2>
+        {isWorkspace ? (
+          <p className="text-sm text-muted-foreground">
+            Rules you add to all your projects live here; Lovable applies them to every project in
+            this workspace.
+          </p>
+        ) : null}
         <p className="text-sm text-muted-foreground">{statusLine}</p>
       </div>
 
@@ -476,6 +490,18 @@ function Page() {
 
   const data = query.data;
   const targets = data?.targets ?? [];
+  // Round 6c part A / item 2: the workspace target only earns its own
+  // section once there's something in it -- otherwise it's a confusing
+  // empty card. "Content" here is the same thing the section itself would
+  // show: rules (active or retired), a staged write ("versions" in
+  // flight), or actual Knowledge text.
+  const workspaceTarget = targets.find((t) => t.target === "workspace");
+  const workspaceHasContent =
+    workspaceTarget != null &&
+    (workspaceTarget.active_rules.length > 0 ||
+      workspaceTarget.retired_rules.length > 0 ||
+      (workspaceTarget.current?.content ?? "").trim().length > 0 ||
+      workspaceTarget.pending_write != null);
 
   return (
     <div className="space-y-8">
@@ -510,20 +536,30 @@ function Page() {
             : "Nothing to show yet. Allow a project on the Projects page, then press Sync now."}
         </div>
       ) : (
-        targets.map((t) => (
-          <TargetSection
-            key={`${t.target}-${t.id}`}
-            target={t}
-            syncing={syncNow.isPending}
-            onSyncNow={() => syncNow.mutate()}
-            retireBusy={retireRule.isPending}
-            onRetire={(ruleId) => retireRule.mutate(ruleId)}
-            readdBusy={readdRule.isPending}
-            onReadd={(improvementId) => readdRule.mutate(improvementId)}
-            cancelWriteBusy={cancelWrite.isPending}
-            onCancelWrite={(versionId) => cancelWrite.mutate(versionId)}
-          />
-        ))
+        <>
+          {targets.map((t) =>
+            t.target === "workspace" && !workspaceHasContent ? null : (
+              <TargetSection
+                key={`${t.target}-${t.id}`}
+                target={t}
+                syncing={syncNow.isPending}
+                onSyncNow={() => syncNow.mutate()}
+                retireBusy={retireRule.isPending}
+                onRetire={(ruleId) => retireRule.mutate(ruleId)}
+                readdBusy={readdRule.isPending}
+                onReadd={(improvementId) => readdRule.mutate(improvementId)}
+                cancelWriteBusy={cancelWrite.isPending}
+                onCancelWrite={(versionId) => cancelWrite.mutate(versionId)}
+              />
+            ),
+          )}
+          {!workspaceHasContent ? (
+            <p className="text-sm text-muted-foreground">
+              No workspace-wide rules yet. Choose "Add to all my projects" on a suggestion to create
+              one.
+            </p>
+          ) : null}
+        </>
       )}
     </div>
   );

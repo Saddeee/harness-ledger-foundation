@@ -622,12 +622,16 @@ function RetireCard({
         <p className="text-sm font-semibold">{projectName(item)}</p>
         {isNew ? <Badge variant="default">New</Badge> : null}
       </div>
+      {/* Round 6c part A / item 1: this fixed line comes first -- Suggestions never lists a live rule, so the card can't lean on a badge to say so. */}
       <Title
         id={titleId}
         className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
       >
-        {item.title}
+        Harness suggests retiring this rule
       </Title>
+      <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+        {item.title.replace(/^Retire:\s*/, "")}
+      </blockquote>
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">{retireSinceLine(retire)}</p>
         <p className="text-sm">{retireReasonSentence(retire)}</p>

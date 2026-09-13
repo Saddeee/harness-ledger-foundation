@@ -151,11 +151,17 @@ test("Inbox: no Previous/Next browser of its own -- that only ever lived in the 
   }
 });
 
-test("Improvements: passes the grouped order (IMPROVEMENT_GROUPS order) to Previous/Next", () => {
+// Round 6c part A / item 1: rewritten with intent -- Suggestions no longer
+// iterates IMPROVEMENT_GROUPS generically (In Lovable/Reverted are gone from
+// this page; pending items now join "Needs attention" under one "Open"
+// section). Previous/Next now browse the four fixed sections in their
+// on-page order: Open, Waiting to be written, Waiting to be tested, Decided
+// earlier.
+test("Improvements: passes the on-page section order (Open, Waiting to be written, Waiting to be tested, Decided earlier) to Previous/Next", () => {
   const ledger = codeOnly(readApp(LEDGER));
   assert.match(
     ledger,
-    /const order = IMPROVEMENT_GROUPS\.flatMap\(\(g\) => grouped\.get\(g\) \?\? \[\]\)\.map\(\(i\) => i\.id\);/,
+    /const order = \[\.\.\.openItems, \.\.\.waitingToBeWritten, \.\.\.waitingToBeTested, \.\.\.decidedEarlier\]\.map\(\s*\(i\) => i\.id,\s*\);/,
   );
   assert.match(
     ledger,

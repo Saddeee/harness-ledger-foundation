@@ -103,6 +103,22 @@ const LLM_PROVIDERS: { value: LlmProvider; label: string }[] = [
 function isApiProvider(p: LlmProvider): p is ApiLlmProvider {
   return p !== "claude_code";
 }
+
+// Round 6c part A / item 3: Claude Code has no per-call model id -- only
+// these three short aliases (mirrors harness/src/store.ts's own
+// CLAUDE_CODE_DEFAULT_MODEL and normalizeLlmModels). Switching a role's
+// provider select prefills/clears its model field so an empty or stale
+// value never reaches Save: switching TO Claude Code always sets the
+// default alias (whatever was there belonged to the old provider); switching
+// AWAY FROM it clears the field only if it still holds an alias (never a
+// real API model id the owner may have already typed).
+const CLAUDE_CODE_ALIASES = ["sonnet", "opus", "haiku"];
+const CLAUDE_CODE_DEFAULT_MODEL = "sonnet";
+const CLAUDE_CODE_MODEL_HINT = "Claude Code model alias: sonnet, opus or haiku";
+function nextModelOnProviderChange(currentModel: string, nextProvider: LlmProvider): string {
+  if (nextProvider === "claude_code") return CLAUDE_CODE_DEFAULT_MODEL;
+  return CLAUDE_CODE_ALIASES.includes(currentModel) ? "" : currentModel;
+}
 // provider_ready checks whichever provider the classifier/rule_writer roles
 // actually use, not specifically the "Key for" dropdown above -- so it only
 // tells us about Claude Code when it's ready, or when it's the provider the
@@ -425,7 +441,13 @@ export function LocalSettings() {
       if (keySaved) setKeyInput("");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
-    onError: () => {
+    // Round 6c part A / item 3: mutationFn above catches every request
+    // error itself (so a failed save still resolves, with settingsError/
+    // keyError surfaced through onSuccess) -- this only ever fires for a
+    // genuinely unexpected throw, but it must still show that error's own
+    // message rather than fail silently.
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Could not save AI analysis settings");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
   });
@@ -777,12 +799,17 @@ export function LocalSettings() {
               <Label htmlFor="llm-model-provider">Provider</Label>
               <Select
                 value={llmModels.rule_writer.provider}
-                onValueChange={(v) =>
+                onValueChange={(v) => {
+                  const provider = v as LlmProvider;
                   setLlmModels((m) => ({
                     ...m,
-                    rule_writer: { ...m.rule_writer, provider: v as LlmProvider },
-                  }))
-                }
+                    rule_writer: {
+                      ...m.rule_writer,
+                      provider,
+                      model: nextModelOnProviderChange(m.rule_writer.model, provider),
+                    },
+                  }));
+                }}
               >
                 <SelectTrigger id="llm-model-provider">
                   <SelectValue />
@@ -811,6 +838,9 @@ export function LocalSettings() {
                   }))
                 }
               />
+              {llmModels.rule_writer.provider === "claude_code" ? (
+                <p className="text-xs text-muted-foreground">{CLAUDE_CODE_MODEL_HINT}</p>
+              ) : null}
             </div>
           </div>
           <p className="text-xs text-muted-foreground">{MODEL_FOR_ANALYSIS_LINE}</p>
@@ -839,9 +869,14 @@ export function LocalSettings() {
                     <Select
                       value={llmModels[key].provider}
                       onValueChange={(v) => {
+                        const provider = v as LlmProvider;
                         setLlmModels((m) => ({
                           ...m,
-                          [key]: { ...m[key], provider: v as LlmProvider },
+                          [key]: {
+                            ...m[key],
+                            provider,
+                            model: nextModelOnProviderChange(m[key].model, provider),
+                          },
                         }));
                         setPerRoleEdited(true);
                       }}
@@ -872,6 +907,9 @@ export function LocalSettings() {
                         setPerRoleEdited(true);
                       }}
                     />
+                    {llmModels[key].provider === "claude_code" ? (
+                      <p className="text-xs text-muted-foreground">{CLAUDE_CODE_MODEL_HINT}</p>
+                    ) : null}
                   </div>
                 </div>
               </div>

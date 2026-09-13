@@ -5,6 +5,7 @@
 // the local UI already uses, never a route of its own. Only ever talks to
 // the executor route (executorQueryOptions/postExecutor); nothing here calls
 // fetch directly or talks to Lovable.
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -100,8 +101,13 @@ export function AnalyseNotice() {
         <p className="text-xs text-muted-foreground">
           {/* The server's own reason already says where to fix it (e.g. "No
               API key saved for openai. Add one in Settings."); the fixed
-              prefix is only a fallback for when there's no reason at all. */}
-          {providerReady.reason || "Add an API key or install Claude Code in Settings."}
+              prefix is only a fallback for when there's no reason at all.
+              Round 6c part A / item 4: "Add one in Settings" alone was just
+              text -- a real Link gets you there in one click. */}
+          {providerReady.reason || "Add an API key or install Claude Code in Settings."}{" "}
+          <Link to="/settings" className="underline underline-offset-2 hover:no-underline">
+            Open Settings
+          </Link>
         </p>
       ) : null}
       {!running && lastRunLine ? (

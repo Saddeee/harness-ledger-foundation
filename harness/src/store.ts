@@ -1591,6 +1591,44 @@ function assertLlmModels(raw: string): void {
   }
 }
 
+// ---- Round 6c ----
+// Claude Code has no per-call model id the way an API provider does -- only
+// the three short aliases a Claude Code subscription accepts: "sonnet",
+// "opus", "haiku". The Settings page prefills "sonnet" the moment a role's
+// provider switches to Claude Code (local-settings.tsx), but a role saved
+// before that existed, or edited by hand, can still arrive here with
+// provider "claude_code" and an empty model -- and assertLlmModels rejected
+// that outright with an unhelpful "model must be a non-empty string",
+// failing the whole save. Substitute the exact same default the UI
+// prefills instead, here at save time, so an empty Claude Code model always
+// resolves to something callable rather than blocking the save.
+const CLAUDE_CODE_DEFAULT_MODEL = "sonnet";
+
+function normalizeLlmModels(raw: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Malformed JSON is still assertLlmModels's job to reject with its own
+    // message -- hand the raw string back unchanged.
+    return raw;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return raw;
+  const obj = parsed as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    const choice = obj[key];
+    if (typeof choice !== "object" || choice === null || Array.isArray(choice)) continue;
+    const c = choice as Record<string, unknown>;
+    if (
+      c.provider === "claude_code" &&
+      (typeof c.model !== "string" || c.model.trim().length === 0)
+    ) {
+      c.model = CLAUDE_CODE_DEFAULT_MODEL;
+    }
+  }
+  return JSON.stringify(obj);
+}
+
 function assertDecisionMode(raw: string): void {
   if (raw !== "ask" && raw !== "automatic") {
     throw new Error(`decision_mode must be "ask" or "automatic"`);
@@ -1643,7 +1681,7 @@ export function setSettings(
   const toWrite: [SettingKey, string][] = [];
 
   for (const key of Object.keys(patch) as SettingKey[]) {
-    const value = patch[key];
+    let value = patch[key];
     if (value === undefined) continue;
     if (BOOLEAN_SETTING_KEYS.includes(key)) {
       assertBooleanSetting(key, value);
@@ -1654,6 +1692,9 @@ export function setSettings(
     } else if (key === "llm_provider") {
       assertLlmProvider(value);
     } else if (key === "llm_models") {
+      // Round 6c: fill in Claude Code's default model before validating,
+      // so an empty model on a claude_code role never fails the save.
+      value = normalizeLlmModels(value);
       assertLlmModels(value);
     } else if (key === "llm_monthly_token_budget") {
       assertIntInRange(key, value, 100_000, 50_000_000);
@@ -1923,12 +1964,25 @@ export function clearSyncCursor(projectId: string): void {
   db.prepare(`DELETE FROM sync_cursors WHERE project_id = ?`).run(projectId);
 }
 
+// Round 6c part A / item 4: this used to check task_episode_evidence (a UI
+// counter that predates message_classifications, per the comment at "----
+// Round 4 A1 ----" below) -- but not every synced user message ever becomes
+// task_episode_evidence (that only happens once segmentEpisodes groups it
+// into an episode, a later pipeline step), while every synced user message
+// does get classified first. A message with no task_episode_evidence row
+// read as "not awaiting analysis" even when it had never been classified at
+// all -- the owner's four real synced messages, reproduced: none had a
+// message_classifications row, yet this reported 0. message_classifications
+// is the actual "has analysis looked at this message yet" record (see
+// listUnclassifiedUserMessages just below, which classifyPending itself
+// works through) -- this now counts the exact same thing that function
+// lists, so the two can never disagree again.
 export function countHistoryItemsAwaitingAnalysis(): number {
   const row = db
     .prepare(
       `SELECT COUNT(*) as n FROM history_items hi
        WHERE hi.kind = 'message' AND hi.role = 'user'
-         AND NOT EXISTS (SELECT 1 FROM task_episode_evidence tee WHERE tee.history_item_id = hi.id)`,
+         AND NOT EXISTS (SELECT 1 FROM message_classifications mc WHERE mc.history_item_id = hi.id)`,
     )
     .get() as { n: number };
   return row.n;
@@ -2502,11 +2556,11 @@ export function listEpisodesAfter(projectId: string | null, sinceIso: string): E
 // ---- end Round 4 C1 ----
 
 // ---- Round 4 A1 ----
-// Data access for harness/src/analysis/classify.ts and segment.ts. These
-// are deliberately separate from countHistoryItemsAwaitingAnalysis's
-// task_episode_evidence-based predicate above (a UI counter that predates
-// this table): message_classifications (migration v9) is the pipeline's own
-// per-message record, one row per classified user history_item.
+// Data access for harness/src/analysis/classify.ts and segment.ts.
+// message_classifications (migration v9) is the pipeline's own per-message
+// record, one row per classified user history_item -- the awaiting-analysis
+// count above now shares this exact predicate (Round 6c part A / item 4)
+// rather than the older, looser task_episode_evidence one.
 
 export type MessageClassificationValue =
   "new_task" | "correction" | "question" | "approval" | "other";

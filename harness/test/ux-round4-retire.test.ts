@@ -122,6 +122,23 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
   assert.match(code, /retireReasonSentence/);
   assert.match(code, /retireSinceLine/);
 
+  // Round 6c part A / item 1: "Harness suggests retiring this rule" must be
+  // the card's first line -- Suggestions no longer shows "In Lovable"
+  // items, so the card can't rely on that badge to make clear this is an
+  // existing rule, not a new suggestion. The actual rule text moves to a
+  // blockquote right under it (item.title is "Retire: <instruction>"
+  // server-side; the card strips that prefix for display).
+  const retireCard = code.slice(
+    code.indexOf("function RetireCard"),
+    code.indexOf("export function VerdictControl"),
+  );
+  assert.match(retireCard, />\s*Harness suggests retiring this rule\s*<\/Title>/);
+  assert.match(retireCard, /item\.title\.replace\(\/\^Retire:\\s\*\/, ""\)/);
+  const titleIdx = retireCard.indexOf("Harness suggests retiring this rule");
+  const reasonIdx = retireCard.indexOf("retireReasonSentence");
+  const sinceIdx = retireCard.indexOf("retireSinceLine");
+  assert.ok(titleIdx >= 0 && titleIdx < sinceIdx && sinceIdx < reasonIdx, "title comes first");
+
   // Retire confirm: same copy shape as the spec.
   assert.ok(raw.includes("Retire this rule?"));
   assert.ok(raw.includes("Harness rewrites your Knowledge without it right away."));

@@ -490,10 +490,36 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   );
 });
 
-test("Suggestions page: contract groups only, non-empty only, decision cards, restore lives in the card", () => {
+// Round 6c part A / item 1: rewritten with intent -- "a suggestion that is
+// already in Lovable makes no sense" (the owner's report). Suggestions now
+// holds only what still needs or awaits a decision: pending items (incl.
+// retirement proposals) and "Needs attention" under one "Open" section;
+// "Waiting to be written"/"Waiting to be tested" as their own sections;
+// "Retired"/"Skipped" collapsed under "Decided earlier"; "In Lovable" and
+// "Reverted" are gone from this page entirely, replaced by a one-line
+// pointer to the Instructions page (those items are rules now, not
+// suggestions).
+test("Suggestions page: Open/Waiting/Decided-earlier sections, no In Lovable/Reverted listing, decision cards, restore lives in the card", () => {
   const ledger = codeOnly(readApp(LEDGER));
-  assert.match(ledger, /IMPROVEMENT_GROUPS\.filter\(/);
-  assert.match(ledger, /\(grouped\.get\(g\)\?\.length \?\? 0\) > 0/);
+  assert.ok(!/IMPROVEMENT_GROUPS/.test(ledger), "no more generic group iteration on this page");
+  assert.match(
+    ledger,
+    /const pending = all\.filter\(\(i\) => i\.decision\.status === "pending"\);/,
+  );
+  assert.match(ledger, /const openItems = \[\.\.\.pending, \.\.\.needsAttention\];/);
+  assert.match(ledger, />\s*Open\{" "\}/, "the Open section heading");
+  assert.match(ledger, />\s*Waiting to be written\{" "\}/);
+  assert.match(ledger, />\s*Waiting to be tested\{" "\}/);
+  assert.match(ledger, /Decided earlier \(\{decidedEarlier\.length\}\)/);
+  assert.match(
+    ledger,
+    /Rules already in Lovable are on the/,
+    "a pointer, not a listing, for rules already in Lovable",
+  );
+  // Retired/Skipped are gone from the page's own section headings -- they
+  // only ever appear now inside the collapsed "Decided earlier" details.
+  assert.ok(!/>\s*In Lovable\{" "\}/.test(ledger));
+  assert.ok(!/>\s*Reverted\{" "\}/.test(ledger));
   assert.ok(!/Everything Harness has learned/.test(ledger), "no subtitle on Suggestions");
   assert.ok(
     !/Needs your decision|Waiting for proof|Ready to add|Decide later/.test(ledger),
@@ -509,6 +535,10 @@ test("Suggestions page: contract groups only, non-empty only, decision cards, re
     !/export function ImprovementCard/.test(readApp(DETAIL)),
     "the temporary wrapper is gone",
   );
+  // Decided earlier is the only <details> on this page, and it is collapsed.
+  for (const tag of ledger.match(/<details[^>]*>/g) ?? []) {
+    assert.ok(!/\sopen\b/.test(tag), `details tag must not be open: ${tag}`);
+  }
   const inbox = codeOnly(readApp(INBOX));
   assert.match(inbox, /i\.decision\.status === "pending"/, "only pending items are in Inbox");
 });
