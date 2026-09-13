@@ -93,7 +93,7 @@ export type ImprovementHealth = {
     not_applicable: number;
     quotes: { verdict: store.AdherenceVerdict; quote: string; created_at: string }[];
   } | null;
-  sources: { observed: boolean; adherence: boolean; verdicts: boolean };
+  sources: { observed: boolean; adherence: boolean; verdicts: boolean; paired: boolean };
   // Round 6 Task 4 / spec §4: set only on the direct response to a
   // just-recorded verdict (recordVerdict below) -- what that one click
   // changed in this rule's health, for the compact VerdictControl
@@ -111,6 +111,42 @@ export type ImprovementHealth = {
 // for every other case (not_sure, a duplicate click that changed nothing,
 // or a did_not_help/helped that didn't meet its own condition above).
 export type VerdictEffect = "counted_hurt" | "snoozed" | "none";
+
+// Round 6 Task 6b / spec §6: whether "Test this rule" is on offer right now,
+// and the latest paired-test run for this rule (if any), regardless of that
+// run's own status -- a judged/failed run still shows on the card (its own
+// result line) even once `available` has gone back to true for a fresh
+// attempt. Computed purely from store.ts reads plus an injected `connected`
+// boolean (improvements.ts may not import lovable-auth.ts's own status() --
+// see the "no Lovable import" test -- so the caller, which already knows,
+// passes it in; see listImprovements/getImprovement's own `opts.connected`).
+// Mirrors executor/experiments.ts#startExperiment's own refusal order and
+// copy exactly (connected, then "no request to replay", then "already
+// running", then budget) -- that module owns the real refusal (the runner
+// checks it again itself when the button is actually pressed), this is only
+// a preview so the card and the confirm dialog can show it before the user
+// presses "Start test".
+export type TestInfo = {
+  available: boolean;
+  unavailable_reason: string | null;
+  run: null | {
+    id: number;
+    status: store.ExperimentStatus;
+    stage_note: string | null;
+    started_at: string;
+    finished_at: string | null;
+    judged_at: string | null;
+    cost_credits: number | null;
+    score: number | null;
+    corrections: number;
+    edits_since_episode: number | null;
+    error: string | null;
+  };
+  // The confirm dialog's own "This month: N credits used of your budget of
+  // B." line -- always present (even when `available`), so the dialog never
+  // needs a second read of these two numbers.
+  credits: { used_this_month: number; budget: number };
+};
 
 export type Improvement = {
   id: number;
@@ -201,6 +237,11 @@ export type Improvement = {
   // have one until the next one). Null otherwise, including for every
   // "retire" item (which carries the equivalent counts under retire.health).
   health: ImprovementHealth | null;
+  // Round 6 Task 6b / spec §6: null for a "retire" item, and for an ordinary
+  // improvement whose correction has no rule yet -- present as soon as a
+  // rule exists, pending or live, whether or not the episode behind it has
+  // a request to replay (see TestInfo.unavailable_reason for that case).
+  test: TestInfo | null;
   // Round 5 Task 5 / spec §4: why decision_mode='automatic' didn't accept
   // this one without asking -- only ever set for a pending "improvement"
   // item whose rule was created by the analysis (see computeUnsure below).
@@ -369,8 +410,85 @@ function computeHealth(
       observed: row.applicable_tasks > 0,
       adherence: adherenceRows.length > 0,
       verdicts: latestVerdict != null,
+      // Round 6 Task 6b: "has run for this rule" once at least one paired
+      // test has actually been judged -- a queued/copying/building/failed
+      // run doesn't count (no verdicts exist yet to have "run").
+      paired: store.listExperimentRuns({ rule_id: ruleId, status: ["judged"] }).length > 0,
     },
     verdict_effect: null,
+  };
+}
+
+// Round 6 Task 6b / spec §6: the exact refusal sentences executor/
+// experiments.ts#startExperiment uses, duplicated here (not imported --
+// that module is under executor/, improvements.ts may not import it) so the
+// card/confirm dialog can preview them before the button is ever pressed.
+// Keep these in sync with startExperiment's own NOT_CONNECTED_REFUSAL /
+// NO_REQUEST_REFUSAL / ALREADY_RUNNING_REFUSAL / budget message by hand.
+const TEST_NOT_CONNECTED = "Harness is not connected — connect on the Projects page.";
+const TEST_NO_REQUEST = "This suggestion has no original request to replay.";
+const TEST_ALREADY_RUNNING = "A test is already running; one runs at a time.";
+function testBudgetRefusal(usedThisMonth: number, budget: number): string {
+  return `This would exceed your monthly Lovable credit budget (${usedThisMonth} of ${budget} used).`;
+}
+
+// Round 6 Task 6b / spec §6: TestInfo for one rule -- null when there is no
+// rule yet (a pending correction with no rule proposed for it has nothing to
+// test). `connected` is injected (see TestInfo's own doc comment above);
+// every other input is a plain store.ts read. The `run` shown is always the
+// LATEST attempt for this rule regardless of its own status -- once it's
+// judged/failed, `available` is free to go back to true (activeExperimentRun
+// only looks at queued/copying/building rows) so a fresh "Test this rule"
+// can sit right alongside that run's own result line on the card.
+function computeTestInfo(
+  c: CorrectionRow,
+  rule: RuleRow | null,
+  connected: boolean,
+): TestInfo | null {
+  if (!rule) return null;
+
+  const requestExternalId =
+    c.project_id != null ? store.episodeRequestExternalId(c.task_episode_id) : null;
+  const usedThisMonth = store.creditsThisMonth();
+  const budget = Number(store.getSetting("lovable_monthly_credit_budget"));
+  const credits = { used_this_month: usedThisMonth, budget };
+
+  let unavailable_reason: string | null = null;
+  if (!connected) {
+    unavailable_reason = TEST_NOT_CONNECTED;
+  } else if (!requestExternalId) {
+    unavailable_reason = TEST_NO_REQUEST;
+  } else if (store.activeExperimentRun(20)) {
+    unavailable_reason = TEST_ALREADY_RUNNING;
+  } else {
+    const projected = store.lastKnownTestCost() ?? 2;
+    if (usedThisMonth + projected > budget) {
+      unavailable_reason = testBudgetRefusal(usedThisMonth, budget);
+    }
+  }
+
+  const latestRun = store.listExperimentRuns({ rule_id: rule.id })[0] ?? null;
+  const corrections = store.episodeCorrections(c.task_episode_id).length;
+
+  return {
+    available: unavailable_reason === null,
+    unavailable_reason,
+    run: latestRun
+      ? {
+          id: latestRun.id,
+          status: latestRun.status,
+          stage_note: latestRun.stage_note,
+          started_at: latestRun.started_at,
+          finished_at: latestRun.finished_at,
+          judged_at: latestRun.judged_at,
+          cost_credits: latestRun.cost_credits,
+          score: latestRun.score,
+          corrections,
+          edits_since_episode: latestRun.edits_since_episode,
+          error: latestRun.error,
+        }
+      : null,
+    credits,
   };
 }
 
@@ -429,6 +547,10 @@ function buildPreview(
 function buildImprovement(
   c: CorrectionRow,
   rates: Record<string, { accepted: number; skipped: number }>,
+  // Round 6 Task 6b: see TestInfo's own doc comment for why this is
+  // injected rather than read here. Defaults false (never silently claims a
+  // test is available) -- every caller that actually knows should pass it.
+  connected = false,
 ): Improvement {
   const rule = store.getRuleForCorrection(c.id) as RuleRow | null;
   const learning = store.getLearningForCorrection(c.id) as LearningRow | null;
@@ -637,6 +759,7 @@ function buildImprovement(
           }
         : null,
     wording_history,
+    test: computeTestInfo(c, rule, connected),
     lovable: {
       write_status: writeStatus,
       written_at: writtenVersion?.verified_at ?? null,
@@ -734,6 +857,7 @@ function buildRetireItem(
     },
     stage: "review",
     stages: [],
+    test: null,
     evidence: evidenceRows.map((e) => ({
       id: e.id,
       author: e.role === "user" ? "you" : "lovable",
@@ -796,13 +920,14 @@ function buildRetireItem(
   };
 }
 
-export function listImprovements(): Improvement[] {
+export function listImprovements(opts?: { connected?: boolean }): Improvement[] {
   // Fix round 1 item 1: computed ONCE for the whole list, not once per item
   // -- see computeRank's doc comment for why a per-item call would be
   // wasteful (tagAcceptanceRates() scans every reviewed candidate).
   const rates = store.tagAcceptanceRates();
+  const connected = opts?.connected ?? false;
   const improvements = (store.listCorrectionCandidates() as unknown as CorrectionRow[]).map((c) =>
-    buildImprovement(c, rates),
+    buildImprovement(c, rates, connected),
   );
   const retirements = store
     .listOpenRetireProposals()
@@ -814,14 +939,14 @@ export function listImprovements(): Improvement[] {
   return sortForInbox([...improvements, ...retirements]);
 }
 
-export function getImprovement(id: number): Improvement | null {
+export function getImprovement(id: number, opts?: { connected?: boolean }): Improvement | null {
   const row = (store.listCorrectionCandidates() as unknown as CorrectionRow[]).find(
     (c) => c.id === id,
   );
   // Fix round 1 item 1: a single lookup, so a single tagAcceptanceRates()
   // call here is not the loop the original per-item computeRank call was --
   // still computed once, same as listImprovements above, for consistency.
-  return row ? buildImprovement(row, store.tagAcceptanceRates()) : null;
+  return row ? buildImprovement(row, store.tagAcceptanceRates(), opts?.connected ?? false) : null;
 }
 
 const ACTOR = "operator (local UI)";
@@ -879,6 +1004,20 @@ const actionInput = z.discriminatedUnion("action", [
   z.object({ action: z.literal("undo"), id: z.number().int() }),
   z.object({ action: z.literal("cancel_write"), version_id: z.number().int() }),
   // ---- end Round 6 Task 3 ----
+  // ---- Round 6 Task 6b ----
+  // "test" (start a paired test) is deliberately NOT in this union: it needs
+  // executor/experiments.ts's startExperiment (a real Lovable call), which
+  // this file may never import (see the "no Lovable import" test) -- it is
+  // intercepted in executor/beats.ts's improvementActionAndWrite, before
+  // this schema ever sees it. "judge" needs no Lovable access (it only
+  // records the owner's own verdicts on an already-finished run), so it
+  // lives here like every other pure-store action.
+  z.object({
+    action: z.literal("judge"),
+    run_id: z.number().int(),
+    verdicts: z.array(z.enum(["yes", "no", "unclear"])),
+  }),
+  // ---- end Round 6 Task 6b ----
 ]);
 
 // After the user approves "Add", stage the exact write for the executor --
@@ -1150,6 +1289,12 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
   if (a.action === "cancel_write") {
     return cancelPendingVersion(a.version_id);
   }
+  // Round 6 Task 6b / spec §6: "judge" addresses an experiment_runs id
+  // directly, same reason as "cancel_write"'s version_id path above -- see
+  // judgeRun in the delimited block at the end of this file.
+  if (a.action === "judge") {
+    return judgeRun(a.run_id, a.verdicts);
+  }
 
   const current = getImprovement(a.id);
   if (!current) throw new Error(`improvement ${a.id} not found`);
@@ -1367,7 +1512,7 @@ export type TimelineChanges = {
 
 export type TimelineNode = {
   id: string;
-  kind: "version" | "external_change" | "decision" | "skill" | "verdict";
+  kind: "version" | "external_change" | "decision" | "skill" | "verdict" | "test";
   at: string;
   label: string;
   actor: "you" | "harness" | "lovable";
@@ -1439,6 +1584,23 @@ function parseRuleIds(json: string): number[] {
   } catch {
     return [];
   }
+}
+
+// Round 6 Task 6b / spec §6: "Tested with the rule: X of Y corrections no
+// longer needed" -- X/Y read straight from the run's own saved verdicts
+// (not run.score * corrections, which would round-trip through floating
+// point for no reason when the exact counts are sitting right there).
+function testedLabel(run: store.ExperimentRunRow): string {
+  let verdicts: unknown[] = [];
+  try {
+    const parsed: unknown = run.verdicts_json ? JSON.parse(run.verdicts_json) : [];
+    if (Array.isArray(parsed)) verdicts = parsed;
+  } catch {
+    verdicts = [];
+  }
+  const total = verdicts.length;
+  const no = verdicts.filter((v) => v === "no").length;
+  return `Tested with the rule: ${no} of ${total} corrections no longer needed`;
 }
 
 const VERDICT_LABEL: Record<store.RuleVerdict, string> = {
@@ -1666,6 +1828,37 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
         actor: "you",
         summary: instruction,
         content: instruction,
+        diff: null,
+        rule_ids: [ruleId],
+        restored_from: null,
+        improvement_id: correctionId,
+        version_id: null,
+        restorable: false,
+      });
+    }
+
+    // ---- test nodes (Round 6 Task 6b / spec §6): judged/failed paired-test
+    // runs -- a run still copying/building/queued/judging has nothing to
+    // show yet (the card's own status line covers that); `at` is judged_at
+    // when judged (the moment the owner actually recorded verdicts), else
+    // finished_at (when a failed run stopped trying). ----
+    for (const run of store.listExperimentRuns({ rule_id: ruleId })) {
+      if (run.status !== "judged" && run.status !== "failed") continue;
+      const at = run.judged_at ?? run.finished_at;
+      if (!at) continue;
+      const label =
+        run.status === "judged" ? testedLabel(run) : `Test failed: ${run.error ?? "unknown error"}`;
+      const content = [run.copy_summary, run.copy_reply]
+        .filter((s): s is string => !!s)
+        .join("\n\n");
+      nodes.push({
+        id: `test:${run.id}`,
+        kind: "test",
+        at,
+        label,
+        actor: "harness",
+        summary: null,
+        content: content || null,
         diff: null,
         rule_ids: [ruleId],
         restored_from: null,
@@ -2175,3 +2368,134 @@ function cancelPendingVersion(versionId: number): Improvement & { cancel_note?: 
   return keptLive ? { ...refreshed, cancel_note: CANCEL_KEPT_LIVE_NOTE } : refreshed;
 }
 // ---- end Round 6 Task 3 ----
+
+// ---- Round 6 Task 6b ----
+// The judge action (spec §6 "Judge (the owner)") and the judging screen's
+// own read (ExperimentRunView) -- both pure store.ts reads/writes, no
+// Lovable access, so both live here rather than in an executor/ module.
+
+/** Validates verdicts.length against the episode's own corrections count,
+ * scores the run (no ÷ corrections -- 0 when there were no corrections to
+ * judge, so a rule with no classified correction on record never divides by
+ * zero), and marks it judged. Returns the ORIGINAL improvement (the run's
+ * own correction_candidate_id), refreshed -- its `test.run` now reflects
+ * this same judged run. */
+function judgeRun(runId: number, verdicts: ("yes" | "no" | "unclear")[]): Improvement {
+  const run = store.getExperimentRun(runId);
+  if (!run) throw new Error(`experiment run ${runId} not found`);
+
+  const correctionsCount = store.episodeCorrections(run.task_episode_id).length;
+  if (verdicts.length !== correctionsCount) {
+    throw new Error(
+      `expected ${correctionsCount} verdict${correctionsCount === 1 ? "" : "s"} (one per correction), got ${verdicts.length}`,
+    );
+  }
+
+  const noCount = verdicts.filter((v) => v === "no").length;
+  const score = correctionsCount > 0 ? noCount / correctionsCount : 0;
+
+  store.updateExperimentRun(runId, {
+    verdicts_json: JSON.stringify(verdicts),
+    score,
+    status: "judged",
+    judged_at: new Date().toISOString(),
+  });
+
+  const refreshed = getImprovement(run.correction_candidate_id);
+  if (!refreshed)
+    throw new Error(
+      `improvement ${run.correction_candidate_id} not found after judging run ${runId}`,
+    );
+  return refreshed;
+}
+
+// The judging screen's own data (spec §6 "Judge"): the run row plus
+// everything the two-column layout shows side by side. `request_text`/
+// `original_reply` reuse episodeTextForJudge's own human-visible,
+// 1500-char-capped read (store.ts) -- the exact same text the judge role
+// already shows for this episode, not a fresh Lovable read (the runner
+// itself never stored the original reply text; re-deriving it from a call
+// the executor already paid for at sync time is free, a second Lovable call
+// for it would not be). `copy_reply`/`copy_summary` are already
+// human-visible and capped, stored verbatim by the runner. Diffs are parsed
+// straight from the runner's own capDiff JSON. Returns null for an unknown
+// run id.
+export type ExperimentRunView = {
+  id: number;
+  status: store.ExperimentStatus;
+  stage_note: string | null;
+  started_at: string;
+  finished_at: string | null;
+  judged_at: string | null;
+  error: string | null;
+  request_text: string;
+  original_reply: string;
+  corrections: string[];
+  rule_text: string;
+  improvement_id: number;
+  original_diff: { lines: string[]; truncated: boolean } | null;
+  copy_diff: { lines: string[]; truncated: boolean } | null;
+  copy_summary: string | null;
+  copy_reply: string | null;
+  cost_credits: number | null;
+  edits_since_episode: number | null;
+  score: number | null;
+  verdicts: ("yes" | "no" | "unclear")[] | null;
+};
+
+function parseDiffJson(json: string | null): { lines: string[]; truncated: boolean } | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as { lines?: unknown; truncated?: unknown };
+    return {
+      lines: Array.isArray(parsed.lines)
+        ? parsed.lines.filter((l): l is string => typeof l === "string")
+        : [],
+      truncated: parsed.truncated === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function buildExperimentRunView(runId: number): ExperimentRunView | null {
+  const run = store.getExperimentRun(runId);
+  if (!run) return null;
+
+  const { request, reply } = store.episodeTextForJudge(run.task_episode_id);
+  const ruleDetail = store.getRule(run.rule_id) as { rule: { instruction: string } } | null;
+
+  let verdicts: ("yes" | "no" | "unclear")[] | null = null;
+  if (run.verdicts_json) {
+    try {
+      const parsed: unknown = JSON.parse(run.verdicts_json);
+      if (Array.isArray(parsed)) verdicts = parsed as ("yes" | "no" | "unclear")[];
+    } catch {
+      verdicts = null;
+    }
+  }
+
+  return {
+    id: run.id,
+    status: run.status,
+    stage_note: run.stage_note,
+    started_at: run.started_at,
+    finished_at: run.finished_at,
+    judged_at: run.judged_at,
+    error: run.error,
+    request_text: request,
+    original_reply: reply,
+    corrections: store.episodeCorrections(run.task_episode_id),
+    rule_text: ruleDetail?.rule.instruction ?? "",
+    improvement_id: run.correction_candidate_id,
+    original_diff: parseDiffJson(run.original_diff_json),
+    copy_diff: parseDiffJson(run.copy_diff_json),
+    copy_summary: run.copy_summary,
+    copy_reply: run.copy_reply,
+    cost_credits: run.cost_credits,
+    edits_since_episode: run.edits_since_episode,
+    score: run.score,
+    verdicts,
+  };
+}
+// ---- end Round 6 Task 6b ----

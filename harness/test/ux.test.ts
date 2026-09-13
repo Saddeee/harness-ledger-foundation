@@ -292,10 +292,11 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
     /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; press Sync now on the Projects page, then Harness reads it and writes this exact text\. You can see the result on the Instructions page\.";/,
   );
   // Task 8: confirm label now reflects the two-choice selection, not
-  // whether a preview is available.
+  // whether a preview is available. Round 6 Task 6b / spec §6: "Save for
+  // testing" is gone -- the test choice now writes immediately too.
   assert.match(
     confirm,
-    /confirmLabel=\{wantsTest \? "Save for testing" : preview \? "Add" : "Save choice"\}/,
+    /confirmLabel=\{wantsTest \? "Add and test" : preview \? "Add" : "Save choice"\}/,
   );
   // over the cap -> the confirm button is disabled and the reason is shown
   assert.match(
@@ -308,9 +309,14 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   assert.match(confirm, /\{overCap \? \(/);
   assert.match(confirm, /\{overRules \? \(/);
   assert.match(detail, /Retire one on the Instructions page first\./);
-  // the confirmation posts the contract action, nothing else
-  assert.match(confirm, /action: "accept",\s*id: item\.id,\s*destination,/);
-  assert.match(confirm, /wantsTest \? "Saved for testing\." : SAVED_LINE/);
+  // the confirmation posts accept, then (only when testing was chosen, and
+  // only once accept itself succeeded) a `test` action for the same id --
+  // Round 6 Task 6b / spec §6, replacing the old test_first staging.
+  assert.match(confirm, /action: "accept",\s*id: item\.id,\s*destination\s*\}/);
+  assert.match(
+    confirm,
+    /if \(accepted && wantsTest\) await run\(\{ action: "test", id: item\.id \}/,
+  );
   // afterwards: a toast says where it went; the card re-renders as decided
   // -- Round 6 Task 2: the real toast text now comes from the write outcome
   // (see writeToastText/useRun), this constant is only the defensive
@@ -638,29 +644,38 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
     `Lovable credits x${count(detail, "Lovable credits")}`,
   );
   assert.equal(count(detail, "Harness analysis"), 1);
-  // Task 8 adds one more bare "credit" mention: "Uses no credits." in the
-  // Add-it-now choice text (not "Lovable credits", so it isn't counted by
-  // either of the other two terms).
+  // Task 8 adds one bare "credit" mention: "Uses no credits." in the
+  // Add-it-now choice text. Round 6 Task 6b adds a second, non-display one:
+  // `item.test.credits` (TestInfo's own field name, read for
+  // testThisRuleBudgetLine's argument) -- neither is "Lovable credits" or
+  // "lovable_credits_max", so neither is counted by those two terms.
   assert.equal(
     count(codeOnly(readApp(DETAIL)), "credit"),
     count(codeOnly(readApp(DETAIL)), "Lovable credits") +
       count(codeOnly(readApp(DETAIL)), "lovable_credits_max") +
-      1,
+      2,
   );
   for (const page of [INBOX, LEDGER, LAYOUT]) {
     assert.equal(count(codeOnly(readApp(page)), "credit"), 0, `${page} mentions credits`);
   }
   // the client lib carries the contract field name lovable_credits_max, but no user-facing credit copy
   assert.equal(count(codeOnly(readApp(CLIENT)), "Lovable credits"), 0);
-  // harness-ux.ts (Round 5 Task 2): "Lovable credits" appears once in
-  // proveCostLine. "credit" and "Credit" combined appear in: "credits" twice
-  // (proveCostLine and step 1), "CREDITS" (constant name), "Credits" and
-  // "credits" (in LANDING_CREDITS_LINE).
+  // harness-ux.ts (Round 5 Task 2): "Lovable credits" appeared once, in
+  // proveCostLine. Round 6 Task 6b / spec §6 adds a second, deliberate one:
+  // TEST_THIS_RULE_CREDITS_LINE ("Uses Lovable credits like any build; the
+  // exact cost is recorded after."), the "Test this rule" confirm's own
+  // credits line -- a distinct sentence for a distinct dialog, not a
+  // duplicate of proveCostLine's.
   const uxSource = codeOnly(readApp("lib/harness-ux.ts"));
-  assert.equal(count(uxSource, "Lovable credits"), 1);
-  // Count case-insensitive: use regex to match credit/credits/Credit/Credits/CREDITS
+  assert.equal(count(uxSource, "Lovable credits"), 2);
+  // Count case-insensitive: use regex to match credit/credits/Credit/Credits/CREDITS.
+  // Round 6 Task 6b's own paired-test copy block (confirm lines, the card's
+  // status line, the judging screen's cost/confounder lines, the
+  // TestRunResultLike type and its own doc comments) is the entire jump
+  // from 5 to 16 -- inventoried here so a FUTURE bump still gets looked at,
+  // rather than this assertion silently loosening forever.
   const creditMatches = (uxSource.match(/credit/gi) || []).length;
-  assert.equal(creditMatches, 5);
+  assert.equal(creditMatches, 16);
 });
 
 test("no internal vocabulary in user-facing JSX outside the Developer view", () => {
@@ -736,6 +751,8 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
   // the History page only, and the skipped-only "Reopen" button folded into
   // the new "undo" (a plain, no-dialog reversal of anything not yet
   // written, shared by the accepted-unwritten and skipped cases alike).
+  // Round 6 Task 6b / spec §6: "test" -- "Test this rule"'s own confirm and
+  // the Add dialog's "Add and test it first" choice both post it.
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
     "change_wording",
@@ -744,6 +761,7 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
     "retire",
     "retry_write",
     "skip",
+    "test",
     "undo",
     "verdict",
   ]);

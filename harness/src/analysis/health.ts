@@ -238,6 +238,38 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
       }
     }
 
+    // Round 6 Task 6b / spec §6: with the "paired test" source on, every
+    // judged run for this rule inside the same window (by its own judged_at,
+    // not an episode's started_at -- a paired test replays the rule's own
+    // ORIGINAL, historical request, which predates the rule's write; it is
+    // not one of the `episodes` the tag-based scan above walks, so there is
+    // no episode to de-duplicate against here) counts once: score >= 0.5 is
+    // one build without a repeat (helped), score === 0 is one hurt. A score
+    // strictly between 0 and 0.5 -- some but not most corrections still
+    // needed -- counts towards neither: a middling result is not confident
+    // evidence either way (the same "evidence, not proof" spirit as the
+    // rest of this module). Re-testing the same rule twice is two distinct
+    // data points, so there is no cap of one per rule the way an episode-
+    // keyed source caps at one per episode.
+    if (sources.paired) {
+      const startMs = new Date(start).getTime();
+      for (const run of store.listExperimentRuns({ rule_id: rule.id, status: ["judged"] })) {
+        if (run.score == null || !run.judged_at) continue;
+        if (new Date(run.judged_at).getTime() <= startMs) continue;
+        if (run.score >= 0.5) {
+          applicableTasks += 1;
+          helped += 1;
+          if (!lastApplicableAt || run.judged_at > lastApplicableAt)
+            lastApplicableAt = run.judged_at;
+        } else if (run.score === 0) {
+          applicableTasks += 1;
+          hurt += 1;
+          if (!lastApplicableAt || run.judged_at > lastApplicableAt)
+            lastApplicableAt = run.judged_at;
+        }
+      }
+    }
+
     const contradictedByRuleId = existing?.contradicted_by_rule_id ?? null;
     const snoozedUntil = existing?.snoozed_until ?? null;
 

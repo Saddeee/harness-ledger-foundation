@@ -173,7 +173,7 @@ test("local-projects.tsx: connection card, sync card, allowed switch, connect fl
   assert.ok(!/claude code/i.test(code));
 });
 
-test("local-settings.tsx: five sections with the exact sentences, schedule and cap posts, validation errors toast", () => {
+test("local-settings.tsx: sections with the exact sentences, schedule and cap posts, validation errors toast", () => {
   const code = codeOnly(readApp(LOCAL_SETTINGS));
   const raw = readApp(LOCAL_SETTINGS);
 
@@ -199,13 +199,14 @@ test("local-settings.tsx: five sections with the exact sentences, schedule and c
   assert.match(code, /toast\.error\(/);
 
   // save buttons per section: decisions (Round 5 Task 6), evidence (Round 5
-  // Task 7), schedule, cap, one combined AI analysis save (settings + key
-  // when typed), key remove, and project defaults (Round 3 §4)
+  // Task 7), Lovable credits (Round 6 Task 6b), schedule, cap, one combined
+  // AI analysis save (settings + key when typed), key remove, and project
+  // defaults (Round 3 §4)
   assert.match(code, /useMutation\(/);
   assert.equal(
     count(code, "useMutation("),
-    7,
-    "decisions, evidence, schedule, cap, ai analysis save, llm key remove, defaults",
+    8,
+    "decisions, evidence, credits, schedule, cap, ai analysis save, llm key remove, defaults",
   );
 
   // only the local Harness client helpers
@@ -217,8 +218,11 @@ test("local-settings.tsx: five sections with the exact sentences, schedule and c
   assert.match(code, /from "@\/lib\/improvements-client"/);
   assert.match(code, /postExecutor\(/);
 
-  // credits only in the one approved sentence
-  assert.equal(count(raw, "credit"), 1);
+  // Round 6 Task 6b / spec §6: "credit" now also appears throughout the
+  // Lovable-credits section (see ux-round3-pages.test.ts's own updated
+  // count for the exact number) -- no longer confined to one sentence.
+  assert.ok(count(raw, "credit") > 1);
+  assert.match(raw, /Lovable credits/);
 
   for (const tag of code.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag));
   // "classifier" is dropped from this page's ban: Round 3 §4 makes it a

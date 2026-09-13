@@ -23,6 +23,12 @@ import { proposeRetirements } from "../analysis/retire.js";
 import { status } from "./lovable-auth.js";
 import { openLovableClient } from "./lovable-mcp.js";
 import type { LovableClient, LovableReader, LovableWriter } from "./lovable-mcp.js";
+// Round 6 Task 6b: the `test` action's own dispatch (isTestAction/
+// testAction) and the background queue's own resume-on-restart call
+// (kickExperimentRunner) -- see experiments-actions.ts/experiments-queue.ts
+// for why each lives in its own module rather than folded in here.
+import { isTestAction, testAction } from "./experiments-actions.js";
+import { kickExperimentRunner } from "./experiments-queue.js";
 
 const FETCHED_BY = "executor";
 /** Enough recent ids that a page of history cannot step over the known window. */
@@ -829,6 +835,17 @@ export async function runAll(
   store.finishSyncRun(runId, { ok, error: error ?? null, counts });
   for (const id of requestIds) store.completeSyncRequest(id);
 
+  // Round 6 Task 6b: resumes a `queued` paired-test run that was still
+  // waiting when the process last died (a `test` action's own kick fired,
+  // but the process exited before runExperiment got to it) -- fire-and-
+  // forget, same as the `test` action's own call; a crash here must never
+  // fail an otherwise-successful sync.
+  try {
+    void kickExperimentRunner();
+  } catch (err) {
+    store.insertEvent("executor.sync.kick_experiment_error", null, { error: errorMessage(err) });
+  }
+
   return { runId, ok, ran: true, counts, ...(error ? { error } : {}) };
 }
 
@@ -904,6 +921,16 @@ export async function improvementActionAndWrite(
   input: unknown,
   actor?: string,
 ): Promise<Improvement & { write?: WriteOutcome }> {
+  // Round 6 Task 6b / spec §6: "test" is a pass-through to
+  // executor/experiments.ts's startExperiment -- no Knowledge write, so no
+  // `write` field on the result (matching every other non-write-eligible
+  // action's own response shape). Checked before peekActionKind, which
+  // doesn't recognize "test" at all (see improvements.ts's own comment on
+  // why it's deliberately absent from that schema).
+  if (isTestAction(input)) {
+    return testAction(input);
+  }
+
   const { kind, testFirst } = peekActionKind(input);
   const writeEligible =
     (kind === "accept" && !testFirst) ||

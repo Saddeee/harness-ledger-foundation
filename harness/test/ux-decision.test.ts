@@ -44,7 +44,9 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
   assert.match(confirm, /aria-label="How to add it"/);
   assert.equal(count(confirm, 'role="radio"'), 2, "exactly two radio buttons");
   assert.match(confirm, /Add it now/);
-  assert.match(confirm, /Test it first/);
+  // Round 6 Task 6b / spec §6: renamed -- this is now the real paired test
+  // (accept, then a `test` action), not the old test_first staging.
+  assert.match(confirm, /Add and test it first/);
   assert.match(confirm, /aria-checked=\{choice === "now"\}/);
   assert.match(confirm, /aria-checked=\{choice === "test"\}/);
   // nothing pre-selected
@@ -54,15 +56,20 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
   assert.match(confirm, /confirmDisabled=\{overCap \|\| overRules \|\| choice == null\}/);
   assert.match(
     confirm,
-    /confirmLabel=\{wantsTest \? "Save for testing" : preview \? "Add" : "Save choice"\}/,
+    /confirmLabel=\{wantsTest \? "Add and test" : preview \? "Add" : "Save choice"\}/,
   );
   // the choice resets when the dialog closes
   assert.match(confirm, /onOpenChange=\{/);
   assert.match(confirm, /setChoice\(null\)/);
-  // posts the two documented shapes
-  assert.match(confirm, /action: "accept",\s*id: item\.id,\s*destination,/);
-  assert.match(confirm, /test_first: true/);
-  assert.match(confirm, /"Saved for testing\."/);
+  // Round 6 Task 6b: posts accept, then (only when the test choice was
+  // picked, and only once accept itself succeeded) a `test` action for the
+  // same id -- test_first is gone from this dialog entirely.
+  assert.match(confirm, /action: "accept",\s*id: item\.id,\s*destination\s*\}/);
+  assert.ok(!/test_first/.test(confirm), "test_first is no longer staged from this dialog");
+  assert.match(
+    confirm,
+    /if \(accepted && wantsTest\) await run\(\{ action: "test", id: item\.id \}/,
+  );
 });
 
 test("AddConfirm help text: exact copy for each choice", () => {
@@ -71,15 +78,14 @@ test("AddConfirm help text: exact copy for each choice", () => {
     detail,
     /Harness writes this exact text now, when you press Add\. Uses no credits\./,
   );
+  // Round 6 Task 6b / spec §6: the real paired-test flow's own help text --
+  // "not switched on yet" is gone (it is switched on now).
   assert.match(
     detail,
-    /Harness runs the same request with and without this instruction in a temporary copy of the project and shows you the difference before anything is written\./,
+    /Harness adds it now, then runs your original request again in a temporary copy with the rule and shows you both builds side by side\./,
   );
   assert.match(detail, /proveCostLine\(\)/);
-  assert.match(
-    detail,
-    /Testing is not switched on yet; your choice is saved and runs when it is\./,
-  );
+  assert.ok(!/Testing is not switched on yet/.test(detail));
 });
 
 test("SAVED_LINE and the new toasts", () => {

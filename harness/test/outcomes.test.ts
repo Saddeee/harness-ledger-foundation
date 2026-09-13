@@ -117,7 +117,10 @@ test("buildImprovement: a live rule with a rule_health row carries health, `sinc
     // yet, and none of the three sources has any data for it.
     verdict: null,
     adherence: null,
-    sources: { observed: true, adherence: false, verdicts: false },
+    // Round 6 Task 6b: sources gained `paired` -- no judged paired-test run
+    // exists for this rule, so it reads false, same as the other two
+    // sources with no data yet.
+    sources: { observed: true, adherence: false, verdicts: false, paired: false },
     // Round 6 Task 4 / spec §4: only recordVerdict's own direct response
     // ever sets a real value here -- an ordinary GET (this one) always
     // reads null.

@@ -747,3 +747,176 @@ test("recomputeRuleHealth: a did_not_help verdict contributes nothing when evide
 
   resetEvidenceSources();
 });
+
+// ---- Round 6 Task 6b / spec §6: paired-test evidence gating -- a judged
+// run's score, not an episode the tag-based scan already walks, decides
+// helped/hurt here (see health.ts's own comment for why there's no episode
+// to de-duplicate against). Own rule per test, own scope tag no fixture
+// episode carries, same convention every other appended block above uses. ----
+
+/** A live rule with its own correction candidate + episode (makeLiveRule
+ * above returns only the rule id -- createExperimentRun needs a real
+ * correction_candidate_id/task_episode_id to attach a run to). */
+function makeLiveRuleWithCandidate(input: { writtenAt: string; scopeTags: string[] }): {
+  ruleId: number;
+  correctionId: number;
+  episodeId: number;
+} {
+  const episodeId = episode(input.writtenAt, [], PROJECT);
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: episodeId,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "seed correction for a paired-test fixture",
+    evidence_history_item_ids: [],
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "seed",
+    desired_behavior: "seed",
+    reuse_rationale: "seed",
+    proposed_scope: "project",
+    provenance: "llm_derived",
+    created_by: "test",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "A rule scored only via a paired test.",
+    scope: "project",
+    applies_when: "n/a",
+    predicted_failure: "n/a",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+  db.prepare(`UPDATE rules SET scope_tags_json = ? WHERE id = ?`).run(
+    JSON.stringify(input.scopeTags),
+    rule.id,
+  );
+  store.updateRule({ id: rule.id, state: "active", actor: "test" });
+  db.prepare(
+    `INSERT INTO knowledge_versions
+       (rule_id, target, project_id, previous_content, new_content, previous_sha256, new_sha256, rule_ids_json, status, actor, written_at)
+     VALUES (?, 'project', ?, '', '', '', '', '[]', 'written', 'test', ?)`,
+  ).run(rule.id, PROJECT, input.writtenAt);
+  return { ruleId: rule.id, correctionId: cc.id, episodeId };
+}
+
+let pairedRunSeq = 0;
+function makeJudgedRun(input: {
+  ruleId: number;
+  correctionId: number;
+  episodeId: number;
+  score: number;
+  judgedAt: string;
+}): void {
+  pairedRunSeq += 1;
+  const { id } = store.createExperimentRun({
+    rule_id: input.ruleId,
+    correction_candidate_id: input.correctionId,
+    task_episode_id: input.episodeId,
+    source_project_id: PROJECT,
+    request_message_external_id: `aimsg_paired_gate_${pairedRunSeq}`,
+  });
+  store.updateExperimentRun(id, {
+    status: "judged",
+    score: input.score,
+    judged_at: input.judgedAt,
+  });
+}
+
+function setPaired(on: boolean): void {
+  store.setSettings({
+    evidence_sources: JSON.stringify({
+      observed: true,
+      adherence: true,
+      verdicts: true,
+      paired: on,
+    }),
+  });
+}
+
+test("recomputeRuleHealth: a judged paired-test run with score >= 0.5 counts as one build without a repeat, when evidence_sources.paired is on", () => {
+  const { ruleId, correctionId, episodeId } = makeLiveRuleWithCandidate({
+    writtenAt: RULE_WRITTEN_AT,
+    scopeTags: ["paired-gate-helped-tag"],
+  });
+  makeJudgedRun({ ruleId, correctionId, episodeId, score: 1, judgedAt: "2026-09-05T00:00:00Z" });
+
+  setPaired(true);
+  recomputeRuleHealth(NOW);
+  const health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 1);
+  assert.equal(health.helped, 1);
+  assert.equal(health.hurt, 0);
+
+  resetEvidenceSources();
+});
+
+test("recomputeRuleHealth: a judged paired-test run with score 0 counts as one hurt, when evidence_sources.paired is on", () => {
+  const { ruleId, correctionId, episodeId } = makeLiveRuleWithCandidate({
+    writtenAt: RULE_WRITTEN_AT,
+    scopeTags: ["paired-gate-hurt-tag"],
+  });
+  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0, judgedAt: "2026-09-05T00:00:00Z" });
+
+  setPaired(true);
+  recomputeRuleHealth(NOW);
+  const health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 1);
+  assert.equal(health.helped, 0);
+  assert.equal(health.hurt, 1);
+
+  resetEvidenceSources();
+});
+
+test("recomputeRuleHealth: a judged paired-test run contributes nothing when evidence_sources.paired is off", () => {
+  const { ruleId, correctionId, episodeId } = makeLiveRuleWithCandidate({
+    writtenAt: RULE_WRITTEN_AT,
+    scopeTags: ["paired-gate-defaultoff-tag"],
+  });
+  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0, judgedAt: "2026-09-05T00:00:00Z" });
+
+  // resetEvidenceSources' own default already has paired: false.
+  recomputeRuleHealth(NOW);
+  const health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 0);
+  assert.equal(health.hurt, 0);
+});
+
+test("recomputeRuleHealth: a judged paired-test run before the rule's own window start does not count, even with paired on", () => {
+  const { ruleId, correctionId, episodeId } = makeLiveRuleWithCandidate({
+    writtenAt: RULE_WRITTEN_AT,
+    scopeTags: ["paired-gate-beforewindow-tag"],
+  });
+  // Judged before RULE_WRITTEN_AT -- a stray run from before this rule's
+  // current life (mirrors windowStart's own re-add reasoning).
+  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0, judgedAt: "2026-08-01T00:00:00Z" });
+
+  setPaired(true);
+  recomputeRuleHealth(NOW);
+  const health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 0);
+  assert.equal(health.hurt, 0);
+
+  resetEvidenceSources();
+});
+
+test("recomputeRuleHealth: a judged paired-test run with a middling score (0 < score < 0.5) counts towards neither helped nor hurt", () => {
+  const { ruleId, correctionId, episodeId } = makeLiveRuleWithCandidate({
+    writtenAt: RULE_WRITTEN_AT,
+    scopeTags: ["paired-gate-middle-tag"],
+  });
+  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0.25, judgedAt: "2026-09-05T00:00:00Z" });
+
+  setPaired(true);
+  recomputeRuleHealth(NOW);
+  const health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 0);
+  assert.equal(health.helped, 0);
+  assert.equal(health.hurt, 0);
+
+  resetEvidenceSources();
+});

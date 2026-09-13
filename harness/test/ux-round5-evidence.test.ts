@@ -123,21 +123,33 @@ test("adherenceLine: 'Followed in N of M builds it applied to · judged by AI, w
   );
 });
 
-test("evidenceSourceLines: four sentences, each ending 'has run for this rule' or 'hasn't run for this rule yet', the paired line always says not available yet", () => {
-  const none = ux.evidenceSourceLines({ observed: false, adherence: false, verdicts: false });
+// Round 6 Task 6b / spec §6: rewritten with intent -- paired tests are wired
+// now, and the fourth sentence is gated on sources.paired exactly like the
+// other three are gated on their own source, instead of permanently reading
+// "not available yet".
+test("evidenceSourceLines: four sentences, each ending 'has run for this rule' or 'hasn't run for this rule yet' -- paired gated the same way as the other three", () => {
+  const none = ux.evidenceSourceLines({
+    observed: false,
+    adherence: false,
+    verdicts: false,
+    paired: false,
+  });
   assert.equal(none.length, 4);
   assert.ok(none[0]!.endsWith("This hasn't run for this rule yet."));
   assert.ok(none[1]!.endsWith("This hasn't run for this rule yet."));
   assert.ok(none[2]!.endsWith("This hasn't run for this rule yet."));
-  assert.ok(none[3]!.includes("not available yet"));
+  assert.ok(none[3]!.endsWith("This hasn't run for this rule yet."));
 
-  const all = ux.evidenceSourceLines({ observed: true, adherence: true, verdicts: true });
+  const all = ux.evidenceSourceLines({
+    observed: true,
+    adherence: true,
+    verdicts: true,
+    paired: true,
+  });
   assert.ok(all[0]!.endsWith("This has run for this rule."));
   assert.ok(all[1]!.endsWith("This has run for this rule."));
   assert.ok(all[2]!.endsWith("This has run for this rule."));
-
-  // Paired is never gated on `sources` -- Phase B isn't built regardless.
-  assert.ok(all[3]!.includes("not available yet"));
+  assert.ok(all[3]!.endsWith("This has run for this rule."));
 });
 
 // ---- verdict control: Instructions row and the Suggestions detail ----
@@ -219,7 +231,10 @@ test("local-settings.tsx: an Evidence section (h2) exists, right after Decisions
   assert.ok(syncAt > evidenceAt, "Evidence must come before Sync schedule");
 });
 
-test("local-settings.tsx: the Evidence section's intro and four checkbox labels match the spec verbatim; paired is disabled and unchecked", () => {
+// Round 6 Task 6b / spec §6: rewritten with intent -- paired tests are wired
+// now, so the fourth checkbox is enabled once a judged run exists
+// (credits.judged_runs > 0) instead of permanently disabled/unchecked.
+test("local-settings.tsx: the Evidence section's intro and four checkbox labels match the spec verbatim; paired is enabled once a judged run exists", () => {
   const raw = readApp(SETTINGS);
   const code = codeOnly(raw);
 
@@ -234,7 +249,7 @@ test("local-settings.tsx: the Evidence section's intro and four checkbox labels 
     "Repeat corrections observed in your real builds",
     "AI adherence check (with quotes)",
     "Your verdicts",
-    "Paired tests (not available yet)",
+    "Paired tests",
   ]) {
     assert.ok(raw.includes(label), `local-settings.tsx missing Evidence label "${label}"`);
   }
@@ -249,13 +264,14 @@ test("local-settings.tsx: the Evidence section's intro and four checkbox labels 
     assert.match(code, new RegExp(`id="${id}"`), `missing checkbox id="${id}"`);
   }
 
-  // Paired stays disabled and unchecked -- Phase B isn't built.
+  // Paired reflects the real setting and is gated on at least one judged
+  // run existing, not permanently disabled/unchecked.
   const pairedBlock = code.slice(
     code.indexOf('id="evidence-paired"') - 40,
-    code.indexOf('id="evidence-paired"') + 120,
+    code.indexOf('id="evidence-paired"') + 220,
   );
-  assert.match(pairedBlock, /checked=\{false\}/);
-  assert.match(pairedBlock, /disabled/);
+  assert.match(pairedBlock, /checked=\{evidenceSources\.paired\}/);
+  assert.match(pairedBlock, /disabled=\{!pairedTestsAvailable\}/);
 
   // Posts the settings action with evidence_sources.
   assert.match(code, /action:\s*"settings"[\s\S]{0,80}evidence_sources:\s*evidenceSources/);

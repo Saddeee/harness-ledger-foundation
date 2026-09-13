@@ -1048,7 +1048,7 @@ function mkRule(input: {
     ownership: "harness",
     created_by: "test",
   }) as { id: number };
-  return { cc, rule };
+  return { cc, rule, ep };
 }
 
 function setAt(table: string, column: string, id: number, at: string) {
@@ -2942,3 +2942,474 @@ test("cancel_write: on a live rule's own pending rewrite, drops only the rewrite
 });
 // ---- end Round 6 Task 3 fix 1 ----
 // ---- end Round 6 Task 3 ----
+
+// ---- Round 6 Task 6b ----
+// Improvement.test (TestInfo): available/unavailable, `run`/`credits`
+// reflect real store state, the `judge` action, and the History timeline's
+// new `test` node kind. Never touches Lovable (no fake server needed here
+// -- the actual runner is tested against one in experiments.test.ts); a
+// `test` action's own queued-run creation is simulated directly via
+// store.createExperimentRun, the same convention experiments.test.ts's own
+// fixtures use for a row that isn't meant to run through the real
+// remix/build flow.
+
+function mkRuleNoRequest(prefix: string) {
+  const ep = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: prefix,
+    provenance: "llm_derived",
+    evidence_history_item_ids: [],
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: ep.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "no request behind this one",
+    evidence_history_item_ids: [],
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: "d",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "llm_derived",
+    created_by: "test",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "A rule with no request to replay.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "x",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+  return { cc, rule, ep };
+}
+
+/** A rule whose episode carries `correctionSummaries.length` classified
+ * correction messages (message_classifications, Round 4 A1's own table --
+ * inserted directly, the same convention rule-health.test.ts's own
+ * `classify` helper uses; store.ts exposes no writer for it, it's the
+ * classifier pipeline's own output) alongside the request that opened it --
+ * what episodeCorrections/TestInfo.run.corrections/the judge action's own
+ * `corrections` count all read. */
+function mkRuleWithCorrections(prefix: string, correctionSummaries: string[]) {
+  const reqMsg = store.upsertHistoryItem({
+    project_id: PROJECT,
+    kind: "message",
+    external_id: `${prefix}-req`,
+    role: "user",
+    content: "Add a signup form.",
+    occurred_at: "2026-09-01T00:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const evidenceIds = [reqMsg.id];
+  correctionSummaries.forEach((summary, i) => {
+    const msg = store.upsertHistoryItem({
+      project_id: PROJECT,
+      kind: "message",
+      external_id: `${prefix}-corr-${i}`,
+      role: "user",
+      content: summary,
+      occurred_at: `2026-09-01T00:0${i + 1}:00Z`,
+      provenance: "lovable_mcp",
+    }) as { id: number };
+    db.prepare(
+      `INSERT INTO message_classifications (history_item_id, classification, tags_json, summary) VALUES (?, 'correction', '[]', ?)`,
+    ).run(msg.id, summary);
+    evidenceIds.push(msg.id);
+  });
+  const ep = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: prefix,
+    provenance: "llm_derived",
+    evidence_history_item_ids: evidenceIds,
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: ep.id,
+    classification: "defect_correction",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "seed correction for a paired-test fixture",
+    evidence_history_item_ids: evidenceIds,
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: "d",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "llm_derived",
+    created_by: "test",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "Always validate the signup form before submit.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "x",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+  return { cc, rule, ep };
+}
+
+// ---- TestInfo: available ----
+
+test("Improvement.test: available when connected, a request to replay exists, nothing else is running, and within budget", () => {
+  const { cc } = mkRule({
+    project: PROJECT,
+    externalIdPrefix: "test-avail",
+    content: "Add a login form.",
+    summary: "s",
+    desired: "d",
+    instruction: "Always validate emails on login forms.",
+    scope: "project",
+  });
+  const item = imp.getImprovement(cc.id, { connected: true })!;
+  assert.ok(item.test, "a rule exists, so test is not null");
+  assert.equal(item.test!.available, true);
+  assert.equal(item.test!.unavailable_reason, null);
+  assert.equal(item.test!.run, null, "no run has ever been started for this rule");
+  assert.deepEqual(item.test!.credits, {
+    used_this_month: store.creditsThisMonth(),
+    budget: Number(store.getSetting("lovable_monthly_credit_budget")),
+  });
+});
+
+test("Improvement.test: null when the correction has no rule yet", () => {
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: episode.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "no rule yet",
+    evidence_history_item_ids: [],
+  }) as { id: number };
+  const item = imp.getImprovement(cc.id, { connected: true })!;
+  assert.equal(item.test, null);
+});
+
+// ---- TestInfo: unavailable reasons ----
+
+test("Improvement.test: unavailable -- not connected (the default when `connected` isn't passed)", () => {
+  const { cc } = mkRule({
+    project: PROJECT,
+    externalIdPrefix: "test-notconnected",
+    content: "Add a checkout page.",
+    summary: "s",
+    desired: "d",
+    instruction: "Always show a loading state on checkout.",
+    scope: "project",
+  });
+  const item = imp.getImprovement(cc.id)!;
+  assert.equal(item.test!.available, false);
+  assert.equal(
+    item.test!.unavailable_reason,
+    "Harness is not connected — connect on the Projects page.",
+  );
+});
+
+test("Improvement.test: unavailable -- no original request to replay", () => {
+  const { cc } = mkRuleNoRequest("test-norequest");
+  const item = imp.getImprovement(cc.id, { connected: true })!;
+  assert.equal(item.test!.available, false);
+  assert.equal(item.test!.unavailable_reason, "This suggestion has no original request to replay.");
+});
+
+test("Improvement.test: unavailable -- a test is already running (checked across every rule)", () => {
+  const busy = mkRule({
+    project: PROJECT,
+    externalIdPrefix: "test-busy-owner",
+    content: "Add a settings page.",
+    summary: "s",
+    desired: "d",
+    instruction: "Always confirm before deleting an account.",
+    scope: "project",
+  });
+  const other = mkRule({
+    project: PROJECT,
+    externalIdPrefix: "test-busy-other",
+    content: "Add a billing page.",
+    summary: "s",
+    desired: "d",
+    instruction: "Always show the next billing date.",
+    scope: "project",
+  });
+  const { id: runId } = store.createExperimentRun({
+    rule_id: busy.rule.id,
+    correction_candidate_id: busy.cc.id,
+    task_episode_id: busy.ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "test-busy-owner-1",
+  });
+  try {
+    const item = imp.getImprovement(other.cc.id, { connected: true })!;
+    assert.equal(item.test!.available, false);
+    assert.equal(item.test!.unavailable_reason, "A test is already running; one runs at a time.");
+  } finally {
+    store.updateExperimentRun(runId, { status: "cancelled" });
+  }
+});
+
+test("Improvement.test: unavailable -- exceeds the monthly credit budget, exact sentence", () => {
+  const { cc, rule, ep } = mkRule({
+    project: PROJECT,
+    externalIdPrefix: "test-budget",
+    content: "Add a pricing page.",
+    summary: "s",
+    desired: "d",
+    instruction: "Always show currency alongside price.",
+    scope: "project",
+  });
+  store.setSettings({ lovable_monthly_credit_budget: "1" });
+  try {
+    // A finished (non-active) run's own credit_ledger row is what
+    // creditsThisMonth() sums -- create and immediately terminate one so it
+    // counts towards this month's usage without itself blocking as "active".
+    const { id: runId } = store.createExperimentRun({
+      rule_id: rule.id,
+      correction_candidate_id: cc.id,
+      task_episode_id: ep.id,
+      source_project_id: PROJECT,
+      request_message_external_id: "test-budget-1",
+    });
+    store.recordCredits(runId, 5);
+    store.updateExperimentRun(runId, {
+      status: "judged",
+      score: 1,
+      judged_at: "2026-09-01T00:00:00Z",
+    });
+
+    const usedThisMonth = store.creditsThisMonth();
+    assert.ok(usedThisMonth >= 5);
+    const item = imp.getImprovement(cc.id, { connected: true })!;
+    assert.equal(item.test!.available, false);
+    assert.equal(
+      item.test!.unavailable_reason,
+      `This would exceed your monthly Lovable credit budget (${usedThisMonth} of 1 used).`,
+    );
+  } finally {
+    store.setSettings({ lovable_monthly_credit_budget: "12" });
+  }
+});
+
+// ---- TestInfo.run reflects the latest experiment_runs row ----
+
+test("Improvement.test.run: reflects the latest run for this rule, whatever its status, alongside the episode's own corrections count", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("test-run-reflect", [
+    "The email field accepted invalid addresses.",
+    "The submit button stayed enabled while the request was in flight.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "test-run-reflect-req",
+  });
+  store.updateExperimentRun(runId, {
+    status: "building",
+    stage_note: "Building in the copy",
+    cost_credits: null,
+    edits_since_episode: null,
+  });
+
+  const item = imp.getImprovement(cc.id, { connected: true })!;
+  assert.ok(item.test!.run);
+  assert.equal(item.test!.run!.id, runId);
+  assert.equal(item.test!.run!.status, "building");
+  assert.equal(item.test!.run!.stage_note, "Building in the copy");
+  assert.equal(item.test!.run!.corrections, 2, "the episode's own two classified corrections");
+  assert.equal(item.test!.run!.score, null);
+
+  // A run that's mid-flight is itself the "already running" refusal for a
+  // DIFFERENT rule -- but this rule's own available flips back to true once
+  // it's terminal (a fresh "Test this rule" can sit next to the old run's
+  // own result line on the card).
+  store.updateExperimentRun(runId, {
+    status: "judged",
+    score: 0.5,
+    judged_at: "2026-09-02T00:00:00Z",
+    verdicts_json: JSON.stringify(["no", "yes"]),
+  });
+  const afterJudged = imp.getImprovement(cc.id, { connected: true })!;
+  assert.equal(afterJudged.test!.available, true);
+  assert.equal(afterJudged.test!.run!.status, "judged");
+  assert.equal(afterJudged.test!.run!.score, 0.5);
+});
+
+// ---- the `judge` action ----
+
+test("judge: verdicts.length must match the episode's own corrections count", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("judge-count", [
+    "Corrected once.",
+    "Corrected twice.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "judge-count-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging" });
+
+  assert.throws(
+    () => imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["yes"] }),
+    /expected 2 verdicts.*got 1/,
+  );
+});
+
+test("judge: unknown run id throws", () => {
+  assert.throws(
+    () => imp.improvementAction({ action: "judge", run_id: 999999, verdicts: [] }),
+    /experiment run 999999 not found/,
+  );
+});
+
+test("judge: computes score (no ÷ corrections), marks the run judged with judged_at, and returns the refreshed improvement", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("judge-score", [
+    "The email field accepted invalid addresses.",
+    "The password field had no minimum length.",
+    "The confirm-password field was never compared.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "judge-score-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging" });
+
+  const result = imp.improvementAction({
+    action: "judge",
+    run_id: runId,
+    verdicts: ["no", "no", "unclear"],
+  });
+
+  assert.equal(result.id, cc.id, "judge returns the run's own improvement");
+  const run = store.getExperimentRun(runId)!;
+  assert.equal(run.status, "judged");
+  assert.ok(run.judged_at);
+  assert.equal(run.score, 2 / 3);
+  assert.deepEqual(JSON.parse(run.verdicts_json!), ["no", "no", "unclear"]);
+});
+
+test("judge: score is 0, not NaN, when the episode has no classified corrections at all", () => {
+  const { cc } = mkRuleNoRequest("judge-zero-corrections");
+  // mkRuleNoRequest's own episode has no evidence, but createExperimentRun
+  // only needs a valid task_episode_id/correction_candidate_id -- the point
+  // here is exercising episodeCorrections() returning [] on an unrelated,
+  // otherwise-fine run, not the "no request" refusal path (that's
+  // startExperiment's own, tested in experiments.test.ts).
+  const found = imp.getImprovement(cc.id)!;
+  const { id: runId } = store.createExperimentRun({
+    rule_id: found.rule_id!,
+    correction_candidate_id: cc.id,
+    task_episode_id: (found.developer.correction as { task_episode_id: number }).task_episode_id,
+    source_project_id: PROJECT,
+    request_message_external_id: "judge-zero-corrections-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging" });
+
+  const result = imp.improvementAction({ action: "judge", run_id: runId, verdicts: [] });
+  assert.equal(result.id, cc.id);
+  assert.equal(store.getExperimentRun(runId)!.score, 0);
+});
+
+// ---- History timeline: the `test` node kind ----
+
+test("buildTimeline: a judged run renders a `test` node with the exact label, actor, content, and improvement_id; a failed run renders its own", () => {
+  const TL2_PROJECT = "timeline-test-project-6b";
+  db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+    TL2_PROJECT,
+    "tl6b",
+  );
+  store.upsertProject({ lovable_project_id: TL2_PROJECT, name: "Timeline Project 6b" });
+
+  const { cc, rule, ep } = mkRuleWithCorrections("timeline-test-node", [
+    "One correction.",
+    "Another correction.",
+  ]);
+  // mkRuleWithCorrections seeds its history/episode under the module-level
+  // PROJECT constant -- the knowledge_versions row below is what actually
+  // puts this rule on TL2_PROJECT's own timeline (buildTimeline reads
+  // targets from versions/active-rules-for-target, not from the rule's
+  // originating project).
+  db.prepare(
+    `INSERT INTO knowledge_versions
+       (rule_id, target, project_id, previous_content, new_content, previous_sha256, new_sha256, rule_ids_json, status, actor, written_at)
+     VALUES (?, 'project', ?, '', '', '', '', ?, 'written', 'test', '2026-08-25T00:00:00Z')`,
+  ).run(rule.id, TL2_PROJECT, JSON.stringify([rule.id]));
+  store.updateRule({ id: rule.id, state: "active", actor: "test" });
+
+  const { id: judgedRunId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "timeline-test-node-req",
+  });
+  store.updateExperimentRun(judgedRunId, {
+    status: "judged",
+    verdicts_json: JSON.stringify(["no", "yes"]),
+    judged_at: "2026-09-03T00:00:00Z",
+    copy_summary: "Added client-side validation.",
+    copy_reply: "Added validation to the signup form.",
+  });
+
+  const {
+    cc: cc2,
+    rule: rule2,
+    ep: ep2,
+  } = mkRuleWithCorrections("timeline-test-node-fail", ["One correction."]);
+  db.prepare(
+    `INSERT INTO knowledge_versions
+       (rule_id, target, project_id, previous_content, new_content, previous_sha256, new_sha256, rule_ids_json, status, actor, written_at)
+     VALUES (?, 'project', ?, '', '', '', '', ?, 'written', 'test', '2026-08-26T00:00:00Z')`,
+  ).run(rule2.id, TL2_PROJECT, JSON.stringify([rule2.id]));
+  store.updateRule({ id: rule2.id, state: "active", actor: "test" });
+  const { id: failedRunId } = store.createExperimentRun({
+    rule_id: rule2.id,
+    correction_candidate_id: cc2.id,
+    task_episode_id: ep2.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "timeline-test-node-fail-req",
+  });
+  store.updateExperimentRun(failedRunId, {
+    status: "failed",
+    error: "Lovable stopped without finishing the build in the copy.",
+    finished_at: "2026-09-04T00:00:00Z",
+  });
+
+  const nodes = imp.buildTimeline("project", TL2_PROJECT);
+  const judgedNode = nodes.find((n) => n.id === `test:${judgedRunId}`);
+  assert.ok(judgedNode);
+  assert.equal(judgedNode!.kind, "test");
+  assert.equal(judgedNode!.label, "Tested with the rule: 1 of 2 corrections no longer needed");
+  assert.equal(judgedNode!.actor, "harness");
+  assert.equal(judgedNode!.at, "2026-09-03T00:00:00Z");
+  assert.equal(judgedNode!.improvement_id, cc.id);
+  assert.match(judgedNode!.content ?? "", /Added client-side validation\./);
+  assert.match(judgedNode!.content ?? "", /Added validation to the signup form\./);
+
+  const failedNode = nodes.find((n) => n.id === `test:${failedRunId}`);
+  assert.ok(failedNode);
+  assert.equal(failedNode!.kind, "test");
+  assert.equal(
+    failedNode!.label,
+    "Test failed: Lovable stopped without finishing the build in the copy.",
+  );
+  assert.equal(failedNode!.improvement_id, cc2.id);
+});
+// ---- end Round 6 Task 6b ----

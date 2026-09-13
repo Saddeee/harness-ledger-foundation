@@ -22,6 +22,10 @@ const { composeManagedKnowledge } = await import("../src/knowledge.js");
 const { startExperiment, runExperiment, cleanupCopy } =
   await import("../src/executor/experiments.js");
 const { createLovableRest } = await import("../src/executor/lovable-rest.js");
+// Round 6 Task 6b: the background queue behind "Test this rule" -- see its
+// own header comment (experiments-queue.ts) for why it lives in its own
+// module rather than folded into experiments.ts.
+const { kickExperimentRunner, _reset } = await import("../src/executor/experiments-queue.js");
 const { startFakeLovable } = await import("./fake-lovable.js");
 type FakeLovableServer = Awaited<ReturnType<typeof startFakeLovable>>;
 type FakeScript = Parameters<typeof startFakeLovable>[0];
@@ -891,5 +895,112 @@ test("cleanupCopy: keep_test_copies=true skips deletion entirely", async () => {
   } finally {
     await fake.close();
     store.setSettings({ keep_test_copies: "false" });
+    // Round 6 Task 6b: this row was created directly via createExperimentRun
+    // and never left `queued` -- kickExperimentRunner (a later test in this
+    // file) picks the OLDEST queued row across the whole process, so a
+    // fixture row like this one must not linger as the oldest queued row
+    // forever.
+    store.updateExperimentRun(runId, { status: "cancelled" });
+  }
+});
+
+// ------------------------------------------------- kickExperimentRunner
+
+test("kickExperimentRunner: runs the oldest queued run once via the fake server, leaving a newer queued run untouched", async () => {
+  // Both rows are created directly (not via startExperiment, which itself
+  // refuses a second start while one is already queued/running -- exactly
+  // the scenario this test needs two queued rows to exist for at once).
+  const older = seedCandidate();
+  const newer = seedCandidate();
+  const { id: olderRunId } = store.createExperimentRun({
+    rule_id: older.ruleId,
+    correction_candidate_id: older.candidateId,
+    task_episode_id: older.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: older.requestExternalId,
+  });
+  const { id: newerRunId } = store.createExperimentRun({
+    rule_id: newer.ruleId,
+    correction_candidate_id: newer.candidateId,
+    task_episode_id: newer.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: newer.requestExternalId,
+  });
+
+  const fake = startFakeLovable(happyPathScript("prj_copy_kick"));
+  try {
+    await kickExperimentRunner({ rest: restFor(fake), sleep: noopSleep });
+
+    assert.equal(
+      store.getExperimentRun(olderRunId)!.status,
+      "judging",
+      "the oldest queued run was driven all the way through",
+    );
+    assert.equal(
+      store.getExperimentRun(newerRunId)!.status,
+      "queued",
+      "a single kick drives exactly one run -- the newer queued row is untouched",
+    );
+    const chatCalls = fake.calls.filter((c) => c.method === "POST" && c.path.endsWith("/messages"));
+    assert.equal(chatCalls.length, 1, "only the oldest run's request was ever replayed");
+  } finally {
+    await fake.close();
+    _reset();
+    // Leave the untouched queued row terminal so it can't be picked up by
+    // (and change the fixture assumptions of) a later test in this file.
+    store.updateExperimentRun(newerRunId, { status: "cancelled" });
+  }
+});
+
+test("kickExperimentRunner: a no-op when nothing is queued and no run is in flight", async () => {
+  await kickExperimentRunner({ rest: createLovableRest({ baseUrl: "http://127.0.0.1:1" }) });
+  // No assertion beyond "this resolved without throwing and touched
+  // nothing" -- every run seeded by an earlier test in this file is left in
+  // a terminal state by the time its own test finishes, so any Lovable call
+  // reaching that unreachable baseUrl would itself prove a bug (the fake
+  // rest client above is never given the chance to matter).
+});
+
+test("kickExperimentRunner: a second call while one is in flight returns the same promise, and never drives a second run concurrently", async () => {
+  const first = seedCandidate();
+  const second = seedCandidate();
+  const { id: firstRunId } = store.createExperimentRun({
+    rule_id: first.ruleId,
+    correction_candidate_id: first.candidateId,
+    task_episode_id: first.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: first.requestExternalId,
+  });
+  const { id: secondRunId } = store.createExperimentRun({
+    rule_id: second.ruleId,
+    correction_candidate_id: second.candidateId,
+    task_episode_id: second.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: second.requestExternalId,
+  });
+
+  const fake = startFakeLovable(happyPathScript("prj_copy_inflight"));
+  try {
+    const rest = restFor(fake);
+    // Both calls happen before either has a chance to await anything --
+    // the in-flight promise is assigned synchronously inside
+    // kickExperimentRunner (see its own doc comment), so the second call
+    // here is guaranteed to observe it already set.
+    const p1 = kickExperimentRunner({ rest, sleep: noopSleep });
+    const p2 = kickExperimentRunner({ rest, sleep: noopSleep });
+    assert.equal(p1, p2, "a call made while one is in flight returns that exact same promise");
+
+    await p1;
+
+    assert.equal(store.getExperimentRun(firstRunId)!.status, "judging");
+    assert.equal(
+      store.getExperimentRun(secondRunId)!.status,
+      "queued",
+      "the in-flight guard kept a second run from ever starting concurrently",
+    );
+  } finally {
+    await fake.close();
+    _reset();
+    store.updateExperimentRun(secondRunId, { status: "cancelled" });
   }
 });

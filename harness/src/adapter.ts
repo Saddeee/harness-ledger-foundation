@@ -330,3 +330,15 @@ export { startExperiment, runExperiment, cleanupCopy } from "./executor/experime
 // rest of this file's store.ts re-exports are.
 export { episodeRequestText, activeExperimentRun } from "./store.js";
 // ---- end Round 6 Task 6a ----
+
+// ---- Round 6 Task 6b ----
+// The judging screen's own read (ExperimentRunView, built from an
+// experiment_runs row plus the episode/rule text around it -- no Lovable
+// access, so it lives in improvements.ts, not an executor/ module). The
+// executor route's own `credits`/`undeleted_copies` GET fields are built
+// from adapter.getSettings()/creditsThisMonth()/lastKnownTestCost()/
+// listUndeletedCopies(), all already re-exported above -- nothing new
+// needed for those.
+export { buildExperimentRunView } from "./improvements.js";
+export type { ExperimentRunView } from "./improvements.js";
+// ---- end Round 6 Task 6b ----

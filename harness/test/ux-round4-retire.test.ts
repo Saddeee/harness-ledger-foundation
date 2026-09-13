@@ -254,6 +254,9 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     // Round 6 Task 2: "Try again" on a not-written outcome.
     "retry_write",
     "skip",
+    // Round 6 Task 6b / spec §6: "Test this rule"'s own confirm, and the Add
+    // dialog's "Add and test it first" choice (accept, then this).
+    "test",
     // Round 6 Task 3: a plain, no-dialog reopen for anything not yet
     // written -- "restore" is gone from this set: it moved to the History
     // page only (see ux-round6-controls.test.ts). Round 6 Task 3 fix 1:

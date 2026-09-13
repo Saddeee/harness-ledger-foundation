@@ -268,10 +268,15 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
   assert.ok(!/\bfetch\(/.test(code), "local-settings.tsx must not call fetch directly");
 });
 
-test("local-settings.tsx: 'credit' appears only in the schedule sentence; the budget label never mentions it", () => {
+// Round 6 Task 6b / spec §6: rewritten with intent -- a whole "Lovable
+// credits" section now legitimately exists (budget, used-this-month,
+// keep-test-copies), so "credit" is no longer confined to the one schedule
+// sentence. The token-budget label (a different, LLM budget entirely) must
+// still never mention it, which is the part of this test worth keeping.
+test("local-settings.tsx: 'credit' appears in the schedule sentence and the Lovable-credits section; the LLM token-budget label never mentions it", () => {
   const raw = readApp(LOCAL_SETTINGS);
-  assert.equal(count(raw, "credit"), 1);
-  assert.ok(!/Monthly budget[^<]*credit/i.test(raw));
+  assert.equal(count(raw, "credit"), 27);
+  assert.ok(!/Monthly token budget[^<]*credit/i.test(raw));
 });
 
 // ---- 6. Projects: per-project settings ----

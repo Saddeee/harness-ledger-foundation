@@ -4193,3 +4193,34 @@ export function activeExperimentRun(windowMinutes: number): ExperimentRunRow | n
   return null;
 }
 // ---- end Round 6 Task 6a ----
+
+// ---- Round 6 Task 6b ----
+// One store addition the judging screen and Improvement.test (TestInfo) both
+// need: the "corrections" an episode's evidence actually names, reusing the
+// exact query listEpisodesAfter's own correctionsStmt already uses (Round 4
+// C1) -- a message_classifications row with classification = 'correction'
+// for one of the episode's evidence messages, summary falling back to the
+// first 200 chars of the message itself. Scoped to one episode id instead of
+// "every episode after some date" -- a plain reuse of the same table shape,
+// not a new concept.
+
+/** The corrections an episode's own evidence names -- what the judging
+ * screen lists as "each correction you made" and what a paired test's score
+ * (no ÷ corrections) divides by. Oldest first. [] for an episode with no
+ * classified correction message (a candidate created by hand, or one whose
+ * episode predates the classifier pipeline) -- callers treat that as "no
+ * corrections to judge" rather than an error. */
+export function episodeCorrections(episodeId: number): string[] {
+  const rows = db
+    .prepare(
+      `SELECT mc.summary as summary, hi.content as content
+       FROM task_episode_evidence tee
+       JOIN history_items hi ON hi.id = tee.history_item_id
+       JOIN message_classifications mc ON mc.history_item_id = hi.id
+       WHERE tee.task_episode_id = ? AND mc.classification = 'correction'
+       ORDER BY hi.id`,
+    )
+    .all(episodeId) as { summary: string | null; content: string }[];
+  return rows.map((r) => (r.summary && r.summary.length > 0 ? r.summary : r.content.slice(0, 200)));
+}
+// ---- end Round 6 Task 6b ----

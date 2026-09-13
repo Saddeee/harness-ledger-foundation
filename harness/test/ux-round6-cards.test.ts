@@ -96,7 +96,10 @@ test("improvement.tsx: CompactDecisionCard's bar has exactly one action-bar cont
   assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 1);
   assert.match(fn, /const size = "sm";/);
   const bar = slice(fn, "className={ACTION_BAR_CLASS}", "</article>");
-  assert.equal(count(bar, "size={size}"), 3, "both AddConfirms and SkipConfirm sized");
+  // Round 6 Task 6b / spec §6: both AddConfirms, SkipConfirm, and TestButton
+  // (rendered unconditionally in source -- it returns null itself when
+  // item.test isn't available, so this is still one bar, never a second).
+  assert.equal(count(bar, "size={size}"), 4, "both AddConfirms, SkipConfirm, and TestButton sized");
   assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
 });
 
@@ -106,7 +109,8 @@ test("improvement.tsx: DecisionCard's own pending branch has exactly one action-
   assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 1);
   assert.match(fn, /const size: "default" \| "sm" = titleAs === "h1" \? "default" : "sm";/);
   const bar = slice(fn, "className={ACTION_BAR_CLASS}", "</article>");
-  assert.equal(count(bar, "size={size}"), 3, "both AddConfirms and SkipConfirm sized");
+  // Round 6 Task 6b / spec §6: both AddConfirms, SkipConfirm, and TestButton.
+  assert.equal(count(bar, "size={size}"), 4, "both AddConfirms, SkipConfirm, and TestButton sized");
   assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
 });
 
