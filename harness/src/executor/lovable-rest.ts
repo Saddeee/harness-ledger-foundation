@@ -20,6 +20,7 @@
  * SQLite.
  */
 import { FileOAuthProvider, authFilePath } from "./lovable-auth.js";
+import { ensureFreshLovableToken } from "./lovable-mcp.js";
 
 const DEFAULT_BASE_URL = "https://api.lovable.dev";
 
@@ -239,9 +240,15 @@ export function createLovableRest(deps?: {
   fetchFn?: typeof fetch;
   baseUrl?: string;
   token?: string;
+  // Round 6 fix wave item B: refreshes the stored token on a 401, before
+  // the one retry below -- defaults to the real ensureFreshLovableToken
+  // (lovable-mcp.ts); tests inject a stub so a 401-retry test never opens a
+  // real MCP client.
+  ensureFreshToken?: () => Promise<void>;
 }): LovableRest {
   const fetchFn = deps?.fetchFn ?? fetch;
   const baseUrl = deps?.baseUrl ?? DEFAULT_BASE_URL;
+  const ensureFreshToken = deps?.ensureFreshToken ?? ensureFreshLovableToken;
   const allowedCopyIds = new Set<string>();
 
   function resolveToken(): string | undefined {
@@ -256,6 +263,10 @@ export function createLovableRest(deps?: {
     method: string,
     path: string,
     opts?: { query?: Record<string, string | undefined>; body?: unknown },
+    // Round 6 fix wave item B: internal-only, never passed by a caller --
+    // set to true on the one retry this function makes of itself after a
+    // 401 (see below), so a second 401 doesn't refresh-and-retry forever.
+    isRetry = false,
   ): Promise<unknown> {
     const url = new URL(baseUrl + path);
     if (opts?.query) {
@@ -277,6 +288,14 @@ export function createLovableRest(deps?: {
     const parsed: unknown = text ? JSON.parse(text) : undefined;
 
     if (!res.ok) {
+      // Round 6 fix wave item B: on a 401, refresh the stored token once
+      // (ensureFreshLovableToken persists it through FileOAuthProvider, so
+      // the retry's own resolveToken() call picks it straight back up) and
+      // retry this exact request exactly once before giving up.
+      if (res.status === 401 && !isRetry) {
+        await ensureFreshToken();
+        return request(method, path, opts, true);
+      }
       const problem: ProblemBody = isRecord(parsed) ? (parsed as ProblemBody) : {};
       throw new LovableRestError(
         res.status,

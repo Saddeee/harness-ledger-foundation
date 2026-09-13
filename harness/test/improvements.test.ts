@@ -3061,6 +3061,77 @@ function mkRuleWithCorrections(prefix: string, correctionSummaries: string[]) {
   return { cc, rule, ep };
 }
 
+/** Round 6 fix wave item C: a rule whose episode carries NO classified
+ * correction messages (no message_classifications rows at all -- unlike
+ * mkRuleWithCorrections above) but does carry `followUpTexts.length`
+ * evidence messages after the opening request, each authored with the
+ * given `role` ("user" or "operator" -- store.episodeFollowUpCorrections'
+ * own fallback source). Mirrors the owner's own real first episode: hand-
+ * built, so nothing was ever run through the classifier. */
+function mkRuleWithFollowUps(
+  prefix: string,
+  followUpTexts: string[],
+  role: "user" | "operator" = "user",
+) {
+  const reqMsg = store.upsertHistoryItem({
+    project_id: PROJECT,
+    kind: "message",
+    external_id: `${prefix}-req`,
+    role: "user",
+    content: "Add a signup form.",
+    occurred_at: "2026-09-01T00:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const evidenceIds = [reqMsg.id];
+  followUpTexts.forEach((text, i) => {
+    const msg = store.upsertHistoryItem({
+      project_id: PROJECT,
+      kind: "message",
+      external_id: `${prefix}-followup-${i}`,
+      role,
+      content: text,
+      occurred_at: `2026-09-01T00:0${i + 1}:00Z`,
+      provenance: "lovable_mcp",
+    }) as { id: number };
+    evidenceIds.push(msg.id);
+  });
+  const ep = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: prefix,
+    provenance: "manual",
+    evidence_history_item_ids: evidenceIds,
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: ep.id,
+    classification: "defect_correction",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "hand-built candidate, no classifier ever ran",
+    evidence_history_item_ids: evidenceIds,
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: "d",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "test",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "Always validate the signup form before submit.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "x",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+  return { cc, rule, ep };
+}
+
 // ---- TestInfo: available ----
 
 test("Improvement.test: available when connected, a request to replay exists, nothing else is running, and within budget", () => {
@@ -3325,6 +3396,168 @@ test("judge: score is 0, not NaN, when the episode has no classified corrections
   const result = imp.improvementAction({ action: "judge", run_id: runId, verdicts: [] });
   assert.equal(result.id, cc.id);
   assert.equal(store.getExperimentRun(runId)!.score, 0);
+});
+
+// ---- Round 6 fix wave item C: corrections fallback (classified vs follow_ups) ----
+
+test("buildExperimentRunView: corrections_source is 'classified' when the episode has message_classifications rows", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("runview-classified", [
+    "The email field accepted invalid addresses.",
+    "The password field had no minimum length.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "runview-classified-req",
+  });
+  const view = imp.buildExperimentRunView(runId)!;
+  assert.equal(view.corrections_source, "classified");
+  assert.deepEqual(view.corrections, [
+    "The email field accepted invalid addresses.",
+    "The password field had no minimum length.",
+  ]);
+});
+
+test("buildExperimentRunView: falls back to follow-up messages (corrections_source 'follow_ups') when the episode has no classified corrections", () => {
+  const { cc, rule, ep } = mkRuleWithFollowUps("runview-followups", [
+    "Actually, also require a confirm-password field.",
+    "And show an inline error, not an alert box.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "runview-followups-req",
+  });
+  const view = imp.buildExperimentRunView(runId)!;
+  assert.equal(view.corrections_source, "follow_ups");
+  assert.deepEqual(view.corrections, [
+    "Actually, also require a confirm-password field.",
+    "And show an inline error, not an alert box.",
+  ]);
+});
+
+test("buildExperimentRunView: an 'operator' role follow-up message counts too, an 'assistant' reply in between does not", () => {
+  const reqMsg = store.upsertHistoryItem({
+    project_id: PROJECT,
+    kind: "message",
+    external_id: "runview-operator-req",
+    role: "user",
+    content: "Add a signup form.",
+    occurred_at: "2026-09-01T00:00:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const reply = store.upsertHistoryItem({
+    project_id: PROJECT,
+    kind: "message",
+    external_id: "runview-operator-reply",
+    role: "assistant",
+    content: "Sure -- adding a signup form now.",
+    occurred_at: "2026-09-01T00:01:00Z",
+    provenance: "lovable_mcp",
+  }) as { id: number };
+  const operatorNote = store.upsertHistoryItem({
+    project_id: PROJECT,
+    kind: "manual_note",
+    external_id: "runview-operator-note",
+    role: "operator",
+    content: "Operator note: also needs a captcha.",
+    occurred_at: "2026-09-01T00:02:00Z",
+    provenance: "manual",
+  }) as { id: number };
+  const ep = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: "runview-operator",
+    provenance: "manual",
+    evidence_history_item_ids: [reqMsg.id, reply.id, operatorNote.id],
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: ep.id,
+    classification: "defect_correction",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "operator-authored follow-up",
+    evidence_history_item_ids: [reqMsg.id, reply.id, operatorNote.id],
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: "d",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "test",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "Always add a captcha to signup forms.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "x",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "runview-operator-req",
+  });
+
+  const view = imp.buildExperimentRunView(runId)!;
+  assert.equal(view.corrections_source, "follow_ups");
+  assert.deepEqual(view.corrections, ["Operator note: also needs a captcha."]);
+});
+
+test("judge: verdicts.length is validated against the follow-up fallback count when the episode has no classified corrections", () => {
+  const { cc, rule, ep } = mkRuleWithFollowUps("judge-followups-count", [
+    "Also require a confirm-password field.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "judge-followups-count-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging" });
+
+  assert.throws(
+    () => imp.improvementAction({ action: "judge", run_id: runId, verdicts: [] }),
+    /expected 1 verdict.*got 0/,
+  );
+
+  const result = imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["no"] });
+  assert.equal(result.id, cc.id);
+  assert.equal(store.getExperimentRun(runId)!.score, 1);
+});
+
+test("Improvement.test.run.corrections: counts follow-up messages when the episode has no classified corrections", () => {
+  const { cc, rule, ep } = mkRuleWithFollowUps("testinfo-followups", [
+    "One follow-up.",
+    "Another follow-up.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "testinfo-followups-req",
+  });
+  store.updateExperimentRun(runId, {
+    status: "judged",
+    score: 0.5,
+    judged_at: "2026-09-02T00:00:00Z",
+  });
+
+  const item = imp.getImprovement(cc.id, { connected: true })!;
+  assert.equal(item.test!.run!.corrections, 2);
 });
 
 // ---- History timeline: the `test` node kind ----

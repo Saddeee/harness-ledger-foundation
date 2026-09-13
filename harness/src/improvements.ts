@@ -432,6 +432,25 @@ function testBudgetRefusal(usedThisMonth: number, budget: number): string {
   return `This would exceed your monthly Lovable credit budget (${usedThisMonth} of ${budget} used).`;
 }
 
+// ---- Round 6 fix wave item C (corrections fallback) ----
+// The owner's own real first paired-test episode was hand-built in an
+// earlier session, before the classifier pipeline existed -- it has no
+// message_classifications rows, so store.episodeCorrections (the classifier-
+// derived source every one of these three call sites used before this fix)
+// returns [], and the judging screen would show zero corrections with a
+// score that means nothing. Shared by computeTestInfo (the card's own
+// preview count), judgeRun (verdict-count validation + scoring), and
+// buildExperimentRunView (the judging screen's own list) so all three agree
+// on exactly the same list, in exactly the same fallback case, every time.
+export type CorrectionsSource = "classified" | "follow_ups";
+
+function correctionsForEpisode(episodeId: number): { texts: string[]; source: CorrectionsSource } {
+  const classified = store.episodeCorrections(episodeId);
+  if (classified.length > 0) return { texts: classified, source: "classified" };
+  return { texts: store.episodeFollowUpCorrections(episodeId), source: "follow_ups" };
+}
+// ---- end Round 6 fix wave item C ----
+
 // Round 6 Task 6b / spec §6: TestInfo for one rule -- null when there is no
 // rule yet (a pending correction with no rule proposed for it has nothing to
 // test). `connected` is injected (see TestInfo's own doc comment above);
@@ -468,7 +487,7 @@ function computeTestInfo(
   }
 
   const latestRun = store.listExperimentRuns({ rule_id: rule.id })[0] ?? null;
-  const corrections = store.episodeCorrections(c.task_episode_id).length;
+  const corrections = correctionsForEpisode(c.task_episode_id).texts.length;
 
   return {
     available: unavailable_reason === null,
@@ -2384,7 +2403,7 @@ function judgeRun(runId: number, verdicts: ("yes" | "no" | "unclear")[]): Improv
   const run = store.getExperimentRun(runId);
   if (!run) throw new Error(`experiment run ${runId} not found`);
 
-  const correctionsCount = store.episodeCorrections(run.task_episode_id).length;
+  const correctionsCount = correctionsForEpisode(run.task_episode_id).texts.length;
   if (verdicts.length !== correctionsCount) {
     throw new Error(
       `expected ${correctionsCount} verdict${correctionsCount === 1 ? "" : "s"} (one per correction), got ${verdicts.length}`,
@@ -2431,6 +2450,11 @@ export type ExperimentRunView = {
   request_text: string;
   original_reply: string;
   corrections: string[];
+  // Round 6 fix wave item C: which of episodeCorrections (classifier-
+  // derived) / episodeFollowUpCorrections (fallback) `corrections` above
+  // came from -- the judging screen shows "Corrections taken from your
+  // follow-up messages" only in the "follow_ups" case.
+  corrections_source: CorrectionsSource;
   rule_text: string;
   improvement_id: number;
   original_diff: { lines: string[]; truncated: boolean } | null;
@@ -2464,6 +2488,7 @@ export function buildExperimentRunView(runId: number): ExperimentRunView | null 
 
   const { request, reply } = store.episodeTextForJudge(run.task_episode_id);
   const ruleDetail = store.getRule(run.rule_id) as { rule: { instruction: string } } | null;
+  const corrections = correctionsForEpisode(run.task_episode_id);
 
   let verdicts: ("yes" | "no" | "unclear")[] | null = null;
   if (run.verdicts_json) {
@@ -2485,7 +2510,8 @@ export function buildExperimentRunView(runId: number): ExperimentRunView | null 
     error: run.error,
     request_text: request,
     original_reply: reply,
-    corrections: store.episodeCorrections(run.task_episode_id),
+    corrections: corrections.texts,
+    corrections_source: corrections.source,
     rule_text: ruleDetail?.rule.instruction ?? "",
     improvement_id: run.correction_candidate_id,
     original_diff: parseDiffJson(run.original_diff_json),

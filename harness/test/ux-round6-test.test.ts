@@ -169,6 +169,23 @@ test("improvements-client.ts: fetches only the six local harness routes, templat
   assert.match(code, /fetchExperimentRun/);
 });
 
+// ---- 5b. corrections fallback source is surfaced on the judging screen (fix wave item C) ----
+
+test("judge.tsx: shows the follow-up-corrections line when corrections_source is 'follow_ups'", () => {
+  const code = codeOnly(readApp(JUDGE));
+  assert.match(code, /corrections_source === "follow_ups"/);
+  assert.match(code, /CORRECTIONS_FROM_FOLLOW_UPS_LINE/);
+
+  const uxCode = codeOnly(readApp(HARNESS_UX));
+  assert.match(
+    uxCode,
+    /export const CORRECTIONS_FROM_FOLLOW_UPS_LINE = "Corrections taken from your follow-up messages";/,
+  );
+
+  const clientCode = codeOnly(readApp(CLIENT));
+  assert.match(clientCode, /corrections_source: "classified" \| "follow_ups";/);
+});
+
 // ---- 6. TimelineNode.kind has "test" ----
 
 test('TimelineNode.kind gained "test" (Round 6 Task 6b), in both the client type and the harness-side source', () => {

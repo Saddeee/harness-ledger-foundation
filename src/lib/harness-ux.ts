@@ -692,3 +692,10 @@ export function testCostLine(costCredits: number | null): string {
     : `This test used ${costCredits} credit${costCredits === 1 ? "" : "s"} · measured`;
 }
 // ---- end Round 6 Task 6b ----
+
+// Round 6 fix wave item C: shown on the judging screen only when the run's
+// own corrections_source is "follow_ups" -- an episode with no classified
+// correction on record (e.g. hand-built before the classifier pipeline
+// existed) whose corrections list is instead the owner's own follow-up
+// messages after the original request.
+export const CORRECTIONS_FROM_FOLLOW_UPS_LINE = "Corrections taken from your follow-up messages";

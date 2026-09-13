@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { WhatChangedLines } from "@/components/harness/timeline";
 import { AddConfirm, RemoveFromKnowledgeConfirm, useRun } from "@/components/harness/improvement";
 import {
+  CORRECTIONS_FROM_FOLLOW_UPS_LINE,
   testCopyConfounderLine,
   testCostLine,
   testedResultLine,
@@ -307,6 +308,11 @@ function Page() {
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Corrections you made
                   </p>
+                  {view.corrections_source === "follow_ups" ? (
+                    <p className="text-xs text-muted-foreground">
+                      {CORRECTIONS_FROM_FOLLOW_UPS_LINE}
+                    </p>
+                  ) : null}
                   <ul className="list-disc space-y-1 pl-5 text-sm">
                     {view.corrections.map((c, i) => (
                       <li key={i}>{c}</li>

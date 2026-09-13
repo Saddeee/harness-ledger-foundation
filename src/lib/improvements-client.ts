@@ -205,6 +205,11 @@ export type ExperimentRunView = {
   request_text: string;
   original_reply: string;
   corrections: string[];
+  // Round 6 fix wave item C: "classified" (message_classifications rows, the
+  // usual case) or "follow_ups" (an episode with none -- e.g. hand-built --
+  // falls back to its own follow-up messages; the judging screen labels
+  // this case explicitly).
+  corrections_source: "classified" | "follow_ups";
   rule_text: string;
   improvement_id: number;
   original_diff: KnowledgeChanges | null;

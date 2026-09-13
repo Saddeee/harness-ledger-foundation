@@ -14,8 +14,19 @@ import { startFakeLovable, type FakeLovableServer } from "./fake-lovable.ts";
 
 const TOKEN = "test-access-token";
 
-function client(fake: FakeLovableServer) {
-  return createLovableRest({ baseUrl: fake.baseUrl, fetchFn: fetch, token: TOKEN });
+// Round 6 fix wave item B: every test in this file gets a no-op
+// ensureFreshToken by default -- createLovableRest's own real default
+// (ensureFreshLovableToken, lovable-mcp.ts) reads the real authFilePath()
+// and, for a stale token, opens a real MCP client, which no test in this
+// repo may ever risk triggering. The one test that actually exercises the
+// 401-retry path overrides this with its own spy.
+function client(fake: FakeLovableServer, extra?: { ensureFreshToken?: () => Promise<void> }) {
+  return createLovableRest({
+    baseUrl: fake.baseUrl,
+    fetchFn: fetch,
+    token: TOKEN,
+    ensureFreshToken: extra?.ensureFreshToken ?? (async () => {}),
+  });
 }
 
 test("getProject: GET /v1/projects/{id}, maps id/name/workspace_id", async () => {
@@ -591,6 +602,61 @@ test("error mapping: 401 carries reason 'reconnect'", async () => {
         return true;
       },
     );
+  } finally {
+    await fake.close();
+  }
+});
+
+test("401: refreshes the token once via ensureFreshToken, then retries and succeeds on the second attempt", async () => {
+  let attempts = 0;
+  let refreshCalls = 0;
+  const fake = startFakeLovable({
+    getProject: () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return { status: 401, body: { status: 401, type: "unauthorized", detail: "stale" } };
+      }
+      return { status: 200, body: { id: "prj_1", name: "x", workspace_id: "ws_1" } };
+    },
+  });
+  try {
+    const rest = client(fake, {
+      ensureFreshToken: async () => {
+        refreshCalls += 1;
+      },
+    });
+    const result = await rest.getProject("prj_1");
+    assert.equal(result.id, "prj_1");
+    assert.equal(attempts, 2, "the request was retried exactly once");
+    assert.equal(refreshCalls, 1, "ensureFreshToken ran once, before the retry");
+  } finally {
+    await fake.close();
+  }
+});
+
+test("401 twice: still throws LovableRestError after the one allowed retry, and ensureFreshToken is called only once", async () => {
+  let refreshCalls = 0;
+  const fake = startFakeLovable({
+    getProject: () => ({
+      status: 401,
+      body: { status: 401, type: "unauthorized", detail: "still stale" },
+    }),
+  });
+  try {
+    const rest = client(fake, {
+      ensureFreshToken: async () => {
+        refreshCalls += 1;
+      },
+    });
+    await assert.rejects(
+      () => rest.getProject("prj_1"),
+      (err: unknown) => {
+        assert.ok(err instanceof LovableRestError);
+        assert.equal(err.status, 401);
+        return true;
+      },
+    );
+    assert.equal(refreshCalls, 1, "no infinite retry loop -- exactly one refresh attempt");
   } finally {
     await fake.close();
   }

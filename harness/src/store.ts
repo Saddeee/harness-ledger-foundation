@@ -4012,6 +4012,34 @@ export function runningExperimentRun(crashWindowMinutes = 20): ExperimentRunRow 
   return null;
 }
 
+// ---- Round 6 fix wave item 3 (queue crash recovery) ----
+/** The inverse of runningExperimentRun's freshness filter: a copying/
+ * building row whose heartbeat has gone quiet (missing, or older than the
+ * crash window) -- a run that was still in flight when the process died and
+ * was never picked back up, because runningExperimentRun (by design) treats
+ * it as "not running" rather than "running". kickExperimentRunner uses this
+ * to close that row out (status: failed) before it looks for the next queued
+ * run to drive, so a crashed run doesn't sit on the card/judging screen
+ * forever reading "Testing… copying the project". Newest first, same as
+ * runningExperimentRun; returns at most one row per call (kickExperimentRunner
+ * loops if more than one is ever found, which in practice is at most one --
+ * only one run is ever driven at a time). */
+export function staleExperimentRun(crashWindowMinutes = 20): ExperimentRunRow | null {
+  const candidates = db
+    .prepare(
+      `SELECT * FROM experiment_runs WHERE status IN ('copying','building') ORDER BY id DESC`,
+    )
+    .all() as ExperimentRunRow[];
+  const cutoffMs = Date.now() - crashWindowMinutes * 60_000;
+  for (const run of candidates) {
+    if (!run.heartbeat_at) return run;
+    const heartbeatMs = new Date(run.heartbeat_at.replace(" ", "T") + "Z").getTime();
+    if (Number.isNaN(heartbeatMs) || heartbeatMs < cutoffMs) return run;
+  }
+  return null;
+}
+// ---- end Round 6 fix wave item 3 ----
+
 /** Every credited call an experiment makes gets its own credit_ledger row
  * (migration v12's own comment explains why: per-call attribution, not a
  * running total on experiment_runs). cost is in Lovable credits. */
@@ -4083,6 +4111,26 @@ export function episodeRequestExternalId(episodeId: number): string | null {
     .get(episodeId) as { external_id: string | null } | undefined;
   return row?.external_id ?? null;
 }
+
+// ---- Round 6 fix wave item A ----
+/** The occurred_at of the episode's earliest evidence message (the same row
+ * episodeRequestExternalId/episodeRequestText resolve) -- what the paired-
+ * test runner's REST-message-id resolver (experiments.ts#resolveRequestMessageId)
+ * uses for its own "within 90 seconds" fallback match, alongside content.
+ * null when the episode has no evidence at all. */
+export function episodeRequestOccurredAt(episodeId: number): string | null {
+  const row = db
+    .prepare(
+      `SELECT hi.occurred_at FROM task_episode_evidence tee
+       JOIN history_items hi ON hi.id = tee.history_item_id
+       WHERE tee.task_episode_id = ?
+       ORDER BY hi.occurred_at ASC, hi.id ASC
+       LIMIT 1`,
+    )
+    .get(episodeId) as { occurred_at: string | null } | undefined;
+  return row?.occurred_at ?? null;
+}
+// ---- end Round 6 fix wave item A ----
 
 /** Pure helper for "N edits since" -- how many of editsIsoDates are strictly
  * after iso. No DB access: the runner passes it Lovable REST edit
@@ -4278,3 +4326,33 @@ export function episodeCorrections(episodeId: number): string[] {
   return rows.map((r) => (r.summary && r.summary.length > 0 ? r.summary : r.content.slice(0, 200)));
 }
 // ---- end Round 6 Task 6b ----
+
+// ---- Round 6 fix wave item C ----
+/** The corrections fallback for an episode with no message_classifications
+ * rows (episodeCorrections above returns [] for it) -- typically a
+ * hand-built episode from before, or outside, the classifier pipeline (the
+ * owner's own real first episode was exactly this). Every evidence message
+ * AFTER the opening request (the same "earliest by occurred_at/id" row
+ * episodeRequestText/episodeRequestExternalId resolve) whose role is 'user'
+ * or 'operator' -- the owner's own follow-up/correction messages, never
+ * Lovable's replies. humanVisibleText's own excerpt fallback (these are
+ * plain user-authored messages, never lov-tool-use blobs, so that fallback
+ * is always what runs) caps each one at 600 characters. Oldest first, same
+ * order as episodeCorrections. [] when the episode has no follow-up
+ * messages either (nothing to judge either way). */
+export function episodeFollowUpCorrections(episodeId: number): string[] {
+  const rows = db
+    .prepare(
+      `SELECT hi.content as content, hi.role as role
+       FROM task_episode_evidence tee
+       JOIN history_items hi ON hi.id = tee.history_item_id
+       WHERE tee.task_episode_id = ?
+       ORDER BY hi.occurred_at ASC, hi.id ASC`,
+    )
+    .all(episodeId) as { content: string; role: string | null }[];
+  return rows
+    .slice(1)
+    .filter((r) => r.role === "user" || r.role === "operator")
+    .map((r) => humanVisibleText(r.content));
+}
+// ---- end Round 6 fix wave item C ----

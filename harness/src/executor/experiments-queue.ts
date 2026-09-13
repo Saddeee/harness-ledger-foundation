@@ -27,6 +27,15 @@ import { createLovableRest, type LovableRest } from "./lovable-rest.js";
 // heartbeat in the last 20 minutes is presumed crashed, not still running.
 const CRASH_WINDOW_MINUTES = 20;
 
+// Round 6 fix wave item 3 (queue crash recovery): the sentence a run that
+// was mid-flight when the process died is marked failed with, before this
+// same kick ever looks for a queued row to start next. Without this, a
+// copying/building row whose heartbeat has gone stale is invisible to
+// runningExperimentRun (by design -- see its own doc comment) but was never
+// actually closed out either, so its card/judging screen would read
+// "Testing… copying the project" forever.
+const CRASH_RESTART_MESSAGE = "Harness restarted while the test was running.";
+
 let inFlight: Promise<void> | null = null;
 
 /**
@@ -48,6 +57,19 @@ export function kickExperimentRunner(deps?: {
   if (inFlight) return inFlight;
 
   if (store.runningExperimentRun(CRASH_WINDOW_MINUTES)) return Promise.resolve();
+
+  // Round 6 fix wave item 3: close out a crashed run (its own heartbeat is
+  // stale, so runningExperimentRun above doesn't see it as "running" either)
+  // before ever starting the next one -- same as store.staleExperimentRun's
+  // own doc comment.
+  const stale = store.staleExperimentRun(CRASH_WINDOW_MINUTES);
+  if (stale) {
+    store.updateExperimentRun(stale.id, {
+      status: "failed",
+      error: CRASH_RESTART_MESSAGE,
+      finished_at: new Date().toISOString(),
+    });
+  }
 
   const queued = store.listExperimentRuns({ status: ["queued"] });
   if (queued.length === 0) return Promise.resolve();

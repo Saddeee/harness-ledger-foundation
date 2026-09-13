@@ -6,11 +6,18 @@
  * once on 429 before giving up. Field mapping is defensive: the server may add
  * or rename keys, and a sync run must not crash on that.
  */
+import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 
-import { FileOAuthProvider, LOVABLE_MCP_URL, authFilePath, status } from "./lovable-auth.js";
+import {
+  FileOAuthProvider,
+  LOVABLE_MCP_URL,
+  authFilePath,
+  status,
+  type AuthFile,
+} from "./lovable-auth.js";
 
 export type LovableMessage = {
   message_id: string;
@@ -231,3 +238,54 @@ export async function openLovableClient(): Promise<LovableClient> {
     },
   };
 }
+
+// ---- Round 6 fix wave item B ----
+// lovable-rest.ts reads the raw, possibly-stale access token straight off
+// the auth file (FileOAuthProvider(...).tokens()) -- only this module's own
+// MCP client transport actually knows how to refresh it (the SDK's own
+// refresh-token flow, driven from StreamableHTTPClientTransport with
+// authProvider: a FileOAuthProvider). Opening (and immediately closing) a
+// client here is the cheapest way to make that refresh happen and get it
+// persisted through FileOAuthProvider#saveTokens, without duplicating the
+// SDK's own refresh logic.
+
+/** How long before the stored token's own expiry this treats it as "about
+ * to expire" and refreshes proactively, rather than waiting for it to
+ * actually fail a real REST call first. */
+const REFRESH_MARGIN_MS = 5 * 60_000;
+
+/** Refreshes and persists the Lovable access token when it's within
+ * REFRESH_MARGIN_MS of expiring, or already expired -- a no-op otherwise,
+ * and a no-op (never throws) when the auth file is missing/unparseable or
+ * carries no expiry info at all, so a caller's own next real Lovable call
+ * still surfaces any genuine auth problem rather than this best-effort
+ * check masking it. `openClient` only needs to open and close (never any of
+ * LovableReader/LovableWriter's own read/write methods) -- narrowed to that
+ * shape, rather than the full LovableClient the real default returns, so a
+ * test can inject a bare `{ close }` stub without building one. Called at
+ * the start of runExperiment (experiments.ts) and, on a 401, once by
+ * lovable-rest.ts's own request() before its one allowed retry. */
+export async function ensureFreshLovableToken(
+  openClient: () => Promise<{ close(): Promise<void> }> = openLovableClient,
+): Promise<void> {
+  let data: AuthFile;
+  try {
+    data = JSON.parse(readFileSync(authFilePath(), "utf8")) as AuthFile;
+  } catch {
+    return;
+  }
+  const expiresIn = data.tokens?.expires_in;
+  const savedAt = data.tokens_saved_at;
+  if (typeof expiresIn !== "number" || typeof savedAt !== "number") return;
+  const expiresAtMs = savedAt + expiresIn * 1000;
+  if (expiresAtMs - REFRESH_MARGIN_MS >= Date.now()) return;
+
+  try {
+    const client = await openClient();
+    await client.close().catch(() => {});
+  } catch {
+    // Best effort only -- the caller's own next real Lovable call still
+    // surfaces any genuine, unrecoverable auth problem.
+  }
+}
+// ---- end Round 6 fix wave item B ----

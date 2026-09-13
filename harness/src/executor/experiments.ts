@@ -22,6 +22,7 @@ import type { ExperimentRunRow } from "../store.js";
 import { composeManagedKnowledge } from "../knowledge.js";
 import { humanVisibleText } from "../analysis/reply-text.js";
 import { status as lovableConnectionStatus } from "./lovable-auth.js";
+import { ensureFreshLovableToken } from "./lovable-mcp.js";
 import { LovableRestError, type LovableRest } from "./lovable-rest.js";
 
 // ---------------------------------------------------------------- tuning
@@ -45,9 +46,28 @@ const DIFF_LINE_CAP = 400;
 // non-credited read, not something worth a full pagination loop for.
 const EDITS_SINCE_LIMIT = 200;
 
+// Round 6 fix wave item A: how far resolveRequestMessageId below pages
+// through the source project's own message list (a free, uncredited read)
+// looking for the REST id that matches the episode's own request, and how
+// close (in wall-clock time) a message's created_at must be to the
+// episode's own occurred_at to count as a fallback match when no content
+// match is ever found. 20 pages of 50 (1,000 messages) is generous for the
+// same reason EDITS_SINCE_LIMIT above is -- a real project's own request is
+// very unlikely to sit past this many messages back.
+const LIST_MESSAGES_MAX_PAGES = 20;
+const LIST_MESSAGES_PAGE_LIMIT = 50;
+const REQUEST_MATCH_WINDOW_MS = 90_000;
+
 const NOT_CONNECTED_REFUSAL = "Harness is not connected — connect on the Projects page.";
 const NO_REQUEST_REFUSAL = "This suggestion has no original request to replay.";
 const ALREADY_RUNNING_REFUSAL = "A test is already running; one runs at a time.";
+// Round 6 fix wave item A: the owner's own real first test failed with a
+// bare Lovable 400 (invalid_message_id) because remixInit was called with
+// the sync's own MCP list_messages id, a format the REST API's remix
+// endpoint (and every other REST message_id-addressed endpoint) does not
+// accept -- see resolveRequestMessageId's own doc comment below.
+const NO_REQUEST_MATCH_ERROR =
+  "Harness could not find your original request in Lovable's message list, so it cannot copy the project at that point.";
 
 // --------------------------------------------------------------- helpers
 
@@ -105,6 +125,74 @@ export function knowledgeBaseAtOrBefore(
   }
   if (snapshots.length > 0) return snapshots[snapshots.length - 1]!.content;
   return "";
+}
+
+/** Trims, collapses internal whitespace runs to one space, and clamps to
+ * 400 characters -- the comparison text resolveRequestMessageId uses on
+ * both sides, so a stored request that was clamped somewhere upstream (or
+ * whitespace that Lovable's own API normalizes differently) still matches. */
+function normalizeForMatch(text: string): string {
+  return text.trim().replace(/\s+/g, " ").slice(0, 400);
+}
+
+/** Same "SQLite datetime('now') is UTC without a zone marker" parsing
+ * convention store.ts's own runningExperimentRun/activeExperimentRun use --
+ * duplicated here (rather than exported from store.ts) because this is
+ * about parsing a Lovable REST timestamp, not a store.ts column. */
+function parseTimestampMs(iso: string): number {
+  const direct = Date.parse(iso);
+  if (!Number.isNaN(direct)) return direct;
+  return Date.parse(iso.replace(" ", "T") + "Z");
+}
+
+/** Resolves the REST message id (Lovable's own "aimsg_..." ids, from GET
+ * .../messages) that corresponds to one episode's own request -- what
+ * remixInit's message_id must be. The sync's own stored
+ * request_message_external_id is the MCP list_messages id (a different
+ * format, e.g. "main:user#00000000000006#usr:34J3MCVP"); the REST API's
+ * remix endpoint (and every other REST message_id-addressed endpoint) only
+ * accepts its own ids -- calling remixInit with the MCP id is exactly what
+ * produced the owner's own real "400 (invalid_message_id)" failure.
+ *
+ * Pages through rest.listMessages(source, ...) (a free, uncredited read)
+ * looking for a role: "user" message whose content, normalized
+ * (normalizeForMatch above), equals the episode's own request text --
+ * returned immediately on the first such match, preferred over a time
+ * match found on an earlier page. Failing any content match anywhere in the
+ * scan, falls back to the first role: "user" message whose created_at fell
+ * within 90 seconds of the episode's own occurred_at (found during the same
+ * single pass, so this never re-pages). null when neither ever matches --
+ * the caller fails the run with NO_REQUEST_MATCH_ERROR rather than send
+ * anything to Lovable. Exported for its own unit tests. */
+export async function resolveRequestMessageId(
+  rest: LovableRest,
+  source: string,
+  target: { content: string; occurred_at: string | null },
+): Promise<string | null> {
+  const wantContent = normalizeForMatch(target.content);
+  const wantMs = target.occurred_at ? parseTimestampMs(target.occurred_at) : NaN;
+  let timeMatch: string | null = null;
+  let cursor: string | undefined;
+
+  for (let page = 0; page < LIST_MESSAGES_MAX_PAGES; page += 1) {
+    const { messages, next_cursor } = await rest.listMessages(source, {
+      limit: LIST_MESSAGES_PAGE_LIMIT,
+      cursor,
+    });
+    for (const m of messages) {
+      if (m.role !== "user") continue;
+      if (normalizeForMatch(m.content) === wantContent) return m.message_id;
+      if (timeMatch === null && !Number.isNaN(wantMs) && m.created_at) {
+        const gotMs = parseTimestampMs(m.created_at);
+        if (!Number.isNaN(gotMs) && Math.abs(gotMs - wantMs) <= REQUEST_MATCH_WINDOW_MS) {
+          timeMatch = m.message_id;
+        }
+      }
+    }
+    if (!next_cursor) break;
+    cursor = next_cursor;
+  }
+  return timeMatch;
 }
 
 /** A plain sentence for every non-`completed` terminal build status
@@ -210,18 +298,31 @@ type GetMessageResult = Awaited<ReturnType<LovableRest["getMessage"]>>;
  * matters, a controllable now) so nothing here ever waits in real time. */
 export async function runExperiment(
   runId: number,
-  deps: { rest: LovableRest; sleep?: (ms: number) => Promise<void>; now?: () => number },
+  deps: {
+    rest: LovableRest;
+    sleep?: (ms: number) => Promise<void>;
+    now?: () => number;
+    // Round 6 fix wave item B: refreshes the stored Lovable access token
+    // before the run's very first REST call, when it's within 5 minutes of
+    // expiring (or already expired) -- see lovable-mcp.ts's own doc comment.
+    // Defaults to the real ensureFreshLovableToken; tests inject a no-op or
+    // a counting stub.
+    ensureFreshToken?: () => Promise<void>;
+  },
 ): Promise<ExperimentRunRow> {
   const rest = deps.rest;
   const sleep =
     deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const now = deps.now ?? (() => Date.now());
+  const ensureFreshToken = deps.ensureFreshToken ?? ensureFreshLovableToken;
 
   const initial = store.getExperimentRun(runId);
   if (!initial) throw new Error(`experiment run ${runId} not found`);
   const source = initial.source_project_id;
 
   try {
+    await ensureFreshToken();
+
     const ruleDetail = store.getRule(initial.rule_id) as { rule: { instruction: string } } | null;
     const ruleInstruction = ruleDetail?.rule.instruction ?? "";
 
@@ -231,8 +332,27 @@ export async function runExperiment(
       stage_note: "Copying the project at the moment before your request",
     });
 
+    // Round 6 fix wave item A: resolve the REST message id BEFORE ever
+    // calling remixInit -- see resolveRequestMessageId's own doc comment.
+    // requestFullText is reused below for the chat replay (step 3) instead
+    // of a second store read.
+    const requestFullText = store.episodeRequestText(initial.task_episode_id) ?? "";
+    const requestOccurredAt = store.episodeRequestOccurredAt(initial.task_episode_id);
+    const restRequestId = await resolveRequestMessageId(rest, source, {
+      content: requestFullText,
+      occurred_at: requestOccurredAt,
+    });
+    if (!restRequestId) {
+      throw new Error(NO_REQUEST_MATCH_ERROR);
+    }
+    store.insertEvent("experiment.resolved_request", null, {
+      run_id: runId,
+      mcp_id: initial.request_message_external_id,
+      rest_id: restRequestId,
+    });
+
     const { job_id } = await rest.remixInit(source, {
-      message_id: initial.request_message_external_id,
+      message_id: restRequestId,
       remix_mode: "before",
       include_history: false,
       include_custom_knowledge: false,
@@ -286,13 +406,12 @@ export async function runExperiment(
     // ---- 3. build in the copy (spec §6 Run 3) ----
     store.updateExperimentRun(runId, { status: "building", stage_note: "Building in the copy" });
 
-    // episodeRequestText (fix round 1), not episodeTextForJudge's own
-    // `request` -- that one is capped at 1500 chars for the judge screen;
-    // the runner replays the owner's original request in full.
-    const requestText = store.episodeRequestText(initial.task_episode_id) ?? "";
+    // requestFullText (resolved above, before remixInit) is the owner's
+    // original request in full -- episodeTextForJudge's own `request` is
+    // capped at 1500 chars for the judge screen, not what gets replayed.
     const { message_id: copyMessageId, thread_id: copyThreadId } = await rest.chat(
       copyProjectId,
-      requestText,
+      requestFullText,
     );
     store.updateExperimentRun(runId, {
       copy_message_id: copyMessageId,
@@ -341,9 +460,13 @@ export async function runExperiment(
     // own build already succeeded and is worth keeping. Fix round 1 minor:
     // separate try/catch per field, so a getDiff failure alone doesn't also
     // null out a commit_sha that getMessage already successfully returned.
+    // Round 6 fix wave item A: restRequestId (the REST id resolved above),
+    // not initial.request_message_external_id (the MCP id) -- these are the
+    // same message_id-addressed REST endpoints remixInit uses, and only
+    // accept Lovable's own ids.
     let originalCommitSha: string | null = null;
     try {
-      const originalMessage = await rest.getMessage(source, initial.request_message_external_id);
+      const originalMessage = await rest.getMessage(source, restRequestId);
       originalCommitSha = originalMessage.commit_sha ?? null;
     } catch {
       originalCommitSha = null;
@@ -351,7 +474,7 @@ export async function runExperiment(
     let originalDiffJson: string | null = null;
     try {
       const originalDiffText = await rest.getDiff(source, {
-        message_id: initial.request_message_external_id,
+        message_id: restRequestId,
       });
       originalDiffJson = JSON.stringify(capDiff(originalDiffText));
     } catch {
