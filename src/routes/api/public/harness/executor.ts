@@ -199,6 +199,10 @@ async function handleGet({ request }: { request: Request }) {
         decision_auto_confidence: Number(settings.decision_auto_confidence),
         evidence_sources: JSON.parse(settings.evidence_sources) as Record<string, boolean>,
         feedback: adapter.feedbackStats(),
+        // Round 6 Task 6b / spec §6: the Lovable-credits section's own
+        // switch -- read here alongside every other setting this route
+        // already exposes.
+        keep_test_copies: settings.keep_test_copies === "true",
       },
       last_run,
       next_run_at,
@@ -219,6 +223,15 @@ async function handleGet({ request }: { request: Request }) {
         provider_ready,
       },
       defaults: { max_active_rules: Number(settings.max_active_rules) },
+      // Round 6 Task 6b / spec §6: the Lovable-credits Settings section and
+      // the Projects page's "Test copies to delete by hand" reminder.
+      credits: {
+        used_this_month: adapter.creditsThisMonth(),
+        budget: Number(settings.lovable_monthly_credit_budget),
+        last_test_cost: adapter.lastKnownTestCost(),
+        judged_runs: adapter.listExperimentRuns({ status: ["judged"] }).length,
+      },
+      undeleted_copies: adapter.listUndeletedCopies(),
     });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
@@ -316,6 +329,14 @@ async function handlePost({ request }: { request: Request }) {
           typeof body["evidence_sources"] === "string"
             ? body["evidence_sources"]
             : JSON.stringify(body["evidence_sources"]);
+      // Round 6 Task 6b / spec §6: the Lovable-credits Settings section --
+      // store.ts's own setSettings validation (assertIntInRange 0-1000 for
+      // the budget, the boolean-setting check for keep_test_copies) is the
+      // real gate, same as every other setting on this route.
+      if (body["lovable_monthly_credit_budget"] !== undefined)
+        patch["lovable_monthly_credit_budget"] = String(body["lovable_monthly_credit_budget"]);
+      if (body["keep_test_copies"] !== undefined)
+        patch["keep_test_copies"] = String(body["keep_test_copies"]);
       const settings = adapter.setSettings(patch);
       return Response.json({ available: true, settings });
     }

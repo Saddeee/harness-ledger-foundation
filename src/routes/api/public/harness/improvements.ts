@@ -4,7 +4,11 @@
 // item. Every action here maps onto the existing local mutations (human
 // decision, review, rule update); nothing reaches Lovable.
 import { createFileRoute } from "@tanstack/react-router";
-import { hostedPreviewBody, loadHarnessAdapter } from "@/lib/server/harness-runtime";
+import {
+  hostedPreviewBody,
+  loadHarnessAdapter,
+  loadHarnessExecutor,
+} from "@/lib/server/harness-runtime";
 
 async function requireAuth(request: Request): Promise<Response | null> {
   const { requireCronOrUser, UnauthorizedError } = await import("@/lib/server/auth");
@@ -17,6 +21,19 @@ async function requireAuth(request: Request): Promise<Response | null> {
   }
 }
 
+/** Real connected status via the executor bundle, same pattern knowledge.ts's
+ * own POST handler already uses -- never throws (a load/status failure just
+ * reads as "not connected", the same fail-closed default TestInfo itself
+ * uses when `connected` is omitted). */
+async function isConnected(): Promise<boolean> {
+  try {
+    const executor = await loadHarnessExecutor();
+    return executor ? executor.auth.status().connected : false;
+  } catch {
+    return false;
+  }
+}
+
 async function handleGet({ request }: { request: Request }) {
   const unauthorized = await requireAuth(request);
   if (unauthorized) return unauthorized;
@@ -24,10 +41,25 @@ async function handleGet({ request }: { request: Request }) {
   const adapter = await loadHarnessAdapter();
   if (!adapter) return Response.json(hostedPreviewBody());
   try {
+    // Round 6 Task 6b / spec §6: the judging screen's own read -- same
+    // route as the improvements list (?run=<id>), not a seventh one.
+    const runParam = new URL(request.url).searchParams.get("run");
+    if (runParam !== null) {
+      const runId = Number(runParam);
+      if (!Number.isInteger(runId)) {
+        return Response.json({ error: "run must be an integer" }, { status: 400 });
+      }
+      const run = adapter.buildExperimentRunView(runId);
+      if (!run) {
+        return Response.json({ available: false, reason: `run ${runId} not found` });
+      }
+      return Response.json({ available: true, run });
+    }
+
     const settings = adapter.getSettings();
     return Response.json({
       available: true,
-      improvements: adapter.listImprovements(),
+      improvements: adapter.listImprovements({ connected: await isConnected() }),
       // Task C3 / spec §4b display + §5 notifications: a server-computed
       // count (pending improvements + open retirement proposals) for the
       // sidebar badge, and when the Inbox was last opened, for the "New"
@@ -88,7 +120,9 @@ async function handlePost({ request }: { request: Request }) {
       if (!Number.isInteger(versionId)) throw new Error("version_id must be an integer");
       const write = await adapter.retryKnowledgeWrite(versionId);
       const id = Number(body["id"]);
-      const improvement = Number.isInteger(id) ? adapter.getImprovement(id) : null;
+      const improvement = Number.isInteger(id)
+        ? adapter.getImprovement(id, { connected: await isConnected() })
+        : null;
       return Response.json({ available: true, ...(improvement ? { improvement } : {}), write });
     } catch (e) {
       return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });

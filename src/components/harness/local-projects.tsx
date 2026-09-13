@@ -262,6 +262,9 @@ export function LocalProjects() {
 
   const defaultMaxActiveRules =
     executor.data?.defaults?.max_active_rules ?? DEFAULT_MAX_ACTIVE_RULES;
+  // Round 6 Task 6b / spec §6: real Lovable projects a test run's own
+  // cleanup couldn't delete -- the reminder to remove them by hand.
+  const undeletedCopies = executor.data?.undeleted_copies ?? [];
 
   const allowedRows = projects.data?.allowed ?? [];
   const allRows = projects.data?.all;
@@ -408,6 +411,24 @@ export function LocalProjects() {
           </TableBody>
         </Table>
       </section>
+
+      {undeletedCopies.length > 0 ? (
+        <details className="rounded-md border">
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Test copies to delete by hand ({undeletedCopies.length})
+          </summary>
+          <ul className="space-y-2 border-t p-3 text-sm">
+            {undeletedCopies.map((c) => (
+              <li key={c.run_id} className="rounded-md border bg-muted/30 p-2">
+                <p className="font-mono text-xs">{c.copy_project_id}</p>
+                {c.copy_cleanup_note ? (
+                  <p className="text-xs text-muted-foreground">{c.copy_cleanup_note}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </div>
   );
 }

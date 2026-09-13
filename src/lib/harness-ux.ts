@@ -602,18 +602,93 @@ export function adherenceLine(adherence: AdherenceLike | null | undefined): stri
 // one rule (`sources`, from harness/src/improvements.ts's computeHealth),
 // regardless of whether Settings › Evidence currently counts it towards
 // retirement. ----
-export type EvidenceSourcesLike = { observed: boolean; adherence: boolean; verdicts: boolean };
+export type EvidenceSourcesLike = {
+  observed: boolean;
+  adherence: boolean;
+  verdicts: boolean;
+  paired: boolean;
+};
 
 function ranSuffix(hasRun: boolean): string {
   return hasRun ? "This has run for this rule." : "This hasn't run for this rule yet.";
 }
 
 export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefined): string[] {
-  const s = sources ?? { observed: false, adherence: false, verdicts: false };
+  const s = sources ?? { observed: false, adherence: false, verdicts: false, paired: false };
   return [
     `Observed from your real builds: Harness counts builds in this rule's area and any repeat correction, automatically, for free. ${ranSuffix(s.observed)}`,
     `Your verdict: you can say directly whether a rule helped, didn't help, or you're not sure, any time. ${ranSuffix(s.verdicts)}`,
     `AI adherence check: Harness's AI reads the request and Lovable's reply and says whether the rule was followed, broken, or didn't apply, with a quote. ${ranSuffix(s.adherence)}`,
-    `Paired test: the same request run with and without the rule, side by side, to see the difference directly — not available yet.`,
+    // Round 6 Task 6b: paired tests are wired now -- the "not available yet"
+    // line was only ever true while Phase B hadn't been built.
+    `Paired test: the same request run with and without the rule, side by side, to see the difference directly. ${ranSuffix(s.paired)}`,
   ];
 }
+
+// ---- Round 6 Task 6b / spec §6: "Test this rule" -- the confirm dialog's
+// exact copy, the card's own status line for a rule's latest paired-test
+// run, and the judging screen's confounder lines. Kept here, verbatim, so
+// every caller (the card, the Add dialog's "Add and test it first" choice,
+// the judging screen) reads the same words. ----
+
+export const TEST_THIS_RULE_TITLE = "Test this rule in a temporary copy?";
+export const TEST_THIS_RULE_BODY =
+  "Harness copies your project as it was just before your original request, adds this rule to the copy's Knowledge, sends the same request, and shows you both builds side by side. The copy is deleted afterwards.";
+export const TEST_THIS_RULE_CREDITS_LINE =
+  "Uses Lovable credits like any build; the exact cost is recorded after.";
+export function testThisRuleBudgetLine(credits: {
+  used_this_month: number;
+  budget: number;
+}): string {
+  return `This month: ${credits.used_this_month} credits used of your budget of ${credits.budget}.`;
+}
+export const TEST_ONE_AT_A_TIME_LINE = "One test runs at a time.";
+export const START_TEST_LABEL = "Start test";
+export const TEST_STARTED_TOAST = "Testing started.";
+
+// The card's status line for a rule's latest paired-test run. `queued` and
+// `copying` share one phrase (the queue is a brief, invisible hop -- spec §6
+// only names "copying"/"building" as distinct in-progress phrases); the
+// "verdict needed" prompt is a link (built by the caller, which has a
+// router), so this only returns its plain label; `judged`/`failed` need
+// values a plain status string alone can't carry, so they're their own
+// functions below rather than a case here.
+export function testInProgressLine(status: string): string | null {
+  if (status === "queued" || status === "copying") return "Testing… copying the project";
+  if (status === "building") return "Testing… building in the copy";
+  return null;
+}
+export const TEST_VERDICT_NEEDED_LABEL = "Your verdict is needed";
+
+export type TestRunResultLike = { score: number | null; corrections: number };
+
+// "Tested: 2 of 3 corrections no longer needed · judged by you" -- X is
+// derived from score * corrections (rounded) rather than carried as its own
+// field on TestInfo.run; score is exactly noCount/corrections (see
+// harness/src/improvements.ts#judgeRun), so this round-trips exactly for
+// any real judged run.
+export function testedResultLine(run: TestRunResultLike): string {
+  const no = Math.round((run.score ?? 0) * run.corrections);
+  return `Tested: ${no} of ${run.corrections} correction${run.corrections === 1 ? "" : "s"} no longer needed · judged by you`;
+}
+
+export function testFailedLine(error: string | null | undefined): string {
+  return `Test failed: ${error ?? "unknown error"}`;
+}
+
+// The judging screen's own confounder lines (spec §6), verbatim.
+export function testCopyConfounderLine(editsSinceEpisode: number | null): string {
+  const n = editsSinceEpisode ?? 0;
+  return `This copy started from the project as it was before that request; ${n} edit${n === 1 ? "" : "s"} have landed since.`;
+}
+export const TEST_ONE_BUILD_LINE = "One build; evidence, not proof.";
+// "This test used N credits · measured" / "Cost not reported by Lovable" --
+// N always comes from cost_credits (a real, measured Lovable REST response
+// field, never a guess), so there is never a hardcoded number next to the
+// word "credit" anywhere in this codebase's own source text.
+export function testCostLine(costCredits: number | null): string {
+  return costCredits == null
+    ? "Cost not reported by Lovable"
+    : `This test used ${costCredits} credit${costCredits === 1 ? "" : "s"} · measured`;
+}
+// ---- end Round 6 Task 6b ----

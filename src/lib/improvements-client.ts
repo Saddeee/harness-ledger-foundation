@@ -151,7 +151,7 @@ export type ImprovementHealth = {
       created_at: string;
     }[];
   } | null;
-  sources: { observed: boolean; adherence: boolean; verdicts: boolean };
+  sources: { observed: boolean; adherence: boolean; verdicts: boolean; paired: boolean };
   // Round 6 Task 4 / spec §4: set only on the direct response to a
   // just-recorded verdict (the "verdict" action) -- what that one click
   // changed in this rule's health, read by the compact VerdictControl to
@@ -159,6 +159,62 @@ export type ImprovementHealth = {
   // guess from the raw counts. Null on every ordinary GET (a persisted
   // health row never remembers "what the last verdict did").
   verdict_effect?: VerdictEffect | null;
+};
+
+// Round 6 Task 6b / spec §6: whether "Test this rule" is on offer, and the
+// latest paired-test run for this rule (whatever its own status -- once
+// judged/failed, `available` is free to be true again for a fresh attempt,
+// so the run's own result line and a fresh "Test this rule" button can sit
+// side by side on the same card). Mirrors harness/src/improvements.ts's own
+// TestInfo exactly.
+export type ExperimentStatus =
+  "queued" | "copying" | "building" | "judging" | "judged" | "failed" | "cancelled";
+
+export type TestRun = {
+  id: number;
+  status: ExperimentStatus;
+  stage_note: string | null;
+  started_at: string;
+  finished_at: string | null;
+  judged_at: string | null;
+  cost_credits: number | null;
+  score: number | null;
+  corrections: number;
+  edits_since_episode: number | null;
+  error: string | null;
+};
+
+export type TestInfo = {
+  available: boolean;
+  unavailable_reason: string | null;
+  run: TestRun | null;
+  credits: { used_this_month: number; budget: number };
+};
+
+// The judging screen's own read (GET .../improvements?run=<id>), served
+// from the same route as everything else here (not a seventh route) --
+// harness/src/improvements.ts's buildExperimentRunView.
+export type ExperimentRunView = {
+  id: number;
+  status: ExperimentStatus;
+  stage_note: string | null;
+  started_at: string;
+  finished_at: string | null;
+  judged_at: string | null;
+  error: string | null;
+  request_text: string;
+  original_reply: string;
+  corrections: string[];
+  rule_text: string;
+  improvement_id: number;
+  original_diff: KnowledgeChanges | null;
+  copy_diff: KnowledgeChanges | null;
+  copy_summary: string | null;
+  copy_reply: string | null;
+  cost_credits: number | null;
+  edits_since_episode: number | null;
+  score: number | null;
+  verdicts: ("yes" | "no" | "unclear")[] | null;
 };
 
 export type Improvement = {
@@ -210,6 +266,9 @@ export type Improvement = {
   // with a rule_health row; null otherwise (including every "retire" item,
   // which carries the equivalent counts under retire.health).
   health: ImprovementHealth | null;
+  // Round 6 Task 6b / spec §6: null for a "retire" item and for an ordinary
+  // improvement with no rule yet.
+  test: TestInfo | null;
   // Round 5 Task 5 / spec §4: why decision_mode='automatic' didn't accept
   // this one without asking; null in ask mode and for "retire" items.
   unsure: string | null;
@@ -278,6 +337,19 @@ export async function fetchImprovements(): Promise<ImprovementsResponse> {
   const res = await fetch("/api/public/harness/improvements", { headers: await authHeaders() });
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as ImprovementsResponse;
+}
+
+// Round 6 Task 6b / spec §6: the judging screen's own read -- same route as
+// fetchImprovements above (?run=<id>), not a seventh one.
+export type ExperimentRunResponse =
+  { available: true; run: ExperimentRunView } | { available: false; reason?: string };
+
+export async function fetchExperimentRun(runId: number): Promise<ExperimentRunResponse> {
+  const res = await fetch(`/api/public/harness/improvements?run=${runId}`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as ExperimentRunResponse;
 }
 
 export async function postImprovementAction(body: Record<string, unknown>): Promise<{
@@ -406,7 +478,7 @@ export async function fetchKnowledge(): Promise<KnowledgeResponse> {
 // existing harness routes, this is not a seventh.
 export type TimelineNode = {
   id: string;
-  kind: "version" | "external_change" | "decision" | "skill" | "verdict";
+  kind: "version" | "external_change" | "decision" | "skill" | "verdict" | "test";
   at: string;
   label: string;
   actor: "you" | "harness" | "lovable";
@@ -553,6 +625,20 @@ export type ExecutorLlm = {
 
 export type ExecutorDefaults = { max_active_rules: number };
 
+// Round 6 Task 6b / spec §6: the Lovable-credits Settings section and the
+// Evidence "Paired tests" checkbox's own enable condition.
+export type ExecutorCredits = {
+  used_this_month: number;
+  budget: number;
+  last_test_cost: number | null;
+  judged_runs: number;
+};
+export type UndeletedCopy = {
+  run_id: number;
+  copy_project_id: string;
+  copy_cleanup_note: string | null;
+};
+
 // Round 5 Task 6 / spec §4/§4b: Settings > Decisions. FeedbackStats mirrors
 // harness/src/store.ts's own type exactly (accepted/skipped/verdicts feed
 // the "From your decisions so far" line; automatic is read but not shown
@@ -578,6 +664,8 @@ export type ExecutorSettings = {
   decision_auto_confidence: number;
   evidence_sources: EvidenceSources;
   feedback: FeedbackStats;
+  // Round 6 Task 6b / spec §6: "Keep test copies (delete them by hand)".
+  keep_test_copies: boolean;
 };
 
 // Round 4 Task A3 (spec §2): "Analyse now" status, independent of the
@@ -621,6 +709,8 @@ export type ExecutorResponse = {
   llm?: ExecutorLlm;
   analysis?: ExecutorAnalysis;
   defaults?: ExecutorDefaults;
+  credits?: ExecutorCredits;
+  undeleted_copies?: UndeletedCopy[];
 };
 
 export async function fetchExecutor(): Promise<ExecutorResponse> {

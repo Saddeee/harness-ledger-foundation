@@ -84,6 +84,13 @@ const DEFAULT_EVIDENCE_SOURCES: EvidenceSources = {
   paired: false,
 };
 
+// ---- Lovable credits (Round 6 Task 6b / spec §6). The store's own default
+// (harness/src/store.ts SETTING_DEFAULTS.lovable_monthly_credit_budget),
+// used only until GET executor answers with the budget actually in force. ----
+const DEFAULT_CREDIT_BUDGET = 12;
+const LOVABLE_CREDITS_INTRO =
+  "Testing a rule in a temporary copy is a normal Lovable build and uses credits like one. Harness refuses to start a test that would put this month over the budget below.";
+
 // ---- AI analysis (Round 3 §4, Round 4 Task A4 / spec §2). Analysis only
 // ever runs when the user presses "Analyse now" (see analyse-notice.tsx); it
 // never runs on a schedule. ----
@@ -187,6 +194,10 @@ export function LocalSettings() {
   const [schedule, setSchedule] = useState<ExecutorSchedule>(DEFAULT_SCHEDULE);
   const [cap, setCap] = useState(DEFAULT_CAP);
 
+  // Round 6 Task 6b / spec §6: Lovable credits (budget, keep-test-copies).
+  const [creditBudget, setCreditBudget] = useState(DEFAULT_CREDIT_BUDGET);
+  const [keepTestCopies, setKeepTestCopies] = useState(false);
+
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(DEFAULT_LLM_PROVIDER);
   const [llmModels, setLlmModels] = useState<LlmModels>(DEFAULT_LLM_MODELS);
   // Fix round 1 item 2: whether a per-role row (inside "Advanced: different
@@ -229,6 +240,16 @@ export function LocalSettings() {
   }, [executor.data?.settings?.knowledge_char_cap]);
 
   useEffect(() => {
+    const saved = executor.data?.credits?.budget;
+    if (saved != null) setCreditBudget(saved);
+  }, [executor.data?.credits?.budget]);
+
+  useEffect(() => {
+    const saved = executor.data?.settings?.keep_test_copies;
+    if (saved != null) setKeepTestCopies(saved);
+  }, [executor.data?.settings?.keep_test_copies]);
+
+  useEffect(() => {
     const llm = executor.data?.llm;
     if (!llm) return;
     setLlmProvider(llm.provider);
@@ -257,6 +278,19 @@ export function LocalSettings() {
     automatic: 0,
   };
 
+  // Round 6 Task 6b / spec §6: the Evidence checkbox is enabled only once a
+  // judged run exists (there's nothing to count towards a rule's health
+  // before then); the credits line reads "No tests yet" when nothing has
+  // ever been recorded (lastKnownTestCost is null only when credit_ledger
+  // has never had a row -- distinct from "0 spent this month" after a
+  // month rolled over).
+  const credits = executor.data?.credits;
+  const pairedTestsAvailable = (credits?.judged_runs ?? 0) > 0;
+  const usedThisMonthLine =
+    credits && credits.used_this_month === 0 && credits.last_test_cost == null
+      ? "No tests yet"
+      : `Used this month: ${credits?.used_this_month ?? 0} credit${credits?.used_this_month === 1 ? "" : "s"} · measured`;
+
   const saveDecisions = useMutation({
     mutationFn: () =>
       postExecutor({
@@ -275,6 +309,20 @@ export function LocalSettings() {
     mutationFn: () => postExecutor({ action: "settings", evidence_sources: evidenceSources }),
     onSuccess: () => {
       toast.success("Evidence setting saved");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
+  });
+
+  const saveCredits = useMutation({
+    mutationFn: () =>
+      postExecutor({
+        action: "settings",
+        lovable_monthly_credit_budget: creditBudget,
+        keep_test_copies: keepTestCopies,
+      }),
+    onSuccess: () => {
+      toast.success("Lovable credits setting saved");
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
@@ -518,15 +566,62 @@ export function LocalSettings() {
             </Label>
           </div>
           <div className="flex items-start gap-2">
-            <Checkbox id="evidence-paired" checked={false} disabled className="mt-0.5" />
-            <Label htmlFor="evidence-paired" className="font-normal text-muted-foreground">
-              Paired tests (not available yet)
+            <Checkbox
+              id="evidence-paired"
+              checked={evidenceSources.paired}
+              disabled={!pairedTestsAvailable}
+              onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, paired: v === true }))}
+              className="mt-0.5"
+            />
+            <Label
+              htmlFor="evidence-paired"
+              className={pairedTestsAvailable ? "font-normal" : "font-normal text-muted-foreground"}
+            >
+              Paired tests{pairedTestsAvailable ? "" : " (judge at least one test first)"}
             </Label>
           </div>
         </div>
 
         <Button onClick={() => saveEvidence.mutate()} disabled={saveEvidence.isPending}>
           {saveEvidence.isPending ? "Saving…" : "Save evidence"}
+        </Button>
+      </section>
+
+      <section className="space-y-4 rounded-md border p-4">
+        <h2 className="text-lg font-medium">Lovable credits</h2>
+        <p className="text-sm text-muted-foreground">{LOVABLE_CREDITS_INTRO}</p>
+
+        <div className="space-y-2">
+          <Label htmlFor="credit-budget">Monthly budget (0–1000)</Label>
+          <Input
+            id="credit-budget"
+            type="number"
+            min={0}
+            max={1000}
+            value={creditBudget}
+            onChange={(e) => setCreditBudget(Number(e.target.value))}
+            className="w-32"
+          />
+        </div>
+
+        <p className="text-sm text-muted-foreground">{usedThisMonthLine}</p>
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-1">
+            <Label htmlFor="keep-test-copies">Keep test copies (delete them by hand)</Label>
+            <p className="text-xs text-muted-foreground">
+              Off by default -- Harness deletes each test's temporary copy once it's judged.
+            </p>
+          </div>
+          <Switch
+            id="keep-test-copies"
+            checked={keepTestCopies}
+            onCheckedChange={setKeepTestCopies}
+          />
+        </div>
+
+        <Button onClick={() => saveCredits.mutate()} disabled={saveCredits.isPending}>
+          {saveCredits.isPending ? "Saving…" : "Save credits"}
         </Button>
       </section>
 

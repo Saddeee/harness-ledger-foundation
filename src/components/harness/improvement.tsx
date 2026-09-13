@@ -5,6 +5,7 @@
 // to Lovable is recorded here and executed by Harness afterwards.
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +34,17 @@ import {
   REMOVE_FROM_KNOWLEDGE_TITLE,
   retireReasonSentence,
   retireSinceLine,
+  START_TEST_LABEL,
+  TEST_ONE_AT_A_TIME_LINE,
+  TEST_STARTED_TOAST,
+  TEST_THIS_RULE_BODY,
+  TEST_THIS_RULE_CREDITS_LINE,
+  TEST_THIS_RULE_TITLE,
+  TEST_VERDICT_NEEDED_LABEL,
+  testedResultLine,
+  testFailedLine,
+  testInProgressLine,
+  testThisRuleBudgetLine,
   UNDO_TOAST,
   VERDICT_TEXT,
   verdictEffectLine,
@@ -111,7 +123,7 @@ const ADD_LABELS: Record<Destination, string> = {
   workspace: "Add to all my projects",
 };
 
-type Run = (body: Record<string, unknown>, msg: string) => Promise<boolean>;
+export type Run = (body: Record<string, unknown>, msg: string) => Promise<boolean>;
 
 // One busy flag and one toast pattern per card (or per wording editor).
 // onChanged also receives the exact toast text, so a caller (the Inbox) can
@@ -121,7 +133,7 @@ type Run = (body: Record<string, unknown>, msg: string) => Promise<boolean>;
 // restore, change_wording of a written rule, retry_write), the toast reads
 // that outcome ("Written to Lovable 19:05" or the plain-language reason)
 // instead of the caller's static `msg` -- see writeToastText.
-function useRun(onChanged: (msg: string) => void): { busy: boolean; run: Run } {
+export function useRun(onChanged: (msg: string) => void): { busy: boolean; run: Run } {
   const [busy, setBusy] = useState(false);
   const run: Run = async (body, msg) => {
     setBusy(true);
@@ -146,7 +158,7 @@ function useRun(onChanged: (msg: string) => void): { busy: boolean; run: Run } {
 // The "Add" confirmation: shows the exact text that would be written when
 // Harness has a snapshot of the current Knowledge; otherwise records the
 // choice and says so.
-function AddConfirm({
+export function AddConfirm({
   item,
   destination,
   busy,
@@ -193,7 +205,7 @@ function AddConfirm({
       title={`Add to ${targetLabel}?`}
       body={preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
       consequences={preview ? PREVIEW_CONSEQUENCES : []}
-      confirmLabel={wantsTest ? "Save for testing" : preview ? "Add" : "Save choice"}
+      confirmLabel={wantsTest ? "Add and test" : preview ? "Add" : "Save choice"}
       confirmDisabled={overCap || overRules || choice == null}
       disabled={busy}
       size={size}
@@ -202,15 +214,17 @@ function AddConfirm({
       }}
       {...(variant ? { variant } : {})}
       onConfirm={() =>
-        void run(
-          {
-            action: "accept",
-            id: item.id,
-            destination,
-            ...(wantsTest ? { test_first: true } : {}),
-          },
-          wantsTest ? "Saved for testing." : SAVED_LINE,
-        )
+        void (async () => {
+          // Round 6 Task 6b / spec §6: "Add and test it first" is now the
+          // real paired test, not the old test_first staging (approve the
+          // rule, write nothing, wait for a proof pass that never ran) --
+          // accept writes immediately (Round 6 Task 2), then a `test`
+          // action queues the paired test on the now-written rule. A
+          // failed second call (e.g. over budget) still leaves the first
+          // one's own accept in place; its own toast explains why.
+          const accepted = await run({ action: "accept", id: item.id, destination }, SAVED_LINE);
+          if (accepted && wantsTest) await run({ action: "test", id: item.id }, TEST_STARTED_TOAST);
+        })()
       }
     >
       <div role="radiogroup" aria-label="How to add it" className="space-y-3">
@@ -246,10 +260,10 @@ function AddConfirm({
             className="w-full sm:w-auto"
             onClick={() => setChoice("test")}
           >
-            Test it first
+            Add and test it first
           </Button>
           <p className="text-xs text-muted-foreground">
-            {`Harness runs the same request with and without this instruction in a temporary copy of the project and shows you the difference before anything is written. ${proveCostLine()} Testing is not switched on yet; your choice is saved and runs when it is.`}
+            {`Harness adds it now, then runs your original request again in a temporary copy with the rule and shows you both builds side by side. ${proveCostLine()}`}
           </p>
         </div>
       </div>
@@ -471,7 +485,7 @@ function RetireConfirm({
 // item's own rule is definitely live, so it's always addressed by
 // rule_id -- never a retire-proposal id), but its own copy: the confirm
 // explains what happens to Knowledge, not that the rule is "retired".
-function RemoveFromKnowledgeConfirm({
+export function RemoveFromKnowledgeConfirm({
   ruleId,
   busy,
   run,
@@ -496,6 +510,90 @@ function RemoveFromKnowledgeConfirm({
     />
   );
 }
+
+// ---- Round 6 Task 6b / spec §6: "Test this rule" ----
+// TestButton (the confirm dialog, placed inside the shared action bar) and
+// TestStatusLine (a muted status paragraph, placed alongside healthLine/
+// adherenceLine -- never inside the bar itself, same convention those two
+// already use) are deliberately separate: a card's action bar holds only
+// buttons (the "no hardcoded size literal" / "one action bar" structural
+// tests scan for exactly that), while a status line is plain text.
+
+function TestButton({
+  item,
+  busy,
+  run,
+  size,
+}: {
+  item: Improvement;
+  busy: boolean;
+  run: Run;
+  size?: "default" | "sm" | undefined;
+}) {
+  if (!item.test?.available) return null;
+  return (
+    <ConfirmAction
+      trigger="Test this rule"
+      variant="outline"
+      size={size}
+      title={TEST_THIS_RULE_TITLE}
+      body={TEST_THIS_RULE_BODY}
+      consequences={[
+        TEST_THIS_RULE_CREDITS_LINE,
+        testThisRuleBudgetLine(item.test.credits),
+        TEST_ONE_AT_A_TIME_LINE,
+      ]}
+      confirmLabel={START_TEST_LABEL}
+      disabled={busy}
+      onConfirm={() => void run({ action: "test", id: item.id }, TEST_STARTED_TOAST)}
+    />
+  );
+}
+
+// The card's own status line for a rule's latest paired-test run --
+// whichever of "testing…", "your verdict is needed", the judged result, or
+// the failure sentence applies; falls back to the plain unavailable reason
+// only once a run exists (nothing here, on a run with no result yet) or the
+// item has been accepted -- never on a still-pending Inbox card (spec: "do
+// not clutter pending Inbox cards").
+function TestStatusLine({ item }: { item: Improvement }) {
+  const test = item.test;
+  if (!test) return null;
+  const run = test.run;
+  if (run) {
+    switch (run.status) {
+      case "queued":
+      case "copying":
+      case "building": {
+        const line = testInProgressLine(run.status);
+        return line ? <p className="text-xs text-muted-foreground">{line}</p> : null;
+      }
+      case "judging":
+        return (
+          <p className="text-xs text-muted-foreground">
+            <Link
+              to="/judge"
+              search={{ run: run.id }}
+              className="text-primary underline underline-offset-2"
+            >
+              {TEST_VERDICT_NEEDED_LABEL} →
+            </Link>
+          </p>
+        );
+      case "judged":
+        return <p className="text-xs text-muted-foreground">{testedResultLine(run)}</p>;
+      case "failed":
+        return <p className="text-xs text-muted-foreground">{testFailedLine(run.error)}</p>;
+      default:
+        return null;
+    }
+  }
+  if (!test.available && test.unavailable_reason && item.decision.status === "accepted") {
+    return <p className="text-xs text-muted-foreground">{test.unavailable_reason}</p>;
+  }
+  return null;
+}
+// ---- end Round 6 Task 6b "Test this rule" ----
 
 function RetireCard({
   item,
@@ -697,6 +795,7 @@ function DecidedStatus({
       {item.health && adherenceLine(item.health.adherence) ? (
         <p className="text-xs text-muted-foreground">{adherenceLine(item.health.adherence)}</p>
       ) : null}
+      <TestStatusLine item={item} />
       {accepted && lovable.write_status === "none" ? (
         <p className="text-xs text-muted-foreground">
           Waiting for Harness to read your current Knowledge. You'll see the exact text before
@@ -811,6 +910,7 @@ function DecidedStatus({
                 Undo
               </Button>
             ) : null}
+            <TestButton item={item} busy={busy} run={run} size={size} />
           </>
         )}
       </div>
@@ -890,6 +990,7 @@ function CompactDecisionCard({
           {item.unsure}
         </p>
       ) : null}
+      <TestStatusLine item={item} />
       <div className={ACTION_BAR_CLASS}>
         <AddConfirm item={item} destination="project" busy={busy} run={run} size={size} />
         <AddConfirm
@@ -901,6 +1002,7 @@ function CompactDecisionCard({
           size={size}
         />
         <SkipConfirm item={item} busy={busy} run={run} size={size} />
+        <TestButton item={item} busy={busy} run={run} size={size} />
       </div>
     </article>
   );
@@ -1077,18 +1179,22 @@ export function DecisionCard({
       </div>
 
       {pending ? (
-        <div className={ACTION_BAR_CLASS}>
-          <AddConfirm item={item} destination="project" busy={busy} run={run} size={size} />
-          <AddConfirm
-            item={item}
-            destination="workspace"
-            busy={busy}
-            run={run}
-            variant="outline"
-            size={size}
-          />
-          <SkipConfirm item={item} busy={busy} run={run} size={size} />
-        </div>
+        <>
+          <TestStatusLine item={item} />
+          <div className={ACTION_BAR_CLASS}>
+            <AddConfirm item={item} destination="project" busy={busy} run={run} size={size} />
+            <AddConfirm
+              item={item}
+              destination="workspace"
+              busy={busy}
+              run={run}
+              variant="outline"
+              size={size}
+            />
+            <SkipConfirm item={item} busy={busy} run={run} size={size} />
+            <TestButton item={item} busy={busy} run={run} size={size} />
+          </div>
+        </>
       ) : (
         <DecidedStatus item={item} busy={busy} run={run} ctx={ctx} />
       )}
