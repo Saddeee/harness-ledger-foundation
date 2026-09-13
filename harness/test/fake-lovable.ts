@@ -143,21 +143,15 @@ function readBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
-/** node:http's `.listen(0)` (OS-assigned port) only resolves the actual
- * port asynchronously (server.address() is null until the next tick), but
- * this factory's contract is synchronous -- callers build a
- * createLovableRest(baseUrl: fake.baseUrl) on the very next line, no await
- * in between. So the port is chosen here instead of asking the OS for one:
- * still effectively random, known synchronously, and any real bind failure
- * (a collision in this range is exceedingly unlikely) surfaces as a loud
- * connection-refused in whichever test's first request. */
-function randomPort(): number {
-  return 20000 + Math.floor(Math.random() * 40000);
-}
-
-export function startFakeLovable(script: FakeScript): FakeLovableServer {
+/** Round 6 fix wave item 5: was a self-picked "random" port in a fixed
+ * 20000-59999 range, which two test FILES running in parallel (node:test
+ * runs each file in its own worker) could both land on -- an intermittent
+ * EADDRINUSE with nothing wrong in the code under test. `.listen(0)` asks
+ * the OS for a free port instead (collision-proof), so this factory is now
+ * async: server.address() isn't populated until the "listening" event
+ * fires, so every caller must `await startFakeLovable(...)`. */
+export async function startFakeLovable(script: FakeScript): Promise<FakeLovableServer> {
   const calls: RecordedCall[] = [];
-  const port = randomPort();
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -225,7 +219,12 @@ export function startFakeLovable(script: FakeScript): FakeLovableServer {
     });
   });
 
-  server.listen(port, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const addr = server.address();
+  const port = typeof addr === "object" && addr !== null ? addr.port : 0;
 
   return {
     baseUrl: `http://127.0.0.1:${port}`,

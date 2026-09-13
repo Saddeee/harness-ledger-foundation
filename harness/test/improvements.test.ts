@@ -3347,6 +3347,43 @@ test("judge: unknown run id throws", () => {
   );
 });
 
+// ---- Round 6 fix wave item 2: judge refuses a run that isn't waiting for a verdict ----
+
+test("judge: a run that's still building (not judging yet) throws, not silently judged", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("judge-guard-building", ["Corrected once."]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "judge-guard-building-req",
+  });
+  store.updateExperimentRun(runId, { status: "building" });
+
+  assert.throws(
+    () => imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["yes"] }),
+    /This test is not waiting for a verdict\./,
+  );
+});
+
+test("judge: an already-judged run refuses a second verdict, not a silent re-judge", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("judge-guard-rejudge", ["Corrected once."]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "judge-guard-rejudge-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging" });
+  imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["yes"] });
+
+  assert.throws(
+    () => imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["no"] }),
+    /This test is not waiting for a verdict\./,
+  );
+});
+
 test("judge: computes score (no ÷ corrections), marks the run judged with judged_at, and returns the refreshed improvement", () => {
   const { cc, rule, ep } = mkRuleWithCorrections("judge-score", [
     "The email field accepted invalid addresses.",
@@ -3562,7 +3599,7 @@ test("Improvement.test.run.corrections: counts follow-up messages when the episo
 
 // ---- History timeline: the `test` node kind ----
 
-test("buildTimeline: a judged run renders a `test` node with the exact label, actor, content, and improvement_id; a failed run renders its own", () => {
+test("buildTimeline: a judged run renders a `test` node with the exact label, actor, content (both the original build and the with-the-rule build), improvement_id, and run_id; a failed run renders its own", () => {
   const TL2_PROJECT = "timeline-test-project-6b";
   db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
     TL2_PROJECT,
@@ -3633,8 +3670,17 @@ test("buildTimeline: a judged run renders a `test` node with the exact label, ac
   assert.equal(judgedNode!.actor, "harness");
   assert.equal(judgedNode!.at, "2026-09-03T00:00:00Z");
   assert.equal(judgedNode!.improvement_id, cc.id);
-  assert.match(judgedNode!.content ?? "", /Added client-side validation\./);
-  assert.match(judgedNode!.content ?? "", /Added validation to the signup form\./);
+  assert.equal(
+    judgedNode!.run_id,
+    judgedRunId,
+    "the node carries the run it's about (fix wave item 3)",
+  );
+  // Fixture's episode never got an assistant reply recorded -- exercises
+  // the "(not recorded)" fallback for the original-build half.
+  assert.equal(
+    judgedNode!.content,
+    "Original build:\n(not recorded)\n\nWith the rule:\nAdded client-side validation.\n\nAdded validation to the signup form.",
+  );
 
   const failedNode = nodes.find((n) => n.id === `test:${failedRunId}`);
   assert.ok(failedNode);
@@ -3644,6 +3690,8 @@ test("buildTimeline: a judged run renders a `test` node with the exact label, ac
     "Test failed: Lovable stopped without finishing the build in the copy.",
   );
   assert.equal(failedNode!.improvement_id, cc2.id);
+  assert.equal(failedNode!.run_id, failedRunId);
+  assert.match(failedNode!.content ?? "", /^Original build:\n\(not recorded\)\n\nWith the rule:\n/);
 });
 // ---- end Round 6 Task 6b ----
 

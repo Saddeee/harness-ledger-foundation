@@ -113,6 +113,16 @@ test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts 
   );
 });
 
+// ---- 2b. judged/failed status lines are openable, not dead-end text (fix wave item 1) ----
+
+test("improvement.tsx: TestStatusLine links to /judge?run=<id> for judging, judged, and failed -- a judged/failed run is never a dead end", () => {
+  const code = codeOnly(readApp(IMPROVEMENT));
+  const judgeLinks = code.match(/to="\/judge"/g) ?? [];
+  assert.equal(judgeLinks.length, 3, "judging, judged, and failed all link to /judge");
+  const runSearch = code.match(/search=\{\{\s*run:\s*run\.id\s*\}\}/g) ?? [];
+  assert.equal(runSearch.length, 3);
+});
+
 // ---- 3. Settings has "Lovable credits" ----
 
 test("local-settings.tsx: a 'Lovable credits' section with a budget input, a measured used-this-month line, and a keep-copies switch; Evidence's paired checkbox gates on judged_runs", () => {

@@ -80,13 +80,25 @@ function statusCell(run: ExperimentRunSummary) {
     case "judged": {
       const no = Math.round((run.score ?? 0) * run.corrections);
       return (
-        <span>
+        <Link
+          to="/judge"
+          search={{ run: run.id }}
+          className="text-primary underline underline-offset-2"
+        >
           {`Judged: ${no} of ${run.corrections} correction${run.corrections === 1 ? "" : "s"} no longer needed`}
-        </span>
+        </Link>
       );
     }
     case "failed":
-      return <span>{`Failed: ${run.error ?? "unknown error"}`}</span>;
+      return (
+        <Link
+          to="/judge"
+          search={{ run: run.id }}
+          className="text-primary underline underline-offset-2"
+        >
+          {`Failed: ${run.error ?? "unknown error"} · open`}
+        </Link>
+      );
     default:
       return <span>Cancelled</span>;
   }

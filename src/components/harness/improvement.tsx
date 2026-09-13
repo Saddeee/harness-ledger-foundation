@@ -585,6 +585,13 @@ function TestStatusLine({ item }: { item: Improvement }) {
         return (
           <p className="text-xs text-muted-foreground">
             {testedResultLine(run)}{" "}
+            <Link
+              to="/judge"
+              search={{ run: run.id }}
+              className="text-primary underline underline-offset-2"
+            >
+              See the comparison
+            </Link>{" "}
             <Link to="/tests" className="text-primary underline underline-offset-2">
               {SEE_ON_TESTS_LABEL}
             </Link>
@@ -594,6 +601,13 @@ function TestStatusLine({ item }: { item: Improvement }) {
         return (
           <p className="text-xs text-muted-foreground">
             {testFailedLine(run.error)}{" "}
+            <Link
+              to="/judge"
+              search={{ run: run.id }}
+              className="text-primary underline underline-offset-2"
+            >
+              See why
+            </Link>{" "}
             <Link to="/tests" className="text-primary underline underline-offset-2">
               {SEE_ON_TESTS_LABEL}
             </Link>

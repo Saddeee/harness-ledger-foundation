@@ -220,15 +220,26 @@ export function Timeline({
                   </button>
                 ) : null}
 
-                {node.improvement_id != null ? (
-                  <div>
-                    <Link
-                      to="/ledger"
-                      search={{ improvement: node.improvement_id }}
-                      className="text-xs text-primary underline underline-offset-2"
-                    >
-                      Open suggestion
-                    </Link>
+                {node.improvement_id != null || (node.kind === "test" && node.run_id != null) ? (
+                  <div className="flex flex-wrap gap-3">
+                    {node.improvement_id != null ? (
+                      <Link
+                        to="/ledger"
+                        search={{ improvement: node.improvement_id }}
+                        className="text-xs text-primary underline underline-offset-2"
+                      >
+                        Open suggestion
+                      </Link>
+                    ) : null}
+                    {node.kind === "test" && node.run_id != null ? (
+                      <Link
+                        to="/judge"
+                        search={{ run: node.run_id }}
+                        className="text-xs text-primary underline underline-offset-2"
+                      >
+                        Open comparison
+                      </Link>
+                    ) : null}
                   </div>
                 ) : null}
 

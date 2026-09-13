@@ -303,7 +303,7 @@ function happyPathScript(copyId: string): FakeScript {
 
 test("happy path: records every field, deletes the copy, never chats with the source project", async () => {
   const seed = seedCandidate();
-  const fake = startFakeLovable(happyPathScript("prj_copy_happy"));
+  const fake = await startFakeLovable(happyPathScript("prj_copy_happy"));
   try {
     const rest = restFor(fake);
     const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
@@ -374,7 +374,7 @@ test("happy path: records every field, deletes the copy, never chats with the so
 
 test("remix failed: the run fails, and nothing beyond the remix calls is ever sent", async () => {
   const seed = seedCandidate();
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: (req) => ({
       status: 200,
       body: { id: req.params.project_id, name: "source", workspace_id: WORKSPACE },
@@ -443,7 +443,7 @@ test("remix failed: the run fails, and nothing beyond the remix calls is ever se
 test("build error: the run fails and the copy is still cleaned up", async () => {
   const seed = seedCandidate();
   const copyId = "prj_copy_builderror";
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     ...happyPathScript(copyId),
     getMessage: (req) => {
       if (req.params.project_id === copyId) {
@@ -517,7 +517,7 @@ function nonCompletedBuildScript(copyId: string, copyStatus: string): FakeScript
 test("build stopped: the run fails with its own sentence and the copy is still cleaned up", async () => {
   const seed = seedCandidate();
   const copyId = "prj_copy_stopped";
-  const fake = startFakeLovable(nonCompletedBuildScript(copyId, "stopped"));
+  const fake = await startFakeLovable(nonCompletedBuildScript(copyId, "stopped"));
   try {
     const rest = restFor(fake);
     const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
@@ -536,7 +536,7 @@ test("build stopped: the run fails with its own sentence and the copy is still c
 test("build awaiting_input: the run fails with its own sentence and the copy is still cleaned up", async () => {
   const seed = seedCandidate();
   const copyId = "prj_copy_awaitinginput";
-  const fake = startFakeLovable(nonCompletedBuildScript(copyId, "awaiting_input"));
+  const fake = await startFakeLovable(nonCompletedBuildScript(copyId, "awaiting_input"));
   try {
     const rest = restFor(fake);
     const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
@@ -555,7 +555,7 @@ test("build awaiting_input: the run fails with its own sentence and the copy is 
 test("build status the client doesn't otherwise name (Lovable's own 'timeout'): the run fails, names the status, and the copy is cleaned up", async () => {
   const seed = seedCandidate();
   const copyId = "prj_copy_timeoutstatus";
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     ...happyPathScript(copyId),
     getMessage: (req) => {
       if (req.params.project_id === copyId) {
@@ -593,7 +593,7 @@ test("build status the client doesn't otherwise name (Lovable's own 'timeout'): 
 test("delete fails: the copy is set private, a cleanup note is recorded, and it shows up in listUndeletedCopies", async () => {
   const seed = seedCandidate();
   const copyId = "prj_copy_deletefails";
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     ...happyPathScript(copyId),
     deleteProject: () => ({ status: 500, body: { status: 500, type: "internal_error" } }),
   });
@@ -629,7 +629,7 @@ test("delete fails: the copy is set private, a cleanup note is recorded, and it 
 test("listEdits failure is best effort: an already-paid, already-completed build still reaches judging", async () => {
   const seed = seedCandidate();
   const copyId = "prj_copy_editsfail";
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     ...happyPathScript(copyId),
     listEdits: () => ({ status: 500, body: { status: 500, type: "internal_error" } }),
   });
@@ -662,7 +662,7 @@ test("full request replay: a request longer than the judge-screen's own 1500-cha
   const longText = "A".repeat(3000);
   const seed = seedCandidate({ requestText: longText });
   const copyId = "prj_copy_longrequest";
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     ...happyPathScript(copyId),
     // Round 6 fix wave item A: this seed's own requestText differs from
     // DEFAULT_REQUEST_TEXT, so it needs its own listMessages match (content
@@ -704,9 +704,9 @@ test("full request replay: a request longer than the judge-screen's own 1500-cha
 
 // ------------------------------------------- REST message id resolution (fix wave item A)
 
-test("resolveRequestMessageId: pages through listMessages and picks the right aimsg_ id by content match on the second page", async () => {
+test("resolveRequestMessageId: pages through listMessages and picks the right umsg_ id by content match on the second page", async () => {
   const wantContent = "Please add validation to the checkout form.";
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     listMessages: (req) => {
       if (!req.query.before) {
         // Page 1: no match, has_more true -- next_cursor is the oldest
@@ -717,7 +717,7 @@ test("resolveRequestMessageId: pages through listMessages and picks the right ai
             has_more: true,
             messages: [
               {
-                message_id: "aimsg_unrelated_1",
+                message_id: "umsg_unrelated_1",
                 role: "user",
                 content: "Unrelated earlier request.",
                 created_at: "2026-08-01T00:00:00Z",
@@ -726,7 +726,7 @@ test("resolveRequestMessageId: pages through listMessages and picks the right ai
           },
         };
       }
-      // Page 2 (before=aimsg_unrelated_1): the match.
+      // Page 2 (before=umsg_unrelated_1): the match.
       return {
         status: 200,
         body: {
@@ -739,7 +739,7 @@ test("resolveRequestMessageId: pages through listMessages and picks the right ai
               created_at: "2026-09-01T09:59:00Z",
             },
             {
-              message_id: "aimsg_the_real_one_user",
+              message_id: "umsg_the_real_one",
               role: "user",
               // Irregular whitespace only (no extra words) -- normalizeForMatch
               // collapses this back to exactly `wantContent`.
@@ -757,7 +757,11 @@ test("resolveRequestMessageId: pages through listMessages and picks the right ai
       content: wantContent,
       occurred_at: "2026-09-01 10:00:00",
     });
-    assert.equal(resolved, "aimsg_the_real_one_user");
+    // Fixture ids are role-prefixed (umsg_/aimsg_) purely for readability --
+    // resolveRequestMessageId matches on role + content/time (see its own
+    // doc comment), never on an id prefix, so this assertion is not proof
+    // the resolver filters by prefix.
+    assert.equal(resolved, "umsg_the_real_one");
     const listCalls = fake.calls.filter(
       (c) => c.method === "GET" && c.path === `/v1/projects/${SOURCE}/messages`,
     );
@@ -768,20 +772,20 @@ test("resolveRequestMessageId: pages through listMessages and picks the right ai
 });
 
 test("resolveRequestMessageId: falls back to a created_at match within 90 seconds when no content ever matches", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     listMessages: () => ({
       status: 200,
       body: {
         has_more: false,
         messages: [
           {
-            message_id: "aimsg_close_in_time",
+            message_id: "umsg_close_in_time",
             role: "user",
             content: "Completely different wording -- Lovable's own paraphrase, say.",
             created_at: "2026-09-01T10:01:20Z", // 80s after occurred_at, inside the 90s window
           },
           {
-            message_id: "aimsg_too_far",
+            message_id: "umsg_too_far",
             role: "user",
             content: "Also unrelated.",
             created_at: "2026-09-01T10:10:00Z", // well outside the window
@@ -796,7 +800,7 @@ test("resolveRequestMessageId: falls back to a created_at match within 90 second
       content: "The original request text, never echoed back verbatim by this fake.",
       occurred_at: "2026-09-01 10:00:00",
     });
-    assert.equal(resolved, "aimsg_close_in_time");
+    assert.equal(resolved, "umsg_close_in_time");
   } finally {
     await fake.close();
   }
@@ -804,7 +808,7 @@ test("resolveRequestMessageId: falls back to a created_at match within 90 second
 
 test("no REST match: the run fails with the exact sentence, and nothing beyond the messages read is ever sent", async () => {
   const seed = seedCandidate();
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: (req) => ({
       status: 200,
       body: { id: req.params.project_id, name: "source", workspace_id: WORKSPACE },
@@ -815,7 +819,7 @@ test("no REST match: the run fails with the exact sentence, and nothing beyond t
         has_more: false,
         messages: [
           {
-            message_id: "aimsg_nope",
+            message_id: "umsg_nope",
             role: "user",
             content: "Nothing like the seeded request, and no created_at near it either.",
             created_at: "2020-01-01T00:00:00Z",
@@ -854,7 +858,7 @@ test("REST id resolution records an experiment.resolved_request event with both 
   // suite's own shared monthly credit ledger has a finite, already-tight
   // budget -- see the other runExperiment-calling tests in this file).
   const seed = seedCandidate();
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: (req) => ({
       status: 200,
       body: { id: req.params.project_id, name: "source", workspace_id: WORKSPACE },
@@ -910,7 +914,7 @@ test("Knowledge sent to the copy: the snapshot at or before the episode's starte
   recordSnapshotAt(PROJECT, "2026-09-05 00:00:00", "# Newer\nNewer content, after the episode.");
 
   const copyId = "prj_copy_knowledgeolder";
-  const fake = startFakeLovable(happyPathScript(copyId));
+  const fake = await startFakeLovable(happyPathScript(copyId));
   try {
     const rest = restFor(fake);
     const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
@@ -938,7 +942,7 @@ test("Knowledge sent to the copy: falls back to the latest snapshot when none is
   recordSnapshotAt(PROJECT, "2026-09-05 00:00:00", "# Only newer\nRecorded after the episode.");
 
   const copyId = "prj_copy_knowledgenewer";
-  const fake = startFakeLovable(happyPathScript(copyId));
+  const fake = await startFakeLovable(happyPathScript(copyId));
   try {
     const rest = restFor(fake);
     const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
@@ -965,7 +969,7 @@ test("Knowledge sent to the copy: base is empty when no snapshot has ever been r
   const seed = seedCandidate({ projectId: PROJECT });
 
   const copyId = "prj_copy_knowledgenone";
-  const fake = startFakeLovable(happyPathScript(copyId));
+  const fake = await startFakeLovable(happyPathScript(copyId));
   try {
     const rest = restFor(fake);
     const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
@@ -995,7 +999,7 @@ test("budget refusal: exact string, current usage and budget", async () => {
   const projected = store.lastKnownTestCost() ?? 2;
   assert.ok(usedBefore + projected > 1, "test setup must actually exceed the budget");
 
-  const fake = startFakeLovable({});
+  const fake = await startFakeLovable({});
   try {
     const rest = restFor(fake);
     const result = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
@@ -1024,7 +1028,7 @@ test("second start while one is running: refused", async () => {
   });
   store.updateExperimentRun(runningId, { status: "building" });
 
-  const fake = startFakeLovable({});
+  const fake = await startFakeLovable({});
   try {
     const rest = restFor(fake);
     const result = await startExperiment(second.candidateId, { rest, ...CONNECTED });
@@ -1040,7 +1044,7 @@ test("second start while one is running: refused", async () => {
 test("queued race: a second startExperiment call right after the first (before runExperiment ever starts) is refused", async () => {
   const first = seedCandidate();
   const second = seedCandidate();
-  const fake = startFakeLovable({});
+  const fake = await startFakeLovable({});
   let firstRunId: number | undefined;
   try {
     const rest = restFor(fake);
@@ -1067,7 +1071,7 @@ test("queued race: a second startExperiment call right after the first (before r
 
 test("not connected: refused with the exact copy, before touching Lovable", async () => {
   const seed = seedCandidate();
-  const fake = startFakeLovable({});
+  const fake = await startFakeLovable({});
   try {
     const rest = restFor(fake);
     // No `connected` override here -- exercises the real status().connected
@@ -1122,7 +1126,7 @@ test("no original request: refused when the candidate's episode has no evidence 
     created_by: "test",
   });
 
-  const fake = startFakeLovable({});
+  const fake = await startFakeLovable({});
   try {
     const rest = restFor(fake);
     const result = await startExperiment(candidate.id, { rest, ...CONNECTED });
@@ -1146,7 +1150,7 @@ test("cleanupCopy: keep_test_copies=true skips deletion entirely", async () => {
     request_message_external_id: seed.requestExternalId,
   });
   store.updateExperimentRun(runId, { copy_project_id: "prj_kept" });
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     deleteProject: () => ({ status: 204 }),
   });
   try {
@@ -1193,7 +1197,7 @@ test("kickExperimentRunner: runs the oldest queued run once via the fake server,
     request_message_external_id: newer.requestExternalId,
   });
 
-  const fake = startFakeLovable(happyPathScript("prj_copy_kick"));
+  const fake = await startFakeLovable(happyPathScript("prj_copy_kick"));
   try {
     await kickExperimentRunner({ rest: restFor(fake), sleep: noopSleep });
 
@@ -1245,7 +1249,7 @@ test("kickExperimentRunner: a second call while one is in flight returns the sam
     request_message_external_id: second.requestExternalId,
   });
 
-  const fake = startFakeLovable(happyPathScript("prj_copy_inflight"));
+  const fake = await startFakeLovable(happyPathScript("prj_copy_inflight"));
   try {
     const rest = restFor(fake);
     // Both calls happen before either has a chance to await anything --
@@ -1298,7 +1302,7 @@ test("kickExperimentRunner: a crashed run (stale heartbeat) is marked failed wit
     request_message_external_id: queued.requestExternalId,
   });
 
-  const fake = startFakeLovable(happyPathScript("prj_copy_aftercrash"));
+  const fake = await startFakeLovable(happyPathScript("prj_copy_aftercrash"));
   try {
     await kickExperimentRunner({ rest: restFor(fake), sleep: noopSleep });
 
@@ -1332,7 +1336,7 @@ test("runExperiment: calls ensureFreshToken exactly once, before the first Lovab
     source_project_id: SOURCE,
     request_message_external_id: seed.requestExternalId,
   });
-  const fake = startFakeLovable(happyPathScript("prj_copy_tokenrefresh"));
+  const fake = await startFakeLovable(happyPathScript("prj_copy_tokenrefresh"));
   try {
     const rest = restFor(fake);
 

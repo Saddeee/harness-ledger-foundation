@@ -75,6 +75,14 @@ test("tests.tsx: the table's own Status column uses the exact plain-word phrases
   assert.match(code, /`Failed: \$\{run\.error/);
 });
 
+test("tests.tsx: judging, judged, and failed rows are all a Link to /judge?run=<id> -- a judged or failed run must be openable, not just judging", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  const judgeLinks = code.match(/to="\/judge"/g) ?? [];
+  assert.equal(judgeLinks.length, 3, "judging, judged, and failed all link to /judge");
+  const runSearch = code.match(/search=\{\{\s*run:\s*run\.id\s*\}\}/g) ?? [];
+  assert.equal(runSearch.length, 3);
+});
+
 test("tests.tsx: the Cost column reads 'N credits · measured' or '—', never a hardcoded number", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
   assert.match(code, /· measured`/);
@@ -143,13 +151,18 @@ test("improvements-client.ts: fetchTestRuns still fetches only the six local har
 
 // ---- 5. the "See on Tests" link on the card's judged/failed status lines ----
 
-test("improvement.tsx: the judged/failed status lines carry a 'See on Tests' link to /tests", () => {
+test("improvement.tsx: the judged/failed status lines carry a 'See on Tests' link to /tests, plus a /judge?run= link so a judged/failed run can be opened straight from the card", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   assert.match(code, /SEE_ON_TESTS_LABEL/);
   assert.match(code, /to="\/tests"/);
 
   const uxCode = codeOnly(readApp(HARNESS_UX));
   assert.match(uxCode, /export const SEE_ON_TESTS_LABEL = "See on Tests";/);
+
+  // judging, judged, and failed all link to /judge?run=<id> -- not just
+  // judging (Round 6 fix wave item 1: judged/failed runs were unopenable).
+  const judgeLinks = code.match(/to="\/judge"/g) ?? [];
+  assert.equal(judgeLinks.length, 3, "judging, judged, and failed all link to /judge");
 });
 
 // ---- 6. judge.tsx: the feedback box and both back links ----

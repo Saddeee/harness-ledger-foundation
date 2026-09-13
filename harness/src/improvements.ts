@@ -1564,6 +1564,11 @@ export type TimelineNode = {
   improvement_id: number | null;
   version_id: number | null;
   restorable: boolean;
+  // Round 6 fix wave item 3: only ever set on a `test` node -- the run this
+  // node is about, so the History page can link straight to its judging
+  // screen (/judge?run=) instead of leaving a judged/failed test's own
+  // history entry as a dead end.
+  run_id?: number | null;
 };
 
 const TIMELINE_MAX_DIFF_LINES = 400;
@@ -1888,9 +1893,17 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
       if (!at) continue;
       const label =
         run.status === "judged" ? testedLabel(run) : `Test failed: ${run.error ?? "unknown error"}`;
-      const content = [run.copy_summary, run.copy_reply]
+      // Round 6 fix wave item 3: was just copy_summary/copy_reply -- the
+      // node showed only the WITH-the-rule half, never what the original
+      // build actually said, so there was nothing to compare against.
+      // episodeTextForJudge's own reply read is the exact same text the
+      // judging screen already shows for this episode (free re-derive, no
+      // fresh Lovable call).
+      const { reply: originalReply } = store.episodeTextForJudge(run.task_episode_id);
+      const withRule = [run.copy_summary, run.copy_reply]
         .filter((s): s is string => !!s)
         .join("\n\n");
+      const content = `Original build:\n${clamp2000(originalReply || "(not recorded)")}\n\nWith the rule:\n${clamp2000(withRule)}`;
       nodes.push({
         id: `test:${run.id}`,
         kind: "test",
@@ -1898,13 +1911,14 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
         label,
         actor: "harness",
         summary: null,
-        content: content || null,
+        content,
         diff: null,
         rule_ids: [ruleId],
         restored_from: null,
         improvement_id: correctionId,
         version_id: null,
         restorable: false,
+        run_id: run.id,
       });
     }
   }
@@ -2046,6 +2060,13 @@ function isAnalysisCreated(rule: RuleRow | null): boolean {
 
 function clamp80(text: string): string {
   return text.length <= 80 ? text : text.slice(0, 80);
+}
+
+// Round 6 fix wave item 3: caps each half of a `test` timeline node's
+// content (the original build's reply, and the copy's own summary/reply)
+// independently, so one very long half can't crowd the other out.
+function clamp2000(text: string): string {
+  return text.length <= 2000 ? text : text.slice(0, 2000);
 }
 
 // propose.ts's own raw model output for this candidate (RawRuleWriterOutput,
@@ -2423,6 +2444,7 @@ function cancelPendingVersion(versionId: number): Improvement & { cancel_note?: 
 function judgeRun(runId: number, verdicts: ("yes" | "no" | "unclear")[]): Improvement {
   const run = store.getExperimentRun(runId);
   if (!run) throw new Error(`experiment run ${runId} not found`);
+  if (run.status !== "judging") throw new Error("This test is not waiting for a verdict.");
 
   const correctionsCount = correctionsForEpisode(run.task_episode_id).texts.length;
   if (verdicts.length !== correctionsCount) {

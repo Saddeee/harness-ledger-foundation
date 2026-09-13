@@ -145,9 +145,14 @@ function parseTimestampMs(iso: string): number {
   return Date.parse(iso.replace(" ", "T") + "Z");
 }
 
-/** Resolves the REST message id (Lovable's own "aimsg_..." ids, from GET
- * .../messages) that corresponds to one episode's own request -- what
- * remixInit's message_id must be. The sync's own stored
+/** Resolves the REST message id (Lovable's own ids, from GET .../messages)
+ * of the role: "user" message that corresponds to one episode's own
+ * request -- what remixInit's message_id must be. Lovable's REST ids are
+ * role-prefixed ("umsg_..." for a user message, "aimsg_..." for an
+ * assistant one, so this always returns a "umsg_..." id) but the match
+ * below is on role + content/time, never on that prefix -- don't "simplify"
+ * this to an id.startsWith("umsg_") filter, the prefix isn't a documented
+ * API contract, just an observed convention. The sync's own stored
  * request_message_external_id is the MCP list_messages id (a different
  * format, e.g. "main:user#00000000000006#usr:34J3MCVP"); the REST API's
  * remix endpoint (and every other REST message_id-addressed endpoint) only

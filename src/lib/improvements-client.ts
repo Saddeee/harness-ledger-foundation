@@ -532,6 +532,9 @@ export type TimelineNode = {
   improvement_id: number | null;
   version_id: number | null;
   restorable: boolean;
+  // Round 6 fix wave item 3: only ever set on a `test` node -- the run this
+  // node is about, so timeline.tsx can link straight to /judge?run=.
+  run_id?: number | null;
 };
 
 export type TimelineResponse = {

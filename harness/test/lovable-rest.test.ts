@@ -30,7 +30,7 @@ function client(fake: FakeLovableServer, extra?: { ensureFreshToken?: () => Prom
 }
 
 test("getProject: GET /v1/projects/{id}, maps id/name/workspace_id", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: (req) => {
       assert.equal(req.method, "GET");
       assert.equal(req.params.project_id, "prj_1");
@@ -63,7 +63,7 @@ test("getProject: GET /v1/projects/{id}, maps id/name/workspace_id", async () =>
 });
 
 test("getProject: falls back to display_name when the SDK's optional `name` (slug) is absent", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: () => ({
       status: 200,
       body: { id: "prj_2", display_name: "No Slug Yet", workspace_id: "ws_1" },
@@ -78,7 +78,7 @@ test("getProject: falls back to display_name when the SDK's optional `name` (slu
 });
 
 test("listMessages: GET .../messages with limit/before, next_cursor derived from has_more + oldest message id (newest-first page)", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     listMessages: (req) => {
       assert.deepEqual(req.query, { limit: "2", before: "msg_5" });
       return {
@@ -123,7 +123,7 @@ test("listMessages: GET .../messages with limit/before, next_cursor derived from
 });
 
 test("listMessages: has_more=false yields next_cursor null/undefined (no further page)", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     listMessages: () => ({
       status: 200,
       body: {
@@ -148,7 +148,7 @@ test("listMessages: has_more=false yields next_cursor null/undefined (no further
 });
 
 test("listEdits: GET .../edits with limit, maps id/commit_sha/commit_message/created_at/has_more", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     listEdits: (req) => {
       assert.deepEqual(req.query, { limit: "10" });
       return {
@@ -186,7 +186,7 @@ test("listEdits: GET .../edits with limit, maps id/commit_sha/commit_message/cre
 });
 
 test("getDiff: GET .../git/diff?message_id=, serializes structured diffs into unified-diff-shaped text", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getDiff: (req) => {
       assert.deepEqual(req.query, { message_id: "msg_9" });
       return {
@@ -231,7 +231,7 @@ test("getDiff: GET .../git/diff?message_id=, serializes structured diffs into un
 });
 
 test('getDiff: GET .../git/diff?sha=, empty diffs list yields ""', async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getDiff: (req) => {
       assert.deepEqual(req.query, { sha: "deadbeef" });
       return { status: 200, body: { diffs: [] } };
@@ -246,7 +246,7 @@ test('getDiff: GET .../git/diff?sha=, empty diffs list yields ""', async () => {
 });
 
 test('getDiff: a null diffs list (the SDK\'s own nullable field) also yields ""', async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getDiff: () => ({ status: 200, body: { diffs: null } }),
   });
   try {
@@ -257,7 +257,7 @@ test('getDiff: a null diffs list (the SDK\'s own nullable field) also yields ""'
 });
 
 test("remixInit: fetches the source project's workspace_id, then POSTs /v1/projects with the remix shape, mapping project_name -> display_name", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: (req) => {
       assert.equal(req.params.project_id, "prj_source");
       return { status: 200, body: { id: "prj_source", name: "source", workspace_id: "ws_42" } };
@@ -295,7 +295,7 @@ test("remixInit: fetches the source project's workspace_id, then POSTs /v1/proje
 });
 
 test("remixProgress: GET .../remix/progress?job_id=, maps preparing/running/completed/error to pending/running/completed/failed", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     remixProgress: (req) => {
       assert.equal(req.params.project_id, "prj_source");
       const status =
@@ -334,7 +334,7 @@ test("remixProgress: GET .../remix/progress?job_id=, maps preparing/running/comp
 });
 
 test("setProjectKnowledge: PUT /v1/projects/{id}/knowledge with {content}", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     putKnowledge: (req) => {
       assert.deepEqual(req.body, { content: "# Knowledge\nBe nice." });
       return { status: 200, body: { content: "# Knowledge\nBe nice." } };
@@ -350,7 +350,7 @@ test("setProjectKnowledge: PUT /v1/projects/{id}/knowledge with {content}", asyn
 });
 
 test("chat: refuses a copy project id that was never allowCopy()'d -- no HTTP call is made", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     postMessage: () => ({
       status: 200,
       body: { message_id: "should-not-be-reached", thread_id: "t", status: "accepted" },
@@ -370,7 +370,7 @@ test("chat: refuses a copy project id that was never allowCopy()'d -- no HTTP ca
 });
 
 test("chat: allowCopy()'d project id -- POST .../messages with {message}, returns message_id/thread_id", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     postMessage: (req) => {
       assert.equal(req.params.project_id, "prj_copy_1");
       assert.deepEqual(req.body, { message: "please add a footer" });
@@ -391,7 +391,7 @@ test("chat: allowCopy()'d project id -- POST .../messages with {message}, return
 });
 
 test("chat: never called with the source project id even after allowCopy()ing a different (copy) project id", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     postMessage: () => ({
       status: 200,
       body: { message_id: "m", thread_id: "t", status: "accepted" },
@@ -412,7 +412,7 @@ test("chat: never called with the source project id even after allowCopy()ing a 
 });
 
 test("getMessage: reads the nested AI `response` when present, mapping its status (awaiting_input/completed/stopped/error passthrough)", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getMessage: (req) => {
       assert.equal(req.params.message_id, "msg_1");
       assert.deepEqual(req.query, { thread_id: "thread_1" });
@@ -455,7 +455,7 @@ test("getMessage: reads the nested AI `response` when present, mapping its statu
 test("getMessage: top-level status queued/accepted/running/in_progress/pending collapse to 'running' (no nested response object yet)", async () => {
   const statuses = ["queued", "accepted", "running", "in_progress", "pending"];
   for (const raw of statuses) {
-    const fake = startFakeLovable({
+    const fake = await startFakeLovable({
       getMessage: () => ({
         status: 200,
         body: {
@@ -477,7 +477,7 @@ test("getMessage: top-level status queued/accepted/running/in_progress/pending c
 });
 
 test("getMessage: a real terminal status this client doesn't separately enumerate (e.g. Lovable's own 'timeout') passes through verbatim instead of collapsing to 'running'", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getMessage: () => ({
       status: 200,
       body: {
@@ -502,7 +502,7 @@ test("getMessage: a real terminal status this client doesn't separately enumerat
 });
 
 test("deleteProject: DELETE /v1/projects/{id}, 204 no content", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     deleteProject: (req) => {
       assert.equal(req.params.project_id, "prj_1");
       return { status: 204 };
@@ -517,7 +517,7 @@ test("deleteProject: DELETE /v1/projects/{id}, 204 no content", async () => {
 });
 
 test("setProjectVisibility: PATCH /v1/projects/{id} with {visibility}", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     patchProject: (req) => {
       assert.deepEqual(req.body, { visibility: "private" });
       return { status: 200, body: { id: "prj_1", visibility: "private", workspace_id: "ws_1" } };
@@ -533,7 +533,7 @@ test("setProjectVisibility: PATCH /v1/projects/{id} with {visibility}", async ()
 });
 
 test("error mapping: a non-2xx response throws LovableRestError with status/type/request_id from the problem+json body", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: () => ({
       status: 404,
       body: {
@@ -566,7 +566,7 @@ test("error mapping: 402 (out of credits) and 500 both surface as LovableRestErr
     [402, "insufficient_credits"],
     [500, "internal_error"],
   ] as const) {
-    const fake = startFakeLovable({
+    const fake = await startFakeLovable({
       getProject: () => ({ status, body: { status, type, detail: "boom" } }),
     });
     try {
@@ -586,7 +586,7 @@ test("error mapping: 402 (out of credits) and 500 both surface as LovableRestErr
 });
 
 test("error mapping: 401 carries reason 'reconnect'", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: () => ({
       status: 401,
       body: { status: 401, type: "unauthorized", detail: "token expired" },
@@ -610,7 +610,7 @@ test("error mapping: 401 carries reason 'reconnect'", async () => {
 test("401: refreshes the token once via ensureFreshToken, then retries and succeeds on the second attempt", async () => {
   let attempts = 0;
   let refreshCalls = 0;
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: () => {
       attempts += 1;
       if (attempts === 1) {
@@ -636,7 +636,7 @@ test("401: refreshes the token once via ensureFreshToken, then retries and succe
 
 test("401 twice: still throws LovableRestError after the one allowed retry, and ensureFreshToken is called only once", async () => {
   let refreshCalls = 0;
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: () => ({
       status: 401,
       body: { status: 401, type: "unauthorized", detail: "still stale" },
@@ -663,7 +663,7 @@ test("401 twice: still throws LovableRestError after the one allowed retry, and 
 });
 
 test("token: an explicit deps.token is sent as a Bearer header and is never present in a thrown error", async () => {
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: (req) => {
       assert.equal(req.headers.authorization, `Bearer ${TOKEN}`);
       return { status: 403, body: { status: 403, type: "forbidden", detail: "nope" } };
@@ -697,7 +697,7 @@ test("token: with no explicit deps.token, the client reads access_token from the
   const prevAuthPath = process.env.HARNESS_AUTH_PATH;
   process.env.HARNESS_AUTH_PATH = authPath;
 
-  const fake = startFakeLovable({
+  const fake = await startFakeLovable({
     getProject: (req) => {
       assert.equal(req.headers.authorization, "Bearer from-auth-file");
       return { status: 200, body: { id: "prj_1", name: "x", workspace_id: "ws_1" } };

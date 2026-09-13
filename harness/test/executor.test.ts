@@ -824,6 +824,15 @@ test("syncNow: a request-scoped timeout returns ok:false with a plain error inst
 // ---- end fix round 1 item 3 ----
 
 // -------------------------------------------------------- lock interplay --
+//
+// Round 6 fix wave item 5: lock.defaultLockPath() below is NOT
+// harness/data/executor.lock in this file -- it's dirname(authFilePath())
+// + "executor.lock", and this file's own top-of-file HARNESS_AUTH_PATH
+// override (join(tmp, "lovable-auth.json"), a mkdtempSync'd dir) already
+// redirects authFilePath() under the per-run temp dir. So every
+// lock.defaultLockPath() call in this file already resolves under that
+// temp dir, not the real data/ directory -- no separate temp-path switch
+// needed here.
 
 test("schedule.loop({once:true}) acquires the lock for its owner and releases it once the tick finishes", async () => {
   const lockPath = lock.defaultLockPath();
@@ -1005,6 +1014,8 @@ test("improvementActionAndWrite: retryKnowledgeWrite reports not connected for a
 });
 
 test("lock.currentLockHolder: null when unheld or stale, the holder when fresh", () => {
+  // Also resolves under this file's own temp dir -- see the "lock
+  // interplay" section header above for why.
   const lockPath = lock.defaultLockPath();
   assert.equal(lock.currentLockHolder(lockPath), null);
   lock.acquireLock(lockPath, "app");
