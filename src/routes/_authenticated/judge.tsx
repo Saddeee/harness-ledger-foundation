@@ -11,10 +11,12 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { WhatChangedLines } from "@/components/harness/timeline";
 import { AddConfirm, RemoveFromKnowledgeConfirm, useRun } from "@/components/harness/improvement";
 import {
   CORRECTIONS_FROM_FOLLOW_UPS_LINE,
+  formatDay,
   testCopyConfounderLine,
   testCostLine,
   testedResultLine,
@@ -193,6 +195,8 @@ function Page() {
   });
 
   const [verdicts, setVerdicts] = useState<(Verdict | null)[]>([]);
+  const [feedbackEditing, setFeedbackEditing] = useState(false);
+  const [feedbackDraft, setFeedbackDraft] = useState("");
   const run = runQuery.data && runQuery.data.available ? runQuery.data.run : null;
 
   useEffect(() => {
@@ -213,6 +217,20 @@ function Page() {
       invalidate();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save your verdicts"),
+  });
+
+  // Round 6c part B: the same feedback box as the Tests page's own list --
+  // a free-text note on this run, any status. `text` is the whole box's
+  // current value, not a diff (setExperimentFeedback replaces it wholesale;
+  // an empty string clears the note).
+  const saveFeedback = useMutation({
+    mutationFn: (text: string) => post({ action: "feedback", run_id: runId!, text }),
+    onSuccess: () => {
+      toast.success("Saved your feedback.");
+      setFeedbackEditing(false);
+      invalidate();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save your feedback"),
   });
 
   if (runId == null) {
@@ -261,13 +279,19 @@ function Page() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-4">
         <Link
           to="/ledger"
           search={{ improvement: view.improvement_id }}
           className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           ← Suggestion
+        </Link>
+        <Link
+          to="/tests"
+          className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          ← Tests
         </Link>
       </div>
 
@@ -406,6 +430,58 @@ function Page() {
           )}
         </>
       )}
+
+      <section className="space-y-2 rounded-md border p-4">
+        <h2 className="text-lg font-medium">Your feedback about this test</h2>
+        {feedbackEditing ? (
+          <div className="space-y-2">
+            <Textarea
+              aria-label="Your feedback about this test"
+              value={feedbackDraft}
+              onChange={(e) => setFeedbackDraft(e.target.value)}
+              maxLength={2000}
+              rows={3}
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={saveFeedback.isPending}
+                onClick={() => saveFeedback.mutate(feedbackDraft)}
+              >
+                {saveFeedback.isPending ? "Saving…" : "Save"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={saveFeedback.isPending}
+                onClick={() => setFeedbackEditing(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setFeedbackDraft(view.feedback ?? "");
+                setFeedbackEditing(true);
+              }}
+            >
+              {view.feedback ? "Edit" : "Add feedback"}
+            </Button>
+            {view.feedback ? (
+              <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                {view.feedback}
+                <br />
+                {`Your note, ${formatDay(view.feedback_at)}`}
+              </p>
+            ) : null}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

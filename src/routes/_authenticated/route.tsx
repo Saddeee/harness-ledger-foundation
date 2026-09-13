@@ -26,6 +26,7 @@ const NAV = [
   { to: "/ledger", label: "Suggestions" },
   { to: "/instructions", label: "Instructions" },
   { to: "/history", label: "History" },
+  { to: "/tests", label: "Tests" },
   { to: "/skills", label: "Skills" },
   { to: "/projects", label: "Projects" },
   { to: "/settings", label: "Settings" },

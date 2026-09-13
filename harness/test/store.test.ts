@@ -13,13 +13,13 @@ const store = await import("../src/store.js");
 const PROJECT = "test-project-id";
 
 test("schema migration: applies all migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 12);
+  assert.equal(schemaVersion(), 13);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
   );
   const tableNames = new Set(
     (
@@ -123,6 +123,55 @@ test("migration v12: on a v11 DB with several rule_verdicts rows for one rule, a
       .prepare(`INSERT INTO rule_verdicts (rule_id, verdict, superseded) VALUES (?, ?, 0)`)
       .run(1, "not_sure");
   }, /UNIQUE constraint failed/);
+
+  scratch.close();
+});
+
+test("migration v13: applies cleanly on a v12 DB -- experiment_runs gains feedback/feedback_at, NULL on existing rows", async () => {
+  // Same exact-migration-path exercise as the v12 test above, brought up to
+  // v12 this time (v13's own ALTER TABLE columns don't exist until it
+  // runs), with one experiment_runs row seeded before v13 applies so the
+  // test can check the new columns default to NULL on it, then that they
+  // actually store a value once written the same way
+  // store.setExperimentFeedback (Round 6c) would.
+  const { default: Database } = await import("better-sqlite3");
+  const { MIGRATIONS } = await import("../src/migrations.js");
+  const scratch = new Database(":memory:");
+  scratch.exec(
+    `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  );
+  const sorted = [...MIGRATIONS].sort((a, b) => a.version - b.version);
+  for (const m of sorted.filter((m) => m.version <= 12)) {
+    scratch.exec(m.sql);
+    scratch
+      .prepare(`INSERT INTO schema_migrations (version, name) VALUES (?, ?)`)
+      .run(m.version, m.name);
+  }
+  scratch.pragma("foreign_keys = OFF");
+  scratch.exec(
+    `INSERT INTO experiment_runs (rule_id, correction_candidate_id, task_episode_id, source_project_id, request_message_external_id)
+     VALUES (1, 1, 1, 'proj', 'msg')`,
+  );
+
+  const v13 = sorted.find((m) => m.version === 13)!;
+  scratch.exec(v13.sql);
+
+  const before = scratch
+    .prepare(`SELECT feedback, feedback_at FROM experiment_runs WHERE rule_id = 1`)
+    .get() as { feedback: string | null; feedback_at: string | null };
+  assert.equal(before.feedback, null, "no note yet on a pre-existing row");
+  assert.equal(before.feedback_at, null);
+
+  scratch
+    .prepare(
+      `UPDATE experiment_runs SET feedback = ?, feedback_at = datetime('now') WHERE rule_id = 1`,
+    )
+    .run("Looked right to me.");
+  const after = scratch
+    .prepare(`SELECT feedback, feedback_at FROM experiment_runs WHERE rule_id = 1`)
+    .get() as { feedback: string | null; feedback_at: string | null };
+  assert.equal(after.feedback, "Looked right to me.");
+  assert.ok(after.feedback_at);
 
   scratch.close();
 });

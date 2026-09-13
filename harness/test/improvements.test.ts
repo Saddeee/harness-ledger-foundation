@@ -3646,3 +3646,144 @@ test("buildTimeline: a judged run renders a `test` node with the exact label, ac
   assert.equal(failedNode!.improvement_id, cc2.id);
 });
 // ---- end Round 6 Task 6b ----
+
+// ---- Round 6c part B: the Tests page ----
+// The "feedback" action (store.setExperimentFeedback, addressed by run_id
+// directly, same convention as "judge") and listTestRunSummaries (the Tests
+// page's own list read, GET .../improvements?runs=1 in the web app --
+// exercised here straight against the store function it's built on).
+
+test("feedback: unknown run id throws", () => {
+  assert.throws(
+    () => imp.improvementAction({ action: "feedback", run_id: 999999, text: "hello" }),
+    /experiment run 999999 not found/,
+  );
+});
+
+test("feedback: saves text on a run, stamps feedback_at, and returns the run's own improvement", () => {
+  const { cc, rule, ep } = mkRule({
+    project: PROJECT,
+    externalIdPrefix: "feedback-save",
+    content: "Add a checkout page.",
+    summary: "s",
+    desired: "d",
+    instruction: "Always show the order total before payment.",
+    scope: "project",
+  });
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "feedback-save-req",
+  });
+
+  const before = store.getExperimentRun(runId)!;
+  assert.equal(before.feedback, null);
+  assert.equal(before.feedback_at, null);
+
+  const result = imp.improvementAction({
+    action: "feedback",
+    run_id: runId,
+    text: "This looked right to me.",
+  });
+  assert.equal(result.id, cc.id, "feedback returns the run's own improvement");
+
+  const after = store.getExperimentRun(runId)!;
+  assert.equal(after.feedback, "This looked right to me.");
+  assert.ok(after.feedback_at);
+});
+
+test("feedback: an empty string clears a previously saved note (feedback_at still updated)", () => {
+  const { cc, rule, ep } = mkRule({
+    project: PROJECT,
+    externalIdPrefix: "feedback-clear",
+    content: "Add a refund flow.",
+    summary: "s",
+    desired: "d",
+    instruction: "Always log refunds to the audit table.",
+    scope: "project",
+  });
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "feedback-clear-req",
+  });
+  imp.improvementAction({ action: "feedback", run_id: runId, text: "First note." });
+  const firstSavedAt = store.getExperimentRun(runId)!.feedback_at;
+  assert.ok(firstSavedAt);
+
+  imp.improvementAction({ action: "feedback", run_id: runId, text: "" });
+  const cleared = store.getExperimentRun(runId)!;
+  assert.equal(cleared.feedback, null, "an empty string is stored as null, not ''");
+  assert.ok(cleared.feedback_at, "feedback_at is still stamped on a clear");
+});
+
+test("listTestRunSummaries: every run, newest first, with the rule's own text, the episode's own corrections count, and the feedback fields", () => {
+  const older = mkRule({
+    project: PROJECT,
+    externalIdPrefix: "runs-list-older",
+    content: "Add a login page.",
+    summary: "s",
+    desired: "d",
+    instruction: "Always show a 'forgot password' link.",
+    scope: "project",
+  });
+  const { id: olderRunId } = store.createExperimentRun({
+    rule_id: older.rule.id,
+    correction_candidate_id: older.cc.id,
+    task_episode_id: older.ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "runs-list-older-req",
+  });
+  store.updateExperimentRun(olderRunId, {
+    status: "failed",
+    error: "Copying the project timed out.",
+  });
+
+  const { cc, rule, ep } = mkRuleWithCorrections("runs-list-newer", [
+    "The confirm link never expired.",
+  ]);
+  const { id: newerRunId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "runs-list-newer-req",
+  });
+  store.updateExperimentRun(newerRunId, {
+    status: "judged",
+    score: 1,
+    judged_at: "2026-09-05T00:00:00Z",
+    cost_credits: 4,
+  });
+  imp.improvementAction({ action: "feedback", run_id: newerRunId, text: "Matched expectations." });
+
+  const summaries = imp.listTestRunSummaries();
+  const newerIdx = summaries.findIndex((s) => s.id === newerRunId);
+  const olderIdx = summaries.findIndex((s) => s.id === olderRunId);
+  assert.ok(newerIdx >= 0 && olderIdx >= 0);
+  assert.ok(newerIdx < olderIdx, "newest run first");
+
+  const newerSummary = summaries[newerIdx]!;
+  assert.equal(newerSummary.rule_id, rule.id);
+  assert.equal(newerSummary.improvement_id, cc.id);
+  assert.equal(newerSummary.rule_text, "Always validate the signup form before submit.");
+  assert.equal(newerSummary.project_id, PROJECT);
+  assert.equal(newerSummary.status, "judged");
+  assert.equal(newerSummary.cost_credits, 4);
+  assert.equal(newerSummary.score, 1);
+  assert.equal(newerSummary.corrections, 1, "the episode's own single classified correction");
+  assert.equal(newerSummary.copy_deleted, 0);
+  assert.equal(newerSummary.feedback, "Matched expectations.");
+  assert.ok(newerSummary.feedback_at);
+
+  const olderSummary = summaries[olderIdx]!;
+  assert.equal(olderSummary.status, "failed");
+  assert.equal(olderSummary.error, "Copying the project timed out.");
+  assert.equal(olderSummary.feedback, null);
+  assert.equal(olderSummary.feedback_at, null);
+});
+// ---- end Round 6c part B ----

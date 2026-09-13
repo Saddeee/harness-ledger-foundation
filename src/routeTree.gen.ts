@@ -28,6 +28,7 @@ import { Route as AuthenticatedScoreboardRouteImport } from './routes/_authentic
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSkillsRouteImport } from './routes/_authenticated/skills'
 import { Route as AuthenticatedSuggestionsRouteImport } from './routes/_authenticated/suggestions'
+import { Route as AuthenticatedTestsRouteImport } from './routes/_authenticated/tests'
 import { Route as AuthenticatedVersionsRouteImport } from './routes/_authenticated/versions'
 import { Route as OauthCallbackRouteImport } from './routes/oauth/callback'
 import { Route as ApiPublicHarnessCorrectionsRouteImport } from './routes/api/public/harness/corrections'
@@ -142,6 +143,11 @@ const AuthenticatedSuggestionsRoute =
     path: '/suggestions',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedTestsRoute = AuthenticatedTestsRouteImport.update({
+  id: '/tests',
+  path: '/tests',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedVersionsRoute = AuthenticatedVersionsRouteImport.update({
   id: '/versions',
   path: '/versions',
@@ -253,6 +259,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/skills': typeof AuthenticatedSkillsRoute
   '/suggestions': typeof AuthenticatedSuggestionsRoute
+  '/tests': typeof AuthenticatedTestsRoute
   '/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -289,6 +296,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/skills': typeof AuthenticatedSkillsRoute
   '/suggestions': typeof AuthenticatedSuggestionsRoute
+  '/tests': typeof AuthenticatedTestsRoute
   '/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -327,6 +335,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/skills': typeof AuthenticatedSkillsRoute
   '/_authenticated/suggestions': typeof AuthenticatedSuggestionsRoute
+  '/_authenticated/tests': typeof AuthenticatedTestsRoute
   '/_authenticated/versions': typeof AuthenticatedVersionsRoute
   '/oauth/callback': typeof OauthCallbackRoute
   '/api/public/harness/corrections': typeof ApiPublicHarnessCorrectionsRoute
@@ -365,6 +374,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/skills'
     | '/suggestions'
+    | '/tests'
     | '/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -401,6 +411,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/skills'
     | '/suggestions'
+    | '/tests'
     | '/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -438,6 +449,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/skills'
     | '/_authenticated/suggestions'
+    | '/_authenticated/tests'
     | '/_authenticated/versions'
     | '/oauth/callback'
     | '/api/public/harness/corrections'
@@ -613,6 +625,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSuggestionsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/tests': {
+      id: '/_authenticated/tests'
+      path: '/tests'
+      fullPath: '/tests'
+      preLoaderRoute: typeof AuthenticatedTestsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/versions': {
       id: '/_authenticated/versions'
       path: '/versions'
@@ -744,6 +763,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSkillsRoute: typeof AuthenticatedSkillsRoute
   AuthenticatedSuggestionsRoute: typeof AuthenticatedSuggestionsRoute
+  AuthenticatedTestsRoute: typeof AuthenticatedTestsRoute
   AuthenticatedVersionsRoute: typeof AuthenticatedVersionsRoute
 }
 
@@ -763,6 +783,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSkillsRoute: AuthenticatedSkillsRoute,
   AuthenticatedSuggestionsRoute: AuthenticatedSuggestionsRoute,
+  AuthenticatedTestsRoute: AuthenticatedTestsRoute,
   AuthenticatedVersionsRoute: AuthenticatedVersionsRoute,
 }
 

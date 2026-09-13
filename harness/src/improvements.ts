@@ -1037,6 +1037,21 @@ const actionInput = z.discriminatedUnion("action", [
     verdicts: z.array(z.enum(["yes", "no", "unclear"])),
   }),
   // ---- end Round 6 Task 6b ----
+  // ---- Round 6c ----
+  // "feedback" (the Tests page's and judging screen's shared feedback box)
+  // addresses a run_id directly, same convention as "judge"'s run_id path
+  // above -- see recordFeedback in the delimited block at the end of this
+  // file. A pure store op (setExperimentFeedback); no Lovable access, so it
+  // needs no interception in executor/beats.ts the way "test" does. An
+  // empty string clears the note (stored as null); max length matches
+  // every other free-text field on this same union (change_wording's
+  // reason, verdict's note).
+  z.object({
+    action: z.literal("feedback"),
+    run_id: z.number().int(),
+    text: z.string().max(2000),
+  }),
+  // ---- end Round 6c ----
 ]);
 
 // After the user approves "Add", stage the exact write for the executor --
@@ -1313,6 +1328,12 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
   // judgeRun in the delimited block at the end of this file.
   if (a.action === "judge") {
     return judgeRun(a.run_id, a.verdicts);
+  }
+  // Round 6c: "feedback" addresses a run_id directly too, same reason as
+  // "judge"'s run_id path above -- see recordFeedback in the delimited
+  // block at the end of this file.
+  if (a.action === "feedback") {
+    return recordFeedback(a.run_id, a.text);
   }
 
   const current = getImprovement(a.id);
@@ -2465,6 +2486,11 @@ export type ExperimentRunView = {
   edits_since_episode: number | null;
   score: number | null;
   verdicts: ("yes" | "no" | "unclear")[] | null;
+  // Round 6c: the same feedback box as the Tests page's own list, read here
+  // too so the judging screen can show the owner's existing note (if any)
+  // without a second fetch.
+  feedback: string | null;
+  feedback_at: string | null;
 };
 
 function parseDiffJson(json: string | null): { lines: string[]; truncated: boolean } | null {
@@ -2522,6 +2548,89 @@ export function buildExperimentRunView(runId: number): ExperimentRunView | null 
     edits_since_episode: run.edits_since_episode,
     score: run.score,
     verdicts,
+    feedback: run.feedback,
+    feedback_at: run.feedback_at,
   };
 }
 // ---- end Round 6 Task 6b ----
+
+// ---- Round 6c ----
+// The Tests page (owner's own ask, 2026-09-13: "a page dedicated for this
+// so you can see status, and actual results, and somewhere we can collect
+// feedback from the user about this"). Two pieces, both pure store ops --
+// no Lovable access, same as judgeRun/buildExperimentRunView above:
+// recordFeedback (the "feedback" action) and listTestRunSummaries (the
+// page's own list read, GET .../improvements?runs=1).
+
+/** Saves (or, given "", clears) the owner's own note on one run --
+ * store.setExperimentFeedback's own validation-free write, wrapped the same
+ * way judgeRun wraps updateExperimentRun: throws on an unknown run id,
+ * otherwise returns the run's own ORIGINAL improvement (its
+ * correction_candidate_id), refreshed. */
+function recordFeedback(runId: number, text: string): Improvement {
+  const run = store.getExperimentRun(runId);
+  if (!run) throw new Error(`experiment run ${runId} not found`);
+  store.setExperimentFeedback(runId, text.length > 0 ? text : null);
+  const refreshed = getImprovement(run.correction_candidate_id);
+  if (!refreshed)
+    throw new Error(
+      `improvement ${run.correction_candidate_id} not found after saving feedback for run ${runId}`,
+    );
+  return refreshed;
+}
+
+// One row of the Tests page's own table -- everything it shows without a
+// second read per row (the rule's own text for the "Rule" column's link
+// label, the episode's own corrections count for the judged result, the
+// owner's own feedback note). Mirrors TestInfo.run's own field set where
+// the two overlap (id/status/stage_note/started_at/finished_at/judged_at/
+// cost_credits/score/corrections/error) plus what only the Tests page
+// needs (rule_id/improvement_id/rule_text/project_id/copy_deleted/
+// feedback/feedback_at).
+export type ExperimentRunSummary = {
+  id: number;
+  rule_id: number;
+  improvement_id: number;
+  rule_text: string;
+  project_id: string | null;
+  status: store.ExperimentStatus;
+  stage_note: string | null;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+  judged_at: string | null;
+  cost_credits: number | null;
+  score: number | null;
+  corrections: number;
+  copy_deleted: number;
+  feedback: string | null;
+  feedback_at: string | null;
+};
+
+/** Every paired-test run ever started, any status, newest first --
+ * store.listExperimentRunsWithRules reshaped into exactly what the Tests
+ * page's table needs, `corrections` filled in the same way
+ * computeTestInfo/judgeRun/buildExperimentRunView already agree on
+ * (correctionsForEpisode, Round 6 fix wave item C's own shared fallback). */
+export function listTestRunSummaries(): ExperimentRunSummary[] {
+  return store.listExperimentRunsWithRules().map((run) => ({
+    id: run.id,
+    rule_id: run.rule_id,
+    improvement_id: run.correction_candidate_id,
+    rule_text: run.rule_text,
+    project_id: run.project_id,
+    status: run.status,
+    stage_note: run.stage_note,
+    error: run.error,
+    started_at: run.started_at,
+    finished_at: run.finished_at,
+    judged_at: run.judged_at,
+    cost_credits: run.cost_credits,
+    score: run.score,
+    corrections: correctionsForEpisode(run.task_episode_id).texts.length,
+    copy_deleted: run.copy_deleted,
+    feedback: run.feedback,
+    feedback_at: run.feedback_at,
+  }));
+}
+// ---- end Round 6c ----

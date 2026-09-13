@@ -34,6 +34,7 @@ import {
   REMOVE_FROM_KNOWLEDGE_TITLE,
   retireReasonSentence,
   retireSinceLine,
+  SEE_ON_TESTS_LABEL,
   START_TEST_LABEL,
   TEST_ONE_AT_A_TIME_LINE,
   TEST_STARTED_TOAST,
@@ -581,9 +582,23 @@ function TestStatusLine({ item }: { item: Improvement }) {
           </p>
         );
       case "judged":
-        return <p className="text-xs text-muted-foreground">{testedResultLine(run)}</p>;
+        return (
+          <p className="text-xs text-muted-foreground">
+            {testedResultLine(run)}{" "}
+            <Link to="/tests" className="text-primary underline underline-offset-2">
+              {SEE_ON_TESTS_LABEL}
+            </Link>
+          </p>
+        );
       case "failed":
-        return <p className="text-xs text-muted-foreground">{testFailedLine(run.error)}</p>;
+        return (
+          <p className="text-xs text-muted-foreground">
+            {testFailedLine(run.error)}{" "}
+            <Link to="/tests" className="text-primary underline underline-offset-2">
+              {SEE_ON_TESTS_LABEL}
+            </Link>
+          </p>
+        );
       default:
         return null;
     }

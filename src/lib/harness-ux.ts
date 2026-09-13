@@ -699,3 +699,22 @@ export function testCostLine(costCredits: number | null): string {
 // existed) whose corrections list is instead the owner's own follow-up
 // messages after the original request.
 export const CORRECTIONS_FROM_FOLLOW_UPS_LINE = "Corrections taken from your follow-up messages";
+
+// ---- Round 6c part B: the Tests page (owner's own ask, 2026-09-13: "a page
+// dedicated for this so you can see status, and actual results, and
+// somewhere we can collect feedback from the user about this"). Copy
+// shared between the Tests page and the card's own "See on Tests" link
+// (improvement.tsx) lives here; the page's own table/empty-state copy that
+// nothing else reads stays local to tests.tsx, same convention
+// history.tsx's own EMPTY_LINE uses. ----
+export const SEE_ON_TESTS_LABEL = "See on Tests";
+
+// "This month: N credits used of your budget of B · measured" -- the Tests
+// page's own credits line, distinct from testThisRuleBudgetLine's confirm-
+// dialog wording (that one has no "· measured" suffix): both N and B are
+// always real numbers read off the executor's own credits/settings, never
+// typed literally.
+export function testsPageCreditsLine(credits: { used_this_month: number; budget: number }): string {
+  return `This month: ${credits.used_this_month} credits used of your budget of ${credits.budget} · measured`;
+}
+// ---- end Round 6c part B ----

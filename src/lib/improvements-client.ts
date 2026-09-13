@@ -220,6 +220,9 @@ export type ExperimentRunView = {
   edits_since_episode: number | null;
   score: number | null;
   verdicts: ("yes" | "no" | "unclear")[] | null;
+  // Round 6c part B: the same feedback box as the Tests page's own list.
+  feedback: string | null;
+  feedback_at: string | null;
 };
 
 export type Improvement = {
@@ -355,6 +358,40 @@ export async function fetchExperimentRun(runId: number): Promise<ExperimentRunRe
   });
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as ExperimentRunResponse;
+}
+
+// Round 6c part B: the Tests page's own list -- same route as everything
+// else here (?runs=1), not a seventh one. Mirrors
+// harness/src/improvements.ts's own ExperimentRunSummary/listTestRunSummaries.
+export type ExperimentRunSummary = {
+  id: number;
+  rule_id: number;
+  improvement_id: number;
+  rule_text: string;
+  project_id: string | null;
+  status: ExperimentStatus;
+  stage_note: string | null;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+  judged_at: string | null;
+  cost_credits: number | null;
+  score: number | null;
+  corrections: number;
+  copy_deleted: number;
+  feedback: string | null;
+  feedback_at: string | null;
+};
+
+export type TestRunsResponse =
+  { available: true; runs: ExperimentRunSummary[] } | { available: false; reason?: string };
+
+export async function fetchTestRuns(): Promise<TestRunsResponse> {
+  const res = await fetch(`/api/public/harness/improvements?runs=1`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as TestRunsResponse;
 }
 
 export async function postImprovementAction(body: Record<string, unknown>): Promise<{

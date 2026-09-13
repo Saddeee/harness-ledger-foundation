@@ -62,7 +62,10 @@ test("harness-ux.ts: LANDING_CREDITS_LINE exists with correct content", () => {
   );
 });
 
-test("nav: Inbox, Suggestions, Instructions, History, Skills, Projects, Settings in that order", () => {
+test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in that order", () => {
+  // Round 6c part B: Tests joins the sidebar between History and Skills --
+  // this is the NAV-order pin the Tests-page task named explicitly, updated
+  // here with intent rather than left to bit-rot against a stale list.
   const code = codeOnly(readApp(ROUTE));
   const navMatch = code.match(
     /const NAV = \[[^\]]*\{ to: "\/([^"]+)", label: "([^"]+)" \}[^\]]*\]/s,
@@ -80,6 +83,7 @@ test("nav: Inbox, Suggestions, Instructions, History, Skills, Projects, Settings
     { route: "ledger", label: "Suggestions" },
     { route: "instructions", label: "Instructions" },
     { route: "history", label: "History" },
+    { route: "tests", label: "Tests" },
     { route: "skills", label: "Skills" },
     { route: "projects", label: "Projects" },
     { route: "settings", label: "Settings" },

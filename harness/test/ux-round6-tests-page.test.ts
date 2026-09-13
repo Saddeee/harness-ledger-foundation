@@ -1,0 +1,173 @@
+// Round 6c part B: structural tests for the Tests page (owner's own ask,
+// 2026-09-13: "a page dedicated for this so you can see status, and actual
+// results, and somewhere we can collect feedback from the user about
+// this"). Same lightweight, dependency-free readApp/codeOnly pattern as
+// ux-round4-retire.test.ts/ux-round6-test.test.ts (kept in its own file per
+// the task instructions -- other tests are being edited concurrently).
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+function readApp(rel: string): string {
+  return readFileSync(new URL(`../../src/${rel}`, import.meta.url), "utf8");
+}
+function codeOnly(source: string): string {
+  return source
+    .split("\n")
+    .filter((l) => {
+      const t = l.trim();
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
+    })
+    .join("\n");
+}
+
+const TESTS_PAGE = "routes/_authenticated/tests.tsx";
+const ROUTE = "routes/_authenticated/route.tsx";
+const JUDGE = "routes/_authenticated/judge.tsx";
+const CLIENT = "lib/improvements-client.ts";
+const HARNESS_UX = "lib/harness-ux.ts";
+const IMPROVEMENT = "components/harness/improvement.tsx";
+
+// ---- 1. the route exists, with the exact copy ----
+
+test("tests.tsx: exists, titled 'Tests', with the exact intro line and empty state", () => {
+  const raw = readApp(TESTS_PAGE);
+  const code = codeOnly(raw);
+  assert.match(code, /createFileRoute\("\/_authenticated\/tests"\)/);
+  assert.match(code, />Tests</, "the page's own <h1> reads exactly 'Tests'");
+  assert.match(
+    code,
+    /Each test copies your project at the moment before a real request, adds one rule, sends the same request, and lets you judge both builds\./,
+  );
+  assert.match(
+    code,
+    /No tests yet\. Open a suggestion and press "Test this rule"\./,
+    "the empty state's exact copy",
+  );
+});
+
+test("tests.tsx: shows the unavailable/hosted copy the same way History's own page does", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  assert.match(code, /available === false/);
+  assert.match(code, /Tests are available when Harness runs on your machine\./);
+});
+
+test("tests.tsx: the credits line comes from harness-ux.ts's own testsPageCreditsLine, not a re-typed template", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  assert.match(code, /testsPageCreditsLine\(/);
+
+  const uxCode = codeOnly(readApp(HARNESS_UX));
+  assert.match(
+    uxCode,
+    /`This month: \$\{credits\.used_this_month\} credits used of your budget of \$\{credits\.budget\} · measured`/,
+  );
+});
+
+test("tests.tsx: the table's own Status column uses the exact plain-word phrases (Queued/Copying/Building/Your verdict is needed/Judged:.../Failed:...)", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  assert.match(code, />Queued</);
+  assert.match(code, />Copying</);
+  assert.match(code, />Building</);
+  assert.match(code, /Your verdict is needed/);
+  assert.match(code, /`Judged: \$\{no\} of \$\{run\.corrections\} correction/);
+  assert.match(code, /`Failed: \$\{run\.error/);
+});
+
+test("tests.tsx: the Cost column reads 'N credits · measured' or '—', never a hardcoded number", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  assert.match(code, /· measured`/);
+  assert.match(code, /"—"/);
+  assert.doesNotMatch(readApp(TESTS_PAGE), /\d+\s*credits?\b/);
+});
+
+test("tests.tsx: the Feedback column offers 'Add feedback'/'Edit' and 'Save', with the saved note shown as 'Your note, <day>'", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  assert.match(code, /"Add feedback"/);
+  assert.match(code, /"Edit"/);
+  assert.match(code, /"Save"/);
+  assert.match(code, /`Your note, \$\{formatDay\(run\.feedback_at\)\}`/);
+});
+
+// ---- 2. the "Test copies to delete by hand" details block lives here now, not on Projects ----
+
+test("tests.tsx: a collapsed <details> lists undeleted test copies when there are any, moved from the Projects page", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  assert.match(
+    code,
+    /<details className="rounded-md border">/,
+    "no `open` attribute -- collapsed by default",
+  );
+  assert.match(code, /Test copies to delete by hand \(\$\{undeletedCopies\.length\}\)/);
+  assert.match(code, /executor\.data\?\.undeleted_copies/);
+
+  const projectsCode = codeOnly(readApp("components/harness/local-projects.tsx"));
+  assert.doesNotMatch(
+    projectsCode,
+    /Test copies to delete by hand/,
+    "moved to Tests, not left duplicated on Projects",
+  );
+});
+
+// ---- 3. NAV includes Tests, in order, between History and Skills ----
+
+test("route.tsx: NAV includes Tests between History and Skills", () => {
+  const code = codeOnly(readApp(ROUTE));
+  const allItems = code.match(/\{ to: "\/([^"]+)", label: "([^"]+)" \}/g);
+  assert.ok(allItems);
+  const routes = allItems!.map((item) => item.match(/to: "\/([^"]+)"/)![1]);
+  const historyIdx = routes.indexOf("history");
+  const testsIdx = routes.indexOf("tests");
+  const skillsIdx = routes.indexOf("skills");
+  assert.ok(historyIdx >= 0 && testsIdx >= 0 && skillsIdx >= 0);
+  assert.equal(testsIdx, historyIdx + 1, "Tests sits immediately after History");
+  assert.equal(skillsIdx, testsIdx + 1, "Skills sits immediately after Tests");
+});
+
+// ---- 4. the client fetches only the six local harness routes ----
+
+test("improvements-client.ts: fetchTestRuns still fetches only the six local harness routes", () => {
+  const code = codeOnly(readApp(CLIENT));
+  assert.match(code, /fetchTestRuns/);
+  const targets = [...code.matchAll(/fetch\(\s*[`"]([^`"]*?)(?:\?[^`"]*)?[`"]/g)].map((m) => m[1]);
+  assert.ok(targets.length > 0);
+  for (const t of targets) {
+    assert.match(
+      t!,
+      /^\/api\/public\/harness\/(improvements|runtime|knowledge|executor|projects|skills)$/,
+      `unexpected fetch target: ${t}`,
+    );
+  }
+});
+
+// ---- 5. the "See on Tests" link on the card's judged/failed status lines ----
+
+test("improvement.tsx: the judged/failed status lines carry a 'See on Tests' link to /tests", () => {
+  const code = codeOnly(readApp(IMPROVEMENT));
+  assert.match(code, /SEE_ON_TESTS_LABEL/);
+  assert.match(code, /to="\/tests"/);
+
+  const uxCode = codeOnly(readApp(HARNESS_UX));
+  assert.match(uxCode, /export const SEE_ON_TESTS_LABEL = "See on Tests";/);
+});
+
+// ---- 6. judge.tsx: the feedback box and both back links ----
+
+test("judge.tsx: has a feedback box ('Your feedback about this test', Save) and both '← Suggestion'/'← Tests' back links", () => {
+  const code = codeOnly(readApp(JUDGE));
+  assert.match(code, /Your feedback about this test/);
+  assert.match(code, /action: "feedback", run_id: runId/);
+  assert.match(code, /← Suggestion/);
+  assert.match(code, /← Tests/);
+  assert.match(code, /to="\/tests"/);
+});
+
+// ---- 7. no digit is ever hardcoded next to 'credit'/'credits' on the Tests page or judge.tsx ----
+
+test("tests.tsx and judge.tsx never hardcode a digit next to 'credit'/'credits'", () => {
+  for (const rel of [TESTS_PAGE, JUDGE]) {
+    const source = readApp(rel);
+    assert.doesNotMatch(source, /\d+\s*credits?\b/, `${rel} has a hardcoded credits number`);
+  }
+});

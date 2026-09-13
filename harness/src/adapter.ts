@@ -342,3 +342,13 @@ export { episodeRequestText, activeExperimentRun } from "./store.js";
 export { buildExperimentRunView } from "./improvements.js";
 export type { ExperimentRunView } from "./improvements.js";
 // ---- end Round 6 Task 6b ----
+
+// ---- Round 6c ----
+// The Tests page's own list read (GET .../improvements?runs=1) -- a pure
+// improvements.ts read, same reason buildExperimentRunView lives there and
+// is re-exported here rather than in store.ts directly. The "feedback"
+// action itself needs no new export: it goes through the existing
+// improvementAction re-export above, same as "judge".
+export { listTestRunSummaries } from "./improvements.js";
+export type { ExperimentRunSummary } from "./improvements.js";
+// ---- end Round 6c ----

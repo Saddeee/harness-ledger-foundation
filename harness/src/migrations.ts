@@ -712,4 +712,18 @@ export const MIGRATIONS: Migration[] = [
       CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_verdicts_current ON rule_verdicts(rule_id) WHERE superseded = 0;
     `,
   },
+  {
+    version: 13,
+    name: "round6c_experiment_feedback",
+    sql: `
+      -- Round 6c part B: the Tests page's own feedback box -- a free-text
+      -- note the owner can leave on any paired-test run, any status, from
+      -- either the Tests page or the judging screen. Null on every existing
+      -- row (nobody has left a note yet); feedback_at is stamped whenever a
+      -- note is saved or cleared (store.ts's setExperimentFeedback), never
+      -- touched by the runner's own stage writes (updateExperimentRun).
+      ALTER TABLE experiment_runs ADD COLUMN feedback TEXT;
+      ALTER TABLE experiment_runs ADD COLUMN feedback_at TEXT;
+    `,
+  },
 ];

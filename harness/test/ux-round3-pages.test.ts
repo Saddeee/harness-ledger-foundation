@@ -50,18 +50,20 @@ const TOUCHED_PAGES = [
 
 // ---- 1. Nav: six items, in order ----
 
-test("nav: Inbox, Suggestions, Instructions, History, Skills, Projects, Settings -- seven items, in order", () => {
+test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings -- eight items, in order", () => {
+  // Round 6c part B: Tests joins the sidebar between History and Skills.
   const shell = codeOnly(readApp(SHELL));
   const order = [
     'label: "Inbox"',
     'label: "Suggestions"',
     'label: "Instructions"',
     'label: "History"',
+    'label: "Tests"',
     'label: "Skills"',
     'label: "Projects"',
     'label: "Settings"',
   ];
-  assert.equal(count(shell, 'label: "'), 7, "exactly seven nav items");
+  assert.equal(count(shell, 'label: "'), 8, "exactly eight nav items");
   let last = -1;
   for (const marker of order) {
     const at = shell.indexOf(marker);
@@ -70,6 +72,7 @@ test("nav: Inbox, Suggestions, Instructions, History, Skills, Projects, Settings
   }
   assert.match(shell, /\{ to: "\/instructions", label: "Instructions" \}/);
   assert.match(shell, /\{ to: "\/history", label: "History" \}/);
+  assert.match(shell, /\{ to: "\/tests", label: "Tests" \}/);
   assert.match(shell, /\{ to: "\/skills", label: "Skills" \}/);
   assert.ok(!/label: "Knowledge"/.test(shell), "Knowledge is no longer a nav label");
 });

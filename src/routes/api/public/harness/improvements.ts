@@ -56,6 +56,12 @@ async function handleGet({ request }: { request: Request }) {
       return Response.json({ available: true, run });
     }
 
+    // Round 6c part B: the Tests page's own read -- same route as
+    // everything else here (?runs=1), not a seventh one.
+    if (new URL(request.url).searchParams.get("runs") !== null) {
+      return Response.json({ available: true, runs: adapter.listTestRunSummaries() });
+    }
+
     const settings = adapter.getSettings();
     return Response.json({
       available: true,

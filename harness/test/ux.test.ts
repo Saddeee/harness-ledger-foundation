@@ -600,21 +600,23 @@ test("Settings: hosted usage cards live under Advanced, gated to the hosted runt
   assert.ok(!/queryKey: \["overview"\]/.test(settings));
 });
 
-test("nav: Inbox, Suggestions, Instructions, History, Skills, Projects, Settings in every runtime; How Harness works links to the landing page", () => {
+test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in every runtime; How Harness works links to the landing page", () => {
   const shell = codeOnly(readApp(SHELL));
   assert.match(shell, /\{ to: "\/inbox", label: "Inbox" \}/);
   assert.match(shell, /\{ to: "\/ledger", label: "Suggestions" \}/);
   assert.match(shell, /\{ to: "\/instructions", label: "Instructions" \}/);
   assert.match(shell, /\{ to: "\/history", label: "History" \}/);
+  assert.match(shell, /\{ to: "\/tests", label: "Tests" \}/);
   assert.match(shell, /\{ to: "\/skills", label: "Skills" \}/);
   assert.match(shell, /\{ to: "\/projects", label: "Projects" \}/);
   assert.match(shell, /\{ to: "\/settings", label: "Settings" \}/);
-  assert.equal(count(shell, 'label: "'), 7, "exactly seven nav items");
+  assert.equal(count(shell, 'label: "'), 8, "exactly eight nav items");
   const navOrder = [
     'label: "Inbox"',
     'label: "Suggestions"',
     'label: "Instructions"',
     'label: "History"',
+    'label: "Tests"',
     'label: "Skills"',
     'label: "Projects"',
     'label: "Settings"',
@@ -702,10 +704,12 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   // Round 6 Task 6b's own paired-test copy block (confirm lines, the card's
   // status line, the judging screen's cost/confounder lines, the
   // TestRunResultLike type and its own doc comments) is the entire jump
-  // from 5 to 16 -- inventoried here so a FUTURE bump still gets looked at,
-  // rather than this assertion silently loosening forever.
+  // from 5 to 16; Round 6c part B's own testsPageCreditsLine (the Tests
+  // page's credits line, with its own "· measured" suffix) is the jump
+  // from 16 to 21 -- inventoried here so a FUTURE bump still gets looked
+  // at, rather than this assertion silently loosening forever.
   const creditMatches = (uxSource.match(/credit/gi) || []).length;
-  assert.equal(creditMatches, 16);
+  assert.equal(creditMatches, 21);
 });
 
 test("no internal vocabulary in user-facing JSX outside the Developer view", () => {

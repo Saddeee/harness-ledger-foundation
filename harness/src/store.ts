@@ -3884,6 +3884,11 @@ export type ExperimentRunRow = {
   heartbeat_at: string | null;
   finished_at: string | null;
   judged_at: string | null;
+  // Migration v13 (Round 6c part B): the Tests page's / judging screen's own
+  // feedback box -- see setExperimentFeedback in this file's own Round 6c
+  // block below.
+  feedback: string | null;
+  feedback_at: string | null;
 };
 
 /** Opens a new attempt at rule_id's paired test, queued and unstarted --
@@ -4356,3 +4361,51 @@ export function episodeFollowUpCorrections(episodeId: number): string[] {
     .map((r) => humanVisibleText(r.content));
 }
 // ---- end Round 6 fix wave item C ----
+
+// ---- Round 6c ----
+// The Tests page (spec: "a page dedicated for this so you can see status,
+// and actual results, and somewhere we can collect feedback from the user
+// about this"). Two additions: a free-text note on any run (any status),
+// and the page's own list read -- every run joined with the rule text and
+// project id its table needs, without a second query per row.
+
+/** Saves (or, given null, clears) the owner's own free-text note on one
+ * paired-test run -- the Tests page's and the judging screen's shared
+ * feedback box. Unlike updateExperimentRun (the runner's own stage-write
+ * path, which stamps heartbeat_at on every call), this stamps feedback_at
+ * -- "when the owner last saved a note" -- on every call including a
+ * clear, so the page can show "Your note, <day>" against the save itself,
+ * not some unrelated run activity. */
+export function setExperimentFeedback(runId: number, text: string | null): void {
+  db.prepare(
+    `UPDATE experiment_runs SET feedback = ?, feedback_at = datetime('now') WHERE id = ?`,
+  ).run(text, runId);
+  insertEvent("experiment_run.feedback_saved", null, { run_id: runId, cleared: text === null });
+}
+
+/** Every experiment_runs row, any status, newest first, joined with the
+ * rule's own instruction text and the episode's project_id -- the Tests
+ * page's own list read (improvements.ts#listTestRunSummaries reshapes this
+ * further, adding the episode's own corrections count via
+ * correctionsForEpisode, a pure function that belongs there, not here). */
+export function listExperimentRunsWithRules(): (ExperimentRunRow & {
+  rule_text: string;
+  correction_candidate_id: number;
+  project_id: string | null;
+})[] {
+  return db
+    .prepare(
+      `SELECT er.*, r.instruction as rule_text, te.project_id as project_id
+       FROM experiment_runs er
+       JOIN rules r ON r.id = er.rule_id
+       JOIN correction_candidates cc ON cc.id = er.correction_candidate_id
+       JOIN task_episodes te ON te.id = cc.task_episode_id
+       ORDER BY er.id DESC`,
+    )
+    .all() as (ExperimentRunRow & {
+    rule_text: string;
+    correction_candidate_id: number;
+    project_id: string | null;
+  })[];
+}
+// ---- end Round 6c ----
