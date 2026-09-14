@@ -78,14 +78,14 @@ test("AddConfirm help text: exact copy for each choice", () => {
   const detail = codeOnly(readApp(DETAIL));
   assert.match(
     detail,
-    /Harness writes this exact text now, when you press Add\. Uses no credits\./,
+    /Harness Ledger writes this exact text now, when you press Add\. Uses no credits\./,
   );
   // Round 6 Task 6b / spec §6: the real paired-test flow's own help text --
   // "not switched on yet" is gone (it is switched on now).
   const ux = codeOnly(readApp("lib/harness-ux.ts"));
   assert.match(
     ux,
-    /export const TEST_FIRST_HELP =\s*"Nothing is added yet\. Harness runs your original request again in a copy with this rule, you compare both builds, and you add it afterwards if it worked\.";/,
+    /export const TEST_FIRST_HELP =\s*"Nothing is added yet\. Harness Ledger runs your original request again in a copy with this rule, you compare both builds, and you add it afterwards if it worked\.";/,
   );
   assert.match(detail, /TEST_FIRST_HELP/);
   assert.match(detail, /proveCostLine\(\)/);
@@ -173,7 +173,7 @@ test("Inbox: decided-this-visit items become a confirmation row in place, count 
 test("harness-ux.ts: LANDING_INTRO and the four HOW_IT_WORKS_STEPS from spec 6.5, verbatim", () => {
   assert.equal(
     ux.LANDING_INTRO,
-    "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a rule you approve. Harness writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.",
+    "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a rule you approve. Harness Ledger writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.",
   );
   assert.deepEqual(
     ux.HOW_IT_WORKS_STEPS.map((s) => s.title),
@@ -182,10 +182,10 @@ test("harness-ux.ts: LANDING_INTRO and the four HOW_IT_WORKS_STEPS from spec 6.5
   assert.deepEqual(
     ux.HOW_IT_WORKS_STEPS.map((s) => s.text),
     [
-      "Harness reads your Lovable chats and Knowledge every hour. No credits, no AI.",
-      "Where you corrected Lovable, Harness's AI analysis proposes one rule, with the exact messages as evidence.",
+      "Harness Ledger reads your Lovable chats and Knowledge every hour. No credits, no AI.",
+      "Where you corrected Lovable, Harness Ledger's AI analysis proposes one rule, with the exact messages as evidence.",
       "Add it now, test it first in a temporary copy, or skip. Nothing changes until you say so.",
-      "Harness writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
+      "Harness Ledger writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
     ],
   );
 });
@@ -200,11 +200,11 @@ test("Landing page renders LANDING_INTRO; login has no 'Internal tool' and its s
   assert.match(login, /Sign in to continue\./);
 });
 
-test("cost accounting stays honest: 'Lovable credits' <= 2 and 'Harness analysis' == 1 on the detail page", () => {
+test("cost accounting stays honest: 'Lovable credits' <= 2 and 'Harness Ledger analysis' == 1 on the detail page", () => {
   const detail = codeOnly(readApp(DETAIL));
   assert.ok(
     count(detail, "Lovable credits") <= 2,
     `Lovable credits x${count(detail, "Lovable credits")}`,
   );
-  assert.equal(count(detail, "Harness analysis"), 1);
+  assert.equal(count(detail, "Harness Ledger analysis"), 1);
 });

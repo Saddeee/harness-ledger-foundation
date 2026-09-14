@@ -306,7 +306,7 @@ async function handlePost({ request }: { request: Request }) {
         write = {
           written: false,
           version_id: version.id,
-          reason: "Harness is not connected — connect on the Projects page.",
+          reason: "Harness Ledger is not connected — connect on the Projects page.",
           kind: "not_connected",
         };
       }

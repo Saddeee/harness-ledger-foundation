@@ -143,7 +143,7 @@ function Page() {
       {sectionsTotal === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
-            ? "Suggestions Harness finds in your Lovable chats will appear here."
+            ? "Suggestions Harness Ledger finds in your Lovable chats will appear here."
             : "Nothing needs a decision right now."}
         </div>
       ) : (

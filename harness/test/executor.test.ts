@@ -646,7 +646,7 @@ test("executeVersionNow: base changed AND the managed block itself was edited in
   const outcome = await beats.executeVersionNow(v.id, fake);
   assert.equal(outcome.written, false);
   assert.ok(!outcome.written && outcome.kind === "stale");
-  assert.ok(!outcome.written && /edited the Harness block/i.test(outcome.reason));
+  assert.ok(!outcome.written && /edited the Harness Ledger block/i.test(outcome.reason));
   assert.equal(fake.setCalls.length, 0, "never writes when the managed block itself drifted");
   assert.equal(store.getKnowledgeVersion(v.id)?.status, "stale");
 });
@@ -683,7 +683,7 @@ test("executeVersionNow: a write that already landed (an earlier read-back misma
   assert.equal(store.getKnowledgeVersion(v.id)?.status, "written");
 });
 
-test("executeVersionNow: the block drifted to a rule set Harness recognizes as its own (a concurrent Harness write) -- recomposes on the union and writes", async () => {
+test("executeVersionNow: the block drifted to a rule set Harness Ledger recognizes as its own (a concurrent Harness Ledger write) -- recomposes on the union and writes", async () => {
   const rule1 = makeRule("Always do A.");
   const rule2 = makeRule("Always do B.");
   store.updateRule({ id: rule1.id, state: "active", actor: "test" });
@@ -1084,7 +1084,7 @@ test("executeVersionNow: a verified write becomes the latest Knowledge snapshot,
   store.disallowProject(project);
 });
 
-test("executeVersionNow: removing a rule right after adding it writes, even when composed on an older base -- Harness's own last-written block is not someone else's edit", async () => {
+test("executeVersionNow: removing a rule right after adding it writes, even when composed on an older base -- Harness Ledger's own last-written block is not someone else's edit", async () => {
   const project = "proj-add-then-remove";
   store.allowProject(project, "Add then remove project");
   const rule = makeRule("Show money in kr.", "test", project);
@@ -1157,7 +1157,7 @@ test("snapshotSkills records a deleted skill, the Skills list drops it, History 
   assert.deepEqual(store.latestSkillSnapshots(WS).map((s) => s.name), ["temp-skill"]);
 });
 
-test("executeVersionNow: retrying an older failed write merges with the rules Harness wrote since -- it never drops a newer rule or re-adds a retired one", async () => {
+test("executeVersionNow: retrying an older failed write merges with the rules Harness Ledger wrote since -- it never drops a newer rule or re-adds a retired one", async () => {
   // Review finding: V_B (only B) failed; V_A (A+B) was written; retrying V_B
   // recomposed from V_B's own rule set alone and removed A from Lovable.
   const project = "proj-retry-merge";

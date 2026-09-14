@@ -11,7 +11,14 @@ import { status } from "./lovable-auth.js";
 import { openLovableClient, type LovableClient } from "./lovable-mcp.js";
 import { runAnalysis } from "../analysis/run.js";
 import { createCallLlm } from "../llm/index.js";
-import { acquireLock, defaultLockPath, heartbeat, releaseLock, type LockOwner } from "./lock.js";
+import {
+  acquireLock,
+  currentLockHolder,
+  defaultLockPath,
+  heartbeat,
+  releaseLock,
+  type LockOwner,
+} from "./lock.js";
 
 export type ScheduleSettings = {
   enabled: boolean;
@@ -279,6 +286,17 @@ export function startInAppScheduler(opts: { tickMs?: number } = {}): void {
   process.once("SIGTERM", () => releaseLock(lockPath));
 }
 // ---- end Round 6 Task 2 ----
+
+/** "Analyse now" from the app: start the requested run right away instead
+ * of on the next scheduler tick (up to a minute later), but only in the
+ * process that runs the schedule -- another process leaves it to its
+ * scheduler. Fire-and-forget; maybeRunAnalysis never throws. */
+export function kickAnalysisNow(): void {
+  if (!inAppSchedulerStarted) return;
+  const holder = currentLockHolder(defaultLockPath());
+  if (!holder || holder.pid !== process.pid) return;
+  void maybeRunAnalysis();
+}
 
 /** One pass regardless of the window, for `--once` and crontab use. */
 export async function runOnce(): Promise<{ ok: boolean; ran: boolean; error?: string }> {

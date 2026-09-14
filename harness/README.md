@@ -1,4 +1,4 @@
-# Harness (local)
+# Harness Ledger (local)
 
 The local half of Harness Ledger: a SQLite-backed store and an MCP server, run on
 your own machine. This is intentionally separate from `../src`, which is the
@@ -10,7 +10,7 @@ hosted OAuth client-metadata-document flow is currently rejected by Lovable's
 own authorization server ("Client Not Found"), so there is no supported way yet
 for a hosted app to authenticate to a user's Lovable account. Claude Code's own
 connection to Lovable (the `lovable` MCP server below) already works, because it
-authenticates differently. Harness runs locally so it can ride on that working
+authenticates differently. Harness Ledger runs locally so it can ride on that working
 connection via Claude Code, instead of waiting on a hosted auth path.
 
 ## Node version
@@ -126,7 +126,7 @@ reads the live Knowledge and records it verbatim, on every sync:
 1. `get_project_knowledge(project_id)` (or `get_workspace_knowledge(workspace_id)`) over Lovable MCP.
 2. `record_knowledge_snapshot(target, project_id | workspace_id, content, fetched_by)` over Harness MCP.
 
-Until a snapshot exists for a target, the Inbox shows "Harness hasn't read
+Until a snapshot exists for a target, the Inbox shows "Harness Ledger hasn't read
 your current Knowledge yet" and an accepted choice stays `write_status:
 "none"`.
 
@@ -147,7 +147,7 @@ next sync (`--once` or the loop):**
 3. If `sha256(live) != previous_sha256` → `mark_knowledge_write_stale(version_id, reason)` and stop for this row. Never write over content you did not preview.
 4. Else `set_project_knowledge(project_id, new_content)` / `set_workspace_knowledge(workspace_id, new_content)`.
 5. Read back with `get_*_knowledge` again.
-6. `record_knowledge_readback(version_id, read_back_content)` — Harness marks the
+6. `record_knowledge_readback(version_id, read_back_content)` — Harness Ledger marks the
    version `written` (and the rule `active`, stage "In Lovable") only if the
    read-back is byte-identical; otherwise `failed`.
 7. Any other error → `mark_knowledge_write_failed(version_id, error)`.

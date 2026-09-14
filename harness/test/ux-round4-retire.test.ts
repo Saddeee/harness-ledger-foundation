@@ -77,7 +77,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   // same honest vocabulary as healthLine.
   assert.equal(
     hurt,
-    "Harness suggests retiring this rule because more of its builds had a repeat correction than didn't.",
+    "Harness Ledger suggests retiring this rule because more of its builds had a repeat correction than didn't.",
   );
 
   const contradiction = ux.retireReasonSentence({
@@ -88,7 +88,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   assert.equal(
     contradiction,
-    "Harness suggests retiring this rule because it contradicts Always use dark mode by default.",
+    "Harness Ledger suggests retiring this rule because it contradicts Always use dark mode by default.",
   );
 
   const unused = ux.retireReasonSentence({
@@ -98,7 +98,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   assert.equal(
     unused,
-    "Harness suggests retiring this rule because it has not applied in 60 days.",
+    "Harness Ledger suggests retiring this rule because it has not applied in 60 days.",
   );
 
   const sinceLine = ux.retireSinceLine({
@@ -132,21 +132,21 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
     code.indexOf("function RetireCard"),
     code.indexOf("export function VerdictControl"),
   );
-  assert.match(retireCard, />\s*Harness suggests retiring this rule\s*<\/Title>/);
+  assert.match(retireCard, />\s*Harness Ledger suggests retiring this rule\s*<\/Title>/);
   assert.match(retireCard, /item\.title\.replace\(\/\^Retire:\\s\*\/, ""\)/);
-  const titleIdx = retireCard.indexOf("Harness suggests retiring this rule");
+  const titleIdx = retireCard.indexOf("Harness Ledger suggests retiring this rule");
   const reasonIdx = retireCard.indexOf("retireReasonSentence");
   const sinceIdx = retireCard.indexOf("retireSinceLine");
   assert.ok(titleIdx >= 0 && titleIdx < sinceIdx && sinceIdx < reasonIdx, "title comes first");
 
   // Retire confirm: same copy shape as the spec.
   assert.ok(raw.includes("Retire this rule?"));
-  assert.ok(raw.includes("Harness rewrites your Knowledge without it right away."));
+  assert.ok(raw.includes("Harness Ledger rewrites your Knowledge without it right away."));
   assert.ok(raw.includes("You can re-add it later from Suggestions."));
 
   // Keep is a ghost button with its own toast, not a confirm dialog.
   assert.match(code, /variant="ghost"[\s\S]{0,200}action: "keep"/);
-  assert.ok(raw.includes("Kept — Harness will ask again in 30 days"));
+  assert.ok(raw.includes("Kept — Harness Ledger will ask again in 30 days"));
 
   // The retire/keep action bodies use the proposal's negative id.
   assert.match(code, /action: "retire", id: -proposalId/);
@@ -289,7 +289,7 @@ test("harness-ux.ts: a 'changed_mind' retirement says you asked for the opposite
   const base = { health: { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null }, since: null };
   assert.equal(
     ux.retireReasonSentence({ ...base, reason: "changed_mind" }),
-    "Harness suggests retiring this rule because you asked Lovable for the opposite.",
+    "Harness Ledger suggests retiring this rule because you asked Lovable for the opposite.",
   );
   assert.doesNotMatch(ux.retireSinceLine({ ...base, reason: "changed_mind" }), /below/);
   const card = readFileSync(new URL("../../src/components/harness/improvement.tsx", import.meta.url), "utf8");

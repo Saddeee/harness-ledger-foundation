@@ -55,7 +55,7 @@ export const Route = createFileRoute("/_authenticated/tests")({
 const INTRO_LINE =
   "Each test copies your project at the moment before a real request, adds one rule, sends the same request, and lets you judge both builds.";
 const EMPTY_LINE = 'No tests yet. Open a suggestion and press "Test this rule".';
-const UNAVAILABLE_LINE = "Tests are available when Harness runs on your machine.";
+const UNAVAILABLE_LINE = "Tests are available when Harness Ledger runs on your machine.";
 const IN_PROGRESS_STATUSES = new Set(["copying", "building"]);
 const POLL_MS = 10_000;
 

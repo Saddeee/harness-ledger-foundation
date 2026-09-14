@@ -844,7 +844,7 @@ test("no REST match: the run fails with the exact sentence, and nothing beyond t
     assert.equal(result.status, "failed");
     assert.equal(
       result.error,
-      "Harness could not find your original request in Lovable's message list, so it cannot copy the project at that point.",
+      "Harness Ledger could not find your original request in Lovable's message list, so it cannot copy the project at that point.",
     );
     assert.equal(result.copy_project_id, null, "nothing was ever sent to remix");
     assert.equal(
@@ -1085,7 +1085,7 @@ test("not connected: refused with the exact copy, before touching Lovable", asyn
     // was never written.
     const result = await startExperiment(seed.candidateId, { rest });
     assert.deepEqual(result, {
-      refused: "Harness is not connected — connect on the Projects page.",
+      refused: "Harness Ledger is not connected — connect on the Projects page.",
     });
     assert.equal(fake.calls.length, 0);
   } finally {
@@ -1314,7 +1314,7 @@ test("kickExperimentRunner: a crashed run (stale heartbeat) is marked failed wit
 
     const crashedRow = store.getExperimentRun(crashedRunId)!;
     assert.equal(crashedRow.status, "failed");
-    assert.equal(crashedRow.error, "Harness restarted while the test was running.");
+    assert.equal(crashedRow.error, "Harness Ledger restarted while the test was running.");
 
     assert.equal(
       store.getExperimentRun(queuedRunId)!.status,
@@ -1541,8 +1541,8 @@ test("deleteTestCopy: deletes only a copy this run recorded, never the source pr
 
 test("testCopyName: copies are named by test number, which build, and project -- never a rule cut mid-word", async () => {
   const { testCopyName } = await import("../src/executor/experiments.js");
-  assert.equal(testCopyName(7, "with the rule", SOURCE), "Harness test 7 · with the rule · Source project");
-  assert.equal(testCopyName(7, "original build", SOURCE), "Harness test 7 · original build · Source project");
+  assert.equal(testCopyName(7, "with the rule", SOURCE), "Harness Ledger test 7 · with the rule · Source project");
+  assert.equal(testCopyName(7, "original build", SOURCE), "Harness Ledger test 7 · original build · Source project");
   // Only characters Lovable accepts in a display name (it refused "#").
   const allowed = /^[\p{L}\p{N} \-_.'·&()[\]|,!:]+$/u;
   store.upsertProject({ lovable_project_id: "prj_odd_name", name: "Café #1 — my.app/shop?" });

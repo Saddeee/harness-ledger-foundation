@@ -34,7 +34,7 @@ const CRASH_WINDOW_MINUTES = 20;
 // runningExperimentRun (by design -- see its own doc comment) but was never
 // actually closed out either, so its card/judging screen would read
 // "Testing… copying the project" forever.
-const CRASH_RESTART_MESSAGE = "Harness restarted while the test was running.";
+const CRASH_RESTART_MESSAGE = "Harness Ledger restarted while the test was running.";
 
 let inFlight: Promise<void> | null = null;
 

@@ -147,7 +147,7 @@ function AuthedLayout() {
             {connectionLine}
           </p>
           <Link to="/" className={HOW_IT_WORKS_LINK_CLASS}>
-            How Harness works
+            How Harness Ledger works
           </Link>
           <p className="mb-2 truncate text-xs text-muted-foreground">{user?.email}</p>
           <Button

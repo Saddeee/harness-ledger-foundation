@@ -89,7 +89,7 @@ test("instructions.tsx: rules table, collapsed Knowledge text, demo notice; the 
   for (const text of [
     "Demo data is loaded so you can see how history looks.",
     "harness:demo -- --remove",
-    "Rules Harness added",
+    "Rules Harness Ledger added",
     "Show all",
     "Full Knowledge text as Lovable sees it",
   ]) {
@@ -132,10 +132,10 @@ test("skills.tsx: heading, read-only line, per-skill fields, history, empty stat
   const code = codeOnly(raw);
 
   assert.match(code, /<h1[^>]*>Skills<\/h1>/);
-  assert.ok(raw.includes("Harness reads your workspace Skills; it does not write them yet."));
+  assert.ok(raw.includes("Harness Ledger reads your workspace Skills; it does not write them yet."));
   assert.ok(
     raw.includes(
-      "Your workspace has no Skills yet. Harness will show them here as soon as it reads one.",
+      "Your workspace has no Skills yet. Harness Ledger will show them here as soon as it reads one.",
     ),
   );
 
@@ -340,7 +340,7 @@ test("improvement.tsx AddConfirm: over_rules disables confirm and shows the reti
 
   // cost wording stays within bounds even with the new alert
   assert.ok(count(detail, "Lovable credits") <= 2);
-  assert.equal(count(detail, "Harness analysis"), 1);
+  assert.equal(count(detail, "Harness Ledger analysis"), 1);
 });
 
 // ---- 8. No <details open> anywhere in the touched pages ----
@@ -445,7 +445,7 @@ test("instructions.tsx: the awaiting-analysis note is now the shared AnalyseNoti
   // not-switched-on placeholder note is gone from this page, replaced by
   // the shared notice component.
   assert.ok(!raw.includes("Analysis is not switched on yet."));
-  assert.ok(!raw.includes("Analysis uses Harness's own AI and runs when you ask for it."));
+  assert.ok(!raw.includes("Analysis uses Harness Ledger's own AI and runs when you ask for it."));
   assert.match(codeOnly(raw), /<AnalyseNotice/);
 });
 

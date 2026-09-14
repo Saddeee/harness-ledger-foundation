@@ -15,12 +15,12 @@ export const Route = createFileRoute("/_authenticated/skills")({
       { title: "Skills — Harness Ledger" },
       {
         name: "description",
-        content: "The workspace Skills Harness can currently read from Lovable.",
+        content: "The workspace Skills Harness Ledger can currently read from Lovable.",
       },
       { property: "og:title", content: "Skills — Harness Ledger" },
       {
         property: "og:description",
-        content: "The workspace Skills Harness can currently read from Lovable.",
+        content: "The workspace Skills Harness Ledger can currently read from Lovable.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -29,9 +29,9 @@ export const Route = createFileRoute("/_authenticated/skills")({
   component: Page,
 });
 
-const READ_ONLY_LINE = "Harness reads your workspace Skills; it does not write them yet.";
+const READ_ONLY_LINE = "Harness Ledger reads your workspace Skills; it does not write them yet.";
 const EMPTY_LINE =
-  "Your workspace has no Skills yet. Harness will show them here as soon as it reads one.";
+  "Your workspace has no Skills yet. Harness Ledger will show them here as soon as it reads one.";
 
 function SkillSection({ skill, workspaceId }: { skill: Skill; workspaceId: string | null }) {
   const lastChanged = skill.updated_at_remote ?? skill.fetched_at;
@@ -92,7 +92,7 @@ function Page() {
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">Skills</h1>
         <p className="text-sm text-muted-foreground">
-          Skills are available when Harness runs on your machine.
+          Skills are available when Harness Ledger runs on your machine.
         </p>
       </div>
     );

@@ -37,7 +37,7 @@ test("harness-ux.ts: the exact Round 6 Task 3 copy, verbatim", () => {
   assert.equal(ux.REMOVE_FROM_KNOWLEDGE_TITLE, "Remove this rule from Knowledge?");
   assert.equal(
     ux.REMOVE_FROM_KNOWLEDGE_BODY,
-    "Harness rewrites your Knowledge without it now. You can re-add it later.",
+    "Harness Ledger rewrites your Knowledge without it now. You can re-add it later.",
   );
   assert.equal(ux.REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL, "Remove");
 });

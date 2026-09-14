@@ -163,6 +163,9 @@ export {
   hasOpenAnalysisRequest,
   latestAnalysisRun,
   runningAnalysisRun,
+  runningAnalysisProgress,
+  testCopyProjects,
+  setProjectName,
 } from "./store.js";
 
 // Round 3: a small, pure line diff for the Instructions page's "What

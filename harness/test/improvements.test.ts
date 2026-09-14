@@ -1194,7 +1194,7 @@ test("buildTimeline: a target with 3 versions (one a restore) + 1 external chang
   assert.equal(nV3!.latest_version, true);
   assert.deepEqual(nV3!.diff, expectedDiff(V2_CONTENT, v3.new_content));
 
-  assert.equal(nExternal!.label, "Changed in Lovable (outside Harness)");
+  assert.equal(nExternal!.label, "Changed in Lovable (outside Harness Ledger)");
   assert.equal(nExternal!.actor, "lovable");
   assert.equal(nExternal!.content, EXTERNAL_CONTENT);
   assert.equal(nExternal!.diff, null);
@@ -1350,7 +1350,7 @@ test("buildTimeline: an automatically-accepted candidate reads 'Accepted automat
   assert.equal(accepted!.actor, "harness");
 });
 
-test("buildTimeline: retire_proposals create 'Harness suggested retiring' + 'You retired'/'You kept it', and a re-add shows 'Re-added'", () => {
+test("buildTimeline: retire_proposals create 'Harness Ledger suggested retiring' + 'You retired'/'You kept it', and a re-add shows 'Re-added'", () => {
   const TL_PROJECT3 = "timeline-test-project-retire";
   db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
     TL_PROJECT3,
@@ -1379,7 +1379,7 @@ test("buildTimeline: retire_proposals create 'Harness suggested retiring' + 'You
 
   const nodes = imp.buildTimeline("project", TL_PROJECT3);
   const labels = nodes.map((n) => n.label);
-  assert.ok(labels.includes("Harness suggested retiring"), labels.join(", "));
+  assert.ok(labels.includes("Harness Ledger suggested retiring"), labels.join(", "));
   assert.ok(labels.includes("You retired"), labels.join(", "));
   assert.ok(labels.includes("Re-added"), labels.join(", "));
   for (const n of nodes) {
@@ -1842,7 +1842,7 @@ test("unsure: below-confidence text, exact copy with two-decimal confidence and 
   });
   assert.equal(
     imp.getImprovement(cc.id)!.unsure,
-    "Harness wasn't sure: confidence 0.62 is below your automatic threshold (0.80).",
+    "Harness Ledger wasn't sure: confidence 0.62 is below your automatic threshold (0.80).",
   );
   store.setSettings({ decision_mode: "ask" });
 });
@@ -1861,7 +1861,7 @@ test("unsure: a flagged (but not auto-rejected) duplicate reads as 'similar to a
   });
   assert.equal(
     imp.getImprovement(cc.id)!.unsure,
-    "Harness wasn't sure: similar to an existing rule.",
+    "Harness Ledger wasn't sure: similar to an existing rule.",
   );
   store.setSettings({ decision_mode: "ask" });
 });
@@ -1896,7 +1896,7 @@ test("unsure: a flagged contradiction names the other rule's text, clamped to 80
   });
   assert.equal(
     imp.getImprovement(cc.id)!.unsure,
-    `Harness wasn't sure: may conflict with "${longInstruction.slice(0, 80)}".`,
+    `Harness Ledger wasn't sure: may conflict with "${longInstruction.slice(0, 80)}".`,
   );
   store.setSettings({ decision_mode: "ask" });
 });
@@ -3188,7 +3188,7 @@ test("Improvement.test: unavailable -- not connected (the default when `connecte
   assert.equal(item.test!.available, false);
   assert.equal(
     item.test!.unavailable_reason,
-    "Harness is not connected — connect on the Projects page.",
+    "Harness Ledger is not connected — connect on the Projects page.",
   );
 });
 
@@ -3865,7 +3865,7 @@ test("unsure: a proposal with no confidence says so, instead of a made-up 0.00",
   });
   assert.equal(
     imp.getImprovement(cc.id)!.unsure,
-    "Harness wasn't sure: the analysis gave no confidence for this rule.",
+    "Harness Ledger wasn't sure: the analysis gave no confidence for this rule.",
   );
   store.setSettings({ decision_mode: "ask" });
 });

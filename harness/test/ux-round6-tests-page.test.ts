@@ -51,7 +51,7 @@ test("tests.tsx: exists, titled 'Tests', with the exact intro line and empty sta
 test("tests.tsx: shows the unavailable/hosted copy the same way History's own page does", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
   assert.match(code, /available === false/);
-  assert.match(code, /Tests are available when Harness runs on your machine\./);
+  assert.match(code, /Tests are available when Harness Ledger runs on your machine\./);
 });
 
 test("tests.tsx: the credits line comes from harness-ux.ts's own testsPageCreditsLine, not a re-typed template", () => {

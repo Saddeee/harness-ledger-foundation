@@ -143,12 +143,12 @@ test("pages only fetch from local harness routes", () => {
   }
 });
 
-test("improvement.tsx: 'Lovable credits' appears at most twice, 'Harness analysis' exactly once", () => {
+test("improvement.tsx: 'Lovable credits' appears at most twice, 'Harness Ledger analysis' exactly once", () => {
   const raw = readApp(DETAIL);
   assert.ok(count(raw, "Lovable credits") <= 2, "too many literal 'Lovable credits' occurrences");
   assert.equal(
-    count(raw, "Harness analysis"),
+    count(raw, "Harness Ledger analysis"),
     1,
-    "'Harness analysis' should appear exactly once (the developer-view disclosure)",
+    "'Harness Ledger analysis' should appear exactly once (the developer-view disclosure)",
   );
 });

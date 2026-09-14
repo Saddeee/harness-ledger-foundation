@@ -103,7 +103,7 @@ test("composer flags over_rules when maxActiveRules is exceeded, and always repo
 // ---- migration ----
 
 test("migrations through v7 applied once; earlier tables and rows intact", () => {
-  assert.equal(schemaVersion(), 16);
+  assert.equal(schemaVersion(), 17);
   const names = new Set(
     (
       db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]
@@ -243,7 +243,7 @@ test("accept with a snapshot creates exactly one pending version whose content e
   assert.equal(out.lovable.write_status, "pending");
   assert.equal(
     out.stages.find((s) => s.key === "in_lovable")!.note,
-    "Waiting for Harness to add it",
+    "Waiting for Harness Ledger to add it",
   );
   assert.equal(out.stages.find((s) => s.key === "proof")!.note, "Not proven yet");
   const pending = store.listPendingKnowledgeWrites() as {
@@ -567,7 +567,7 @@ test("Lovable's MCP '(empty)' placeholder is never treated as Knowledge text", a
   assert.ok(real.final_content.startsWith("My notes\n\n"), "real user text is untouched");
 });
 
-test("removing the last rule removes Harness's whole block (no empty heading left behind); adding again brings it back", () => {
+test("removing the last rule removes Harness Ledger's whole block (no empty heading left behind); adding again brings it back", () => {
   const block = `${HARNESS_START}\n${knowledge.MANAGED_HEADING}\n- Use kr.\n${HARNESS_END}`;
   // Only Harness's block: removing the last rule leaves nothing.
   const onlyBlock = composeManagedKnowledge(block, []);

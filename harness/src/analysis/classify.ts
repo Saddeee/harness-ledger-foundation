@@ -167,13 +167,15 @@ function rulesInLovable(projectId: string): { id: number; instruction: string }[
  */
 export async function classifyPending(
   callLlm: CallLlm,
-  opts: { limit: number; runId?: number },
+  opts: { limit: number; runId?: number; onProgress?: (done: number, total: number) => void },
 ): Promise<{ classified: number; failed: number }> {
   const pending = store.listUnclassifiedUserMessages(opts.limit);
   let classified = 0;
   let failed = 0;
+  opts.onProgress?.(0, pending.length);
 
   for (const message of pending) {
+    opts.onProgress?.(classified + failed, pending.length);
     const context = store.listContextBefore(message.id, DEFAULT_CONTEXT_SIZE);
     const liveRules = message.project_id ? rulesInLovable(message.project_id) : [];
     try {

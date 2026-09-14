@@ -439,7 +439,7 @@ function computeHealth(
 // card/confirm dialog can preview them before the button is ever pressed.
 // Keep these in sync with startExperiment's own NOT_CONNECTED_REFUSAL /
 // NO_REQUEST_REFUSAL / ALREADY_RUNNING_REFUSAL / budget message by hand.
-const TEST_NOT_CONNECTED = "Harness is not connected — connect on the Projects page.";
+const TEST_NOT_CONNECTED = "Harness Ledger is not connected — connect on the Projects page.";
 const TEST_NO_REQUEST = "This suggestion has no original request to replay.";
 const TEST_ALREADY_RUNNING = "A test is already running; one runs at a time.";
 function testBudgetRefusal(usedThisMonth: number, budget: number): string {
@@ -726,7 +726,7 @@ function buildImprovement(
     inLovableNote = d ? `Added to Lovable, ${d}` : "Added to Lovable";
   } else if (writeStatus === "pending") {
     inLovableState = "current";
-    inLovableNote = "Waiting for Harness to add it";
+    inLovableNote = "Waiting for Harness Ledger to add it";
   } else if (writeStatus === "stale") {
     inLovableState = "blocked";
     inLovableNote = "Knowledge changed in Lovable — review the text again";
@@ -1818,7 +1818,7 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
         id: `external_change:${s.id}`,
         kind: "external_change",
         at: s.fetched_at,
-        label: "Changed in Lovable (outside Harness)",
+        label: "Changed in Lovable (outside Harness Ledger)",
         actor: "lovable",
         summary: null,
         content: s.content,
@@ -1883,7 +1883,7 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
         id: `decision:rp-${rp.id}-created`,
         kind: "decision",
         at: rp.created_at,
-        label: "Harness suggested retiring",
+        label: "Harness Ledger suggested retiring",
         actor: "harness",
         summary: instruction,
         content: instruction,
@@ -2208,15 +2208,15 @@ function computeUnsure(c: CorrectionRow, rule: RuleRow | null): string | null {
 
   const threshold = Number(store.getSetting("decision_auto_confidence"));
   if (c.confidence == null) {
-    return "Harness wasn't sure: the analysis gave no confidence for this rule.";
+    return "Harness Ledger wasn't sure: the analysis gave no confidence for this rule.";
   }
   if (c.confidence < threshold) {
-    return `Harness wasn't sure: confidence ${c.confidence.toFixed(2)} is below your automatic threshold (${threshold.toFixed(2)}).`;
+    return `Harness Ledger wasn't sure: confidence ${c.confidence.toFixed(2)} is below your automatic threshold (${threshold.toFixed(2)}).`;
   }
 
   const writerOutput = ruleWriterOutput(c.id);
   if (writerOutput?.duplicate_of_rule_id != null) {
-    return "Harness wasn't sure: similar to an existing rule.";
+    return "Harness Ledger wasn't sure: similar to an existing rule.";
   }
 
   if (writerOutput?.contradicts_rule_id != null) {
@@ -2224,7 +2224,7 @@ function computeUnsure(c: CorrectionRow, rule: RuleRow | null): string | null {
       rule: { instruction: string };
     } | null;
     if (contradicted) {
-      return `Harness wasn't sure: may conflict with "${clamp80(contradicted.rule.instruction)}".`;
+      return `Harness Ledger wasn't sure: may conflict with "${clamp80(contradicted.rule.instruction)}".`;
     }
   }
 

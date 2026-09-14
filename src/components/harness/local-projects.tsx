@@ -36,7 +36,7 @@ const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 const MCP_CREDITS_LINE =
-  "Harness reads your chats and Knowledge through Lovable's MCP. Reading and writing Knowledge uses no credits.";
+  "Harness Ledger reads your chats and Knowledge through Lovable's MCP. Reading and writing Knowledge uses no credits.";
 
 // The store's own default (harness/src/store.ts SETTING_DEFAULTS), used only
 // until GET executor answers with the default actually in force.
@@ -49,6 +49,7 @@ type Row = {
   last_synced_at: string | null;
   history_count: number | null;
   settings: ProjectSettings | null;
+  test_copy_run: number | null;
 };
 
 // Per-project overrides of the two global defaults (spec §5): how many
@@ -275,6 +276,7 @@ export function LocalProjects() {
           last_synced_at: known?.last_synced_at ?? null,
           history_count: known?.history_count ?? null,
           settings: known?.settings ?? null,
+          test_copy_run: p.test_copy_run ?? null,
         };
       })
     : allowedRows.map((p) => ({
@@ -284,6 +286,7 @@ export function LocalProjects() {
         last_synced_at: p.last_synced_at,
         history_count: p.history_count,
         settings: p.settings,
+        test_copy_run: null,
       }));
 
   return (
@@ -376,6 +379,11 @@ export function LocalProjects() {
                           </Button>
                         ) : null}
                         <span>{p.name}</span>
+                        {p.test_copy_run != null ? (
+                          <span className="rounded border px-1.5 py-0.5 text-xs text-muted-foreground">
+                            {`Test copy · test ${p.test_copy_run}`}
+                          </span>
+                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell>

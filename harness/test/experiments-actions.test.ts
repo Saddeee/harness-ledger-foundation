@@ -125,7 +125,7 @@ test("testAction: not connected -- throws the exact sentence the route relays ve
     () => testAction({ action: "test", id: 999_999 }),
     (err: unknown) => {
       assert.ok(err instanceof Error);
-      assert.equal(err.message, "Harness is not connected — connect on the Projects page.");
+      assert.equal(err.message, "Harness Ledger is not connected — connect on the Projects page.");
       return true;
     },
   );

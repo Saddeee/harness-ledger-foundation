@@ -17,7 +17,7 @@ export const KNOWLEDGE_CAP = 9000;
 export class MalformedMarkersError extends Error {
   constructor(detail: string) {
     super(
-      `Knowledge has malformed Harness markers (${detail}); refusing to compose rather than risk overwriting your text`,
+      `Knowledge has malformed Harness Ledger markers (${detail}); refusing to compose rather than risk overwriting your text`,
     );
     this.name = "MalformedMarkersError";
   }

@@ -101,7 +101,7 @@ test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts 
   );
   assert.match(
     uxCode,
-    /export const TEST_THIS_RULE_BODY =\s*"Harness copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request\. You get both builds side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done\.";/,
+    /export const TEST_THIS_RULE_BODY =\s*"Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request\. You get both builds side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done\.";/,
   );
   assert.match(
     uxCode,

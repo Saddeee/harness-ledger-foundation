@@ -190,6 +190,10 @@ export async function runAnalysis(
   let ok = true;
   let error: string | undefined;
 
+  const progress = (stage: store.AnalysisStage, done = 0, total: number | null = null) =>
+    store.setAnalysisProgress(runId, { stage, done, total });
+  progress("starting");
+
   try {
     const ready = await providerReady();
     if (!ready.ok) {
@@ -197,10 +201,15 @@ export async function runAnalysis(
       error = ready.reason;
     } else {
       const classifyLimit = Math.max(0, Math.min(CLASSIFY_CALL_CAP, maxCalls));
-      const classifyResult = await classifyPending(callLlm, { limit: classifyLimit, runId });
+      const classifyResult = await classifyPending(callLlm, {
+        limit: classifyLimit,
+        runId,
+        onProgress: (done, total) => progress("classify", done, total),
+      });
       counts.classified = classifyResult.classified;
       counts.failed += classifyResult.failed;
 
+      progress("group");
       const segmentResult = segmentAllProjects();
       counts.episodes_created = segmentResult.created;
 
@@ -208,7 +217,11 @@ export async function runAnalysis(
       const mineLimit = Math.max(0, maxCalls - callsUsed);
       let mineCallsUsed = 0;
       if (mineLimit > 0) {
-        const mineResult = await proposeRules(callLlm, { limit: mineLimit, runId });
+        const mineResult = await proposeRules(callLlm, {
+          limit: mineLimit,
+          runId,
+          onProgress: (done, total) => progress("rules", done, total),
+        });
         counts.proposed = mineResult.proposed;
         counts.skipped_duplicate = mineResult.skippedDuplicate;
         counts.rejected = mineResult.skippedNoProposal;
@@ -236,7 +249,11 @@ export async function runAnalysis(
         Math.min(JUDGE_CALL_CAP, maxCalls - callsUsed - mineCallsUsed),
       );
       if (judgeLimit > 0) {
-        const judgeResult = await judgeAdherence(callLlm, { limit: judgeLimit, runId });
+        const judgeResult = await judgeAdherence(callLlm, {
+          limit: judgeLimit,
+          runId,
+          onProgress: (done, total) => progress("judge", done, total),
+        });
         counts.judged = judgeResult.judged;
         counts.judge_failed = judgeResult.failed;
       }
@@ -251,6 +268,7 @@ export async function runAnalysis(
       // an otherwise-successful analysis run to ok:false -- classify/mine/
       // judge already ran and should still be recorded as ok), logged via
       // insertEvent rather than thrown.
+      progress("health");
       try {
         const health = recomputeRuleHealth();
         store.insertEvent("analysis.health", null, health);

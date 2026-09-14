@@ -95,13 +95,24 @@ function windowStart(firstWrittenAt: string, baselineAt: string | null): string 
  */
 export async function judgeAdherence(
   callLlm: CallLlm,
-  opts: { limit: number; runId: number },
+  opts: { limit: number; runId: number; onProgress?: (done: number, total: number) => void },
 ): Promise<{ judged: number; failed: number }> {
   let judged = 0;
   let failed = 0;
   let callsMade = 0;
 
   const rules = store.listLiveRulesWithTargets();
+  // How many builds there are to judge this run, for the progress line.
+  const totalToJudge = Math.min(
+    opts.limit,
+    rules.reduce((n, rule) => {
+      if (!rule.first_written_at) return n;
+      const start = windowStart(rule.first_written_at, store.getRuleHealth(rule.id)?.baseline_at ?? null);
+      const projectId = rule.scope === "project" ? rule.project_id : null;
+      return n + store.listUnjudgedEpisodesForRule(rule.id, start, projectId, opts.limit).length;
+    }, 0),
+  );
+  opts.onProgress?.(0, totalToJudge);
 
   ruleLoop: for (const rule of rules) {
     if (callsMade >= opts.limit) break;
@@ -116,6 +127,7 @@ export async function judgeAdherence(
     for (const episode of episodes) {
       if (callsMade >= opts.limit) break ruleLoop;
 
+      opts.onProgress?.(callsMade, totalToJudge);
       const { request, reply } = store.episodeTextForJudge(episode.id);
 
       let result;

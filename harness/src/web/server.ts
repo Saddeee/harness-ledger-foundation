@@ -21,7 +21,7 @@ function esc(value: unknown): string {
 }
 
 function layout(title: string, body: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} - Harness</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} - Harness Ledger</title>
 <style>
 body{font-family:system-ui,sans-serif;max-width:920px;margin:2rem auto;padding:0 1rem;color:#1a1a1a;background:#fafafa}
 nav a{margin-right:1rem;font-weight:600;text-decoration:none;color:#2d5bd7}
@@ -199,5 +199,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Harness local UI on http://localhost:${PORT}`);
+  console.log(`Harness Ledger local UI on http://localhost:${PORT}`);
 });

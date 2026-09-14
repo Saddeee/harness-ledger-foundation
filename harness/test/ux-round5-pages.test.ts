@@ -117,12 +117,12 @@ test("history.tsx: fetches the timeline, has a target selector and the empty-sta
 
   assert.ok(
     raw.includes(
-      "Nothing has happened here yet. Rules you add, changes Harness writes, and your decisions will show up here.",
+      "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions will show up here.",
     ),
   );
 
   // unavailable/error/loading states mirror the Instructions page's
-  assert.ok(raw.includes("Knowledge is available when Harness runs on your machine."));
+  assert.ok(raw.includes("Knowledge is available when Harness Ledger runs on your machine."));
   assert.match(code, /Loading…/);
   assert.match(code, /role="alert"/);
 
@@ -190,13 +190,13 @@ test("every History timeline label from spec §3b appears in improvements.ts or 
     "Needs attention",
     "Failed",
     "Cancelled",
-    "Changed in Lovable (outside Harness)",
+    "Changed in Lovable (outside Harness Ledger)",
     "You accepted",
     "Accepted automatically (confidence",
     "You skipped",
     "You retired",
     "Re-added",
-    "Harness suggested retiring",
+    "Harness Ledger suggested retiring",
     "You kept it",
     "You said this rule helped",
     "You said this rule didn't help",

@@ -65,7 +65,7 @@ const LIST_MESSAGES_MAX_PAGES = 20;
 const LIST_MESSAGES_PAGE_LIMIT = 50;
 const REQUEST_MATCH_WINDOW_MS = 90_000;
 
-const NOT_CONNECTED_REFUSAL = "Harness is not connected — connect on the Projects page.";
+const NOT_CONNECTED_REFUSAL = "Harness Ledger is not connected — connect on the Projects page.";
 const NO_REQUEST_REFUSAL = "This suggestion has no original request to replay.";
 const ALREADY_RUNNING_REFUSAL = "A test is already running; one runs at a time.";
 // Round 6 fix wave item A: the owner's own real first test failed with a
@@ -74,7 +74,7 @@ const ALREADY_RUNNING_REFUSAL = "A test is already running; one runs at a time."
 // endpoint (and every other REST message_id-addressed endpoint) does not
 // accept -- see resolveRequestMessageId's own doc comment below.
 const NO_REQUEST_MATCH_ERROR =
-  "Harness could not find your original request in Lovable's message list, so it cannot copy the project at that point.";
+  "Harness Ledger could not find your original request in Lovable's message list, so it cannot copy the project at that point.";
 
 // --------------------------------------------------------------- helpers
 
@@ -117,7 +117,7 @@ export function testCopyName(
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 60) || "your project";
-  return `Harness test ${runId} · ${which} · ${project}`;
+  return `Harness Ledger test ${runId} · ${which} · ${project}`;
 }
 
 /** Splits a unified-diff-shaped string (LovableRest#getDiff's own return
@@ -256,7 +256,7 @@ function buildFailureMessage(status: string): string {
  * throw site in this module already writes as a plain sentence. */
 function errorMessage(err: unknown): string {
   if (err instanceof LovableRestError && err.reason === "reconnect") {
-    return "Lovable asked Harness to reconnect.";
+    return "Lovable asked Harness Ledger to reconnect.";
   }
   if (err instanceof Error) return err.message;
   return String(err);

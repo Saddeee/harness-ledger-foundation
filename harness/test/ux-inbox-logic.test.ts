@@ -144,13 +144,13 @@ test('unchanged: exactly two role="radio" buttons in AddConfirm', () => {
   assert.equal(count(confirm, 'role="radio"'), 2, "exactly two radio buttons");
 });
 
-test("unchanged: 'Lovable credits' <= 2 and 'Harness analysis' exactly 1 on the detail page", () => {
+test("unchanged: 'Lovable credits' <= 2 and 'Harness Ledger analysis' exactly 1 on the detail page", () => {
   const detail = codeOnly(readApp(DETAIL));
   assert.ok(
     count(detail, "Lovable credits") <= 2,
     `Lovable credits x${count(detail, "Lovable credits")}`,
   );
-  assert.equal(count(detail, "Harness analysis"), 1);
+  assert.equal(count(detail, "Harness Ledger analysis"), 1);
 });
 
 test("unchanged: no <details open> anywhere in the layout or detail components", () => {

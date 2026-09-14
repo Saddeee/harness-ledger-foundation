@@ -51,7 +51,7 @@ const DEFAULT_CAP = 9000;
 
 const SCHEDULE_LINE =
   "Syncing reads your Lovable chats and Knowledge. It uses no Lovable credits and no AI.";
-const CAP_LINE = "Lovable allows 10,000 characters; Harness keeps a margin.";
+const CAP_LINE = "Lovable allows 10,000 characters; Harness Ledger keeps a margin.";
 const APPROVAL_LINE = "Nothing is written to Lovable until you approve it here.";
 
 // ---- Decisions (Round 5 Task 6 / spec §4, §4b). decision_mode defaults to
@@ -59,14 +59,14 @@ const APPROVAL_LINE = "Nothing is written to Lovable until you approve it here."
 // already decided. Copy below is verbatim from the spec. ----
 const ASK_LABEL = "Ask me about every suggestion";
 const AUTOMATIC_LABEL =
-  "Automatic: accept suggestions Harness is confident about; ask me about the rest.";
+  "Automatic: accept suggestions Harness Ledger is confident about; ask me about the rest.";
 const AUTOMATIC_HELP =
-  "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge the next time Harness syncs, if that project allows automatic writes (Projects page). Everything Harness does automatically is listed in the Instructions page history, and you can retire or restore any of it.";
+  "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge the next time Harness Ledger syncs, if that project allows automatic writes (Projects page). Everything Harness Ledger does automatically is listed in the Instructions page history, and you can retire or restore any of it.";
 const DEFAULT_DECISION_MODE: "ask" | "automatic" = "ask";
 const DEFAULT_AUTO_CONFIDENCE = 0.8;
 
 function feedbackLine(feedback: { accepted: number; skipped: number; verdicts: number }): string {
-  return `From your decisions so far: ${feedback.accepted} accepted, ${feedback.skipped} skipped, ${feedback.verdicts} verdicts. Harness shows the Rule writer what you accepted and skipped, and won't re-propose what you skipped.`;
+  return `From your decisions so far: ${feedback.accepted} accepted, ${feedback.skipped} skipped, ${feedback.verdicts} verdicts. Harness Ledger shows the Rule writer what you accepted and skipped, and won't re-propose what you skipped.`;
 }
 
 // ---- Evidence (Round 5 Task 7 / spec §5 "which count"). Which of the four
@@ -89,7 +89,7 @@ const DEFAULT_EVIDENCE_SOURCES: EvidenceSources = {
 // used only until GET executor answers with the budget actually in force. ----
 const DEFAULT_CREDIT_BUDGET = 12;
 const LOVABLE_CREDITS_INTRO =
-  "Testing a rule in a temporary copy is a normal Lovable build and uses credits like one. Harness refuses to start a test that would put this month over the budget below.";
+  "Testing a rule in a temporary copy is a normal Lovable build and uses credits like one. Harness Ledger refuses to start a test that would put this month over the budget below.";
 
 // ---- AI analysis (Round 3 §4, Round 4 Task A4 / spec §2). Analysis only
 // ever runs when the user presses "Analyse now" (see analyse-notice.tsx); it
@@ -995,7 +995,8 @@ export function LocalSettings() {
               Notify me in this browser when a new proposal arrives
             </Label>
             <p className="text-xs text-muted-foreground">
-              Only while Harness is open in a tab. Uses your browser's notification permission.
+              Only while Harness Ledger is open in a tab. Uses your browser's notification
+              permission.
             </p>
           </div>
           <Switch

@@ -13,13 +13,13 @@ const store = await import("../src/store.js");
 const PROJECT = "test-project-id";
 
 test("schema migration: applies all migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 16);
+  assert.equal(schemaVersion(), 17);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
   );
   const tableNames = new Set(
     (
@@ -1727,4 +1727,16 @@ test("creditsThisMonth is rounded to cents, never a float artefact", () => {
   for (const c of [0.6, 0.3, 2.3]) insert.run(run, c);
   assert.equal(store.creditsThisMonth(), 3.2);
   db.prepare(`DELETE FROM credit_ledger`).run();
+});
+
+test("testCopyProjects labels both copies of a test; setProjectName follows a rename in Lovable", () => {
+  const { ruleId, candidateId, episodeId, externalId } = r6Fixture();
+  const { id: run } = store.createExperimentRun({ rule_id: ruleId, correction_candidate_id: candidateId, task_episode_id: episodeId, source_project_id: R6_PROJECT, request_message_external_id: externalId });
+  store.updateExperimentRun(run, { status: "cancelled", copy_project_id: "prj_copy_label", original_copy_project_id: "prj_original_label" });
+  const copies = store.testCopyProjects();
+  assert.equal(copies["prj_copy_label"], run);
+  assert.equal(copies["prj_original_label"], run);
+  store.upsertProject({ lovable_project_id: "prj_rename", name: "Old name" });
+  store.setProjectName("prj_rename", "New name");
+  assert.equal(store.getProjectMeta("prj_rename")?.name, "New name");
 });

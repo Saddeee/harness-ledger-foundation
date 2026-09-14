@@ -554,7 +554,7 @@ export async function executeVersionNow(
   // last thing standing between any staged version and a real Lovable
   // write, so it refuses too (spec §5).
   if (isDemoWrite(row)) {
-    const reason = "This rule is demo data — Harness never writes it to Lovable";
+    const reason = "This rule is demo data — Harness Ledger never writes it to Lovable";
     const cancelled = store.markKnowledgeWriteCancelled(versionId, reason);
     return {
       written: false,
@@ -610,7 +610,7 @@ export async function executeVersionNow(
       const lastWritten = store.latestWrittenKnowledgeContent(rowForRun.target, targetIdForRun);
       if (lastWritten == null || sha256(live) !== sha256(lastWritten)) {
         const reason =
-          "Your Knowledge changed in Lovable since Harness last wrote it — press Sync now, then try again from History";
+          "Your Knowledge changed in Lovable since Harness Ledger last wrote it — press Sync now, then try again from History";
         store.markKnowledgeWriteStale(versionId, reason);
         return { written: false, version_id: versionId, reason, kind: "stale" };
       }
@@ -709,7 +709,7 @@ export async function executeVersionNow(
           liveLines.every((line) => activeRules.some((r) => r.instruction === line));
 
         if (!allLinesKnown) {
-          const reason = "Someone edited the Harness block in Lovable — re-check the preview";
+          const reason = "Someone edited the Harness Ledger block in Lovable — re-check the preview";
           store.markKnowledgeWriteStale(versionId, reason);
           return { written: false, version_id: versionId, reason, kind: "stale" };
         }
@@ -757,7 +757,7 @@ export async function executeVersionNow(
     return {
       written: false,
       version_id: versionId,
-      reason: after?.error ?? "Lovable's copy didn't match what Harness wrote",
+      reason: after?.error ?? "Lovable's copy didn't match what Harness Ledger wrote",
       kind: "rejected",
     };
   };
@@ -814,7 +814,7 @@ export async function syncNow(
     return {
       ok: false,
       counts: {},
-      error: "Harness is not connected — connect on the Projects page.",
+      error: "Harness Ledger is not connected — connect on the Projects page.",
     };
   }
 
@@ -984,7 +984,7 @@ export async function runAll(
 // (executeWrites' own auto_write check above, run from the periodic
 // pass); pressing a button here IS the approval.
 
-const NOT_CONNECTED_REASON = "Harness is not connected — connect on the Projects page.";
+const NOT_CONNECTED_REASON = "Harness Ledger is not connected — connect on the Projects page.";
 
 function notConnectedOutcome(versionId: number | null): WriteOutcome {
   return {
@@ -1114,7 +1114,7 @@ export async function improvementActionAndWrite(
         written: false,
         version_id: null,
         reason:
-          "Harness hasn't read this project's Knowledge from Lovable yet — run Sync now first.",
+          "Harness Ledger hasn't read this project's Knowledge from Lovable yet — run Sync now first.",
         kind: "no_snapshot",
       },
     };

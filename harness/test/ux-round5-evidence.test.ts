@@ -206,10 +206,10 @@ test("improvement.tsx: DecidedStatus shows verdict buttons only for a live (acce
   assert.match(code, /adherenceLine\(item\.health\.adherence\)/);
 });
 
-test("improvement.tsx: the Details paragraph 'How Harness judges whether a rule helps' lists evidenceSourceLines and a collapsed Quotes list", () => {
+test("improvement.tsx: the Details paragraph 'How Harness Ledger judges whether a rule helps' lists evidenceSourceLines and a collapsed Quotes list", () => {
   const raw = readApp(IMPROVEMENT);
   const code = codeOnly(raw);
-  assert.ok(raw.includes("How Harness judges whether a rule helps"));
+  assert.ok(raw.includes("How Harness Ledger judges whether a rule helps"));
   assert.match(code, /evidenceSourceLines\(/);
   assert.ok(raw.includes(">Quotes<") || raw.includes(">\n                Quotes"));
   // Every <details> in the file stays collapsed.

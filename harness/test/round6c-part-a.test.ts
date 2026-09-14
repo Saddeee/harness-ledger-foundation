@@ -165,7 +165,9 @@ test("analyse-notice.tsx: the not-ready reason links to Settings, and the button
   // whenever the provider is ready (the analysis also re-judges adherence
   // and proposes from unclassified messages, so there is always something
   // useful for it to do).
-  assert.match(code, /const disabled = running \|\| !providerReady\.ok;/);
+  // Round 7: a requested-but-not-started run also disables it (progress shows).
+  assert.match(code, /const inProgress = running \|\| analysis\.queued === true;/);
+  assert.match(code, /const disabled = inProgress \|\| !providerReady\.ok;/);
 });
 
 test("countHistoryItemsAwaitingAnalysis: counts a user message with no message_classifications row even once it's already task_episode_evidence -- reproduces the owner's 'four real synced messages read as 0' report", () => {
@@ -210,4 +212,20 @@ test("countHistoryItemsAwaitingAnalysis: counts a user message with no message_c
     before - 1,
     "classifying the message must drop the count by exactly one",
   );
+});
+
+test("analyse-notice.tsx: shows step-by-step progress while analysis is queued or running, polling every 2 s", () => {
+  const code = codeOnly(readApp("components/harness/analyse-notice.tsx"));
+  for (const label of [
+    "Reading your new messages",
+    "Grouping them into tasks",
+    "Writing suggestions from your corrections",
+    "Checking your rules against recent builds",
+    "Updating rule health",
+  ]) {
+    assert.ok(code.includes(label), `missing step: ${label}`);
+  }
+  assert.match(code, /<Progress/);
+  assert.match(code, /a && \(a\.running \|\| a\.queued\) \? 2_000 : false/);
+  assert.match(code, /role="status"/);
 });

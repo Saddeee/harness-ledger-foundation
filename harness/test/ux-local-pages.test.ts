@@ -31,7 +31,7 @@ const LOCAL_PROJECTS = "components/harness/local-projects.tsx";
 const LOCAL_SETTINGS = "components/harness/local-settings.tsx";
 
 const CONNECT_LOVABLE_SENTENCE =
-  "Harness reads your chats and Knowledge through Lovable's MCP. Reading and writing Knowledge uses no credits.";
+  "Harness Ledger reads your chats and Knowledge through Lovable's MCP. Reading and writing Knowledge uses no credits.";
 const SCHEDULE_SENTENCE =
   "Syncing reads your Lovable chats and Knowledge. It uses no Lovable credits and no AI.";
 const APPROVAL_SENTENCE = "Nothing is written to Lovable until you approve it here.";

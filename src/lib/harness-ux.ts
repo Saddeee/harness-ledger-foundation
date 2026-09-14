@@ -94,21 +94,21 @@ export function label(map: Record<string, string>, value: string | null | undefi
 
 export const WHY_TEMPLATES: Record<string, string> = {
   constraint_restatement:
-    "Lovable missed something you already expected. Harness thinks this should become a standing instruction so it doesn't happen again.",
+    "Lovable missed something you already expected. Harness Ledger thinks this should become a standing instruction so it doesn't happen again.",
   preference_revision:
-    "You changed how you want this done. Harness thinks the new way should become a standing instruction.",
+    "You changed how you want this done. Harness Ledger thinks the new way should become a standing instruction.",
   missing_requirement:
-    "Part of what you needed wasn't in the request. Harness thinks it should become a standing instruction.",
+    "Part of what you needed wasn't in the request. Harness Ledger thinks it should become a standing instruction.",
   defect_correction:
-    "Lovable made a mistake you had to fix. Harness thinks a standing instruction would prevent it.",
+    "Lovable made a mistake you had to fix. Harness Ledger thinks a standing instruction would prevent it.",
   scope_extension:
-    "The request grew beyond its original scope. Harness thinks a standing instruction would set clearer expectations.",
+    "The request grew beyond its original scope. Harness Ledger thinks a standing instruction would set clearer expectations.",
   retire:
-    "Harness found a signal that this rule may be doing more harm than good. You can retire it, or keep it and be asked again later.",
+    "Harness Ledger found a signal that this rule may be doing more harm than good. You can retire it, or keep it and be asked again later.",
 };
 
 const WHY_GENERIC =
-  "You corrected something Lovable did. Harness thinks it should become a standing instruction.";
+  "You corrected something Lovable did. Harness Ledger thinks it should become a standing instruction.";
 
 export function whyFor(classification: string | null | undefined): string {
   return (classification && WHY_TEMPLATES[classification]) || WHY_GENERIC;
@@ -333,7 +333,7 @@ export function lovableStatusLine(
     default:
       if (ctx?.testFirst) return "Saved for testing — nothing is written until the test runs";
       if (ctx?.connected === false)
-        return "Connect Lovable on the Projects page to let Harness write this";
+        return "Connect Lovable on the Projects page to let Harness Ledger write this";
       if (ctx?.autoWriteOff) return "Waiting for you to turn on automatic writes for this project";
       // Round 6 Task 2: a decision the user presses writes in the same
       // request (see writeOutcomeLine above) -- reaching here at all means
@@ -408,7 +408,7 @@ export function improvementGroup(input: {
 // ---- Proof copy ----
 
 export const PROVE_INTRO =
-  "Harness runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.";
+  "Harness Ledger runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.";
 
 export function proveCostLine(): string {
   return "Uses Lovable credits like any build; the cost is recorded after the test.";
@@ -417,16 +417,16 @@ export function proveCostLine(): string {
 // ---- Onboarding: the only place the product explains itself ----
 
 export const LANDING_INTRO =
-  "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a rule you approve. Harness writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.";
+  "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a rule you approve. Harness Ledger writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.";
 
 export const HOW_IT_WORKS_STEPS = [
   {
     title: "Synced",
-    text: "Harness reads your Lovable chats and Knowledge every hour. No credits, no AI.",
+    text: "Harness Ledger reads your Lovable chats and Knowledge every hour. No credits, no AI.",
   },
   {
     title: "Proposed",
-    text: "Where you corrected Lovable, Harness's AI analysis proposes one rule, with the exact messages as evidence.",
+    text: "Where you corrected Lovable, Harness Ledger's AI analysis proposes one rule, with the exact messages as evidence.",
   },
   {
     title: "Approved by you",
@@ -434,12 +434,12 @@ export const HOW_IT_WORKS_STEPS = [
   },
   {
     title: "Written and versioned",
-    text: "Harness writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
+    text: "Harness Ledger writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
   },
 ] as const;
 
 export const LANDING_CREDITS_LINE =
-  "Credits left this month? Spend them on making Lovable better at your project. Syncing chats and writing Knowledge costs nothing. Testing a rule in a temporary copy is a normal Lovable build and uses credits like one; Harness records what each test cost.";
+  "Credits left this month? Spend them on making Lovable better at your project. Syncing chats and writing Knowledge costs nothing. Testing a rule in a temporary copy is a normal Lovable build and uses credits like one; Harness Ledger records what each test cost.";
 
 // Wording-history attribution: a stored reason is shown only when it was
 // typed in this UI; anything else is attributed to Harness without its
@@ -456,7 +456,7 @@ export function wordingChangeLine(entry: {
   if (entry.actor == null || entry.actor.startsWith("operator")) {
     return `You changed the wording on ${day}.`;
   }
-  return `Updated by Harness on ${day}.`;
+  return `Updated by Harness Ledger on ${day}.`;
 }
 
 // ---- Round 6 Task 3 / spec §3: Undo, Cancel, Remove from Knowledge ----
@@ -470,7 +470,7 @@ export const UNDO_TOAST = "Undone — back in your Inbox";
 export const CANCEL_WRITE_TOAST = "Cancelled — back in your Inbox";
 export const REMOVE_FROM_KNOWLEDGE_TITLE = "Remove this rule from Knowledge?";
 export const REMOVE_FROM_KNOWLEDGE_BODY =
-  "Harness rewrites your Knowledge without it now. You can re-add it later.";
+  "Harness Ledger rewrites your Knowledge without it now. You can re-add it later.";
 export const REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL = "Remove";
 
 // ---- Retirement proposals (Task C2 / spec §4b-§5) ----
@@ -495,16 +495,16 @@ export type RetireLike = {
 // build without a repeat correction is not proof the rule helped).
 export function retireReasonSentence(input: RetireLike): string {
   if (input.reason === "changed_mind") {
-    return "Harness suggests retiring this rule because you asked Lovable for the opposite.";
+    return "Harness Ledger suggests retiring this rule because you asked Lovable for the opposite.";
   }
   if (input.reason === "contradiction") {
     const other = (input.contradicts_instruction ?? "another rule").replace(/\.+$/, "");
-    return `Harness suggests retiring this rule because it contradicts ${other}.`;
+    return `Harness Ledger suggests retiring this rule because it contradicts ${other}.`;
   }
   if (input.reason === "unused") {
-    return "Harness suggests retiring this rule because it has not applied in 60 days.";
+    return "Harness Ledger suggests retiring this rule because it has not applied in 60 days.";
   }
-  return "Harness suggests retiring this rule because more of its builds had a repeat correction than didn't.";
+  return "Harness Ledger suggests retiring this rule because more of its builds had a repeat correction than didn't.";
 }
 
 // The one-line health summary under a retirement proposal's title -- the
@@ -636,9 +636,9 @@ function ranSuffix(hasRun: boolean): string {
 export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefined): string[] {
   const s = sources ?? { observed: false, adherence: false, verdicts: false, paired: false };
   return [
-    `Observed from your real builds: Harness counts builds in this rule's area and any repeat correction, automatically, for free. ${ranSuffix(s.observed)}`,
+    `Observed from your real builds: Harness Ledger counts builds in this rule's area and any repeat correction, automatically, for free. ${ranSuffix(s.observed)}`,
     `Your verdict: you can say directly whether a rule helped, didn't help, or you're not sure, any time. ${ranSuffix(s.verdicts)}`,
-    `AI adherence check: Harness's AI reads the request and Lovable's reply and says whether the rule was followed, broken, or didn't apply, with a quote. ${ranSuffix(s.adherence)}`,
+    `AI adherence check: Harness Ledger's AI reads the request and Lovable's reply and says whether the rule was followed, broken, or didn't apply, with a quote. ${ranSuffix(s.adherence)}`,
     // Round 6 Task 6b: paired tests are wired now -- the "not available yet"
     // line was only ever true while Phase B hadn't been built.
     `Paired test: the same request run with and without the rule, side by side, to see the difference directly. ${ranSuffix(s.paired)}`,
@@ -653,7 +653,7 @@ export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefi
 
 export const TEST_THIS_RULE_TITLE = "Test this rule in a copy of your project?";
 export const TEST_THIS_RULE_BODY =
-  "Harness copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request. You get both builds side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done.";
+  "Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request. You get both builds side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done.";
 // Round 7: the second, free copy that shows the original build.
 export const SHOW_ORIGINAL_LABEL = "Also copy my original build so I can open both (free)";
 export const SHOW_ORIGINAL_HELP =
@@ -661,7 +661,7 @@ export const SHOW_ORIGINAL_HELP =
 // Round 7: "Test it first" in the Add dialog adds nothing until you decide.
 export const TEST_FIRST_LABEL = "Test it first";
 export const TEST_FIRST_HELP =
-  "Nothing is added yet. Harness runs your original request again in a copy with this rule, you compare both builds, and you add it afterwards if it worked.";
+  "Nothing is added yet. Harness Ledger runs your original request again in a copy with this rule, you compare both builds, and you add it afterwards if it worked.";
 /** A warning when a rule going to every project talks about one app. */
 export function workspaceWordingWarning(
   instruction: string | null | undefined,

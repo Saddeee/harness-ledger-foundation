@@ -41,7 +41,7 @@ const ruleState = z.enum([
 
 // ---- Checkpoint A ----
 
-tool("health", "Report local Harness service health and DB path.", {}, () => store.health());
+tool("health", "Report local Harness Ledger service health and DB path.", {}, () => store.health());
 
 tool(
   "create_test_record",
@@ -52,7 +52,7 @@ tool(
 
 tool(
   "get_allowed_projects",
-  "List Lovable project IDs this Harness instance permits Claude Code to read or act on. Read-only: curated out-of-band (npm run seed), never by an agent.",
+  "List Lovable project IDs this Harness Ledger instance permits Claude Code to read or act on. Read-only: curated out-of-band (npm run seed), never by an agent.",
   {},
   () => store.getAllowedProjects(),
 );

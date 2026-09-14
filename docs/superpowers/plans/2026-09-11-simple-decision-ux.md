@@ -1655,7 +1655,7 @@ Expected: typecheck clean, lint clean, build ends without an error line, `# fail
 - [ ] **Step 2: Smoke-run the dev server against the local runtime**
 
 ```bash
-cd /home/ibbzy/harness-ledger-foundation
+cd harness-ledger-foundation
 HARNESS_RUNTIME=local HARNESS_DB_PATH=harness/data/harness.db npm run dev > /tmp/claude-1000/-home-ibbzy-harness-ledger-foundation/fc2bc6ee-1996-48a4-bc2c-f7c642a5e615/scratchpad/dev.log 2>&1 &
 sleep 8
 PORT=$(grep -oE 'localhost:[0-9]+' /tmp/claude-1000/-home-ibbzy-harness-ledger-foundation/fc2bc6ee-1996-48a4-bc2c-f7c642a5e615/scratchpad/dev.log | head -1 | cut -d: -f2)

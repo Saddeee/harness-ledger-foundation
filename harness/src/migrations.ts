@@ -792,4 +792,13 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_retire_proposals_status ON retire_proposals(status);
     `,
   },
+  {
+    version: 17,
+    name: "round7_analysis_progress",
+    sql: `
+      -- The step an analysis run is on and how far it has got, so the Inbox
+      -- can show progress while it runs: {"stage": ..., "done": n, "total": n}.
+      ALTER TABLE analysis_runs ADD COLUMN progress_json TEXT;
+    `,
+  },
 ];

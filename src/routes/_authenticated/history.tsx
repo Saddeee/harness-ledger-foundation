@@ -35,12 +35,12 @@ export const Route = createFileRoute("/_authenticated/history")({
       { title: "History — Harness Ledger" },
       {
         name: "description",
-        content: "Everything Harness has done to your Lovable Knowledge, per project.",
+        content: "Everything Harness Ledger has done to your Lovable Knowledge, per project.",
       },
       { property: "og:title", content: "History — Harness Ledger" },
       {
         property: "og:description",
-        content: "Everything Harness has done to your Lovable Knowledge, per project.",
+        content: "Everything Harness Ledger has done to your Lovable Knowledge, per project.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -51,7 +51,7 @@ export const Route = createFileRoute("/_authenticated/history")({
 
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
 const EMPTY_LINE =
-  "Nothing has happened here yet. Rules you add, changes Harness writes, and your decisions will show up here.";
+  "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions will show up here.";
 
 function Page() {
   const qc = useQueryClient();
@@ -117,7 +117,7 @@ function Page() {
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">History</h1>
         <p className="text-sm text-muted-foreground">
-          Knowledge is available when Harness runs on your machine.
+          Knowledge is available when Harness Ledger runs on your machine.
         </p>
       </div>
     );

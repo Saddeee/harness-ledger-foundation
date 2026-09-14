@@ -70,12 +70,12 @@ export const Route = createFileRoute("/_authenticated/instructions")({
       { title: "Instructions — Harness Ledger" },
       {
         name: "description",
-        content: "What Harness has written to your Lovable Knowledge, and its history.",
+        content: "What Harness Ledger has written to your Lovable Knowledge, and its history.",
       },
       { property: "og:title", content: "Instructions — Harness Ledger" },
       {
         property: "og:description",
-        content: "What Harness has written to your Lovable Knowledge, and its history.",
+        content: "What Harness Ledger has written to your Lovable Knowledge, and its history.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -357,7 +357,7 @@ function TargetSection({
       </div>
 
       <div className="space-y-2">
-        <h3 className="text-sm font-medium">Rules Harness added</h3>
+        <h3 className="text-sm font-medium">Rules Harness Ledger added</h3>
         <RulesTable rules={target.active_rules} retireBusy={retireBusy} onRetire={onRetire} />
         <RetiredRulesList rules={target.retired_rules} readdBusy={readdBusy} onReadd={onReadd} />
       </div>
@@ -482,7 +482,7 @@ function Page() {
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">Instructions</h1>
         <p className="text-sm text-muted-foreground">
-          Knowledge is available when Harness runs on your machine.
+          Knowledge is available when Harness Ledger runs on your machine.
         </p>
       </div>
     );

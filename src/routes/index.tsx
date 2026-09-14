@@ -12,7 +12,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Harness reads your Lovable chats, proposes one instruction per correction, and adds it to your Lovable Knowledge only when you say so.",
+          "Harness Ledger reads your Lovable chats, proposes one instruction per correction, and adds it to your Lovable Knowledge only when you say so.",
       },
       { property: "og:title", content: "Harness Ledger" },
       {

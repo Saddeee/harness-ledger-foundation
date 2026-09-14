@@ -130,7 +130,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
     "{whyFor(item.classification)}",
     "What happened",
     'title="Details"',
-    "How Harness read this",
+    "How Harness Ledger read this",
     "Wording history",
   ];
   let last = -1;
@@ -150,7 +150,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
   assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="Details"'));
   // proof is hidden until it can run
   assert.ok(
-    !/Run proof|Prove it first|How Harness would prove this|PROVE_INTRO|proveCostLine/.test(body),
+    !/Run proof|Prove it first|How Harness Ledger would prove this|PROVE_INTRO|proveCostLine/.test(body),
   );
 });
 
@@ -238,7 +238,7 @@ test("decision card: three buttons for pending items, decision buttons shown inl
 test("proof copy stays defined for later but nothing on screen runs or mentions a proof", () => {
   assert.equal(
     ux.PROVE_INTRO,
-    "Harness runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.",
+    "Harness Ledger runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.",
   );
   assert.equal(
     ux.proveCostLine(),
@@ -290,7 +290,7 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   // no snapshot yet -> save the choice, say so, and promise the read-back
   assert.match(
     detail,
-    /const NO_SNAPSHOT_BODY =\s*"Harness hasn't read your current Knowledge yet\. Your choice is saved; press Sync now on the Projects page, then Harness reads it and writes this exact text\. You can see the result on the Instructions page\.";/,
+    /const NO_SNAPSHOT_BODY =\s*"Harness Ledger hasn't read your current Knowledge yet\. Your choice is saved; press Sync now on the Projects page, then Harness Ledger reads it and writes this exact text\. You can see the result on the Instructions page\.";/,
   );
   // Task 8: confirm label now reflects the two-choice selection, not
   // whether a preview is available. Round 6 Task 6b / spec §6: "Save for
@@ -362,7 +362,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   // StatusCtx no longer carries a nextSyncAt field at all.
   assert.equal(
     ux.lovableStatusLine({ write_status: "none", written_at: null }, { connected: false }),
-    "Connect Lovable on the Projects page to let Harness write this",
+    "Connect Lovable on the Projects page to let Harness Ledger write this",
   );
   assert.equal(
     ux.lovableStatusLine({ write_status: "none", written_at: null }, { testFirst: true }),
@@ -463,7 +463,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   assert.equal(g("accepted", "reverted", true, true), "Retired");
   assert.equal(g("skipped", null, false, true), "Skipped", "skipped still wins over retired");
 
-  assert.ok(!/Waiting for Harness/.test(readApp("lib/harness-ux.ts")));
+  assert.ok(!/Waiting for Harness Ledger/.test(readApp("lib/harness-ux.ts")));
 
   assert.equal(
     ux.versionStatusLine({
@@ -518,7 +518,7 @@ test("Suggestions page: Open/Waiting/Decided-earlier sections, no In Lovable/Rev
   // only ever appear now inside the collapsed "Decided earlier" details.
   assert.ok(!/>\s*In Lovable\{" "\}/.test(ledger));
   assert.ok(!/>\s*Reverted\{" "\}/.test(ledger));
-  assert.ok(!/Everything Harness has learned/.test(ledger), "no subtitle on Suggestions");
+  assert.ok(!/Everything Harness Ledger has learned/.test(ledger), "no subtitle on Suggestions");
   assert.ok(
     !/Needs your decision|Waiting for proof|Ready to add|Decide later/.test(ledger),
     "old group names are gone",
@@ -541,7 +541,7 @@ test("Suggestions page: Open/Waiting/Decided-earlier sections, no In Lovable/Rev
   assert.match(inbox, /i\.decision\.status === "pending"/, "only pending items are in Inbox");
 });
 
-test("wording history: reasons only for changes made in this UI; anything else is 'Updated by Harness'", () => {
+test("wording history: reasons only for changes made in this UI; anything else is 'Updated by Harness Ledger'", () => {
   assert.equal(
     ux.wordingChangeLine({
       changed_at: "2026-09-09T10:00:00Z",
@@ -556,7 +556,7 @@ test("wording history: reasons only for changes made in this UI; anything else i
       reason: "internal classifier note",
       actor: "claude-checkpoint-b",
     }),
-    "Updated by Harness on 9 Sep.",
+    "Updated by Harness Ledger on 9 Sep.",
   );
   assert.equal(
     ux.wordingChangeLine({ changed_at: "2026-09-09T10:00:00Z", reason: "x", actor: "operator" }),
@@ -598,7 +598,7 @@ test("Settings: hosted usage cards live under Advanced, gated to the hosted runt
   assert.ok(!/queryKey: \["overview"\]/.test(settings));
 });
 
-test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in every runtime; How Harness works links to the landing page", () => {
+test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in every runtime; How Harness Ledger works links to the landing page", () => {
   const shell = codeOnly(readApp(SHELL));
   assert.match(shell, /\{ to: "\/inbox", label: "Inbox" \}/);
   assert.match(shell, /\{ to: "\/ledger", label: "Suggestions" \}/);
@@ -630,7 +630,7 @@ test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, S
     "nav never depends on the runtime",
   );
   assert.ok(!/label: "Ledger"|label: "Overview"|label: "Knowledge"/.test(shell));
-  assert.match(shell, /<Link to="\/"[^>]*>\s*How Harness works\s*<\/Link>/);
+  assert.match(shell, /<Link to="\/"[^>]*>\s*How Harness Ledger works\s*<\/Link>/);
   const client = codeOnly(readApp(CLIENT));
   assert.ok(
     !/HowItWorks|howItWorks|HOW_IT_WORKS/.test(client),
@@ -667,13 +667,13 @@ test("lovableReplyText extracts what the user saw in the Lovable chat from a ver
   assert.ok(fallback.length <= 601 && fallback.startsWith("plain assistant text"));
 });
 
-test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness analysis' exactly once, nowhere else", () => {
+test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness Ledger analysis' exactly once, nowhere else", () => {
   const detail = detailCopy();
   assert.ok(
     count(detail, "Lovable credits") <= 2,
     `Lovable credits x${count(detail, "Lovable credits")}`,
   );
-  assert.equal(count(detail, "Harness analysis"), 1);
+  assert.equal(count(detail, "Harness Ledger analysis"), 1);
   // Task 8 adds one bare "credit" mention: "Uses no credits." in the
   // Add-it-now choice text. Round 6 Task 6b adds a second, non-display one:
   // `item.test.credits` (TestInfo's own field name, read for
@@ -834,10 +834,10 @@ test("landing page: public, four steps from HOW_IT_WORKS_STEPS (spec 6.5), one b
   assert.deepEqual(
     ux.HOW_IT_WORKS_STEPS.map((s) => s.text),
     [
-      "Harness reads your Lovable chats and Knowledge every hour. No credits, no AI.",
-      "Where you corrected Lovable, Harness's AI analysis proposes one rule, with the exact messages as evidence.",
+      "Harness Ledger reads your Lovable chats and Knowledge every hour. No credits, no AI.",
+      "Where you corrected Lovable, Harness Ledger's AI analysis proposes one rule, with the exact messages as evidence.",
       "Add it now, test it first in a temporary copy, or skip. Nothing changes until you say so.",
-      "Harness writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
+      "Harness Ledger writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
     ],
   );
   const landing = codeOnly(readApp("routes/index.tsx"));

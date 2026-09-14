@@ -329,7 +329,7 @@ function recordContradiction(contradictedRuleId: number, newRuleId: number, now:
  */
 export async function proposeRules(
   callLlm: CallLlm,
-  opts: { limit: number; runId?: number },
+  opts: { limit: number; runId?: number; onProgress?: (done: number, total: number) => void },
 ): Promise<{
   proposed: number;
   skippedDuplicate: number;
@@ -342,6 +342,10 @@ export async function proposeRules(
   createdCandidateIds: number[];
 }> {
   const episodes = store.listMinableEpisodes(opts.limit);
+  // Progress counts corrections asked about (one call each), not episodes.
+  const totalCorrections = episodes.reduce((n, e) => n + e.uncovered_correction_ids.length, 0);
+  let correctionsAsked = 0;
+  opts.onProgress?.(0, totalCorrections);
 
   // Round 5 Task 6 / spec §4b: read once per call, not per episode -- the
   // user's own decisions don't change mid-run, and tagAcceptanceRates-style
@@ -383,6 +387,7 @@ export async function proposeRules(
 
     while (pending.length > 0) {
       const focusId = pending.shift()!;
+      opts.onProgress?.(correctionsAsked++, totalCorrections);
       const focus = correctionById.get(focusId);
       if (!focus?.external_id) continue;
 

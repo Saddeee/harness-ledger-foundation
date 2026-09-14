@@ -1153,7 +1153,7 @@ export function addDemoData(): AddDemoResult {
   backdateVersionCreatedAt(stalePendingId, 4);
   store.markKnowledgeWriteStale(
     stalePendingId,
-    "demo: Knowledge changed in Lovable before Harness could write this",
+    "demo: Knowledge changed in Lovable before Harness Ledger could write this",
   );
   store.updateRule({
     id: staleSeed.ruleId,
@@ -1255,7 +1255,7 @@ export function addDemoData(): AddDemoResult {
   // every fetched_by = 'demo' row (see improvements.ts), so this is just
   // additional recorded history for the project, same as any other demo
   // snapshot. ----
-  const externalChangeContent = `${v3.final_content}\n<!-- Demo: edited directly in Lovable, outside Harness -->\n`;
+  const externalChangeContent = `${v3.final_content}\n<!-- Demo: edited directly in Lovable, outside Harness Ledger -->\n`;
   const externalSnapshot = store.recordKnowledgeSnapshot({
     target: "project",
     project_id: projectId,

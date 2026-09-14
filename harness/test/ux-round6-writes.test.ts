@@ -75,10 +75,10 @@ test("harness-ux.ts: writeOutcomeLine reports 'Written to Lovable {time}' for a 
     ux.writeOutcomeLine({
       written: false,
       version_id: 1,
-      reason: "Harness is not connected — connect on the Projects page.",
+      reason: "Harness Ledger is not connected — connect on the Projects page.",
       kind: "not_connected",
     }),
-    "Harness is not connected — connect on the Projects page.",
+    "Harness Ledger is not connected — connect on the Projects page.",
   );
   assert.equal(ux.writeOutcomeLine(null), null);
   assert.equal(ux.writeOutcomeLine(undefined), null);
@@ -198,7 +198,7 @@ test("history.tsx: restore's toast reads the write outcome", () => {
 test("local-settings.tsx: the automatic-mode help text no longer says 'next sync'", () => {
   const raw = readApp(LOCAL_SETTINGS);
   assert.ok(!/next sync/i.test(raw));
-  assert.ok(raw.includes("the next time Harness syncs"));
+  assert.ok(raw.includes("the next time Harness Ledger syncs"));
 });
 
 // ---- improvements-client.ts: WriteOutcome type and helpers exist ----

@@ -52,7 +52,7 @@ test("local-settings.tsx: the radio pair uses the spec's exact copy, and the def
   assert.ok(raw.includes("Ask me about every suggestion"));
   assert.ok(
     raw.includes(
-      "Automatic: accept suggestions Harness is confident about; ask me about the rest.",
+      "Automatic: accept suggestions Harness Ledger is confident about; ask me about the rest.",
     ),
   );
 
@@ -60,7 +60,7 @@ test("local-settings.tsx: the radio pair uses the spec's exact copy, and the def
   // phrase is banned from UI copy repo-wide now), keeping the rest verbatim.
   assert.ok(
     raw.includes(
-      "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge the next time Harness syncs, if that project allows automatic writes (Projects page). Everything Harness does automatically is listed in the Instructions page history, and you can retire or restore any of it.",
+      "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge the next time Harness Ledger syncs, if that project allows automatic writes (Projects page). Everything Harness Ledger does automatically is listed in the Instructions page history, and you can retire or restore any of it.",
     ),
     "the automatic-mode help text must match spec §4 (minus the banned 'next sync' phrase)",
   );
@@ -95,7 +95,7 @@ test("local-settings.tsx: the feedback line reads the accepted/skipped/verdicts 
   assert.match(code, /accepted, \$\{.*\} skipped, \$\{.*\} verdicts/);
   assert.match(
     code,
-    /Harness shows the Rule writer what you accepted and skipped, and won't re-propose what you skipped\./,
+    /Harness Ledger shows the Rule writer what you accepted and skipped, and won't re-propose what you skipped\./,
   );
   assert.match(code, /action:\s*"settings"[\s\S]{0,120}decision_mode:\s*decisionMode/);
   assert.match(code, /decision_auto_confidence:\s*autoConfidence/);
@@ -274,14 +274,14 @@ test("ledger.tsx and improvement.tsx: a decided item shows an 'Accepted automati
   assert.match(badgeBranch, /Accepted automatically/);
 });
 
-test("inbox.tsx: the empty state names how many Harness accepted automatically since the last visit, in automatic mode only", () => {
+test("inbox.tsx: the empty state names how many Harness Ledger accepted automatically since the last visit, in automatic mode only", () => {
   const code = codeOnly(readApp(INBOX));
   assert.match(code, /executorQueryOptions/);
   assert.match(code, /executor\.data\?\.settings\?\.decision_mode === "automatic"/);
   assert.match(code, /auto_accepted_since_seen/);
   assert.match(
     code,
-    /Nothing needs your decision\. Harness accepted \$\{autoAcceptedSince\} suggestion\$\{autoAcceptedSince === 1 \? "" : "s"\} automatically since your last visit; see Suggestions\./,
+    /Nothing needs your decision\. Harness Ledger accepted \$\{autoAcceptedSince\} suggestion\$\{autoAcceptedSince === 1 \? "" : "s"\} automatically since your last visit; see Suggestions\./,
   );
   // The plain line still exists for ask mode / nothing auto-accepted yet.
   assert.ok(

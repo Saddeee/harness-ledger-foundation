@@ -760,9 +760,19 @@ export type ExecutorAnalysisLastRun = {
 
 export type ExecutorProviderReady = { ok: boolean; reason?: string };
 
+export type AnalysisStage = "starting" | "classify" | "group" | "rules" | "judge" | "health";
+
 export type ExecutorAnalysis = {
   last_run: ExecutorAnalysisLastRun;
   running: boolean;
+  // Round 7: the run in flight, step by step, and a requested run not yet
+  // started -- the Inbox's progress display.
+  progress?: {
+    id: number;
+    started_at: string;
+    progress: { stage: AnalysisStage; done: number; total: number | null } | null;
+  } | null;
+  queued?: boolean;
   awaiting_analysis: number;
   provider_ready: ExecutorProviderReady;
 };
@@ -840,7 +850,13 @@ export type AllowedProject = {
   history_count: number;
   settings: ProjectSettings;
 };
-export type LovableProjectListing = { id: string; name: string; allowed: boolean };
+export type LovableProjectListing = {
+  id: string;
+  name: string;
+  allowed: boolean;
+  // Round 7: set when this project is one of Harness Ledger's own test copies.
+  test_copy_run?: number | null;
+};
 
 export type ProjectsResponse = {
   available: boolean;

@@ -332,7 +332,7 @@ function Page() {
               copy={view.original_copy}
               noCopyLine={
                 view.original_copy_error
-                  ? `Harness could not copy your original build: ${view.original_copy_error}`
+                  ? `Harness Ledger could not copy your original build: ${view.original_copy_error}`
                   : view.show_original
                     ? null
                     : "No copy of the original build was made for this test."

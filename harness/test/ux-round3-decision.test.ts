@@ -179,13 +179,13 @@ test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 
   assert.equal(count(detail, 'role="radio"'), 6);
 });
 
-test("cost wording stays honest: 'Lovable credits' <= 2 and 'Harness analysis' == 1 on improvement.tsx", () => {
+test("cost wording stays honest: 'Lovable credits' <= 2 and 'Harness Ledger analysis' == 1 on improvement.tsx", () => {
   const detail = codeOnly(readApp(DETAIL));
   assert.ok(
     count(detail, "Lovable credits") <= 2,
     `Lovable credits x${count(detail, "Lovable credits")}`,
   );
-  assert.equal(count(detail, "Harness analysis"), 1);
+  assert.equal(count(detail, "Harness Ledger analysis"), 1);
 });
 
 test("no <details open> anywhere in improvement.tsx", () => {

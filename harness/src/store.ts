@@ -4569,7 +4569,63 @@ export function ruleWordings(ruleId: number): string[] {
     new Set([current?.instruction, ...revisions.flatMap((r) => [r.a, r.b])].filter((t): t is string => !!t)),
   );
 }
-// ---- end Round 7 ----
+
+// ---- Analysis progress (Round 7) ----
+export type AnalysisStage = "starting" | "classify" | "group" | "rules" | "judge" | "health";
+export type AnalysisProgress = { stage: AnalysisStage; done: number; total: number | null };
+
+export function setAnalysisProgress(runId: number, progress: AnalysisProgress): void {
+  db.prepare(`UPDATE analysis_runs SET progress_json = ? WHERE id = ?`).run(
+    JSON.stringify(progress),
+    runId,
+  );
+}
+
+/** The run in flight (same crash window as runningAnalysisRun) with its
+ * progress, or null. */
+export function runningAnalysisProgress(): {
+  id: number;
+  started_at: string;
+  progress: AnalysisProgress | null;
+} | null {
+  const row = db
+    .prepare(
+      `SELECT id, started_at, progress_json FROM analysis_runs
+       WHERE finished_at IS NULL AND started_at >= datetime('now', '-15 minutes')
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get() as { id: number; started_at: string; progress_json: string | null } | undefined;
+  if (!row) return null;
+  let progress: AnalysisProgress | null = null;
+  try {
+    progress = row.progress_json ? (JSON.parse(row.progress_json) as AnalysisProgress) : null;
+  } catch {
+    progress = null;
+  }
+  return { id: row.id, started_at: row.started_at, progress };
+}
+
+/** Projects that are Harness Ledger's own test copies, keyed by project id,
+ * with the test number -- the Projects page labels them. */
+export function testCopyProjects(): Record<string, number> {
+  const rows = db
+    .prepare(`SELECT id, copy_project_id, original_copy_project_id FROM experiment_runs`)
+    .all() as { id: number; copy_project_id: string | null; original_copy_project_id: string | null }[];
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    if (r.copy_project_id) out[r.copy_project_id] = r.id;
+    if (r.original_copy_project_id) out[r.original_copy_project_id] = r.id;
+  }
+  return out;
+}
+
+/** Keeps a known project's name in step with Lovable (a rename there). */
+export function setProjectName(lovableProjectId: string, name: string): void {
+  db.prepare(
+    `UPDATE projects SET name = ?, updated_at = datetime('now') WHERE lovable_project_id = ? AND (name IS NULL OR name != ?)`,
+  ).run(name, lovableProjectId, name);
+}
+// ---- end Round 7 (projects) ----
 
 // ---- Round 7: one suggestion per correction ----
 export type CorrectionMiningOutcome = "proposed" | "no_proposal" | "duplicate" | "skipped_repeat";

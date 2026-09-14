@@ -41,10 +41,10 @@ test("MessageBlock: Open in Lovable link on each user message, with correct attr
   assert.match(messageBlock, /\{\!isLovable && projectId/, "link only shown when isLovable is false and projectId exists");
 });
 
-test("MessageBlock: cost wording still correct ('Lovable credits' ≤ 2, 'Harness analysis' exactly 1)", () => {
+test("MessageBlock: cost wording still correct ('Lovable credits' ≤ 2, 'Harness Ledger analysis' exactly 1)", () => {
   const detail = codeOnly(readApp(DETAIL));
   assert.ok(count(detail, "Lovable credits") <= 2, `Lovable credits x${count(detail, "Lovable credits")}`);
-  assert.equal(count(detail, "Harness analysis"), 1, "Harness analysis mentioned exactly once");
+  assert.equal(count(detail, "Harness Ledger analysis"), 1, "Harness Ledger analysis mentioned exactly once");
 });
 
 test("MessageBlock: no <details open attribute", () => {

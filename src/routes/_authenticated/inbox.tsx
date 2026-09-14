@@ -221,7 +221,7 @@ function Page() {
   const autoAcceptedSince = query.data?.counts?.auto_accepted_since_seen ?? 0;
   const nothingPendingLine =
     executor.data?.settings?.decision_mode === "automatic" && autoAcceptedSince > 0
-      ? `Nothing needs your decision. Harness accepted ${autoAcceptedSince} suggestion${autoAcceptedSince === 1 ? "" : "s"} automatically since your last visit; see Suggestions.`
+      ? `Nothing needs your decision. Harness Ledger accepted ${autoAcceptedSince} suggestion${autoAcceptedSince === 1 ? "" : "s"} automatically since your last visit; see Suggestions.`
       : "Nothing needs your decision. Everything you've decided on is under Suggestions.";
 
   return (
@@ -231,7 +231,7 @@ function Page() {
       {list.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
-            ? "Suggestions Harness finds in your Lovable chats will appear here."
+            ? "Suggestions Harness Ledger finds in your Lovable chats will appear here."
             : nothingPendingLine}
         </div>
       ) : (

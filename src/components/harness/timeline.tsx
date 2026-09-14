@@ -82,7 +82,7 @@ export function ManagedBlockText({
       {before ? <pre className="whitespace-pre-wrap break-words">{before}</pre> : null}
       <div className="rounded-md border bg-background p-2">
         <p className="mb-1 font-sans text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Added by Harness
+          Added by Harness Ledger
         </p>
         <pre className="whitespace-pre-wrap break-words">{managed}</pre>
       </div>
@@ -97,7 +97,7 @@ function hasManagedBlock(content: string | null): boolean {
 
 const ACTOR_LABEL: Record<TimelineNode["actor"], string> = {
   you: "You",
-  harness: "Harness",
+  harness: "Harness Ledger",
   lovable: "Lovable",
 };
 
@@ -106,11 +106,11 @@ const ACTOR_LABEL: Record<TimelineNode["actor"], string> = {
 const UNDO_LABEL = "Undo this change";
 const UNDO_TITLE = "Undo this change?";
 const UNDO_BODY =
-  "Harness writes back your Knowledge as it was before this change, as a new version.";
+  "Harness Ledger writes back your Knowledge as it was before this change, as a new version.";
 const GO_BACK_LABEL = "Go back to before this change";
 const GO_BACK_TITLE = "Go back to before this change?";
 const GO_BACK_BODY =
-  "Harness writes back your Knowledge as it was before this change, as a new version. Every change after it is undone too.";
+  "Harness Ledger writes back your Knowledge as it was before this change, as a new version. Every change after it is undone too.";
 
 export function Timeline({
   nodes,
@@ -141,8 +141,8 @@ export function Timeline({
   if (nodes.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nothing has happened here yet. Rules you add, changes Harness writes, and your decisions
-        will show up here.
+        Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your
+        decisions will show up here.
       </p>
     );
   }

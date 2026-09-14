@@ -83,8 +83,8 @@ export type { Improvement, Message };
 // there's no Knowledge snapshot yet to compose against (Harness has never
 // read this target), which Sync now fixes.
 const NO_SNAPSHOT_BODY =
-  "Harness hasn't read your current Knowledge yet. Your choice is saved; press Sync now on the Projects page, then Harness reads it and writes this exact text. You can see the result on the Instructions page.";
-const PREVIEW_BODY = "This is the exact text Harness will write to your Lovable Knowledge.";
+  "Harness Ledger hasn't read your current Knowledge yet. Your choice is saved; press Sync now on the Projects page, then Harness Ledger reads it and writes this exact text. You can see the result on the Instructions page.";
+const PREVIEW_BODY = "This is the exact text Harness Ledger will write to your Lovable Knowledge.";
 // Addendum to Round 6 Task 4: "restore" alone overstated what's actually on
 // offer from this card -- Remove from Knowledge lives here (Round 6 Task 3),
 // while restoring an earlier version is a History-page-only action.
@@ -100,13 +100,14 @@ function overRulesLine(activeRulesCount: number): string {
 // (writeToastText, below) -- these four are only the defensive fallback for
 // a response that somehow carries no `write` field at all.
 const SAVED_LINE = "Added.";
-const NO_INSTRUCTION = "Harness hasn't drafted an instruction yet.";
-const ADD_NOW_HELP = "Harness writes this exact text now, when you press Add. Uses no credits.";
+const NO_INSTRUCTION = "Harness Ledger hasn't drafted an instruction yet.";
+const ADD_NOW_HELP =
+  "Harness Ledger writes this exact text now, when you press Add. Uses no credits.";
 const RETIRE_TITLE = "Retire this rule?";
-const RETIRE_BODY = "Harness rewrites your Knowledge without it right away.";
+const RETIRE_BODY = "Harness Ledger rewrites your Knowledge without it right away.";
 const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
 const RETIRED_TOAST = "Retired.";
-const KEPT_TOAST = "Kept — Harness will ask again in 30 days";
+const KEPT_TOAST = "Kept — Harness Ledger will ask again in 30 days";
 const READDED_TOAST = "Re-added.";
 // Round 6 Task 3 / spec §3: "Remove from Knowledge" replaces "Restore
 // previous version" on a written rule's card -- it retires the rule and
@@ -388,7 +389,7 @@ function SkipConfirm({
       variant="ghost"
       size={size}
       title="Skip this suggestion?"
-      body="Harness won't suggest it again."
+      body="Harness Ledger won't suggest it again."
       consequences={["Nothing changes in Lovable."]}
       confirmLabel="Skip"
       disabled={busy}
@@ -729,7 +730,7 @@ function RetireCard({
         id={titleId}
         className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
       >
-        Harness suggests retiring this rule
+        Harness Ledger suggests retiring this rule
       </Title>
       <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
         {item.title.replace(/^Retire:\s*/, "")}
@@ -911,8 +912,8 @@ function DecidedStatus({
       <TestStatusLine item={item} />
       {accepted && lovable.write_status === "none" ? (
         <p className="text-xs text-muted-foreground">
-          Waiting for Harness to read your current Knowledge. You'll see the exact text before
-          anything is written.
+          Waiting for Harness Ledger to read your current Knowledge. You'll see the exact text
+          before anything is written.
         </p>
       ) : null}
       {accepted && lovable.write_status === "stale" && lovable.stale_reason ? (
@@ -920,8 +921,8 @@ function DecidedStatus({
       ) : null}
       {accepted && lovable.write_status === "failed" ? (
         <p className="text-xs text-muted-foreground">
-          Harness could not write this to Lovable. You can try again, choose the other destination,
-          or skip it.
+          Harness Ledger could not write this to Lovable. You can try again, choose the other
+          destination, or skip it.
         </p>
       ) : null}
       <div className={ACTION_BAR_CLASS}>
@@ -1487,8 +1488,8 @@ export function ImprovementDetail({
       </section>
 
       <AdvancedDetails title="Details">
-        <DetailSection title="How Harness read this">
-          <p>Harness read this as: {label(CLASSIFICATION_LABELS, item.classification)}.</p>
+        <DetailSection title="How Harness Ledger read this">
+          <p>Harness Ledger read this as: {label(CLASSIFICATION_LABELS, item.classification)}.</p>
           {item.decision.decided_at ? (
             <p>
               {skipped ? "You skipped it on" : "You decided on"}{" "}
@@ -1496,12 +1497,12 @@ export function ImprovementDetail({
             </p>
           ) : null}
           {accepted && lovable.untested ? (
-            <p>Added without a proof — Harness hasn't tested this instruction.</p>
+            <p>Added without a proof — Harness Ledger hasn't tested this instruction.</p>
           ) : null}
-          <p>Harness analysis uses Harness's own AI, not your Lovable account.</p>
+          <p>Harness Ledger analysis uses Harness Ledger's own AI, not your Lovable account.</p>
         </DetailSection>
 
-        <DetailSection title="How Harness judges whether a rule helps">
+        <DetailSection title="How Harness Ledger judges whether a rule helps">
           {evidenceSourceLines(item.health?.sources ?? null).map((line, i) => (
             <p key={i}>{line}</p>
           ))}
@@ -1554,8 +1555,8 @@ export function ImprovementDetail({
           </summary>
           <div className="space-y-2 border-t px-3 py-3 text-xs">
             <p className="text-muted-foreground">
-              Raw records as Harness stores them. Includes internal identifiers and classifier
-              reasoning.
+              Raw records as Harness Ledger stores them. Includes internal identifiers and
+              classifier reasoning.
             </p>
             {(
               [

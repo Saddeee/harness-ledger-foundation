@@ -103,10 +103,17 @@ async function handleGet({ request }: { request: Request }) {
           if (workspaceId) {
             const list = await cachedListProjects(executor, workspaceId);
             const allowedIds = new Set(allowedRows.map((r) => r.lovable_project_id));
+            const testCopies = adapter.testCopyProjects();
+            // Round 7: a project renamed in Lovable keeps its new name here.
+            for (const p of list) {
+              if (allowedIds.has(p.id) && p.name) adapter.setProjectName(p.id, p.name);
+            }
             body["all"] = list.map((p) => ({
               id: p.id,
               name: p.name,
               allowed: allowedIds.has(p.id),
+              // Round 7: Harness Ledger's own test copies are labelled.
+              test_copy_run: testCopies[p.id] ?? null,
             }));
           }
         }

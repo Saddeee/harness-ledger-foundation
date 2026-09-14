@@ -219,6 +219,10 @@ async function handleGet({ request }: { request: Request }) {
       analysis: {
         last_run: analysis_last_run,
         running: adapter.runningAnalysisRun() != null,
+        // Round 7: the step and counts of the run in flight, and whether a
+        // requested run has not started yet -- the Inbox's progress display.
+        progress: adapter.runningAnalysisProgress(),
+        queued: adapter.hasOpenAnalysisRequest(),
         awaiting_analysis: adapter.countHistoryItemsAwaitingAnalysis(),
         provider_ready,
       },
@@ -279,6 +283,10 @@ async function handlePost({ request }: { request: Request }) {
     // existing open request's id instead of stacking a second one.
     if (action === "analyse_now") {
       const result = adapter.requestAnalysis();
+      // Start now in this process when it runs the schedule; otherwise the
+      // schedule's own tick picks the request up.
+      const executor = await loadHarnessExecutor();
+      executor?.schedule.kickAnalysisNow();
       return Response.json({ available: true, requested: true, id: result.id });
     }
 
