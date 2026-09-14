@@ -69,8 +69,9 @@ class FakeLovable implements LovableClient {
   async getWorkspaceKnowledge() {
     return this.workspaceKnowledge;
   }
+  skillsComplete = true;
   async listWorkspaceSkills() {
-    return this.skills;
+    return { skills: this.skills, complete: this.skillsComplete };
   }
   async setProjectKnowledge(projectId: string, content: string) {
     if (this.setProjectThrows) throw new Error(this.setProjectThrows);
@@ -1029,4 +1030,257 @@ test("lock.currentLockHolder: null when unheld or stale, the holder when fresh",
     JSON.stringify({ owner: "cli", pid: 999999, heartbeat_at: staleHeartbeat }),
   );
   assert.equal(lock.currentLockHolder(lockPath), null, "a stale holder does not count as current");
+});
+
+test("toIdName: prefers Lovable's display_name, falls back to the slug, then the id", async () => {
+  const { toIdName } = await import("../src/executor/lovable-mcp.js");
+  assert.deepEqual(toIdName({ id: "p1", name: "harness-ledger-start", display_name: "Harness Ledger Foundation" }), {
+    id: "p1",
+    name: "Harness Ledger Foundation",
+  });
+  assert.deepEqual(toIdName({ id: "p2", display_name: "Frontier Forge" }), { id: "p2", name: "Frontier Forge" });
+  assert.deepEqual(toIdName({ id: "p3", name: "slug-only" }), { id: "p3", name: "slug-only" });
+  assert.deepEqual(toIdName({ id: "p4" }), { id: "p4", name: "p4" });
+});
+
+test("syncHistory names a newly allowed project after its Projects-page label, and never wipes an existing name", async () => {
+  // A project allowed from the Projects page had a projects row with no
+  // name, so every card showed its raw id instead of its name.
+  const NEW_PROJECT = "proj-named-by-label";
+  store.allowProject(NEW_PROJECT, "Quick Tip Calculator");
+  const fake = new FakeLovable();
+  fake.pages[NEW_PROJECT] = [{ messages: [], next_cursor: null, has_more: false }];
+  await beats.syncHistory(fake);
+  assert.equal(store.getProjectMeta(NEW_PROJECT)?.name, "Quick Tip Calculator");
+  assert.equal(store.getProjectMeta(NEW_PROJECT)?.workspace_id, WORKSPACE);
+
+  store.upsertProject({ lovable_project_id: NEW_PROJECT, workspace_id: WORKSPACE });
+  assert.equal(store.getProjectMeta(NEW_PROJECT)?.name, "Quick Tip Calculator", "an upsert without a name keeps the name");
+  store.disallowProject(NEW_PROJECT);
+});
+
+test("executeVersionNow: a verified write becomes the latest Knowledge snapshot, so the next change composes on what Lovable now holds", async () => {
+  // Add then Remove, with no sync in between: Remove was composed on the
+  // pre-write read and went stale on the owner's-style test project.
+  const project = "proj-readback-snapshot";
+  store.allowProject(project, "Readback snapshot project");
+  const fake = new FakeLovable();
+  fake.projectKnowledge[project] = "";
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: null,
+    target: "project",
+    project_id: project,
+    previous_content: "",
+    new_content: managedBlock(["Use kr for money."]),
+    rule_ids: [],
+    actor: "test",
+  });
+  const outcome = await beats.executeVersionNow(v.id, fake);
+  assert.equal(outcome.written, true);
+  assert.equal(
+    store.latestKnowledgeSnapshot("project", project, { forWrite: true })?.content,
+    managedBlock(["Use kr for money."]),
+  );
+  store.disallowProject(project);
+});
+
+test("executeVersionNow: removing a rule right after adding it writes, even when composed on an older base -- Harness's own last-written block is not someone else's edit", async () => {
+  const project = "proj-add-then-remove";
+  store.allowProject(project, "Add then remove project");
+  const rule = makeRule("Show money in kr.", "test", project);
+  const block = managedBlock([rule.instruction]);
+  const fake = new FakeLovable();
+  fake.projectKnowledge[project] = "";
+
+  const add = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: project,
+    previous_content: "",
+    new_content: block,
+    rule_ids: [rule.id],
+    actor: "test",
+  });
+  assert.equal((await beats.executeVersionNow(add.id, fake)).written, true);
+
+  // The rule is retired before its removal is written (retireRule's order),
+  // and the removal was composed on the pre-add base.
+  store.updateRule({ id: rule.id, state: "retired", actor: "test", reason: "retired manually" });
+  const remove = store.createPendingKnowledgeVersion({
+    rule_id: null,
+    target: "project",
+    project_id: project,
+    previous_content: "",
+    new_content: managedBlock([]),
+    rule_ids: [],
+    actor: "test",
+  });
+  const outcome = await beats.executeVersionNow(remove.id, fake);
+  assert.equal(outcome.written, true, JSON.stringify(outcome));
+  assert.ok(!fake.projectKnowledge[project]!.includes(rule.instruction), "the rule is gone from Lovable");
+
+  // A line Harness never wrote is still refused.
+  fake.projectKnowledge[project] = managedBlock(["Something a human typed inside the markers."]);
+  const again = store.createPendingKnowledgeVersion({
+    rule_id: null,
+    target: "project",
+    project_id: project,
+    previous_content: "",
+    new_content: managedBlock([]),
+    rule_ids: [],
+    actor: "test",
+  });
+  const refused = await beats.executeVersionNow(again.id, fake);
+  assert.equal(refused.written, false);
+  assert.ok(!refused.written && refused.kind === "stale");
+  store.disallowProject(project);
+});
+
+test("snapshotSkills records a deleted skill, the Skills list drops it, History says it was deleted, and re-creating it is recorded again", async () => {
+  // Live: a skill deleted in Lovable stayed on the Skills page as current.
+  const WS = "ws-skill-deletion";
+  const fake = new FakeLovable();
+  fake.skills = [{ name: "temp-skill", description: "d", content: "# v1", updated_at: null }];
+  await beats.snapshotSkills(fake, WS);
+  assert.deepEqual(store.latestSkillSnapshots(WS).map((s) => s.name), ["temp-skill"]);
+
+  fake.skills = [];
+  assert.deepEqual(await beats.snapshotSkills(fake, WS), { skills: 0, changed: 1 });
+  assert.deepEqual(store.latestSkillSnapshots(WS), [], "a deleted skill is not listed as current");
+  assert.deepEqual(await beats.snapshotSkills(fake, WS), { skills: 0, changed: 0 }, "deletion recorded once");
+
+  const labels = imp.buildTimeline("workspace", WS).filter((n) => n.kind === "skill").map((n) => n.label);
+  assert.deepEqual(labels.sort(), ["Skill temp-skill deleted", "Skill temp-skill first read"].sort());
+
+  fake.skills = [{ name: "temp-skill", description: "d", content: "# v1", updated_at: null }];
+  assert.deepEqual(await beats.snapshotSkills(fake, WS), { skills: 1, changed: 1 }, "same content after deletion is a new snapshot");
+  assert.deepEqual(store.latestSkillSnapshots(WS).map((s) => s.name), ["temp-skill"]);
+});
+
+test("executeVersionNow: retrying an older failed write merges with the rules Harness wrote since -- it never drops a newer rule or re-adds a retired one", async () => {
+  // Review finding: V_B (only B) failed; V_A (A+B) was written; retrying V_B
+  // recomposed from V_B's own rule set alone and removed A from Lovable.
+  const project = "proj-retry-merge";
+  store.allowProject(project, "Retry merge project");
+  const a = makeRule("Rule A.", "test", project);
+  const b = makeRule("Rule B.", "test", project);
+  const retired = makeRule("Rule R.", "test", project);
+  for (const r of [a, b, retired]) store.updateRule({ id: r.id, state: "active", actor: "test" });
+  const fake = new FakeLovable();
+  fake.projectKnowledge[project] = "";
+
+  const vB = store.createPendingKnowledgeVersion({
+    rule_id: b.id, target: "project", project_id: project,
+    previous_content: "", new_content: managedBlock([b.instruction, retired.instruction]),
+    rule_ids: [b.id, retired.id], actor: "test",
+  });
+  store.markKnowledgeWriteFailed(vB.id, "timed out");
+
+  const vA = store.createPendingKnowledgeVersion({
+    rule_id: a.id, target: "project", project_id: project,
+    previous_content: "", new_content: managedBlock([a.instruction, b.instruction]),
+    rule_ids: [a.id, b.id], actor: "test",
+  });
+  assert.equal((await beats.executeVersionNow(vA.id, fake)).written, true);
+
+  store.updateRule({ id: retired.id, state: "retired", actor: "test", reason: "retired manually" });
+  const retry = await beats.executeVersionNow(vB.id, fake);
+  assert.equal(retry.written, true, JSON.stringify(retry));
+  const live = fake.projectKnowledge[project]!;
+  assert.ok(live.includes("Rule A."), "the newer rule A is kept");
+  assert.ok(live.includes("Rule B."), "the retried rule B is written");
+  assert.ok(!live.includes("Rule R."), "a rule retired since is not re-added");
+  store.disallowProject(project);
+});
+
+
+test("snapshotSkills never marks skills deleted from an incomplete or malformed answer", async () => {
+  // Review finding: an unexpected response shape read as "no skills" and
+  // would have marked every skill in the workspace deleted.
+  const WS = "ws-skill-incomplete";
+  const fake = new FakeLovable();
+  fake.skills = [{ name: "keep-me", description: null, content: "# k", updated_at: null }];
+  await beats.snapshotSkills(fake, WS);
+  fake.skills = [];
+  fake.skillsComplete = false;
+  assert.deepEqual(await beats.snapshotSkills(fake, WS), { skills: 0, changed: 0 });
+  assert.deepEqual(store.latestSkillSnapshots(WS).map((s) => s.name), ["keep-me"]);
+});
+
+test("lovable-mcp listWorkspaceSkills: complete only for a well-formed answer without has_more", async () => {
+  const { skillListFromResponse } = await import("../src/executor/lovable-mcp.js");
+  assert.deepEqual(skillListFromResponse({ skills: [], total: 0, has_more: false }), { skills: [], complete: true });
+  assert.equal(skillListFromResponse({ skills: [{ name: "a", markdown: "# a" }], has_more: true }).complete, false);
+  assert.deepEqual(skillListFromResponse({ error: "unexpected" }), { skills: [], complete: false });
+});
+
+test("executeVersionNow: 'Go back to before this change' on an older version writes that older text, even though later changes are live", async () => {
+  const project = "proj-go-back";
+  store.allowProject(project, "Go back project");
+  const a = makeRule("Go back A.", "test", project);
+  const b = makeRule("Go back B.", "test", project);
+  for (const r of [a, b]) store.updateRule({ id: r.id, state: "active", actor: "test" });
+  const fake = new FakeLovable();
+  fake.projectKnowledge[project] = "Notes.";
+  const v1 = store.createPendingKnowledgeVersion({ rule_id: a.id, target: "project", project_id: project, previous_content: "Notes.", new_content: `Notes.\n\n${managedBlock([a.instruction])}`, rule_ids: [a.id], actor: "test" });
+  assert.equal((await beats.executeVersionNow(v1.id, fake)).written, true);
+  const v2 = store.createPendingKnowledgeVersion({ rule_id: b.id, target: "project", project_id: project, previous_content: fake.projectKnowledge[project]!, new_content: `Notes.\n\n${managedBlock([a.instruction, b.instruction])}`, rule_ids: [a.id, b.id], actor: "test" });
+  assert.equal((await beats.executeVersionNow(v2.id, fake)).written, true);
+
+  const goBack = store.createRestoreVersion(v1.id, "test") as { id: number };
+  const outcome = await beats.executeVersionNow(goBack.id, fake);
+  assert.equal(outcome.written, true, JSON.stringify(outcome));
+  assert.equal(fake.projectKnowledge[project], "Notes.", "the text from before version 1 is back");
+  // Both rules left Lovable, so both read as reverted.
+  const stateOf = (id: number) => (db.prepare(`SELECT state FROM rules WHERE id = ?`).get(id) as { state: string }).state;
+  assert.equal(stateOf(a.id), "rolled_back");
+  assert.equal(stateOf(b.id), "rolled_back");
+
+  // Someone edits Knowledge in Lovable, outside Harness: going back refuses
+  // rather than overwrite that edit.
+  fake.projectKnowledge[project] = "Notes. Edited in Lovable.";
+  const again = store.createRestoreVersion(v2.id, "test") as { id: number };
+  const refused = await beats.executeVersionNow(again.id, fake);
+  assert.equal(refused.written, false);
+  assert.ok(!refused.written && refused.kind === "stale");
+  assert.equal(fake.projectKnowledge[project], "Notes. Edited in Lovable.");
+  store.disallowProject(project);
+});
+
+test("parseToolResult: a Lovable error result throws -- its message is never returned as data (it was saved as Knowledge)", async () => {
+  const { parseToolResult } = await import("../src/executor/lovable-mcp.js");
+  assert.throws(
+    () => parseToolResult({ isError: true, content: [{ type: "text", text: "Lovable API error: 401 unauthorized: Unauthorized" }] }),
+    /401 unauthorized/,
+  );
+  assert.deepEqual(parseToolResult({ content: [{ type: "text", text: '{"content":"Notes"}' }] }), { content: "Notes" });
+});
+
+test("going back keeps a rule active when Knowledge holds an earlier wording of it, or a rule written over several lines", async () => {
+  // Review finding: rules were matched by their current wording only, so
+  // undoing a wording change (old wording back in Lovable) marked the rule
+  // Reverted, and so did any multi-line instruction.
+  const project = "proj-go-back-wording";
+  store.allowProject(project, "Go back wording");
+  const worded = makeRule("Use kronor.", "test", project);
+  const multi = makeRule("First line.\nSecond line.", "test", project);
+  for (const r of [worded, multi]) store.updateRule({ id: r.id, state: "active", actor: "test" });
+  const fake = new FakeLovable();
+  fake.projectKnowledge[project] = "";
+  const blockOld = managedBlock(["Use kronor.", "First line.\nSecond line."]);
+  const v1 = store.createPendingKnowledgeVersion({ rule_id: worded.id, target: "project", project_id: project, previous_content: "", new_content: blockOld, rule_ids: [worded.id, multi.id], actor: "test" });
+  assert.equal((await beats.executeVersionNow(v1.id, fake)).written, true);
+  store.updateRule({ id: worded.id, instruction: "Show money in kronor.", actor: "test", reason: "reworded" });
+  const blockNew = managedBlock(["Show money in kronor.", "First line.\nSecond line."]);
+  const v2 = store.createPendingKnowledgeVersion({ rule_id: worded.id, target: "project", project_id: project, previous_content: blockOld, new_content: blockNew, rule_ids: [worded.id, multi.id], actor: "test" });
+  assert.equal((await beats.executeVersionNow(v2.id, fake)).written, true);
+
+  // Undo the wording change: the old wording is back in Lovable.
+  const undo = store.createRestoreVersion(v2.id, "test") as { id: number };
+  assert.equal((await beats.executeVersionNow(undo.id, fake)).written, true);
+  assert.equal(fake.projectKnowledge[project], blockOld);
+  const stateOf = (id: number) => (db.prepare(`SELECT state FROM rules WHERE id = ?`).get(id) as { state: string }).state;
+  assert.notEqual(stateOf(worded.id), "rolled_back", "its earlier wording is in Lovable");
+  assert.equal(stateOf(multi.id), "active", "a multi-line rule that is present stays active");
+  store.disallowProject(project);
 });

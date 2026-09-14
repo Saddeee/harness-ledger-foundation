@@ -166,7 +166,7 @@ test("local-projects.tsx: a schedule holder line (running in the app / in the ex
 
 test("improvement.tsx: toasts read the write outcome (writeToastText), not a static 'next sync' message", () => {
   const code = codeOnly(readApp(DETAIL));
-  assert.match(code, /writeToastText\(result\.write, msg\)/);
+  assert.match(code, /toastWriteOutcome\(result\.write, msg\)/);
   assert.match(code, /const SAVED_LINE = "Added\.";/);
   assert.match(code, /const RETIRED_TOAST = "Retired\.";/);
   assert.match(code, /const READDED_TOAST = "Re-added\.";/);
@@ -183,14 +183,14 @@ test("improvement.tsx: 'Try again' on a stale or failed outcome re-runs executeV
 
 test("instructions.tsx: retire/readd/sync toasts read the write outcome and the sync result", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(code, /writeToastText\(data\.write, "Retired\."\)/);
-  assert.match(code, /writeToastText\(data\.write, "Re-added\."\)/);
+  assert.match(code, /toastWriteOutcome\(data\.write, "Retired\."\)/);
+  assert.match(code, /toastWriteOutcome\(data\.write, "Re-added\."\)/);
   assert.match(code, /syncResultText\(data\)/);
 });
 
 test("history.tsx: restore's toast reads the write outcome", () => {
   const code = codeOnly(readApp(HISTORY_PAGE));
-  assert.match(code, /writeToastText\(data\.write, "Restore staged\."\)/);
+  assert.match(code, /toastWriteOutcome\(data\.write, "Change undone\."\)/);
 });
 
 // ---- local-settings.tsx: the automatic-mode help text lost 'next sync' ----
@@ -207,6 +207,9 @@ test("lib/improvements-client.ts: WriteOutcome, writeToastText and syncResultTex
   const code = codeOnly(readApp(CLIENT));
   assert.match(code, /export type \{ WriteOutcome \}/);
   assert.match(code, /export function writeToastText/);
+  // A write that did not land is an error toast, never a green success.
+  assert.match(code, /export function toastWriteOutcome/);
+  assert.match(code, /if \(write && !write\.written\) toast\.error\(text\);/);
   assert.match(code, /export function syncResultText/);
   assert.match(code, /schedule_holder\?: ScheduleHolder/);
 });

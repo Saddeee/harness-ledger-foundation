@@ -26,6 +26,8 @@ function decodeHtmlEntities(s: string): string {
 
 const MESSAGE_USER_BLOCK =
   /<lov-tool-use\b[^>]*?name="user_messaging--message_user"[^>]*?data="((?:[^"\\]|\\.)*)"/g;
+const LOV_TOOL_USE_BLOCK = /<lov-tool-use\b(?:[^>"]|"(?:[^"\\]|\\.)*")*>[\s\S]*?<\/lov-tool-use>/g;
+const LOV_OTHER_TAG = /<\/?lov-[\w-]+\b(?:[^>"]|"(?:[^"\\]|\\.)*")*\/?>/g;
 
 /**
  * The human-visible part of a raw Lovable assistant `history_items.content`
@@ -49,5 +51,17 @@ export function humanVisibleText(raw: string): string {
     }
   }
   if (out.length > 0) return out.join("\n\n");
+  // Lovable's current replies have no message_user blocks: what the person
+  // saw is the plain text between and after the tool-use blocks. Quoted
+  // attribute values may contain ">" and escaped quotes, hence the pattern.
+  if (/<lov-[\w-]+\b/.test(raw)) {
+    return raw
+      .replace(LOV_TOOL_USE_BLOCK, "\n\n")
+      .replace(LOV_OTHER_TAG, "\n\n")
+      .split(/\n{2,}/)
+      .map((chunk) => chunk.trim())
+      .filter(Boolean)
+      .join("\n\n");
+  }
   return excerpt(raw, 600);
 }

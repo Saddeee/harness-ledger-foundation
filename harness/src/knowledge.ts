@@ -53,12 +53,26 @@ function countOccurrences(haystack: string, needle: string): number {
 // when it has none), or the global default outright for a workspace target.
 // Omitting it (nothing to enforce yet, e.g. a caller with no opinion) never
 // flags over_rules.
+/** What Lovable's MCP get_project_knowledge/get_workspace_knowledge return
+ * for Knowledge that is empty (the REST API returns ""). Taken at face value
+ * it was written back to Lovable as real text ahead of Harness's block. */
+export const LOVABLE_EMPTY_PLACEHOLDER = "(empty)";
+
+/** Knowledge text as Lovable really holds it: the MCP's "(empty)" placeholder
+ * reads as "". */
+export function realKnowledgeText(content: string): string {
+  return content.trim() === LOVABLE_EMPTY_PLACEHOLDER ? "" : content;
+}
+
 export function composeManagedKnowledge(
-  currentContent: string,
+  rawCurrentContent: string,
   rules: ManagedRule[],
   maxActiveRules?: number,
 ): Composed {
-  const managed_block = buildManagedBlock(rules);
+  // No rules left: Harness keeps no block at all (an empty heading would sit
+  // in every agent's context); adding a rule later creates it again.
+  const managed_block = rules.length > 0 ? buildManagedBlock(rules) : "";
+  const currentContent = realKnowledgeText(rawCurrentContent);
   const starts = countOccurrences(currentContent, HARNESS_START);
   const ends = countOccurrences(currentContent, HARNESS_END);
 
@@ -73,27 +87,47 @@ export function composeManagedKnowledge(
 
   if (starts === 0) {
     user_text = currentContent;
-    final_content = currentContent === "" ? managed_block : `${currentContent}\n\n${managed_block}`;
+    final_content =
+      managed_block === ""
+        ? currentContent
+        : currentContent === ""
+          ? managed_block
+          : `${currentContent}\n\n${managed_block}`;
   } else {
     const startIdx = currentContent.indexOf(HARNESS_START);
     const endIdx = currentContent.indexOf(HARNESS_END);
     if (endIdx < startIdx)
       throw new MalformedMarkersError("end marker appears before start marker");
-    const before = currentContent.slice(0, startIdx);
+    let before = currentContent.slice(0, startIdx);
     const after = currentContent.slice(endIdx + HARNESS_END.length);
+    // Residue of the placeholder bug: "(empty)" written ahead of the block
+    // is not the user's text; drop it rather than keep it forever.
+    if (after.trim() === "" && before.trim() === LOVABLE_EMPTY_PLACEHOLDER) before = "";
     user_text = before + after;
+    if (managed_block === "") {
+      // Drop the "\n\n" Harness put between the user's text and its block.
+      if (before.endsWith("\n\n")) before = before.slice(0, -2);
+      else if (before === "" && after.startsWith("\n\n")) {
+        final_content = after.slice(2);
+        return finish(final_content);
+      }
+    }
     final_content = before + managed_block + after;
   }
 
-  return {
-    user_text,
-    managed_block,
-    final_content,
-    char_count: final_content.length,
-    over_cap: final_content.length > Number(getSetting("knowledge_char_cap")),
-    active_rules_count: rules.length,
-    over_rules: maxActiveRules !== undefined && rules.length > maxActiveRules,
-  };
+  return finish(final_content);
+
+  function finish(content: string): Composed {
+    return {
+      user_text,
+      managed_block,
+      final_content: content,
+      char_count: content.length,
+      over_cap: content.length > Number(getSetting("knowledge_char_cap")),
+      active_rules_count: rules.length,
+      over_rules: maxActiveRules !== undefined && rules.length > maxActiveRules,
+    };
+  }
 }
 
 // ---- Round 6 Task 2 ----

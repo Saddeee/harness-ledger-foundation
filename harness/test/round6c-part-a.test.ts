@@ -123,12 +123,13 @@ test("local-settings.tsx: switching a role's provider to Claude Code prefills th
   );
   assert.match(code, /if \(nextProvider === "claude_code"\) return CLAUDE_CODE_DEFAULT_MODEL;/);
   assert.match(code, /CLAUDE_CODE_ALIASES\.includes\(currentModel\) \? "" : currentModel;/);
-  // Wired into both the primary (rule_writer) provider select and every
-  // per-role Advanced provider select -- not just computed and unused.
+  // Wired into the "Key for" select (which moves the analysis provider with
+  // it), the primary (rule_writer) provider select and every per-role
+  // Advanced provider select -- not just computed and unused.
   assert.equal(
     (code.match(/model: nextModelOnProviderChange\(/g) ?? []).length,
-    2,
-    "primary + per-role provider selects both call it",
+    3,
+    "key-for + primary + per-role provider selects all call it",
   );
   // The hint renders next to both the primary and the per-role model input.
   assert.equal((code.match(/\{CLAUDE_CODE_MODEL_HINT\}/g) ?? []).length, 2);

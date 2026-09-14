@@ -42,14 +42,20 @@ export type RestBuildStatus =
   "completed" | "stopped" | "awaiting_input" | "timeout" | "error" | "running" | (string & {});
 
 export interface LovableRest {
-  getProject(id: string): Promise<{ id: string; name: string; workspace_id: string }>;
+  getProject(id: string): Promise<{
+    id: string;
+    name: string;
+    workspace_id: string;
+    latest_commit_sha?: string;
+    latest_screenshot_url?: string;
+  }>;
   listMessages(
     id: string,
     opts?: { limit?: number; cursor?: string },
   ): Promise<{ messages: RestMessage[]; next_cursor?: string | null }>;
   listEdits(
     id: string,
-    opts?: { limit?: number },
+    opts?: { limit?: number; before?: string },
   ): Promise<{
     edits: { id: string; commit_sha: string; commit_message: string; created_at: string }[];
     has_more: boolean;
@@ -314,16 +320,33 @@ export function createLovableRest(deps?: {
   // Response: components["schemas"]["V1ProjectResponse"] (line 4413) --
   // `id` and `workspace_id` are required, `name` (the slug) is optional so
   // falls back to display_name, then "".
-  async function getProject(
-    id: string,
-  ): Promise<{ id: string; name: string; workspace_id: string }> {
+  async function getProject(id: string): Promise<{
+    id: string;
+    name: string;
+    workspace_id: string;
+    latest_commit_sha?: string;
+    latest_screenshot_url?: string;
+  }> {
     const raw = (await request("GET", `/v1/projects/${enc(id)}`)) as {
       id: string;
       name?: string;
       display_name?: string;
       workspace_id: string;
+      latest_commit_sha?: string;
+      latest_screenshot_url?: string;
     };
-    return { id: raw.id, name: raw.name ?? raw.display_name ?? "", workspace_id: raw.workspace_id };
+    const out: {
+      id: string;
+      name: string;
+      workspace_id: string;
+      latest_commit_sha?: string;
+      latest_screenshot_url?: string;
+    } = { id: raw.id, name: raw.name ?? raw.display_name ?? "", workspace_id: raw.workspace_id };
+    // Round 7: the screenshot the judging screen shows, and the commit it
+    // must belong to (its URL carries the first 8 characters of that sha).
+    if (raw.latest_commit_sha !== undefined) out.latest_commit_sha = raw.latest_commit_sha;
+    if (raw.latest_screenshot_url !== undefined) out.latest_screenshot_url = raw.latest_screenshot_url;
+    return out;
   }
 
   return {
@@ -354,13 +377,13 @@ export function createLovableRest(deps?: {
       return { messages, next_cursor };
     },
 
-    // GET /v1/projects/{project_id}/edits?limit= -- operation
+    // GET /v1/projects/{project_id}/edits?limit=&before= -- operation
     // "get-v1-projects-project_id-edits", index.d.ts:7450. Response:
     // V1GetEditsOutputBody (line 3999) of V1EditSummary (line 3957);
     // commit_sha/commit_message are optional there and default to "".
     async listEdits(id, opts) {
       const raw = (await request("GET", `/v1/projects/${enc(id)}/edits`, {
-        query: { limit: opts?.limit?.toString() },
+        query: { limit: opts?.limit?.toString(), before: opts?.before },
       })) as {
         has_more?: boolean;
         edits?:

@@ -103,7 +103,7 @@ test("composer flags over_rules when maxActiveRules is exceeded, and always repo
 // ---- migration ----
 
 test("migrations through v7 applied once; earlier tables and rows intact", () => {
-  assert.equal(schemaVersion(), 13);
+  assert.equal(schemaVersion(), 16);
   const names = new Set(
     (
       db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as { name: string }[]
@@ -543,4 +543,44 @@ test("no Lovable import and no network call in the knowledge path", () => {
       `${file} must not write Knowledge itself`,
     );
   }
+});
+
+test("Lovable's MCP '(empty)' placeholder is never treated as Knowledge text", async () => {
+  // The first write to an empty project put "(empty)" into its Knowledge.
+  const { knowledgeContent } = await import("../src/executor/lovable-mcp.js");
+  assert.equal(knowledgeContent({ content: "(empty)" }), "");
+  assert.equal(knowledgeContent("(empty)"), "");
+  assert.equal(knowledgeContent({ content: "Real text" }), "Real text");
+
+  const fresh = composeManagedKnowledge("(empty)", [{ id: 1, instruction: "Use kr." }]);
+  assert.equal(fresh.final_content, fresh.managed_block);
+  assert.equal(fresh.user_text, "");
+
+  const residue = composeManagedKnowledge(`(empty)\n\n${HARNESS_START}\nold\n${HARNESS_END}`, [
+    { id: 1, instruction: "Use kr." },
+  ]);
+  assert.equal(residue.final_content, residue.managed_block, "residue from the old bug is dropped");
+
+  const real = composeManagedKnowledge(`My notes\n\n${HARNESS_START}\nold\n${HARNESS_END}`, [
+    { id: 1, instruction: "Use kr." },
+  ]);
+  assert.ok(real.final_content.startsWith("My notes\n\n"), "real user text is untouched");
+});
+
+test("removing the last rule removes Harness's whole block (no empty heading left behind); adding again brings it back", () => {
+  const block = `${HARNESS_START}\n${knowledge.MANAGED_HEADING}\n- Use kr.\n${HARNESS_END}`;
+  // Only Harness's block: removing the last rule leaves nothing.
+  const onlyBlock = composeManagedKnowledge(block, []);
+  assert.equal(onlyBlock.final_content, "");
+  assert.equal(onlyBlock.managed_block, "");
+  // The user's own text keeps every byte; the separator Harness added goes.
+  const withText = composeManagedKnowledge(`My notes.\n\n${block}`, []);
+  assert.equal(withText.final_content, "My notes.");
+  const textAfter = composeManagedKnowledge(`Before.\n\n${block}\n\nAfter.`, []);
+  assert.equal(textAfter.final_content, "Before.\n\nAfter.");
+  // No block and no rules: unchanged.
+  assert.equal(composeManagedKnowledge("Just mine.", []).final_content, "Just mine.");
+  // Adding again creates the block.
+  const readded = composeManagedKnowledge("My notes.", [{ id: 1, instruction: "Use kr." }]);
+  assert.equal(readded.final_content, `My notes.\n\n${block}`);
 });

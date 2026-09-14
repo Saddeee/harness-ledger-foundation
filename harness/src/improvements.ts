@@ -49,7 +49,7 @@ export type KnowledgePreview = {
 // correction_candidate -- its id space is negative (id = -proposal_id) so it
 // never collides with a real improvement's id; the client's search params
 // and action bodies pass it through unchanged (see improvementAction below).
-export type RetireReason = "hurt" | "contradiction" | "unused";
+export type RetireReason = "hurt" | "contradiction" | "unused" | "changed_mind";
 export type RetireInfo = {
   proposal_id: number;
   rule_id: number;
@@ -328,6 +328,20 @@ function firstSentence(text: string | null | undefined): string {
   return (m ? m[0] : t).trim();
 }
 
+const TITLE_MAX_CHARS = 72;
+
+/** A card heading for an instruction: its first sentence, clipped at a word
+ * boundary when the instruction is one long sentence -- otherwise the heading
+ * and the quoted instruction under it repeat the same text word for word.
+ * Exported for its unit test. */
+export function titleFor(text: string | null | undefined): string {
+  const sentence = firstSentence(text);
+  if (sentence.length <= TITLE_MAX_CHARS || sentence !== (text ?? "").trim()) return sentence;
+  const cut = sentence.slice(0, TITLE_MAX_CHARS);
+  const atWord = cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)).replace(/[\s,;:—–-]+$/, "");
+  return `${atWord}…`;
+}
+
 // "rolled_back" belongs here too: the user's decision to accept this
 // improvement still stands after a restore undoes its Knowledge write --
 // only the write itself was reverted, not the decision. Without it, a
@@ -444,6 +458,45 @@ function testBudgetRefusal(usedThisMonth: number, budget: number): string {
 // on exactly the same list, in exactly the same fallback case, every time.
 export type CorrectionsSource = "classified" | "follow_ups";
 
+/** The corrections a test of this suggestion is judged on. Round 7: the
+ * suggestion's own corrections first (one suggestion per correction -- a
+ * test of the kronor rule must not ask about the fonts correction), then the
+ * whole episode's, then its follow-up messages. */
+function correctionsForSuggestion(
+  candidateId: number,
+  episodeId: number,
+): { texts: string[]; source: CorrectionsSource } {
+  const own = store.candidateCorrections(candidateId);
+  if (own.length > 0) return { texts: own, source: "classified" };
+  return correctionsForEpisode(episodeId);
+}
+
+/** A run's corrections as they were judged (saved at judge time), else as
+ * they would be judged now. For a run judged before those were saved, the
+ * episode-wide list is what its verdicts line up with. */
+function correctionsForRun(run: store.ExperimentRunRow): { texts: string[]; source: CorrectionsSource } {
+  if (run.judged_corrections_json) {
+    try {
+      const saved = JSON.parse(run.judged_corrections_json) as { texts: string[]; source: CorrectionsSource };
+      if (Array.isArray(saved.texts)) return saved;
+    } catch {
+      // fall through
+    }
+  }
+  const current = correctionsForSuggestion(run.correction_candidate_id, run.task_episode_id);
+  if (run.verdicts_json) {
+    try {
+      const verdicts = JSON.parse(run.verdicts_json) as unknown[];
+      if (Array.isArray(verdicts) && verdicts.length !== current.texts.length) {
+        return correctionsForEpisode(run.task_episode_id);
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return current;
+}
+
 function correctionsForEpisode(episodeId: number): { texts: string[]; source: CorrectionsSource } {
   const classified = store.episodeCorrections(episodeId);
   if (classified.length > 0) return { texts: classified, source: "classified" };
@@ -487,7 +540,9 @@ function computeTestInfo(
   }
 
   const latestRun = store.listExperimentRuns({ rule_id: rule.id })[0] ?? null;
-  const corrections = correctionsForEpisode(c.task_episode_id).texts.length;
+  const corrections = latestRun
+    ? correctionsForRun(latestRun).texts.length
+    : correctionsForSuggestion(c.id, c.task_episode_id).texts.length;
 
   return {
     available: unavailable_reason === null,
@@ -734,10 +789,10 @@ function buildImprovement(
     }));
 
   const title = rule
-    ? firstSentence(rule.instruction)
+    ? titleFor(rule.instruction)
     : learning
-      ? firstSentence(learning.desired_behavior)
-      : firstSentence(c.summary);
+      ? titleFor(learning.desired_behavior)
+      : titleFor(c.summary);
 
   const health = rule && ruleState === "active" ? computeHealth(rule.id, versions) : null;
 
@@ -850,7 +905,9 @@ function buildRetireItem(
         : projectId;
 
   const evidenceRows =
-    proposal.reason === "hurt" ? store.listHistoryItemsByIds(proposal.evidence) : [];
+    proposal.reason === "hurt" || proposal.reason === "changed_mind"
+      ? store.listHistoryItemsByIds(proposal.evidence)
+      : [];
 
   const contradictsInstruction =
     proposal.reason === "contradiction" && proposal.evidence[0] != null
@@ -1061,6 +1118,7 @@ function stagePendingWrite(
   rule: RuleRow,
   target: "project" | "workspace",
   reason?: string,
+  actor: string = ACTOR,
 ) {
   // Round 6 Task 5: a demo rule's retire/re-add/restore is accepted but
   // never stages a write (spec §5) -- there is no real decision to compose.
@@ -1100,8 +1158,12 @@ function stagePendingWrite(
     previous_content: snapshot.content,
     new_content: preview.final_content,
     rule_ids: ruleIds,
-    actor: ACTOR,
-    reason: reason ?? `user chose "${preview.target_label}" in the Inbox`,
+    actor,
+    reason:
+      reason ??
+      (actor === ACTOR
+        ? `user chose "${preview.target_label}" in the Inbox`
+        : `accepted automatically for "${preview.target_label}"`),
   });
 }
 
@@ -1402,6 +1464,8 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
               refreshedForPreview,
               { ...rule, scope: destination, state: "approved" },
               destination,
+              undefined,
+              actor,
             );
         }
       }
@@ -1564,6 +1628,10 @@ export type TimelineNode = {
   improvement_id: number | null;
   version_id: number | null;
   restorable: boolean;
+  // Round 7: true on the newest written version -- its button reads "Undo
+  // this change"; older ones read "Go back to before this change" (writing
+  // back an older version's earlier text undoes every later change too).
+  latest_version?: boolean;
   // Round 6 fix wave item 3: only ever set on a `test` node -- the run this
   // node is about, so the History page can link straight to its judging
   // screen (/judge?run=) instead of leaving a judged/failed test's own
@@ -1617,7 +1685,7 @@ function versionLabel(v: {
       return "Cancelled";
     case "written":
       return v.restored_from_version_id != null
-        ? `Restored to version #${v.restored_from_version_id}`
+        ? `Went back to before version #${v.restored_from_version_id}`
         : "Written to Lovable";
   }
 }
@@ -1680,7 +1748,7 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
         v.target === target &&
         (target === "project" ? v.project_id === targetId : v.workspace_id === targetId),
     )
-    .sort((a, b) => timelineAtMs(a.created_at) - timelineAtMs(b.created_at));
+    .sort((a, b) => timelineAtMs(a.created_at) - timelineAtMs(b.created_at) || a.id - b.id);
 
   const newestWrittenId = versionsForTarget
     .filter((v) => v.status === "written")
@@ -1718,9 +1786,14 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
       restored_from: v.restored_from_version_id,
       improvement_id: null,
       version_id: v.id,
-      restorable: v.status === "written" && v.id !== newestWrittenId,
+      restorable: v.status === "written",
+      latest_version: v.id === newestWrittenId,
     });
-    prevVersionContent = v.new_content;
+    // Only a written version changes what Lovable holds: a stale, failed or
+    // cancelled attempt must not become the baseline the next node's
+    // "+N −M lines" is measured against (a refused undo made the real undo
+    // after it read "+0 −0").
+    if (v.status === "written") prevVersionContent = v.new_content;
   }
 
   // ---- external_change nodes: knowledge_snapshots for this target, oldest
@@ -1928,7 +2001,9 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
   // time (recordSkillSnapshot skips an unchanged sha), so every row after
   // the first genuinely changed ----
   if (target === "workspace") {
-    const names = (store.latestSkillSnapshots(targetId) as { name: string }[]).map((s) => s.name);
+    const names = (
+      store.latestSkillSnapshots(targetId, { includeDeleted: true }) as { name: string }[]
+    ).map((s) => s.name);
     for (const name of names) {
       const snaps = store.listSkillSnapshots(targetId, name);
       let prevContent: string | null = null;
@@ -1944,7 +2019,12 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
           id: `skill:${s.id}`,
           kind: "skill",
           at: s.fetched_at,
-          label: i === 0 ? `Skill ${name} first read` : `Skill ${name} changed`,
+          label:
+            s.deleted === 1
+              ? `Skill ${name} deleted`
+              : i === 0 || snaps[i - 1]!.deleted === 1
+                ? `Skill ${name} first read`
+                : `Skill ${name} changed`,
           actor: "lovable",
           summary,
           content: s.content,
@@ -1960,7 +2040,12 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
     }
   }
 
-  nodes.sort((a, b) => timelineAtMs(b.at) - timelineAtMs(a.at));
+  // Newest first; versions written in the same second keep their real order.
+  nodes.sort(
+    (a, b) =>
+      timelineAtMs(b.at) - timelineAtMs(a.at) ||
+      (a.version_id != null && b.version_id != null ? b.version_id - a.version_id : 0),
+  );
   return nodes.slice(0, TIMELINE_MAX_NODES);
 }
 
@@ -2122,7 +2207,10 @@ function computeUnsure(c: CorrectionRow, rule: RuleRow | null): string | null {
   if (!isAnalysisCreated(rule)) return null;
 
   const threshold = Number(store.getSetting("decision_auto_confidence"));
-  if (c.confidence != null && c.confidence < threshold) {
+  if (c.confidence == null) {
+    return "Harness wasn't sure: the analysis gave no confidence for this rule.";
+  }
+  if (c.confidence < threshold) {
     return `Harness wasn't sure: confidence ${c.confidence.toFixed(2)} is below your automatic threshold (${threshold.toFixed(2)}).`;
   }
 
@@ -2446,7 +2534,8 @@ function judgeRun(runId: number, verdicts: ("yes" | "no" | "unclear")[]): Improv
   if (!run) throw new Error(`experiment run ${runId} not found`);
   if (run.status !== "judging") throw new Error("This test is not waiting for a verdict.");
 
-  const correctionsCount = correctionsForEpisode(run.task_episode_id).texts.length;
+  const judgedCorrections = correctionsForRun(run);
+  const correctionsCount = judgedCorrections.texts.length;
   if (verdicts.length !== correctionsCount) {
     throw new Error(
       `expected ${correctionsCount} verdict${correctionsCount === 1 ? "" : "s"} (one per correction), got ${verdicts.length}`,
@@ -2458,6 +2547,7 @@ function judgeRun(runId: number, verdicts: ("yes" | "no" | "unclear")[]): Improv
 
   store.updateExperimentRun(runId, {
     verdicts_json: JSON.stringify(verdicts),
+    judged_corrections_json: JSON.stringify(judgedCorrections),
     score,
     status: "judged",
     judged_at: new Date().toISOString(),
@@ -2513,7 +2603,40 @@ export type ExperimentRunView = {
   // without a second fetch.
   feedback: string | null;
   feedback_at: string | null;
+  // Round 7: both builds as real Lovable projects you can open.
+  project_id: string;
+  project_name: string | null;
+  original_summary: string | null;
+  show_original: boolean;
+  copy: TestBuildCopy | null;
+  original_copy: TestBuildCopy | null;
+  original_copy_error: string | null;
 };
+
+/** One test build as a Lovable project: where to open it, its screenshot,
+ * and whether it still exists. */
+export type TestBuildCopy = {
+  project_id: string;
+  editor_url: string;
+  preview_url: string;
+  screenshot_url: string | null;
+  deleted: boolean;
+};
+
+function buildCopy(
+  projectId: string | null,
+  screenshotUrl: string | null,
+  deleted: number,
+): TestBuildCopy | null {
+  if (!projectId) return null;
+  return {
+    project_id: projectId,
+    editor_url: `https://lovable.dev/projects/${projectId}`,
+    preview_url: `https://id-preview--${projectId}.lovable.app`,
+    screenshot_url: screenshotUrl,
+    deleted: deleted === 1,
+  };
+}
 
 function parseDiffJson(json: string | null): { lines: string[]; truncated: boolean } | null {
   if (!json) return null;
@@ -2536,7 +2659,7 @@ export function buildExperimentRunView(runId: number): ExperimentRunView | null 
 
   const { request, reply } = store.episodeTextForJudge(run.task_episode_id);
   const ruleDetail = store.getRule(run.rule_id) as { rule: { instruction: string } } | null;
-  const corrections = correctionsForEpisode(run.task_episode_id);
+  const corrections = correctionsForRun(run);
 
   let verdicts: ("yes" | "no" | "unclear")[] | null = null;
   if (run.verdicts_json) {
@@ -2572,6 +2695,17 @@ export function buildExperimentRunView(runId: number): ExperimentRunView | null 
     verdicts,
     feedback: run.feedback,
     feedback_at: run.feedback_at,
+    project_id: run.source_project_id,
+    project_name: store.getProjectMeta(run.source_project_id)?.name ?? null,
+    original_summary: run.original_summary,
+    show_original: run.show_original === 1,
+    copy: buildCopy(run.copy_project_id, run.copy_screenshot_url, run.copy_deleted),
+    original_copy: buildCopy(
+      run.original_copy_project_id,
+      run.original_screenshot_url,
+      run.original_copy_deleted,
+    ),
+    original_copy_error: run.original_copy_error,
   };
 }
 // ---- end Round 6 Task 6b ----
@@ -2627,6 +2761,10 @@ export type ExperimentRunSummary = {
   copy_deleted: number;
   feedback: string | null;
   feedback_at: string | null;
+  // Round 7: which project the test is for, and its copies.
+  project_name: string | null;
+  copy: TestBuildCopy | null;
+  original_copy: TestBuildCopy | null;
 };
 
 /** Every paired-test run ever started, any status, newest first --
@@ -2649,10 +2787,17 @@ export function listTestRunSummaries(): ExperimentRunSummary[] {
     judged_at: run.judged_at,
     cost_credits: run.cost_credits,
     score: run.score,
-    corrections: correctionsForEpisode(run.task_episode_id).texts.length,
+    corrections: correctionsForRun(run).texts.length,
     copy_deleted: run.copy_deleted,
     feedback: run.feedback,
     feedback_at: run.feedback_at,
+    project_name: run.project_id ? (store.getProjectMeta(run.project_id)?.name ?? null) : null,
+    copy: buildCopy(run.copy_project_id, run.copy_screenshot_url, run.copy_deleted),
+    original_copy: buildCopy(
+      run.original_copy_project_id,
+      run.original_screenshot_url,
+      run.original_copy_deleted,
+    ),
   }));
 }
 // ---- end Round 6c ----

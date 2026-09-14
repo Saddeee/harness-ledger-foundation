@@ -10,11 +10,21 @@
  */
 import { z } from "zod";
 import { getImprovement, type Improvement } from "../improvements.js";
-import { startExperiment } from "./experiments.js";
+import { deleteTestCopy, startExperiment } from "./experiments.js";
 import { createLovableRest } from "./lovable-rest.js";
 import { kickExperimentRunner } from "./experiments-queue.js";
 
-const testActionInput = z.object({ action: z.literal("test"), id: z.number().int() });
+const testActionInput = z.object({
+  action: z.literal("test"),
+  id: z.number().int(),
+  // Round 7: also make a free copy of the original build to look at.
+  show_original: z.boolean().optional(),
+});
+const deleteCopyInput = z.object({
+  action: z.literal("delete_copy"),
+  run_id: z.number().int(),
+  which: z.enum(["with_rule", "original"]),
+});
 
 /** True for any input shaped like a `test` action -- checked BEFORE the
  * input is otherwise validated (testActionInput.parse, inside testAction,
@@ -41,10 +51,10 @@ export function isTestAction(input: unknown): boolean {
  * `queued` row.
  */
 export async function testAction(input: unknown): Promise<Improvement> {
-  const { id } = testActionInput.parse(input);
+  const { id, show_original } = testActionInput.parse(input);
 
   const rest = createLovableRest();
-  const result = await startExperiment(id, { rest });
+  const result = await startExperiment(id, { rest }, { showOriginal: show_original === true });
   if ("refused" in result) {
     throw new Error(result.refused);
   }
@@ -56,5 +66,24 @@ export async function testAction(input: unknown): Promise<Improvement> {
 
   const improvement = getImprovement(id, { connected: true });
   if (!improvement) throw new Error(`improvement ${id} not found after starting a test`);
+  return improvement;
+}
+
+/** True for a `delete_copy` action (Round 7: "Delete copy" on a test). */
+export function isDeleteCopyAction(input: unknown): boolean {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    (input as Record<string, unknown>)["action"] === "delete_copy"
+  );
+}
+
+/** Deletes one of a test's own copies in Lovable (never the source project;
+ * see deleteTestCopy) and returns the refreshed suggestion. */
+export async function deleteCopyAction(input: unknown): Promise<Improvement> {
+  const { run_id, which } = deleteCopyInput.parse(input);
+  const run = await deleteTestCopy(run_id, which, createLovableRest());
+  const improvement = getImprovement(run.correction_candidate_id, { connected: true });
+  if (!improvement) throw new Error(`improvement ${run.correction_candidate_id} not found`);
   return improvement;
 }

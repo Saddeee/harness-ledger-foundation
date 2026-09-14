@@ -1185,11 +1185,13 @@ test("buildTimeline: a target with 3 versions (one a restore) + 1 external chang
   assert.deepEqual(nVerdict!.rule_ids, [a.rule.id]);
   assert.equal(nVerdict!.diff, null);
 
-  assert.equal(nV3!.label, `Restored to version #${v1.id}`);
+  assert.equal(nV3!.label, `Went back to before version #${v1.id}`);
   assert.equal(nV3!.content, v3.new_content);
   assert.equal(nV3!.version_id, v3.id);
   assert.equal(nV3!.restored_from, v1.id);
-  assert.equal(nV3!.restorable, false, "the newest written version is never restorable");
+  // Round 7: the newest change can be undone ("Undo this change").
+  assert.equal(nV3!.restorable, true, "the newest written version can be undone");
+  assert.equal(nV3!.latest_version, true);
   assert.deepEqual(nV3!.diff, expectedDiff(V2_CONTENT, v3.new_content));
 
   assert.equal(nExternal!.label, "Changed in Lovable (outside Harness)");
@@ -1202,6 +1204,7 @@ test("buildTimeline: a target with 3 versions (one a restore) + 1 external chang
   assert.equal(nV2!.version_id, v2.id);
   assert.equal(nV2!.restored_from, null);
   assert.equal(nV2!.restorable, true, "an older written version is restorable");
+  assert.equal(nV2!.latest_version, false, "older versions read 'Go back to before this change'");
   assert.deepEqual(nV2!.diff, expectedDiff(V1_CONTENT, V2_CONTENT));
 
   assert.equal(nV1!.label, "Written to Lovable");
@@ -1733,7 +1736,7 @@ function mkMinedCandidate(input: {
   summary: string;
   instruction: string;
   scope: "project" | "workspace";
-  confidence: number;
+  confidence: number | null;
   structuredOutput?: { duplicate_of_rule_id: number | null; contradicts_rule_id: number | null };
 }) {
   const msg = store.upsertHistoryItem({
@@ -3835,3 +3838,49 @@ test("listTestRunSummaries: every run, newest first, with the rule's own text, t
   assert.equal(olderSummary.feedback_at, null);
 });
 // ---- end Round 6c part B ----
+
+test("titleFor: a long single-sentence instruction gets a clipped heading, so the card doesn't repeat it word for word", () => {
+  const one =
+    'In this app, display all monetary amounts in Swedish kronor as a whole number followed by "kr" (e.g., "125 kr") — never dollars or decimals — for every feature.';
+  assert.equal(imp.titleFor(one), "In this app, display all monetary amounts in Swedish kronor as a whole…");
+  assert.equal(
+    imp.titleFor("Do not enable recurring background work by default. Prefer user-triggered execution."),
+    "Do not enable recurring background work by default.",
+  );
+  assert.equal(imp.titleFor("Use kr for money."), "Use kr for money.");
+});
+
+test("unsure: a proposal with no confidence says so, instead of a made-up 0.00", () => {
+  // Live: the Rule writer (Claude Code) left confidence out; it was stored as
+  // 0 and the Inbox read "confidence 0.00 is below your automatic threshold".
+  store.setSettings({ decision_mode: "automatic", decision_auto_confidence: "0.8" });
+  const { cc } = mkMinedCandidate({
+    project: UNSURE_PROJECT,
+    externalIdPrefix: "unsure-noconf",
+    content: "reset should reset everything",
+    summary: "reset everything",
+    instruction: "Make Reset restore every input to its default.",
+    scope: "project",
+    confidence: null,
+  });
+  assert.equal(
+    imp.getImprovement(cc.id)!.unsure,
+    "Harness wasn't sure: the analysis gave no confidence for this rule.",
+  );
+  store.setSettings({ decision_mode: "ask" });
+});
+
+test("buildTimeline: a stale or failed attempt is not the baseline for the next version's '+N −M lines'", () => {
+  const P = "timeline-stale-baseline";
+  store.allowProject(P, "Stale baseline");
+  const mk = (prev: string, next: string) =>
+    store.createPendingKnowledgeVersion({ rule_id: null, target: "project", project_id: P, previous_content: prev, new_content: next, rule_ids: [], actor: "test" }) as { id: number; new_content: string };
+  const v1 = mk("", "one\ntwo");
+  store.recordKnowledgeReadback(v1.id, v1.new_content);
+  const refused = mk("one\ntwo", "one\ntwo\nthree");
+  store.markKnowledgeWriteStale(refused.id, "changed in Lovable");
+  const v3 = mk("one\ntwo", "one\ntwo\nthree");
+  store.recordKnowledgeReadback(v3.id, v3.new_content);
+  const node = imp.buildTimeline("project", P).find((n) => n.version_id === v3.id)!;
+  assert.equal(node.summary, "+1 −0 lines");
+});

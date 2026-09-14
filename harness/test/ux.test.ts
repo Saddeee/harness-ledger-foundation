@@ -267,7 +267,8 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
     detail.indexOf("function AddConfirm"),
     detail.indexOf("function SkipConfirm"),
   );
-  assert.match(confirm, /title=\{`Add to \$\{targetLabel\}\?`\}/);
+  // Round 7: with "Test it first" picked the dialog speaks about the test.
+  assert.match(confirm, /title=\{wantsTest \? TEST_THIS_RULE_TITLE : `Add to \$\{targetLabel\}\?`\}/);
   assert.match(confirm, /Your existing Knowledge \(unchanged\)/);
   assert.match(confirm, /\{preview\.managed_block\}/);
   assert.match(
@@ -285,7 +286,7 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
     detail,
     /\[\s*"You can remove it from Knowledge or restore an earlier version from History at any time\.",?\s*\]/,
   );
-  assert.match(confirm, /consequences=\{preview \? PREVIEW_CONSEQUENCES : \[\]\}/);
+  assert.match(confirm, /consequences=\{\s*wantsTest && item\.test \? testConfirmLines\(item\.test\) : preview \? PREVIEW_CONSEQUENCES : \[\]\s*\}/);
   // no snapshot yet -> save the choice, say so, and promise the read-back
   assert.match(
     detail,
@@ -296,7 +297,7 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   // testing" is gone -- the test choice now writes immediately too.
   assert.match(
     confirm,
-    /confirmLabel=\{wantsTest \? "Add and test" : preview \? "Add" : "Save choice"\}/,
+    /confirmLabel=\{wantsTest \? START_TEST_LABEL : preview \? "Add" : "Save choice"\}/,
   );
   // over the cap -> the confirm button is disabled and the reason is shown
   assert.match(
@@ -305,18 +306,15 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   );
   // ... and so is an unmade choice, or the project's over its rule cap
   // (Round 3 §5: over_rules mirrors over_cap)
-  assert.match(confirm, /confirmDisabled=\{overCap \|\| overRules \|\| choice == null\}/);
+  assert.match(confirm, /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/);
   assert.match(confirm, /\{overCap \? \(/);
   assert.match(confirm, /\{overRules \? \(/);
   assert.match(detail, /Retire one on the Instructions page first\./);
-  // the confirmation posts accept, then (only when testing was chosen, and
-  // only once accept itself succeeded) a `test` action for the same id --
-  // Round 6 Task 6b / spec §6, replacing the old test_first staging.
+  // the confirmation posts accept for "Add it now"; Round 7: "Test it
+  // first" posts only a `test` action -- nothing is added until the owner
+  // has compared both builds.
   assert.match(confirm, /action: "accept",\s*id: item\.id,\s*destination\s*\}/);
-  assert.match(
-    confirm,
-    /if \(accepted && wantsTest\) await run\(\{ action: "test", id: item\.id \}/,
-  );
+  assert.match(confirm, /if \(wantsTest\) \{\s*await run\(\s*\{ action: "test"/);
   // afterwards: a toast says where it went; the card re-renders as decided
   // -- Round 6 Task 2: the real toast text now comes from the write outcome
   // (see writeToastText/useRun), this constant is only the defensive

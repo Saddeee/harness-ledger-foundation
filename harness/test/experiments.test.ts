@@ -42,6 +42,12 @@ store.upsertProject({
 
 const CONNECTED = { connected: () => true };
 
+// Round 7: copies are kept by default now (they are real builds you can
+// open and continue from). The Round 6 tests below were written for
+// automatic deletion, so this file starts from that setting and the Round 7
+// tests set "true" explicitly.
+store.setSettings({ keep_test_copies: "false" });
+
 function noopSleep(): Promise<void> {
   return Promise.resolve();
 }
@@ -1354,4 +1360,194 @@ test("runExperiment: calls ensureFreshToken exactly once, before the first Lovab
   } finally {
     await fake.close();
   }
+});
+
+test("knowledgeBaseAtOrBefore: compares real times, not strings -- a same-day snapshot taken after the request is not 'before' it", async () => {
+  // Snapshots carry SQLite's "YYYY-MM-DD HH:MM:SS"; episodes carry ISO
+  // "YYYY-MM-DDTHH:MM:SSZ". As strings, " " < "T", so every same-day
+  // snapshot counted as before the request.
+  const { knowledgeBaseAtOrBefore } = await import("../src/executor/experiments.js");
+  const snapshots = [
+    { content: "before", fetched_at: "2026-09-13 18:20:00" },
+    { content: "after", fetched_at: "2026-09-13 18:33:05" },
+  ];
+  assert.equal(knowledgeBaseAtOrBefore(snapshots, "2026-09-13T18:29:36Z"), "before");
+  assert.equal(knowledgeBaseAtOrBefore(snapshots, "2026-09-13T18:40:00Z"), "after");
+  assert.equal(
+    knowledgeBaseAtOrBefore([{ content: "only later", fetched_at: "2026-09-13 18:33:05" }], "2026-09-13T18:29:36Z"),
+    "only later",
+    "falls back to the newest snapshot when none precedes the request",
+  );
+});
+
+test("edits since the request: pages Lovable's edits 50 at a time with `before`, as the real API requires", async () => {
+  // Live run 3 recorded null (shown as "0 edits have landed since") because
+  // the real /edits endpoint answers 422 for limit > 50.
+  const seed = seedCandidate(); // episode started 2026-09-01 10:00:00
+  const copyId = "prj_copy_editspaging";
+  // Earlier tests in this file spend the fake month's credit budget.
+  db.prepare(`DELETE FROM credit_ledger`).run();
+  const newest = Array.from({ length: 50 }, (_, i) => ({
+    id: `n${i}`, commit_sha: `s${i}`, commit_message: "m",
+    created_at: new Date(Date.UTC(2026, 8, 10, 0, 0, i)).toISOString(),
+  }));
+  const older = [
+    { id: "o1", commit_sha: "o1", commit_message: "m", created_at: "2026-09-02T00:00:00Z" },
+    { id: "o2", commit_sha: "o2", commit_message: "m", created_at: "2026-08-30T00:00:00Z" },
+  ];
+  const seenQueries: Record<string, string>[] = [];
+  const fake = await startFakeLovable({
+    ...happyPathScript(copyId),
+    listEdits: (req) => {
+      seenQueries.push(req.query);
+      if (Number(req.query.limit) > 50) {
+        return { status: 422, body: { status: 422, type: "unprocessable_entity", detail: "validation failed" } };
+      }
+      return req.query.before
+        ? { status: 200, body: { has_more: false, edits: older } }
+        : { status: 200, body: { has_more: true, edits: newest } };
+    },
+  });
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED });
+    assert.ok("run_id" in started, JSON.stringify(started));
+    const runId = (started as { run_id: number }).run_id;
+    const result = await runExperiment(runId, { rest, sleep: noopSleep });
+    assert.equal(result.status, "judging");
+    assert.equal(result.edits_since_episode, 51, "50 on the newest page + 1 older one after the request");
+    assert.ok(seenQueries.every((q) => Number(q.limit) <= 50));
+    assert.ok(seenQueries.some((q) => q.before), "asked for the older page");
+  } finally {
+    await fake.close();
+  }
+});
+
+
+// ---------------------------------------------- Round 7: builds you can look at
+
+test("visible builds: the original build is copied too (remix including the request, no chat), both screenshots and the original summary are recorded, and copies are kept", async () => {
+  store.setSettings({ keep_test_copies: "true" });
+  db.prepare(`DELETE FROM credit_ledger`).run();
+  const seed = seedCandidate();
+  const copyId = "prj_copy_visible";
+  const originalCopyId = "prj_original_visible";
+  const remixBodies: Record<string, unknown>[] = [];
+  const fake = await startFakeLovable({
+    ...happyPathScript(copyId),
+    postProjects: (req) => {
+      const body = req.body as Record<string, unknown>;
+      remixBodies.push(body);
+      return { status: 201, body: { job_id: body.remix_mode === "including" ? "job_original" : "job_copy" } };
+    },
+    remixProgress: (req) => ({
+      status: 200,
+      body: { status: "completed", result: { project_id: req.query.job_id === "job_original" ? originalCopyId : copyId } },
+    }),
+    getProject: (req) => {
+      const id = req.params.project_id;
+      const sha = id === copyId ? "sha_copy_1234" : "abcdef12999";
+      return {
+        status: 200,
+        body: {
+          id,
+          name: id,
+          workspace_id: WORKSPACE,
+          latest_commit_sha: sha,
+          latest_screenshot_url: `https://screenshot2.lovable.dev/x/id-preview-${sha.slice(0, 8)}--${id}.lovable.app-1.png`,
+        },
+      };
+    },
+    getMessage: (req) =>
+      req.params.project_id === copyId
+        ? { status: 200, body: { status: "completed", response: { status: "completed", commit_sha: "sha_copy_1234", summary: "Added a validated contact form", cost_credits: 0.5, content: "Done." } } }
+        : { status: 200, body: { status: "running", response: { status: "completed", commit_sha: "sha_original", summary: "Added the contact form (original)", content: "original reply" } } },
+  });
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED }, { showOriginal: true });
+    assert.ok("run_id" in started, JSON.stringify(started));
+    const runId = (started as { run_id: number }).run_id;
+    const result = await runExperiment(runId, { rest, sleep: noopSleep });
+
+    assert.equal(result.status, "judging", result.error ?? "");
+    assert.equal(result.show_original, 1);
+    assert.equal(result.original_copy_project_id, originalCopyId);
+    assert.equal(result.original_summary, "Added the contact form (original)");
+    assert.match(result.copy_screenshot_url ?? "", /id-preview-sha_copy--prj_copy_visible/);
+    assert.match(result.original_screenshot_url ?? "", /prj_original_visible/);
+
+    const original = remixBodies.find((b) => b.remix_mode === "including")!;
+    assert.equal(original.message_id, DEFAULT_REST_REQUEST_ID);
+    assert.ok(!fake.calls.some((c) => c.method === "POST" && c.path === `/v1/projects/${originalCopyId}/messages`), "never chats in the original copy");
+    assert.ok(!fake.calls.some((c) => c.method === "DELETE"), "copies are kept by default");
+    assert.equal(result.copy_deleted, 0);
+  } finally {
+    await fake.close();
+    store.setSettings({ keep_test_copies: "false" });
+  }
+});
+
+test("visible builds: with keep_test_copies off, both copies are deleted after the build", async () => {
+  db.prepare(`DELETE FROM credit_ledger`).run();
+  const seed = seedCandidate();
+  const copyId = "prj_copy_delete_both";
+  const fake = await startFakeLovable({
+    ...happyPathScript(copyId),
+    postProjects: (req) => ({ status: 201, body: { job_id: (req.body as { remix_mode: string }).remix_mode === "including" ? "job_o" : "job_c" } }),
+    remixProgress: (req) => ({ status: 200, body: { status: "completed", result: { project_id: req.query.job_id === "job_o" ? "prj_original_delete_both" : copyId } } }),
+  });
+  try {
+    const rest = restFor(fake);
+    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED }, { showOriginal: true });
+    const runId = (started as { run_id: number }).run_id;
+    const result = await runExperiment(runId, { rest, sleep: noopSleep });
+    assert.equal(result.copy_deleted, 1);
+    assert.equal(result.original_copy_deleted, 1);
+    const deleted = fake.calls.filter((c) => c.method === "DELETE").map((c) => c.path).sort();
+    assert.deepEqual(deleted, [`/v1/projects/${copyId}`, "/v1/projects/prj_original_delete_both"]);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("deleteTestCopy: deletes only a copy this run recorded, never the source project", async () => {
+  const { deleteTestCopy } = await import("../src/executor/experiments.js");
+  const seed = seedCandidate();
+  const { id: runId } = store.createExperimentRun({
+    rule_id: seed.ruleId,
+    correction_candidate_id: seed.candidateId,
+    task_episode_id: seed.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: seed.requestExternalId,
+  });
+  store.updateExperimentRun(runId, { status: "judged", copy_project_id: "prj_kept_copy", original_copy_project_id: "prj_kept_original" });
+  const fake = await startFakeLovable({ deleteProject: () => ({ status: 204 }) });
+  try {
+    const rest = restFor(fake);
+    await deleteTestCopy(runId, "with_rule", rest);
+    await deleteTestCopy(runId, "original", rest);
+    const row = store.getExperimentRun(runId)!;
+    assert.equal(row.copy_deleted, 1);
+    assert.equal(row.original_copy_deleted, 1);
+    assert.deepEqual(fake.calls.map((c) => c.path).sort(), ["/v1/projects/prj_kept_copy", "/v1/projects/prj_kept_original"]);
+
+    store.updateExperimentRun(runId, { copy_project_id: SOURCE, copy_deleted: 0 });
+    await assert.rejects(() => deleteTestCopy(runId, "with_rule", rest), /source project/);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("testCopyName: copies are named by test number, which build, and project -- never a rule cut mid-word", async () => {
+  const { testCopyName } = await import("../src/executor/experiments.js");
+  assert.equal(testCopyName(7, "with the rule", SOURCE), "Harness test 7 · with the rule · Source project");
+  assert.equal(testCopyName(7, "original build", SOURCE), "Harness test 7 · original build · Source project");
+  // Only characters Lovable accepts in a display name (it refused "#").
+  const allowed = /^[\p{L}\p{N} \-_.'·&()[\]|,!:]+$/u;
+  store.upsertProject({ lovable_project_id: "prj_odd_name", name: "Café #1 — my.app/shop?" });
+  const odd = testCopyName(8, "with the rule", "prj_odd_name");
+  assert.match(odd, allowed, odd);
+  assert.doesNotMatch(odd, /#|\.app|\//);
+  assert.match(odd, /Café 1/);
 });

@@ -41,6 +41,11 @@ import {
   TEST_THIS_RULE_BODY,
   TEST_THIS_RULE_CREDITS_LINE,
   TEST_THIS_RULE_TITLE,
+  TEST_FIRST_HELP,
+  TEST_FIRST_LABEL,
+  SHOW_ORIGINAL_HELP,
+  SHOW_ORIGINAL_LABEL,
+  workspaceWordingWarning,
   TEST_VERDICT_NEEDED_LABEL,
   testedResultLine,
   testFailedLine,
@@ -63,8 +68,9 @@ import {
   lovableOf,
   postImprovementAction as post,
   projectName,
-  writeToastText,
+  toastWriteOutcome,
   type Improvement,
+  type TestInfo,
   type Message,
 } from "@/lib/improvements-client";
 
@@ -140,8 +146,7 @@ export function useRun(onChanged: (msg: string) => void): { busy: boolean; run: 
     setBusy(true);
     try {
       const result = await post(body);
-      const text = writeToastText(result.write, msg);
-      toast.success(text);
+      const text = toastWriteOutcome(result.write, msg);
       onChanged(text);
       return true;
     } catch (e) {
@@ -152,6 +157,11 @@ export function useRun(onChanged: (msg: string) => void): { busy: boolean; run: 
     }
   };
   return { busy, run };
+}
+
+function excerptText(text: string, max: number): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  return t.length <= max ? t : `${t.slice(0, max).replace(/\s+\S*$/, "")}…`;
 }
 
 // ---- Confirmations ----
@@ -177,7 +187,13 @@ export function AddConfirm({
   size?: "default" | "sm" | undefined;
 }) {
   const [choice, setChoice] = useState<"now" | "test" | null>(null);
+  const [showOriginal, setShowOriginal] = useState(true);
   const wantsTest = choice === "test";
+  const canTest = item.test?.available === true;
+  const wordingWarning =
+    destination === "workspace"
+      ? workspaceWordingWarning(item.proposed_instruction, item.project.name)
+      : null;
   // A radiogroup is one tab stop: arrows move between the options and only
   // the selected one (or the first, before anything is chosen) is tabbable.
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -203,11 +219,13 @@ export function AddConfirm({
   return (
     <ConfirmAction
       trigger={trigger ?? ADD_LABELS[destination]}
-      title={`Add to ${targetLabel}?`}
-      body={preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
-      consequences={preview ? PREVIEW_CONSEQUENCES : []}
-      confirmLabel={wantsTest ? "Add and test" : preview ? "Add" : "Save choice"}
-      confirmDisabled={overCap || overRules || choice == null}
+      title={wantsTest ? TEST_THIS_RULE_TITLE : `Add to ${targetLabel}?`}
+      body={wantsTest ? TEST_THIS_RULE_BODY : preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
+      consequences={
+        wantsTest && item.test ? testConfirmLines(item.test) : preview ? PREVIEW_CONSEQUENCES : []
+      }
+      confirmLabel={wantsTest ? START_TEST_LABEL : preview ? "Add" : "Save choice"}
+      confirmDisabled={(!wantsTest && (overCap || overRules)) || choice == null}
       disabled={busy}
       size={size}
       onOpenChange={(open) => {
@@ -223,8 +241,16 @@ export function AddConfirm({
           // action queues the paired test on the now-written rule. A
           // failed second call (e.g. over budget) still leaves the first
           // one's own accept in place; its own toast explains why.
-          const accepted = await run({ action: "accept", id: item.id, destination }, SAVED_LINE);
-          if (accepted && wantsTest) await run({ action: "test", id: item.id }, TEST_STARTED_TOAST);
+          // Round 7: "Test it first" adds nothing -- the rule is tested, you
+          // compare both builds, and add it from the test afterwards.
+          if (wantsTest) {
+            await run(
+              { action: "test", id: item.id, show_original: showOriginal },
+              TEST_STARTED_TOAST,
+            );
+            return;
+          }
+          await run({ action: "accept", id: item.id, destination }, SAVED_LINE);
         })()
       }
     >
@@ -260,15 +286,26 @@ export function AddConfirm({
             variant={choice === "test" ? "default" : "outline"}
             className="w-full sm:w-auto"
             onClick={() => setChoice("test")}
+            disabled={!canTest}
           >
-            Add and test it first
+            {TEST_FIRST_LABEL}
           </Button>
           <p className="text-xs text-muted-foreground">
-            {`Harness adds it now, then runs your original request again in a temporary copy with the rule and shows you both builds side by side. ${proveCostLine()}`}
+            {canTest
+              ? `${TEST_FIRST_HELP} ${proveCostLine()}`
+              : (item.test?.unavailable_reason ?? "This suggestion can't be tested.")}
           </p>
+          {wantsTest ? (
+            <ShowOriginalChoice checked={showOriginal} onChange={setShowOriginal} />
+          ) : null}
         </div>
       </div>
-      {preview ? (
+      {wordingWarning ? (
+        <p role="alert" className="text-xs text-destructive">
+          {wordingWarning}
+        </p>
+      ) : null}
+      {preview && !wantsTest ? (
         <div className="space-y-2">
           <details className="rounded-md border">
             <summary className="cursor-pointer px-2 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -531,6 +568,7 @@ function TestButton({
   run: Run;
   size?: "default" | "sm" | undefined;
 }) {
+  const [showOriginal, setShowOriginal] = useState(true);
   if (!item.test?.available) return null;
   return (
     <ConfirmAction
@@ -539,15 +577,50 @@ function TestButton({
       size={size}
       title={TEST_THIS_RULE_TITLE}
       body={TEST_THIS_RULE_BODY}
-      consequences={[
-        TEST_THIS_RULE_CREDITS_LINE,
-        testThisRuleBudgetLine(item.test.credits),
-        TEST_ONE_AT_A_TIME_LINE,
-      ]}
+      consequences={testConfirmLines(item.test)}
       confirmLabel={START_TEST_LABEL}
       disabled={busy}
-      onConfirm={() => void run({ action: "test", id: item.id }, TEST_STARTED_TOAST)}
-    />
+      onConfirm={() =>
+        void run({ action: "test", id: item.id, show_original: showOriginal }, TEST_STARTED_TOAST)
+      }
+    >
+      <ShowOriginalChoice checked={showOriginal} onChange={setShowOriginal} />
+    </ConfirmAction>
+  );
+}
+
+// The paired test's own consequence lines -- one place, shared by "Test this
+// rule" and the Add dialog's "Test it first".
+function testConfirmLines(test: TestInfo): string[] {
+  return [
+    TEST_THIS_RULE_CREDITS_LINE,
+    testThisRuleBudgetLine(test.credits),
+    TEST_ONE_AT_A_TIME_LINE,
+  ];
+}
+
+// Round 7: whether the test also makes a free copy of the original build,
+// so both builds can be opened side by side.
+function ShowOriginalChoice({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-start gap-2 text-sm">
+      <input
+        type="checkbox"
+        className="mt-1"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="space-y-0.5">
+        <span className="block">{SHOW_ORIGINAL_LABEL}</span>
+        <span className="block text-xs text-muted-foreground">{SHOW_ORIGINAL_HELP}</span>
+      </span>
+    </label>
   );
 }
 
@@ -664,6 +737,13 @@ function RetireCard({
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">{retireSinceLine(retire)}</p>
         <p className="text-sm">{retireReasonSentence(retire)}</p>
+        {retire.reason === "changed_mind" && item.evidence[0] ? (
+          // Round 7: the message that asked for the opposite, so the choice
+          // can be made from the card.
+          <blockquote className="border-l-2 pl-3 text-sm text-muted-foreground">
+            {`You wrote: "${excerptText(item.evidence[0].text, 240)}"`}
+          </blockquote>
+        ) : null}
       </div>
       <div className={ACTION_BAR_CLASS}>
         <RetireConfirm proposalId={retire.proposal_id} busy={busy} run={run} size={size} />

@@ -30,6 +30,22 @@ function isApplicable(episodeTags: string[], scopeTags: string[]): boolean {
   return episodeTags.some((t) => scopeTags.includes(t));
 }
 
+/** no ÷ (yes + no) from a judged run's verdicts; null when nothing was
+ * decided. Runs recorded without verdicts fall back to their score. */
+function decidedNoShare(verdictsJson: string | null, score: number): number | null {
+  if (!verdictsJson) return score;
+  let verdicts: unknown;
+  try {
+    verdicts = JSON.parse(verdictsJson);
+  } catch {
+    return score;
+  }
+  if (!Array.isArray(verdicts)) return score;
+  const no = verdicts.filter((v) => v === "no").length;
+  const yes = verdicts.filter((v) => v === "yes").length;
+  return yes + no === 0 ? null : no / (yes + no);
+}
+
 // Round 4 fix wave item 4: the episode window start is the later of
 // first_written_at (when the rule first landed in Knowledge) and
 // baseline_at (when it was last "Re-add"ed, store.rebaselineRuleHealth) --
@@ -256,12 +272,17 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
       for (const run of store.listExperimentRuns({ rule_id: rule.id, status: ["judged"] })) {
         if (run.score == null || !run.judged_at) continue;
         if (new Date(run.judged_at).getTime() <= startMs) continue;
-        if (run.score >= 0.5) {
+        // Share of DECIDED corrections that are no longer needed: "Unclear"
+        // is no evidence either way, so a run judged all-unclear counts for
+        // nothing (score alone divides by every correction and read as 0).
+        const share = decidedNoShare(run.verdicts_json, run.score);
+        if (share == null) continue;
+        if (share >= 0.5) {
           applicableTasks += 1;
           helped += 1;
           if (!lastApplicableAt || run.judged_at > lastApplicableAt)
             lastApplicableAt = run.judged_at;
-        } else if (run.score === 0) {
+        } else if (share === 0) {
           applicableTasks += 1;
           hurt += 1;
           if (!lastApplicableAt || run.judged_at > lastApplicableAt)

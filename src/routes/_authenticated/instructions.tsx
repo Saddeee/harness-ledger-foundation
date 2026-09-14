@@ -59,7 +59,7 @@ import {
   postExecutor,
   postImprovementAction,
   syncResultText,
-  writeToastText,
+  toastWriteOutcome,
   type KnowledgeActiveRule,
   type KnowledgeTargetView,
 } from "@/lib/improvements-client";
@@ -417,7 +417,7 @@ function Page() {
   const retireRule = useMutation({
     mutationFn: (ruleId: number) => postImprovementAction({ action: "retire", rule_id: ruleId }),
     onSuccess: (data) => {
-      toast.success(writeToastText(data.write, "Retired."));
+      toastWriteOutcome(data.write, "Retired.");
       void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
       void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
     },
@@ -428,7 +428,7 @@ function Page() {
     mutationFn: (improvementId: number) =>
       postImprovementAction({ action: "readd", id: improvementId }),
     onSuccess: (data) => {
-      toast.success(writeToastText(data.write, "Re-added."));
+      toastWriteOutcome(data.write, "Re-added.");
       void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
       void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
     },

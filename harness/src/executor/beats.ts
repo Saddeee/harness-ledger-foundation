@@ -21,13 +21,18 @@ import { redact } from "./redact.js";
 import { recomputeRuleHealth } from "../analysis/health.js";
 import { proposeRetirements } from "../analysis/retire.js";
 import { status } from "./lovable-auth.js";
-import { openLovableClient } from "./lovable-mcp.js";
+import { ensureFreshLovableToken, openLovableClient } from "./lovable-mcp.js";
 import type { LovableClient, LovableReader, LovableWriter } from "./lovable-mcp.js";
 // Round 6 Task 6b: the `test` action's own dispatch (isTestAction/
 // testAction) and the background queue's own resume-on-restart call
 // (kickExperimentRunner) -- see experiments-actions.ts/experiments-queue.ts
 // for why each lives in its own module rather than folded in here.
-import { isTestAction, testAction } from "./experiments-actions.js";
+import {
+  deleteCopyAction,
+  isDeleteCopyAction,
+  isTestAction,
+  testAction,
+} from "./experiments-actions.js";
 import { kickExperimentRunner } from "./experiments-queue.js";
 
 const FETCHED_BY = "executor";
@@ -82,9 +87,22 @@ export async function syncHistory(
   let messages = 0;
   let truncated = 0;
 
+  const labels = new Map(
+    (store.getAllowedProjects() as { lovable_project_id: string; label: string | null }[]).map(
+      (r) => [r.lovable_project_id, r.label],
+    ),
+  );
   for (const projectId of projects) {
-    if (workspaceId && !store.getProjectMeta(projectId)?.workspace_id) {
-      store.upsertProject({ lovable_project_id: projectId, workspace_id: workspaceId });
+    const meta = store.getProjectMeta(projectId);
+    const label = labels.get(projectId) ?? undefined;
+    // Backfill the workspace id and, for a project allowed from the Projects
+    // page, its name -- otherwise cards show the raw project id.
+    if ((workspaceId && !meta?.workspace_id) || (label && !meta?.name)) {
+      store.upsertProject({
+        lovable_project_id: projectId,
+        workspace_id: workspaceId ?? undefined,
+        name: meta?.name ?? label,
+      });
     }
 
     const known = store.latestHistoryExternalIds(projectId, KNOWN_ID_WINDOW);
@@ -199,7 +217,7 @@ export async function snapshotSkills(
   workspaceId: string,
 ): Promise<{ skills: number; changed: number }> {
   if (!workspaceId) return { skills: 0, changed: 0 };
-  const skills = await lovable.listWorkspaceSkills(workspaceId);
+  const { skills, complete } = await lovable.listWorkspaceSkills(workspaceId);
   let changed = 0;
   for (const skill of skills) {
     if (!skill.name) continue;
@@ -212,6 +230,16 @@ export async function snapshotSkills(
       fetched_by: FETCHED_BY,
     });
     if (result.inserted) changed += 1;
+  }
+  // Round 7: a skill Harness knew about that Lovable no longer lists was
+  // deleted there -- record it once, so it stops showing as current.
+  // Only from a complete, well-formed answer: an empty or partial one must
+  // never mark every skill deleted.
+  const seen = new Set(skills.map((s) => s.name));
+  for (const known of complete ? store.latestSkillSnapshots(workspaceId) : []) {
+    if (!seen.has(known.name) && store.recordSkillDeleted(workspaceId, known.name, FETCHED_BY)) {
+      changed += 1;
+    }
   }
   return { skills: skills.length, changed };
 }
@@ -255,7 +283,19 @@ async function writeAndVerify(
       : await lovable.getWorkspaceKnowledge(targetId);
 
   const after = store.recordKnowledgeReadback(versionId, readBack);
-  return { written: after?.status === "written" };
+  const written = after?.status === "written";
+  // The read-back is a real read of Lovable: keep it as the latest snapshot,
+  // so the next change (Remove right after Add) composes on what Lovable now
+  // holds rather than on the pre-write read.
+  if (written) {
+    store.recordKnowledgeSnapshot({
+      target,
+      ...(target === "project" ? { project_id: targetId } : { workspace_id: targetId }),
+      content: readBack,
+      fetched_by: FETCHED_BY,
+    });
+  }
+  return { written };
 }
 
 // ---- Round 6 Task 5 ----
@@ -378,6 +418,33 @@ function parseRuleIds(json: string): number[] {
  * knowledge.ts's buildManagedBlock. Used to tell which rules a live block
  * actually names, for the "is this a concurrent Harness write or a human
  * edit" check below. */
+/** After going back to an older Knowledge text, make each rule's status
+ * match what Lovable now holds: a rule that was in Lovable and whose line is
+ * gone reads "Reverted" (rolled_back); a reverted or retired rule whose line
+ * is back reads active again. Only rules that were ever written are touched. */
+function reconcileRulesWithKnowledge(
+  target: "project" | "workspace",
+  targetId: string,
+  content: string,
+  versionId: number,
+): void {
+  const block = extractManagedBlock(content) ?? "";
+  for (const rule of store.writtenRulesForTarget(target, targetId)) {
+    // Any wording the rule has had counts (undoing a wording change brings
+    // the old one back), matched as the rule's own "- " entry in the block
+    // so an instruction written over several lines still matches.
+    const inKnowledge = store
+      .ruleWordings(rule.id)
+      .some((text) => block.includes(`\n- ${text}\n`));
+    const live = rule.state === "active" || rule.state === "approved" || rule.state === "supported";
+    if (live && !inKnowledge) {
+      store.updateRule({ id: rule.id, state: "rolled_back", actor: "harness", reason: `went back to an earlier Knowledge text (version ${versionId})` });
+    } else if (!live && inKnowledge && (rule.state === "rolled_back" || rule.state === "retired")) {
+      store.updateRule({ id: rule.id, state: "active", actor: "harness", reason: `back in Knowledge after going back (version ${versionId})` });
+    }
+  }
+}
+
 function parseManagedBlockLines(block: string): string[] {
   return block
     .split("\n")
@@ -426,6 +493,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 const DEFAULT_VERSION_TIMEOUT_MS = 45_000;
 const DEFAULT_SYNC_TIMEOUT_MS = 5 * 60_000;
 const TIMEOUT_REASON = "Lovable did not answer in time — try again";
+const TOKEN_REFRESH_WAIT_MS = 15_000;
 // ---- end Round 6 Task 2 fix 1 ----
 
 /**
@@ -532,7 +600,23 @@ export async function executeVersionNow(
 
     let newContent = rowForRun.new_content;
 
-    if (sha256(live) !== rowForRun.previous_sha256) {
+    // Round 7: "Undo this change" / "Go back to before this change" writes
+    // exactly the text the user picked -- never a recompose of today's rules
+    // (which silently turned an older go-back into a no-op). Safe only when
+    // Lovable still holds what Harness last wrote there; otherwise someone
+    // changed Knowledge outside Harness and that edit would be lost.
+    const isGoBack = rowForRun.restored_from_version_id != null;
+    if (isGoBack && sha256(live) !== rowForRun.previous_sha256) {
+      const lastWritten = store.latestWrittenKnowledgeContent(rowForRun.target, targetIdForRun);
+      if (lastWritten == null || sha256(live) !== sha256(lastWritten)) {
+        const reason =
+          "Your Knowledge changed in Lovable since Harness last wrote it — press Sync now, then try again from History";
+        store.markKnowledgeWriteStale(versionId, reason);
+        return { written: false, version_id: versionId, reason, kind: "stale" };
+      }
+    }
+
+    if (!isGoBack && sha256(live) !== rowForRun.previous_sha256) {
       const liveBlock = extractManagedBlock(live);
       const knownBlock = extractManagedBlock(rowForRun.previous_content);
       const intendedBlock = extractManagedBlock(rowForRun.new_content);
@@ -571,10 +655,39 @@ export async function executeVersionNow(
 
       let rules: { id: number; instruction: string }[];
 
+      // The block Harness itself last wrote to this target, verified by
+      // read-back. A live block equal to it is Harness's own text even when
+      // its rules have since been retired (Remove marks the rule retired
+      // before the write) -- not a human edit inside the markers.
+      const lastWrittenBlock = extractManagedBlock(
+        store.latestWrittenKnowledgeContent(rowForRun.target, targetIdForRun) ?? "",
+      );
+
+      const activeNow = store.activeRulesForTarget(rowForRun.target, targetIdForRun) as {
+        id: number;
+        instruction: string;
+      }[];
+      const isActiveNow = (id: number) => activeNow.some((r) => r.id === id);
+
       if (knownBlock === liveBlock) {
         // Only the user's own text outside the block changed -- recompose
         // the exact same rule set this version already carries.
         rules = ruleObjectsFor(parseRuleIds(rowForRun.rule_ids_json));
+      } else if (liveBlock != null && liveBlock === lastWrittenBlock) {
+        // Harness's own newer write is live (e.g. Remove right after Add, or
+        // "Try again" on an older failed version). Merge, like the concurrent
+        // write case below: this version's rules plus the live block's rules,
+        // limited to rules still active -- so a newer rule is never dropped
+        // and a rule retired since (Remove marks it retired before writing)
+        // is never put back.
+        const liveIds = parseManagedBlockLines(liveBlock)
+          .map((line) => activeNow.find((r) => r.instruction === line)?.id)
+          .filter((id): id is number => id != null);
+        rules = ruleObjectsFor(
+          Array.from(new Set([...parseRuleIds(rowForRun.rule_ids_json), ...liveIds])).filter(
+            isActiveNow,
+          ),
+        );
       } else {
         // Fix round 1 item 2: the managed block itself drifted. Tell a
         // concurrent Harness write (another pass composed a different, but
@@ -606,7 +719,7 @@ export async function executeVersionNow(
           .filter((id): id is number => id != null);
         const unionIds = Array.from(
           new Set([...parseRuleIds(rowForRun.rule_ids_json), ...liveRuleIds]),
-        );
+        ).filter(isActiveNow);
         rules = ruleObjectsFor(unionIds);
       }
 
@@ -631,6 +744,9 @@ export async function executeVersionNow(
       lovable,
     );
     const after = store.getKnowledgeVersion(versionId);
+    if (written && isGoBack) {
+      reconcileRulesWithKnowledge(rowForRun.target, targetIdForRun, newContent, versionId);
+    }
     if (written) {
       return {
         written: true,
@@ -884,6 +1000,13 @@ function notConnectedOutcome(versionId: number | null): WriteOutcome {
  * `retryKnowledgeWrite` both need. */
 async function runVersionNow(versionId: number): Promise<WriteOutcome> {
   if (!status().connected) return notConnectedOutcome(versionId);
+  // Refresh a token that is about to expire before the fresh read, the way
+  // the paired test already does -- bounded, so a stalled connect can never
+  // hold up the write (the write's own 45 s limit starts after this).
+  await Promise.race([
+    ensureFreshLovableToken(),
+    new Promise<void>((resolve) => setTimeout(resolve, TOKEN_REFRESH_WAIT_MS).unref?.()),
+  ]);
   const client = await openLovableClient();
   try {
     return await executeVersionNow(versionId, client);
@@ -929,6 +1052,9 @@ export async function improvementActionAndWrite(
   // why it's deliberately absent from that schema).
   if (isTestAction(input)) {
     return testAction(input);
+  }
+  if (isDeleteCopyAction(input)) {
+    return deleteCopyAction(input);
   }
 
   const { kind, testFirst } = peekActionKind(input);

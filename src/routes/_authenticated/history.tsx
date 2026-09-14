@@ -6,7 +6,7 @@
 // "What changed" list lives here now; Instructions shows only what is
 // current. Only talks to the local Harness routes (fetchKnowledge for the
 // target list, fetchTimeline for the selected target's nodes, postKnowledge
-// for "Restore this version").
+// for "Undo this change" / "Go back to before this change").
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -17,7 +17,7 @@ import {
   fetchKnowledge,
   fetchTimeline,
   postKnowledge,
-  writeToastText,
+  toastWriteOutcome,
 } from "@/lib/improvements-client";
 
 type HistorySearch = { target?: "project" | "workspace"; id?: string };
@@ -84,7 +84,7 @@ function Page() {
     onSuccess: (data) => {
       // Round 6 Task 2 / spec §2: restore writes immediately when Harness
       // is connected -- the toast reads the real outcome.
-      toast.success(writeToastText(data.write, "Restore staged."));
+      toastWriteOutcome(data.write, "Change undone.");
       void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
       void qc.invalidateQueries({ queryKey: ["harness-timeline"] });
     },

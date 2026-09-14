@@ -76,7 +76,7 @@ export function upsertProject(input: {
       `INSERT INTO projects (lovable_project_id, name, status, url, tech_stack, raw_json, workspace_id, updated_at)
        VALUES (@lovable_project_id, @name, @status, @url, @tech_stack, @raw_json, @workspace_id, datetime('now'))
        ON CONFLICT(lovable_project_id) DO UPDATE SET
-         name = excluded.name, status = excluded.status, url = excluded.url,
+         name = COALESCE(excluded.name, projects.name), status = excluded.status, url = excluded.url,
          tech_stack = excluded.tech_stack, raw_json = excluded.raw_json,
          workspace_id = COALESCE(excluded.workspace_id, projects.workspace_id),
          updated_at = excluded.updated_at
@@ -1489,7 +1489,7 @@ export const SETTING_DEFAULTS: Record<SettingKey, string> = {
     paired: false,
   }),
   lovable_monthly_credit_budget: "12",
-  keep_test_copies: "false",
+  keep_test_copies: "true",
 };
 
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
@@ -1781,10 +1781,12 @@ export function recordSkillSnapshot(input: {
   const sha = knowledgeSha256(input.content);
   const latest = db
     .prepare(
-      `SELECT id, sha256 FROM skill_snapshots WHERE workspace_id = ? AND name = ? ORDER BY id DESC LIMIT 1`,
+      `SELECT id, sha256, deleted FROM skill_snapshots WHERE workspace_id = ? AND name = ? ORDER BY id DESC LIMIT 1`,
     )
-    .get(input.workspace_id, input.name) as { id: number; sha256: string } | undefined;
-  if (latest && latest.sha256 === sha) {
+    .get(input.workspace_id, input.name) as
+    | { id: number; sha256: string; deleted: number }
+    | undefined;
+  if (latest && latest.sha256 === sha && latest.deleted === 0) {
     return { id: latest.id, inserted: false };
   }
   const row = db
@@ -1810,7 +1812,27 @@ export function recordSkillSnapshot(input: {
   return { id: row.id, inserted: true };
 }
 
-export function latestSkillSnapshots(workspaceId: string): {
+/** Records that a skill Harness knew about is gone from Lovable (Round 7).
+ * Returns false when its latest snapshot already says so. */
+export function recordSkillDeleted(workspaceId: string, name: string, fetchedBy: string): boolean {
+  const latest = db
+    .prepare(
+      `SELECT deleted FROM skill_snapshots WHERE workspace_id = ? AND name = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(workspaceId, name) as { deleted: number } | undefined;
+  if (!latest || latest.deleted === 1) return false;
+  db.prepare(
+    `INSERT INTO skill_snapshots (workspace_id, name, description, content, sha256, updated_at_remote, fetched_by, deleted)
+     VALUES (?, ?, NULL, '', ?, NULL, ?, 1)`,
+  ).run(workspaceId, name, knowledgeSha256(""), fetchedBy);
+  insertEvent("skill_snapshot.deleted", null, { workspace_id: workspaceId, name });
+  return true;
+}
+
+export function latestSkillSnapshots(
+  workspaceId: string,
+  opts: { includeDeleted?: boolean } = {},
+): {
   name: string;
   description: string | null;
   content: string;
@@ -1828,6 +1850,7 @@ export function latestSkillSnapshots(workspaceId: string): {
            WHERE s2.workspace_id = s.workspace_id AND s2.name = s.name
            ORDER BY id DESC LIMIT 1
          )
+         ${opts.includeDeleted ? "" : "AND s.deleted = 0"}
        ORDER BY name`,
     )
     .all(workspaceId) as {
@@ -2247,10 +2270,11 @@ export function listSkillSnapshots(
   sha256: string;
   updated_at_remote: string | null;
   fetched_at: string;
+  deleted: number;
 }[] {
   return db
     .prepare(
-      `SELECT id, content, sha256, updated_at_remote, fetched_at
+      `SELECT id, content, sha256, updated_at_remote, fetched_at, deleted
        FROM skill_snapshots
        WHERE workspace_id = ? AND name = ?
        ORDER BY id ASC`,
@@ -2261,6 +2285,7 @@ export function listSkillSnapshots(
     sha256: string;
     updated_at_remote: string | null;
     fetched_at: string;
+    deleted: number;
   }[];
 }
 // ---- end round 3 Task 2 ----
@@ -2496,14 +2521,14 @@ export function listEpisodesAfter(projectId: string | null, sinceIso: string): E
       ? db
           .prepare(
             `SELECT id, project_id, started_at FROM task_episodes
-             WHERE started_at IS NOT NULL AND started_at > ?
+             WHERE started_at IS NOT NULL AND julianday(started_at) > julianday(?)
              ORDER BY started_at`,
           )
           .all(sinceIso)
       : db
           .prepare(
             `SELECT id, project_id, started_at FROM task_episodes
-             WHERE started_at IS NOT NULL AND started_at > ? AND project_id = ?
+             WHERE started_at IS NOT NULL AND julianday(started_at) > julianday(?) AND project_id = ?
              ORDER BY started_at`,
           )
           .all(sinceIso, projectId)
@@ -2737,6 +2762,10 @@ export type MinableEpisode = {
   title: string;
   request: MinableMessage;
   corrections: MinableCorrection[];
+  // Round 7: the corrections (history_item ids) no suggestion covers yet and
+  // the Rule writer has not been asked about -- one proposal is sought per
+  // entry. Oldest first. Always non-empty for a returned episode.
+  uncovered_correction_ids: number[];
   assistant_summaries: string[];
 };
 
@@ -2765,6 +2794,24 @@ function truncateText(text: string, max: number): string {
  * and truncated to 800 chars so the rule writer sees what Lovable told the user,
  * never raw tool-use markup.
  */
+
+// An episode's "request" is its first user message. Evidence also holds
+// spec excerpts, notes and diffs, often with occurred_at NULL, and SQLite
+// sorts NULLs first -- so ordering by time alone picked a spec excerpt as the
+// request and the paired test could never find it in Lovable. Shared by every
+// lookup that reads the request (or everything after it).
+const EPISODE_REQUEST_ORDER = `(hi.kind = 'message' AND hi.role = 'user') DESC,
+         hi.occurred_at IS NULL, hi.occurred_at ASC, hi.id ASC`;
+
+// A correction (tee.history_item_id) is uncovered when no suggestion cites
+// it as evidence and the Rule writer has not already been asked about it.
+const UNCOVERED_CORRECTION_CLAUSE = `NOT EXISTS (
+           SELECT 1 FROM correction_candidate_evidence cce WHERE cce.history_item_id = tee.history_item_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM correction_mining cm WHERE cm.history_item_id = tee.history_item_id
+         )`;
+
 export function listMinableEpisodes(limit: number): MinableEpisode[] {
   const episodeRows = db
     .prepare(
@@ -2774,9 +2821,7 @@ export function listMinableEpisodes(limit: number): MinableEpisode[] {
          SELECT 1 FROM task_episode_evidence tee
          JOIN message_classifications mc ON mc.history_item_id = tee.history_item_id
          WHERE tee.task_episode_id = te.id AND mc.classification = 'correction'
-       )
-       AND NOT EXISTS (
-         SELECT 1 FROM correction_candidates cc WHERE cc.task_episode_id = te.id
+           AND ${UNCOVERED_CORRECTION_CLAUSE}
        )
        ORDER BY te.started_at ASC, te.id ASC
        LIMIT ?`,
@@ -2794,7 +2839,7 @@ export function listMinableEpisodes(limit: number): MinableEpisode[] {
      FROM task_episode_evidence tee
      JOIN history_items hi ON hi.id = tee.history_item_id
      WHERE tee.task_episode_id = ?
-     ORDER BY hi.occurred_at ASC, hi.id ASC
+     ORDER BY ${EPISODE_REQUEST_ORDER}
      LIMIT 1`,
   );
   const correctionsStmt = db.prepare(
@@ -2812,6 +2857,15 @@ export function listMinableEpisodes(limit: number): MinableEpisode[] {
        AND hi.occurred_at IS NOT NULL
        AND hi.occurred_at > ?
        AND (? IS NULL OR hi.occurred_at <= ?)
+     ORDER BY hi.occurred_at ASC, hi.id ASC`,
+  );
+  const uncoveredStmt = db.prepare(
+    `SELECT tee.history_item_id AS id
+     FROM task_episode_evidence tee
+     JOIN history_items hi ON hi.id = tee.history_item_id
+     JOIN message_classifications mc ON mc.history_item_id = tee.history_item_id
+     WHERE tee.task_episode_id = ? AND mc.classification = 'correction'
+       AND ${UNCOVERED_CORRECTION_CLAUSE}
      ORDER BY hi.occurred_at ASC, hi.id ASC`,
   );
 
@@ -2849,6 +2903,7 @@ export function listMinableEpisodes(limit: number): MinableEpisode[] {
         text: truncateText(c.content, MINABLE_TEXT_CHAR_LIMIT),
         summary: c.summary,
       })),
+      uncovered_correction_ids: (uncoveredStmt.all(ep.id) as { id: number }[]).map((r) => r.id),
       assistant_summaries: assistantRows.map((a) =>
         truncateText(humanVisibleText(a.content), MINABLE_ASSISTANT_SUMMARY_CHAR_LIMIT),
       ),
@@ -2940,7 +2995,9 @@ export function setRuleScopeTags(ruleId: number, tags: string[]): void {
 // retire_proposals (migration v9) plus two small read helpers the
 // improvements layer needs to render a proposal or a retired rule.
 
-export type RetireReason = "hurt" | "contradiction" | "unused";
+// "changed_mind" (Round 7): the user asked Lovable for the opposite of this
+// live rule; evidence is that message's history_item id.
+export type RetireReason = "hurt" | "contradiction" | "unused" | "changed_mind";
 export type RetireProposalStatus = "open" | "retired" | "kept";
 
 export type RetireProposalRow = {
@@ -3509,7 +3566,7 @@ export function listUnjudgedEpisodesForRule(
       ? db
           .prepare(
             `SELECT id, project_id, started_at FROM task_episodes
-             WHERE started_at IS NOT NULL AND started_at > ? AND ${notYetJudged}
+             WHERE started_at IS NOT NULL AND julianday(started_at) > julianday(?) AND ${notYetJudged}
              ORDER BY started_at ASC
              LIMIT ?`,
           )
@@ -3517,7 +3574,7 @@ export function listUnjudgedEpisodesForRule(
       : db
           .prepare(
             `SELECT id, project_id, started_at FROM task_episodes
-             WHERE started_at IS NOT NULL AND started_at > ? AND project_id = ? AND ${notYetJudged}
+             WHERE started_at IS NOT NULL AND julianday(started_at) > julianday(?) AND project_id = ? AND ${notYetJudged}
              ORDER BY started_at ASC
              LIMIT ?`,
           )
@@ -3815,13 +3872,28 @@ export function episodeTextForJudge(episodeId: number): { request: string; reply
 
   const reqRow = db
     .prepare(
-      `SELECT hi.content FROM task_episode_evidence tee
+      `SELECT hi.id, hi.content FROM task_episode_evidence tee
        JOIN history_items hi ON hi.id = tee.history_item_id
        WHERE tee.task_episode_id = ?
-       ORDER BY hi.occurred_at ASC, hi.id ASC
+       ORDER BY ${EPISODE_REQUEST_ORDER}
        LIMIT 1`,
     )
-    .get(episodeId) as { content: string } | undefined;
+    .get(episodeId) as { id: number; content: string } | undefined;
+
+  // Lovable's reply to the request ends where the user's first follow-up
+  // (a correction) begins -- replies after that answer the correction, not
+  // the request, and must not be shown as "your original build".
+  const firstFollowUp = reqRow
+    ? (db
+        .prepare(
+          `SELECT MIN(hi.occurred_at) AS at FROM task_episode_evidence tee
+           JOIN history_items hi ON hi.id = tee.history_item_id
+           WHERE tee.task_episode_id = ? AND hi.id != ? AND hi.role IN ('user', 'operator')
+             AND hi.occurred_at IS NOT NULL AND hi.occurred_at > ?`,
+        )
+        .get(episodeId, reqRow.id, episode.started_at ?? "") as { at: string | null })
+    : { at: null };
+  const replyEnd = firstFollowUp.at;
 
   const assistantRows = episode.started_at
     ? (db
@@ -3831,9 +3903,17 @@ export function episodeTextForJudge(episodeId: number): { request: string; reply
              AND hi.occurred_at IS NOT NULL
              AND hi.occurred_at > ?
              AND (? IS NULL OR hi.occurred_at <= ?)
+             AND (? IS NULL OR hi.occurred_at < ?)
            ORDER BY hi.occurred_at ASC, hi.id ASC`,
         )
-        .all(episode.project_id, episode.started_at, episode.ended_at, episode.ended_at) as {
+        .all(
+          episode.project_id,
+          episode.started_at,
+          episode.ended_at,
+          episode.ended_at,
+          replyEnd,
+          replyEnd,
+        ) as {
         content: string;
       }[])
     : [];
@@ -3889,6 +3969,15 @@ export type ExperimentRunRow = {
   // block below.
   feedback: string | null;
   feedback_at: string | null;
+  // Migration v14 (Round 7): both builds as real Lovable projects.
+  show_original: number;
+  original_copy_project_id: string | null;
+  original_copy_deleted: number;
+  original_copy_error: string | null;
+  original_summary: string | null;
+  copy_screenshot_url: string | null;
+  original_screenshot_url: string | null;
+  judged_corrections_json: string | null;
 };
 
 /** Opens a new attempt at rule_id's paired test, queued and unstarted --
@@ -3902,15 +3991,16 @@ export function createExperimentRun(input: {
   task_episode_id: number;
   source_project_id: string;
   request_message_external_id: string;
+  show_original?: boolean;
 }): { id: number } {
   const row = db
     .prepare(
       `INSERT INTO experiment_runs
-         (rule_id, correction_candidate_id, task_episode_id, source_project_id, request_message_external_id)
-       VALUES (@rule_id, @correction_candidate_id, @task_episode_id, @source_project_id, @request_message_external_id)
+         (rule_id, correction_candidate_id, task_episode_id, source_project_id, request_message_external_id, show_original)
+       VALUES (@rule_id, @correction_candidate_id, @task_episode_id, @source_project_id, @request_message_external_id, @show_original)
        RETURNING id`,
     )
-    .get(input) as { id: number };
+    .get({ ...input, show_original: input.show_original ? 1 : 0 }) as { id: number };
   insertEvent("experiment_run.created", null, {
     id: row.id,
     rule_id: input.rule_id,
@@ -3940,6 +4030,14 @@ const EXPERIMENT_RUN_COLUMNS = new Set<string>([
   "copy_deleted",
   "copy_cleanup_note",
   "edits_since_episode",
+  "show_original",
+  "original_copy_project_id",
+  "original_copy_deleted",
+  "original_copy_error",
+  "original_summary",
+  "copy_screenshot_url",
+  "original_screenshot_url",
+  "judged_corrections_json",
   "score",
   "verdicts_json",
   "error",
@@ -4063,7 +4161,9 @@ export function creditsThisMonth(): number {
        WHERE created_at >= strftime('%Y-%m-01 00:00:00', 'now')`,
     )
     .get() as { total: number };
-  return row.total;
+  // Rounded to cents: 0.6 + 0.3 + 2.3 summed as floats read
+  // "3.6999999999999997 credits" on the Tests page.
+  return Math.round(row.total * 100) / 100;
 }
 
 /** The most recently recorded credit_ledger cost, else null -- a rough
@@ -4110,7 +4210,7 @@ export function episodeRequestExternalId(episodeId: number): string | null {
       `SELECT hi.external_id FROM task_episode_evidence tee
        JOIN history_items hi ON hi.id = tee.history_item_id
        WHERE tee.task_episode_id = ?
-       ORDER BY hi.occurred_at ASC, hi.id ASC
+       ORDER BY ${EPISODE_REQUEST_ORDER}
        LIMIT 1`,
     )
     .get(episodeId) as { external_id: string | null } | undefined;
@@ -4129,7 +4229,7 @@ export function episodeRequestOccurredAt(episodeId: number): string | null {
       `SELECT hi.occurred_at FROM task_episode_evidence tee
        JOIN history_items hi ON hi.id = tee.history_item_id
        WHERE tee.task_episode_id = ?
-       ORDER BY hi.occurred_at ASC, hi.id ASC
+       ORDER BY ${EPISODE_REQUEST_ORDER}
        LIMIT 1`,
     )
     .get(episodeId) as { occurred_at: string | null } | undefined;
@@ -4269,7 +4369,7 @@ export function episodeRequestText(episodeId: number): string | null {
       `SELECT hi.content FROM task_episode_evidence tee
        JOIN history_items hi ON hi.id = tee.history_item_id
        WHERE tee.task_episode_id = ?
-       ORDER BY hi.occurred_at ASC, hi.id ASC
+       ORDER BY ${EPISODE_REQUEST_ORDER}
        LIMIT 1`,
     )
     .get(episodeId) as { content: string } | undefined;
@@ -4325,7 +4425,7 @@ export function episodeCorrections(episodeId: number): string[] {
        JOIN history_items hi ON hi.id = tee.history_item_id
        JOIN message_classifications mc ON mc.history_item_id = hi.id
        WHERE tee.task_episode_id = ? AND mc.classification = 'correction'
-       ORDER BY hi.id`,
+       ORDER BY hi.occurred_at IS NULL, hi.occurred_at, hi.id`,
     )
     .all(episodeId) as { summary: string | null; content: string }[];
   return rows.map((r) => (r.summary && r.summary.length > 0 ? r.summary : r.content.slice(0, 200)));
@@ -4337,7 +4437,7 @@ export function episodeCorrections(episodeId: number): string[] {
  * rows (episodeCorrections above returns [] for it) -- typically a
  * hand-built episode from before, or outside, the classifier pipeline (the
  * owner's own real first episode was exactly this). Every evidence message
- * AFTER the opening request (the same "earliest by occurred_at/id" row
+ * AFTER the opening request (the same first-user-message row
  * episodeRequestText/episodeRequestExternalId resolve) whose role is 'user'
  * or 'operator' -- the owner's own follow-up/correction messages, never
  * Lovable's replies. humanVisibleText's own excerpt fallback (these are
@@ -4348,15 +4448,28 @@ export function episodeCorrections(episodeId: number): string[] {
 export function episodeFollowUpCorrections(episodeId: number): string[] {
   const rows = db
     .prepare(
-      `SELECT hi.content as content, hi.role as role
+      `SELECT hi.id as id, hi.content as content, hi.role as role
        FROM task_episode_evidence tee
        JOIN history_items hi ON hi.id = tee.history_item_id
        WHERE tee.task_episode_id = ?
-       ORDER BY hi.occurred_at ASC, hi.id ASC`,
+       ORDER BY ${EPISODE_REQUEST_ORDER}`,
     )
-    .all(episodeId) as { content: string; role: string | null }[];
+    .all(episodeId) as { id: number; content: string; role: string | null }[];
+  // rows[0] is the request; the rest are read in time order (the
+  // request-first ordering puts user messages ahead of operator notes).
+  const requestId = rows[0]?.id;
+  const timeOrder = db
+    .prepare(
+      `SELECT hi.id FROM task_episode_evidence tee
+       JOIN history_items hi ON hi.id = tee.history_item_id
+       WHERE tee.task_episode_id = ?
+       ORDER BY hi.occurred_at IS NULL, hi.occurred_at, hi.id`,
+    )
+    .all(episodeId) as { id: number }[];
+  const rank = new Map(timeOrder.map((r, i) => [r.id, i]));
   return rows
-    .slice(1)
+    .filter((r) => r.id !== requestId)
+    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
     .filter((r) => r.role === "user" || r.role === "operator")
     .map((r) => humanVisibleText(r.content));
 }
@@ -4409,3 +4522,88 @@ export function listExperimentRunsWithRules(): (ExperimentRunRow & {
   })[];
 }
 // ---- end Round 6c ----
+
+// ---- Round 7: end-to-end test fixes ----
+/** new_content of the newest verified-written Knowledge version for a
+ * target, or null -- what Harness itself last put in Lovable there
+ * (executeVersionNow uses it to recognise its own managed block). */
+export function latestWrittenKnowledgeContent(
+  target: KnowledgeTarget,
+  targetId: string,
+): string | null {
+  const row = db
+    .prepare(
+      `SELECT new_content FROM knowledge_versions
+       WHERE target = ? AND ${targetColumn(target)} = ? AND status = 'written'
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(target, targetId) as { new_content: string } | undefined;
+  return row?.new_content ?? null;
+}
+
+/** Every rule that was ever written to this target's Knowledge, with its
+ * current state -- what going back to an older text reconciles. */
+export function writtenRulesForTarget(
+  target: KnowledgeTarget,
+  targetId: string,
+): { id: number; instruction: string; state: string }[] {
+  return db
+    .prepare(
+      `SELECT DISTINCT r.id, r.instruction, r.state FROM rules r
+       JOIN knowledge_versions kv ON kv.rule_id = r.id
+       WHERE kv.status = 'written' AND kv.target = ? AND ${targetColumn(target).replace(/^/, "kv.")} = ?`,
+    )
+    .all(target, targetId) as { id: number; instruction: string; state: string }[];
+}
+
+/** Every wording a rule has had: its current instruction and each earlier
+ * or later one from rule_revisions. */
+export function ruleWordings(ruleId: number): string[] {
+  const current = db.prepare(`SELECT instruction FROM rules WHERE id = ?`).get(ruleId) as
+    | { instruction: string }
+    | undefined;
+  const revisions = db
+    .prepare(`SELECT previous_instruction AS a, new_instruction AS b FROM rule_revisions WHERE rule_id = ?`)
+    .all(ruleId) as { a: string; b: string }[];
+  return Array.from(
+    new Set([current?.instruction, ...revisions.flatMap((r) => [r.a, r.b])].filter((t): t is string => !!t)),
+  );
+}
+// ---- end Round 7 ----
+
+// ---- Round 7: one suggestion per correction ----
+export type CorrectionMiningOutcome = "proposed" | "no_proposal" | "duplicate" | "skipped_repeat";
+
+/** Records that the Rule writer was asked about these corrections, so they
+ * are not mined again. Idempotent per correction (first outcome wins). */
+export function recordCorrectionMining(
+  historyItemIds: number[],
+  outcome: CorrectionMiningOutcome,
+  opts: { correction_candidate_id?: number | null; run_id?: number | null } = {},
+): void {
+  const stmt = db.prepare(
+    `INSERT OR IGNORE INTO correction_mining (history_item_id, outcome, correction_candidate_id, run_id)
+     VALUES (?, ?, ?, ?)`,
+  );
+  for (const id of historyItemIds) {
+    stmt.run(id, outcome, opts.correction_candidate_id ?? null, opts.run_id ?? null);
+  }
+}
+
+/** The correction texts a suggestion was made from (its own cited evidence
+ * classified as corrections, oldest first) -- [] for a suggestion whose
+ * evidence carries no classified correction (e.g. hand-built ones). */
+export function candidateCorrections(correctionCandidateId: number): string[] {
+  const rows = db
+    .prepare(
+      `SELECT mc.summary AS summary, hi.content AS content
+       FROM correction_candidate_evidence cce
+       JOIN history_items hi ON hi.id = cce.history_item_id
+       JOIN message_classifications mc ON mc.history_item_id = hi.id
+       WHERE cce.correction_candidate_id = ? AND mc.classification = 'correction'
+       ORDER BY hi.occurred_at IS NULL, hi.occurred_at, hi.id`,
+    )
+    .all(correctionCandidateId) as { summary: string | null; content: string }[];
+  return rows.map((r) => (r.summary && r.summary.length > 0 ? r.summary : r.content.slice(0, 200)));
+}
+// ---- end Round 7 ----

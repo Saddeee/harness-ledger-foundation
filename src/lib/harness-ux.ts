@@ -195,6 +195,8 @@ function decodeHtmlEntities(s: string): string {
 
 const MESSAGE_USER_BLOCK =
   /<lov-tool-use\b[^>]*?name="user_messaging--message_user"[^>]*?data="((?:[^"\\]|\\.)*)"/g;
+const LOV_TOOL_USE_BLOCK = /<lov-tool-use\b(?:[^>"]|"(?:[^"\\]|\\.)*")*>[\s\S]*?<\/lov-tool-use>/g;
+const LOV_OTHER_TAG = /<\/?lov-[\w-]+\b(?:[^>"]|"(?:[^"\\]|\\.)*")*\/?>/g;
 
 export function lovableReplyText(raw: string): string {
   const out: string[] = [];
@@ -210,6 +212,18 @@ export function lovableReplyText(raw: string): string {
     }
   }
   if (out.length > 0) return out.join("\n\n");
+  // Lovable's current replies have no message_user blocks: what the person
+  // saw is the plain text between and after the tool-use blocks. Quoted
+  // attribute values may contain ">" and escaped quotes, hence the pattern.
+  if (/<lov-[\w-]+\b/.test(raw)) {
+    return raw
+      .replace(LOV_TOOL_USE_BLOCK, "\n\n")
+      .replace(LOV_OTHER_TAG, "\n\n")
+      .split(/\n{2,}/)
+      .map((chunk) => chunk.trim())
+      .filter(Boolean)
+      .join("\n\n");
+  }
   return excerpt(raw, 600);
 }
 
@@ -461,7 +475,7 @@ export const REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL = "Remove";
 
 // ---- Retirement proposals (Task C2 / spec §4b-§5) ----
 
-export type RetireReason = "hurt" | "contradiction" | "unused";
+export type RetireReason = "hurt" | "contradiction" | "unused" | "changed_mind";
 export type RetireLike = {
   reason: RetireReason;
   health: {
@@ -480,6 +494,9 @@ export type RetireLike = {
 // says "helped" -- same honest vocabulary as healthLine below (an applicable
 // build without a repeat correction is not proof the rule helped).
 export function retireReasonSentence(input: RetireLike): string {
+  if (input.reason === "changed_mind") {
+    return "Harness suggests retiring this rule because you asked Lovable for the opposite.";
+  }
   if (input.reason === "contradiction") {
     const other = (input.contradicts_instruction ?? "another rule").replace(/\.+$/, "");
     return `Harness suggests retiring this rule because it contradicts ${other}.`;
@@ -498,6 +515,9 @@ export function retireReasonSentence(input: RetireLike): string {
 // same counts, so the two can never say different things about the same
 // rule -- and, by construction, "helped" never appears here either.
 export function retireSinceLine(input: RetireLike): string {
+  if (input.reason === "changed_mind") {
+    return "This rule is still in your Lovable Knowledge, so Lovable keeps being told the old way.";
+  }
   if (input.reason === "contradiction") {
     return "This rule is still live, but a newer rule now says the opposite.";
   }
@@ -631,9 +651,30 @@ export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefi
 // every caller (the card, the Add dialog's "Add and test it first" choice,
 // the judging screen) reads the same words. ----
 
-export const TEST_THIS_RULE_TITLE = "Test this rule in a temporary copy?";
+export const TEST_THIS_RULE_TITLE = "Test this rule in a copy of your project?";
 export const TEST_THIS_RULE_BODY =
-  "Harness copies your project as it was just before your original request, adds this rule to the copy's Knowledge, sends the same request, and shows you both builds side by side. The copy is deleted afterwards.";
+  "Harness copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request. You get both builds side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done.";
+// Round 7: the second, free copy that shows the original build.
+export const SHOW_ORIGINAL_LABEL = "Also copy my original build so I can open both (free)";
+export const SHOW_ORIGINAL_HELP =
+  "Leave this on when the rule is about something you can see. Turn it off for rules about things you can't, like how data is saved.";
+// Round 7: "Test it first" in the Add dialog adds nothing until you decide.
+export const TEST_FIRST_LABEL = "Test it first";
+export const TEST_FIRST_HELP =
+  "Nothing is added yet. Harness runs your original request again in a copy with this rule, you compare both builds, and you add it afterwards if it worked.";
+/** A warning when a rule going to every project talks about one app. */
+export function workspaceWordingWarning(
+  instruction: string | null | undefined,
+  projectName: string | null | undefined,
+): string | null {
+  if (!instruction) return null;
+  const match = instruction.match(
+    /\b(?:in |for )?(?:this|the) (?:app|project|site|page|website)\b/i,
+  );
+  if (!match) return null;
+  const project = projectName ? ` if it's only for ${projectName}` : "";
+  return `This rule says "${match[0].trim()}", but every project in your workspace will read it. Edit the wording first${project}, or add it to this project instead.`;
+}
 export const TEST_THIS_RULE_CREDITS_LINE =
   "Uses Lovable credits like any build; the exact cost is recorded after.";
 export function testThisRuleBudgetLine(credits: {
@@ -678,10 +719,19 @@ export function testFailedLine(error: string | null | undefined): string {
 
 // The judging screen's own confounder lines (spec §6), verbatim.
 export function testCopyConfounderLine(editsSinceEpisode: number | null): string {
-  const n = editsSinceEpisode ?? 0;
-  return `This copy started from the project as it was before that request; ${n} edit${n === 1 ? "" : "s"} have landed since.`;
+  // null means Lovable's edit list could not be read: say nothing about a
+  // count rather than claim "0 edits".
+  if (editsSinceEpisode == null)
+    return "This copy started from the project as it was before that request.";
+  const n = editsSinceEpisode;
+  return `This copy started from the project as it was before that request; ${n} edit${n === 1 ? " has" : "s have"} landed since.`;
 }
 export const TEST_ONE_BUILD_LINE = "One build; evidence, not proof.";
+// Round 7, found in a live test: the copy with the rule came out in euros and
+// lowercase -- preferences given to Lovable hours after the replayed request.
+// Lovable's own project memory is copied as it is now, not as it was then.
+export const TEST_MEMORY_CONFOUNDER_LINE =
+  "Lovable's own project memory is copied as it is today, so preferences you gave Lovable after that request can show up in the copy.";
 // "This test used N credits · measured" / "Cost not reported by Lovable" --
 // N always comes from cost_credits (a real, measured Lovable REST response
 // field, never a guess), so there is never a hardcoded number next to the

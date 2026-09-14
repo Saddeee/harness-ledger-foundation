@@ -43,11 +43,13 @@ export interface LovableReader {
   ): Promise<{ messages: LovableMessage[]; next_cursor: string | null; has_more: boolean }>;
   getProjectKnowledge(projectId: string): Promise<string>;
   getWorkspaceKnowledge(workspaceId: string): Promise<string>;
-  listWorkspaceSkills(
-    workspaceId: string,
-  ): Promise<
-    { name: string; description: string | null; content: string; updated_at: string | null }[]
-  >;
+  // Round 7: `complete` is false when Lovable's answer had no skills list or
+  // said there are more than it returned -- a missing skill then can't be
+  // read as "deleted".
+  listWorkspaceSkills(workspaceId: string): Promise<{
+    skills: { name: string; description: string | null; content: string; updated_at: string | null }[];
+    complete: boolean;
+  }>;
 }
 
 export interface LovableWriter {
@@ -62,6 +64,13 @@ export type LovableClient = LovableReader & LovableWriter & { close(): Promise<v
 export function parseToolResult(result: unknown): unknown {
   const content = (result as { content?: { type?: string; text?: string }[] } | undefined)?.content;
   const text = content?.find((c) => c?.type === "text")?.text;
+  // An error result carries its message as ordinary text ("Lovable API
+  // error: 401 unauthorized: Unauthorized"). Returned as data, that text was
+  // saved as the project's Knowledge -- and a write composed on it would have
+  // put it into Lovable. It is an error: throw it.
+  if ((result as { isError?: unknown } | undefined)?.isError === true) {
+    throw new Error(typeof text === "string" && text ? text : "Lovable returned an error");
+  }
   if (typeof text !== "string") throw new Error("unexpected Lovable tool result shape");
   try {
     return JSON.parse(text);
@@ -115,9 +124,13 @@ function toMessage(raw: unknown): LovableMessage {
   };
 }
 
-function toIdName(raw: unknown): { id: string; name: string } {
+/** list_projects gives every project a display_name (what Lovable shows),
+ * but only some carry the older `name` slug -- the Projects page showed blank
+ * rows for those. Exported for its unit test. */
+export function toIdName(raw: unknown): { id: string; name: string } {
   const o = asRecord(raw);
-  return { id: String(o.id ?? ""), name: String(o.name ?? "") };
+  const name = o.display_name ?? o.name ?? o.id ?? "";
+  return { id: String(o.id ?? ""), name: String(name) };
 }
 
 function toSkill(raw: unknown): {
@@ -135,10 +148,25 @@ function toSkill(raw: unknown): {
   };
 }
 
-function knowledgeContent(parsed: unknown): string {
-  if (typeof parsed === "string") return parsed;
+/** Lovable's MCP answers "(empty)" for empty Knowledge (REST answers "").
+ * Same rule as knowledge.ts#realKnowledgeText, kept local so this client
+ * stays free of the store/database import. Exported for its unit test. */
+export function knowledgeContent(parsed: unknown): string {
+  const raw = typeof parsed === "string" ? parsed : (str(asRecord(parsed).content) ?? str(asRecord(parsed).knowledge) ?? "");
+  return raw.trim() === "(empty)" ? "" : raw;
+}
+
+/** list_workspace_skills' answer as skills plus whether it is the whole
+ * list: false for a malformed answer (no skills array) or has_more. Exported
+ * for its unit test. */
+export function skillListFromResponse(parsed: unknown): {
+  skills: { name: string; description: string | null; content: string; updated_at: string | null }[];
+  complete: boolean;
+} {
   const o = asRecord(parsed);
-  return str(o.content) ?? str(o.knowledge) ?? "";
+  const wellFormed = Array.isArray(o.skills);
+  const list = wellFormed ? (o.skills as unknown[]) : [];
+  return { skills: list.map(toSkill), complete: wellFormed && o.has_more !== true };
 }
 
 // ---------------------------------------------------------------- client
@@ -218,11 +246,9 @@ export async function openLovableClient(): Promise<LovableClient> {
     },
 
     async listWorkspaceSkills(workspaceId: string) {
-      const o = asRecord(
+      return skillListFromResponse(
         await call("list_workspace_skills", { workspace_id: workspaceId, include_markdown: true }),
       );
-      const list = Array.isArray(o.skills) ? o.skills : [];
-      return list.map(toSkill);
     },
 
     async setProjectKnowledge(projectId: string, content: string) {

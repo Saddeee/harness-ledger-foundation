@@ -37,6 +37,10 @@ const REMIX_TIMEOUT_MS = 5 * 60_000;
 const BUILD_POLL_MS = 20_000;
 const BUILD_TIMEOUT_MS = 15 * 60_000;
 const REPLY_CHAR_CAP = 4_000;
+// Round 7: Lovable takes a screenshot of a project's latest commit some time
+// after a build; poll for one that belongs to that commit.
+const SCREENSHOT_POLL_MS = 10_000;
+const SCREENSHOT_POLL_ATTEMPTS = 18;
 const DIFF_LINE_CAP = 400;
 // How many of the source project's most recent edits to look at when
 // counting how many landed after the episode started (store.countEditsSince
@@ -44,7 +48,10 @@ const DIFF_LINE_CAP = 400;
 // its own). Generous enough that a real project's edit history since one
 // episode is very unlikely to spill past it; this is a secondary,
 // non-credited read, not something worth a full pagination loop for.
-const EDITS_SINCE_LIMIT = 200;
+// The real endpoint rejects limit > 50 (422); older pages come from
+// `before` (an ISO timestamp). A live run with limit 200 recorded null.
+const EDITS_PAGE_LIMIT = 50;
+const EDITS_MAX_PAGES = 10;
 
 // Round 6 fix wave item A: how far resolveRequestMessageId below pages
 // through the source project's own message list (a free, uncredited read)
@@ -90,8 +97,27 @@ function findCandidateEpisode(correctionCandidateId: number): CandidateEpisodeRo
   );
 }
 
-function clipTitle(text: string, max = 40): string {
-  return text.length > max ? text.slice(0, max) : text;
+/** A test copy's Lovable project name, e.g. "Harness test #7 · with the
+ * rule · Quick Tip Calculator". The old name cut the rule text at 40
+ * characters mid-word, which read like a broken project. Exported for its
+ * unit test. */
+export function testCopyName(
+  runId: number,
+  which: "with the rule" | "original build",
+  sourceProjectId: string,
+): string {
+  const raw = store.getProjectMeta(sourceProjectId)?.name ?? "your project";
+  // Lovable only accepts letters, numbers, spaces and - _ . ' · & ( ) [ ] | ,
+  // ! : in a display name, and no links or domain names ("#" is refused with
+  // a 400, which would fail the whole test). Dots go too, so a project named
+  // like a domain can't trip the check.
+  const project =
+    raw
+      .replace(/[^\p{L}\p{N} \-_'·&()[\]|,!:]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 60) || "your project";
+  return `Harness test ${runId} · ${which} · ${project}`;
 }
 
 /** Splits a unified-diff-shaped string (LovableRest#getDiff's own return
@@ -116,9 +142,12 @@ export function knowledgeBaseAtOrBefore(
   episodeStartedAt: string | null,
 ): string {
   if (episodeStartedAt) {
+    // Parsed, not string-compared: snapshots use SQLite's "YYYY-MM-DD
+    // HH:MM:SS" (UTC) and episodes ISO "…T…Z", and " " sorts before "T".
+    const startedMs = parseTimestampMs(episodeStartedAt);
     let picked: string | null = null;
     for (const snap of snapshots) {
-      if (snap.fetched_at <= episodeStartedAt) picked = snap.content;
+      if (parseTimestampMs(snap.fetched_at) <= startedMs) picked = snap.content;
       else break;
     }
     if (picked !== null) return picked;
@@ -140,9 +169,12 @@ function normalizeForMatch(text: string): string {
  * duplicated here (rather than exported from store.ts) because this is
  * about parsing a Lovable REST timestamp, not a store.ts column. */
 function parseTimestampMs(iso: string): number {
-  const direct = Date.parse(iso);
-  if (!Number.isNaN(direct)) return direct;
-  return Date.parse(iso.replace(" ", "T") + "Z");
+  // SQLite's zone-less "YYYY-MM-DD HH:MM:SS" is UTC; Date.parse would read
+  // it as local time, so it is converted explicitly first.
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(iso)) {
+    return Date.parse(iso.replace(" ", "T") + "Z");
+  }
+  return Date.parse(iso);
 }
 
 /** Resolves the REST message id (Lovable's own ids, from GET .../messages)
@@ -230,6 +262,27 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
+/** How many of the source project's edits landed after the request, paging
+ * newest-first until a page reaches back past it (or runs out). */
+async function countEditsSinceEpisode(
+  rest: LovableRest,
+  source: string,
+  episodeStartedAt: string,
+): Promise<number> {
+  const startedMs = parseTimestampMs(episodeStartedAt);
+  let count = 0;
+  let before: string | undefined;
+  for (let page = 0; page < EDITS_MAX_PAGES; page += 1) {
+    const { edits, has_more } = await rest.listEdits(source, { limit: EDITS_PAGE_LIMIT, before });
+    const times = edits.map((e) => e.created_at);
+    count += store.countEditsSince(new Date(startedMs).toISOString(), times.map((t) => new Date(parseTimestampMs(t)).toISOString()));
+    const oldestMs = Math.min(...times.map(parseTimestampMs));
+    if (!has_more || edits.length === 0 || oldestMs <= startedMs) break;
+    before = new Date(oldestMs).toISOString();
+  }
+  return count;
+}
+
 // ----------------------------------------------------------- startExperiment
 
 /** Opens a new paired-test attempt for a correction candidate that already
@@ -242,6 +295,7 @@ function errorMessage(err: unknown): string {
 export async function startExperiment(
   candidateId: number,
   deps: { rest: LovableRest; connected?: () => boolean },
+  opts: { showOriginal?: boolean } = {},
 ): Promise<{ run_id: number } | { refused: string }> {
   const isConnected = deps.connected ?? (() => lovableConnectionStatus().connected);
   if (!isConnected()) {
@@ -284,6 +338,7 @@ export async function startExperiment(
     task_episode_id: candidate.task_episode_id,
     source_project_id: candidate.project_id,
     request_message_external_id: requestExternalId,
+    show_original: opts.showOriginal === true,
   });
   return { run_id: id };
 }
@@ -362,7 +417,7 @@ export async function runExperiment(
       include_history: false,
       include_custom_knowledge: false,
       skip_initial_remix_message: true,
-      project_name: `Harness test: ${clipTitle(ruleInstruction)}`,
+      project_name: testCopyName(runId, "with the rule", source),
     });
 
     const remixStart = now();
@@ -470,9 +525,11 @@ export async function runExperiment(
     // same message_id-addressed REST endpoints remixInit uses, and only
     // accept Lovable's own ids.
     let originalCommitSha: string | null = null;
+    let originalSummary: string | null = null;
     try {
       const originalMessage = await rest.getMessage(source, restRequestId);
       originalCommitSha = originalMessage.commit_sha ?? null;
+      originalSummary = originalMessage.summary ?? null;
     } catch {
       originalCommitSha = null;
     }
@@ -491,11 +548,7 @@ export async function runExperiment(
     let editsSinceEpisode: number | null = null;
     if (episodeStartedAt) {
       try {
-        const edits = await rest.listEdits(source, { limit: EDITS_SINCE_LIMIT });
-        editsSinceEpisode = store.countEditsSince(
-          episodeStartedAt,
-          edits.edits.map((e) => e.created_at),
-        );
+        editsSinceEpisode = await countEditsSinceEpisode(rest, source, episodeStartedAt);
       } catch {
         editsSinceEpisode = null;
       }
@@ -503,8 +556,57 @@ export async function runExperiment(
 
     store.updateExperimentRun(runId, {
       original_commit_sha: originalCommitSha,
+      original_summary: originalSummary,
       original_diff_json: originalDiffJson,
       edits_since_episode: editsSinceEpisode,
+    });
+
+    // ---- 4b. Round 7: builds you can look at ----
+    // A free copy of the project right after the original request (remix
+    // "including" it, no chat) so the original build can be opened next to
+    // the new one; best effort -- the paid build above is already recorded.
+    if (initial.show_original === 1) {
+      store.updateExperimentRun(runId, { stage_note: "Copying your original build to look at" });
+      try {
+        const { job_id: originalJob } = await rest.remixInit(source, {
+          message_id: restRequestId,
+          remix_mode: "including",
+          include_history: false,
+          include_custom_knowledge: false,
+          skip_initial_remix_message: true,
+          project_name: testCopyName(runId, "original build", source),
+        });
+        const originalStart = now();
+        for (;;) {
+          const progress = await rest.remixProgress(source, originalJob);
+          if (progress.status === "completed") {
+            if (progress.project_id) {
+              store.updateExperimentRun(runId, { original_copy_project_id: progress.project_id });
+            }
+            break;
+          }
+          if (progress.status === "failed") {
+            throw new Error(progress.error ?? "Copying the original build failed.");
+          }
+          if (now() - originalStart >= REMIX_TIMEOUT_MS) {
+            throw new Error("Copying the original build timed out.");
+          }
+          await sleep(REMIX_POLL_MS);
+        }
+      } catch (err) {
+        store.updateExperimentRun(runId, { original_copy_error: errorMessage(err) });
+      }
+    }
+
+    store.updateExperimentRun(runId, { stage_note: "Waiting for screenshots of the builds" });
+    const withRuleShot = await screenshotOf(rest, copyProjectId, sleep);
+    const afterShots = store.getExperimentRun(runId)!;
+    const originalShot = afterShots.original_copy_project_id
+      ? await screenshotOf(rest, afterShots.original_copy_project_id, sleep)
+      : null;
+    store.updateExperimentRun(runId, {
+      copy_screenshot_url: withRuleShot,
+      original_screenshot_url: originalShot,
     });
 
     // ---- 5. cleanup (spec §6 Run 5) ----
@@ -524,7 +626,8 @@ export async function runExperiment(
     const failed = store.getExperimentRun(runId);
     // cleanupCopy never throws (its own try/catch swallows every failure
     // mode internally), so no .catch is needed here.
-    if (failed) await cleanupCopy(failed, rest);
+    // A failed test's copies prove nothing: always delete them.
+    if (failed) await cleanupCopy(failed, rest, { force: true });
   }
 
   return store.getExperimentRun(runId)!;
@@ -539,23 +642,86 @@ export async function runExperiment(
  * private (best effort of its own -- swallowed on failure, same as any
  * other cleanup step) and leaves a note store.listUndeletedCopies() (the
  * Projects page's own reminder, a later task) picks up. Never throws. */
-export async function cleanupCopy(run: ExperimentRunRow, rest: LovableRest): Promise<void> {
-  if (!run.copy_project_id) return;
-  if (store.getSetting("keep_test_copies") === "true") return;
+export async function cleanupCopy(
+  run: ExperimentRunRow,
+  rest: LovableRest,
+  opts: { force?: boolean } = {},
+): Promise<void> {
+  // Round 7: copies are kept unless the owner turned that off -- they are
+  // real builds to open and continue from. A failed test's are always
+  // deleted (force).
+  if (!opts.force && store.getSetting("keep_test_copies") !== "false") return;
 
-  try {
-    await rest.deleteProject(run.copy_project_id);
-    store.updateExperimentRun(run.id, { copy_deleted: 1 });
-  } catch {
+  if (run.copy_project_id && !run.copy_deleted) {
     try {
-      await rest.setProjectVisibility(run.copy_project_id, "private");
+      await rest.deleteProject(run.copy_project_id);
+      store.updateExperimentRun(run.id, { copy_deleted: 1 });
     } catch {
-      // Nothing more this module can do locally; the note below still
-      // tells the owner to delete it by hand either way.
+      try {
+        await rest.setProjectVisibility(run.copy_project_id, "private");
+      } catch {
+        // Nothing more this module can do locally; the note below still
+        // tells the owner to delete it by hand either way.
+      }
+      store.updateExperimentRun(run.id, {
+        copy_cleanup_note:
+          "Could not delete the test copy; it was set private. Delete it by hand in Lovable.",
+      });
     }
-    store.updateExperimentRun(run.id, {
-      copy_cleanup_note:
-        "Could not delete the test copy; it was set private. Delete it by hand in Lovable.",
-    });
   }
+  if (run.original_copy_project_id && !run.original_copy_deleted) {
+    try {
+      await rest.deleteProject(run.original_copy_project_id);
+      store.updateExperimentRun(run.id, { original_copy_deleted: 1 });
+    } catch {
+      store.updateExperimentRun(run.id, {
+        copy_cleanup_note:
+          "Could not delete a test copy; delete it by hand in Lovable.",
+      });
+    }
+  }
+}
+
+/** The screenshot URL of a project's latest commit, once Lovable has taken
+ * it (its URL carries the commit's first 8 characters), else null. */
+async function screenshotOf(
+  rest: LovableRest,
+  projectId: string,
+  sleep: (ms: number) => Promise<void>,
+): Promise<string | null> {
+  for (let attempt = 0; attempt < SCREENSHOT_POLL_ATTEMPTS; attempt += 1) {
+    try {
+      const project = await rest.getProject(projectId);
+      const url = project.latest_screenshot_url;
+      const sha = project.latest_commit_sha;
+      if (url && (!sha || url.includes(`-${sha.slice(0, 8)}--`))) return url;
+    } catch {
+      return null;
+    }
+    await sleep(SCREENSHOT_POLL_MS);
+  }
+  return null;
+}
+
+/** "Delete copy" on the judging screen: deletes one of this run's own test
+ * copies in Lovable. Refuses anything that is not a copy this run recorded,
+ * and always refuses the source project. */
+export async function deleteTestCopy(
+  runId: number,
+  which: "with_rule" | "original",
+  rest: LovableRest,
+): Promise<ExperimentRunRow> {
+  const run = store.getExperimentRun(runId);
+  if (!run) throw new Error(`test ${runId} not found`);
+  const projectId = which === "with_rule" ? run.copy_project_id : run.original_copy_project_id;
+  if (!projectId) throw new Error("This test has no such copy.");
+  if (projectId === run.source_project_id) {
+    throw new Error("Refusing to delete the source project.");
+  }
+  await rest.deleteProject(projectId);
+  store.updateExperimentRun(
+    runId,
+    which === "with_rule" ? { copy_deleted: 1 } : { original_copy_deleted: 1 },
+  );
+  return store.getExperimentRun(runId)!;
 }

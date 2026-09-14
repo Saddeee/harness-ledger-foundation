@@ -811,6 +811,7 @@ function makeJudgedRun(input: {
   episodeId: number;
   score: number;
   judgedAt: string;
+  verdicts?: ("yes" | "no" | "unclear")[];
 }): void {
   pairedRunSeq += 1;
   const { id } = store.createExperimentRun({
@@ -824,6 +825,7 @@ function makeJudgedRun(input: {
     status: "judged",
     score: input.score,
     judged_at: input.judgedAt,
+    ...(input.verdicts ? { verdicts_json: JSON.stringify(input.verdicts) } : {}),
   });
 }
 
@@ -918,5 +920,25 @@ test("recomputeRuleHealth: a judged paired-test run with a middling score (0 < s
   assert.equal(health.helped, 0);
   assert.equal(health.hurt, 0);
 
+  resetEvidenceSources();
+});
+
+test("recomputeRuleHealth: a paired test judged all 'Unclear' is not a hurt -- nothing was judged still needed", () => {
+  // Live run 4 was judged Unclear; its score (no / corrections) is 0, which
+  // counted as one hurt against the rule.
+  const { ruleId, correctionId, episodeId } = makeLiveRuleWithCandidate({
+    writtenAt: RULE_WRITTEN_AT,
+    scopeTags: ["paired-gate-unclear-tag"],
+  });
+  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0, judgedAt: "2026-09-05T00:00:00Z", verdicts: ["unclear"] });
+  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0.5, judgedAt: "2026-09-06T00:00:00Z", verdicts: ["no", "unclear"] });
+  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0, judgedAt: "2026-09-07T00:00:00Z", verdicts: ["yes", "unclear"] });
+
+  setPaired(true);
+  recomputeRuleHealth(NOW);
+  const health = store.getRuleHealth(ruleId)!;
+  assert.equal(health.applicable_tasks, 2, "the all-unclear run counts for nothing");
+  assert.equal(health.helped, 1, "no + unclear: every decided correction was resolved");
+  assert.equal(health.hurt, 1, "yes + unclear: still needed, nothing resolved");
   resetEvidenceSources();
 });

@@ -147,9 +147,10 @@ test("timeline.tsx: aria-expanded nodes, a diff toggle, Restore, nothing expande
   assert.match(code, /aria-expanded/);
   assert.ok(raw.includes("Show as diff"));
   assert.ok(raw.includes("Full text"));
-  assert.ok(raw.includes("Restore this version"));
+  assert.ok(raw.includes("Undo this change"));
+  assert.ok(raw.includes("Go back to before this change"));
   assert.ok(raw.includes("Open suggestion"));
-  assert.ok(raw.includes("restored #"));
+  assert.ok(raw.includes("went back to before #"));
 
   // a single selection, defaulting to nothing selected -- never expanded by
   // default.

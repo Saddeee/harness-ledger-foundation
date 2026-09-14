@@ -410,8 +410,10 @@ export function LocalSettings() {
             };
         await postExecutor({
           action: "llm_settings",
-          llm_provider: llmProvider,
-          llm_models: modelsToSave,
+          // The executor route reads `provider`/`models`; under the old
+          // llm_-prefixed names nothing was saved while the toast said it was.
+          provider: llmProvider,
+          models: modelsToSave,
           monthly_token_budget: budget,
         });
       } catch (e) {
@@ -630,9 +632,11 @@ export function LocalSettings() {
 
         <div className="flex items-center justify-between gap-2">
           <div className="space-y-1">
-            <Label htmlFor="keep-test-copies">Keep test copies (delete them by hand)</Label>
+            <Label htmlFor="keep-test-copies">Keep test builds as projects</Label>
             <p className="text-xs text-muted-foreground">
-              Off by default -- Harness deletes each test's temporary copy once it's judged.
+              On by default: each test's builds stay in your Lovable workspace so you can open them
+              and keep building on them; delete them from the test when you're done. Turn off to
+              delete them as soon as a test finishes. A failed test's copies are always deleted.
             </p>
           </div>
           <Switch
@@ -736,7 +740,24 @@ export function LocalSettings() {
 
         <div className="space-y-1">
           <Label htmlFor="llm-provider">Key for</Label>
-          <Select value={llmProvider} onValueChange={(v) => setLlmProvider(v as LlmProvider)}>
+          <Select
+            value={llmProvider}
+            onValueChange={(v) => {
+              // One provider choice: the key's provider and the analysis
+              // model's provider move together, so picking Claude Code here
+              // can't leave analysis on a provider with no key.
+              const provider = v as LlmProvider;
+              setLlmProvider(provider);
+              setLlmModels((m) => ({
+                ...m,
+                rule_writer: {
+                  ...m.rule_writer,
+                  provider,
+                  model: nextModelOnProviderChange(m.rule_writer.model, provider),
+                },
+              }));
+            }}
+          >
             <SelectTrigger id="llm-provider" className="w-full sm:w-56">
               <SelectValue />
             </SelectTrigger>
@@ -801,6 +822,7 @@ export function LocalSettings() {
                 value={llmModels.rule_writer.provider}
                 onValueChange={(v) => {
                   const provider = v as LlmProvider;
+                  setLlmProvider(provider);
                   setLlmModels((m) => ({
                     ...m,
                     rule_writer: {

@@ -327,7 +327,7 @@ test("improvement.tsx AddConfirm: over_rules disables confirm and shows the reti
   );
 
   assert.match(detail, /const overRules = preview\?\.over_rules === true;/);
-  assert.match(confirm, /confirmDisabled=\{overCap \|\| overRules \|\| choice == null\}/);
+  assert.match(confirm, /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/);
   assert.match(confirm, /\{overRules \? \(/);
   assert.match(confirm, /role="alert"/);
   assert.match(confirm, /overRulesLine\(preview\.active_rules_count\)/);

@@ -11,7 +11,7 @@
 // same cache key Projects/Settings read from), and postImprovementAction
 // for the "feedback" action.
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -59,49 +59,56 @@ const UNAVAILABLE_LINE = "Tests are available when Harness runs on your machine.
 const IN_PROGRESS_STATUSES = new Set(["copying", "building"]);
 const POLL_MS = 10_000;
 
-function statusCell(run: ExperimentRunSummary) {
+/** The Status column's plain words. The whole row opens this test's own
+ * screen (the rule text is that link), whatever state the test is in. */
+function statusText(run: ExperimentRunSummary): string {
   switch (run.status) {
     case "queued":
-      return <span>Queued</span>;
+      return "Queued";
     case "copying":
-      return <span>Copying</span>;
+      return "Copying";
     case "building":
-      return <span>Building</span>;
+      return "Building";
     case "judging":
-      return (
-        <Link
-          to="/judge"
-          search={{ run: run.id }}
-          className="text-primary underline underline-offset-2"
-        >
-          Your verdict is needed
-        </Link>
-      );
+      return "Your verdict is needed";
     case "judged": {
       const no = Math.round((run.score ?? 0) * run.corrections);
-      return (
-        <Link
-          to="/judge"
-          search={{ run: run.id }}
-          className="text-primary underline underline-offset-2"
-        >
-          {`Judged: ${no} of ${run.corrections} correction${run.corrections === 1 ? "" : "s"} no longer needed`}
-        </Link>
-      );
+      return `Judged: ${no} of ${run.corrections} correction${run.corrections === 1 ? "" : "s"} no longer needed`;
     }
     case "failed":
-      return (
-        <Link
-          to="/judge"
-          search={{ run: run.id }}
-          className="text-primary underline underline-offset-2"
-        >
-          {`Failed: ${run.error ?? "unknown error"} · open`}
-        </Link>
-      );
+      return `Failed: ${run.error ?? "unknown error"}`;
     default:
-      return <span>Cancelled</span>;
+      return "Cancelled";
   }
+}
+
+// Round 7: the test's builds are real Lovable projects -- open them from
+// the list without going through the comparison.
+function buildLinks(run: ExperimentRunSummary) {
+  const links = [
+    run.original_copy && !run.original_copy.deleted
+      ? { label: "Original build", href: run.original_copy.editor_url }
+      : null,
+    run.copy && !run.copy.deleted
+      ? { label: "Build with the rule", href: run.copy.editor_url }
+      : null,
+  ].filter((l): l is { label: string; href: string } => l !== null);
+  if (links.length === 0) return null;
+  return (
+    <span className="mt-1 flex flex-wrap gap-3 text-xs">
+      {links.map((l) => (
+        <a
+          key={l.label}
+          href={l.href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-muted-foreground underline underline-offset-2"
+        >
+          {`${l.label} in Lovable`}
+        </a>
+      ))}
+    </span>
+  );
 }
 
 function costCell(run: ExperimentRunSummary): string {
@@ -168,6 +175,7 @@ function FeedbackCell({
 
 function Page() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
 
@@ -245,6 +253,7 @@ function Page() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Project</TableHead>
               <TableHead>Rule</TableHead>
               <TableHead>Started</TableHead>
               <TableHead>Status</TableHead>
@@ -254,18 +263,30 @@ function Page() {
           </TableHeader>
           <TableBody>
             {runs.map((run) => (
-              <TableRow key={run.id}>
+              <TableRow
+                key={run.id}
+                className="cursor-pointer"
+                onClick={(e) => {
+                  // Feedback buttons and the textarea keep their own clicks.
+                  if ((e.target as HTMLElement).closest("button, textarea, a")) return;
+                  void navigate({ to: "/judge", search: { run: run.id } });
+                }}
+              >
+                <TableCell className="whitespace-nowrap font-medium">
+                  {run.project_name ?? "—"}
+                </TableCell>
                 <TableCell>
                   <Link
-                    to="/ledger"
-                    search={{ improvement: run.improvement_id }}
+                    to="/judge"
+                    search={{ run: run.id }}
                     className="text-primary underline underline-offset-2"
                   >
                     {run.rule_text}
                   </Link>
+                  {buildLinks(run)}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">{formatDate(run.started_at)}</TableCell>
-                <TableCell>{statusCell(run)}</TableCell>
+                <TableCell>{statusText(run)}</TableCell>
                 <TableCell className="whitespace-nowrap">{costCell(run)}</TableCell>
                 <TableCell>
                   <FeedbackCell

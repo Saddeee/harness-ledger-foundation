@@ -101,8 +101,16 @@ const ACTOR_LABEL: Record<TimelineNode["actor"], string> = {
   lovable: "Lovable",
 };
 
-const RESTORE_TITLE = "Restore this version?";
-const RESTORE_BODY = "Harness will write the earlier text back, as a new version.";
+// Round 7 (owner): the button says what it does. A version node shows the
+// text after that change; the action writes back the text from before it.
+const UNDO_LABEL = "Undo this change";
+const UNDO_TITLE = "Undo this change?";
+const UNDO_BODY =
+  "Harness writes back your Knowledge as it was before this change, as a new version.";
+const GO_BACK_LABEL = "Go back to before this change";
+const GO_BACK_TITLE = "Go back to before this change?";
+const GO_BACK_BODY =
+  "Harness writes back your Knowledge as it was before this change, as a new version. Every change after it is undone too.";
 
 export function Timeline({
   nodes,
@@ -216,7 +224,7 @@ export function Timeline({
                     onClick={() => jumpTo(`version:${node.restored_from}`)}
                     className="text-xs text-primary underline underline-offset-2"
                   >
-                    restored #{node.restored_from}
+                    went back to before #{node.restored_from}
                   </button>
                 ) : null}
 
@@ -245,11 +253,11 @@ export function Timeline({
 
                 {canRestore ? (
                   <ConfirmAction
-                    trigger="Restore this version"
-                    title={RESTORE_TITLE}
-                    body={RESTORE_BODY}
+                    trigger={node.latest_version ? UNDO_LABEL : GO_BACK_LABEL}
+                    title={node.latest_version ? UNDO_TITLE : GO_BACK_TITLE}
+                    body={node.latest_version ? UNDO_BODY : GO_BACK_BODY}
                     consequences={[]}
-                    confirmLabel="Restore"
+                    confirmLabel={node.latest_version ? "Undo" : "Go back"}
                     disabled={restoreDisabled}
                     onConfirm={() => onRestore(node.version_id!)}
                   />

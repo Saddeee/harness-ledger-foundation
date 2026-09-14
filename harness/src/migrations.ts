@@ -726,4 +726,70 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE experiment_runs ADD COLUMN feedback_at TEXT;
     `,
   },
+  {
+    version: 14,
+    name: "round7_per_correction_mining_and_visible_builds",
+    sql: `
+      -- One suggestion per correction: every correction message the Rule
+      -- writer has already been asked about, and what came of it, so an
+      -- episode with a second, uncovered correction is mined again while a
+      -- "no rule here" answer is never re-asked on every Analyse now.
+      CREATE TABLE IF NOT EXISTS correction_mining (
+        history_item_id INTEGER PRIMARY KEY REFERENCES history_items(id),
+        outcome TEXT NOT NULL CHECK (outcome IN ('proposed','no_proposal','duplicate','skipped_repeat')),
+        correction_candidate_id INTEGER REFERENCES correction_candidates(id),
+        run_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      -- Proof you can look at: both builds are real Lovable projects. The
+      -- "with the rule" copy already exists (copy_project_id); a second,
+      -- free copy of the project right after the original request shows the
+      -- original build. Screenshots, the original build's own summary, and
+      -- the corrections as they were judged (so a later change to what a
+      -- rule's corrections are never re-labels an old verdict).
+      ALTER TABLE experiment_runs ADD COLUMN show_original INTEGER NOT NULL DEFAULT 0 CHECK (show_original IN (0,1));
+      ALTER TABLE experiment_runs ADD COLUMN original_copy_project_id TEXT;
+      ALTER TABLE experiment_runs ADD COLUMN original_copy_deleted INTEGER NOT NULL DEFAULT 0 CHECK (original_copy_deleted IN (0,1));
+      ALTER TABLE experiment_runs ADD COLUMN original_copy_error TEXT;
+      ALTER TABLE experiment_runs ADD COLUMN original_summary TEXT;
+      ALTER TABLE experiment_runs ADD COLUMN copy_screenshot_url TEXT;
+      ALTER TABLE experiment_runs ADD COLUMN original_screenshot_url TEXT;
+      ALTER TABLE experiment_runs ADD COLUMN judged_corrections_json TEXT;
+    `,
+  },
+  {
+    version: 15,
+    name: "round7_skill_deletions",
+    sql: `
+      -- A skill deleted in Lovable used to stay "current" forever: the sync
+      -- only recorded skills it saw. A deletion is now its own snapshot row
+      -- (content empty, deleted = 1), so the Skills page drops it and
+      -- History shows when it went away.
+      ALTER TABLE skill_snapshots ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0,1));
+    `,
+  },
+  {
+    version: 16,
+    name: "round7_retire_changed_mind",
+    sql: `
+      -- A new retirement reason: you asked Lovable for the opposite of a
+      -- live rule (evidence = that message's history_item id). SQLite can't
+      -- alter a CHECK constraint, so the table is rebuilt with every row kept.
+      CREATE TABLE retire_proposals_v16 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        reason TEXT NOT NULL CHECK (reason IN ('hurt','contradiction','unused','changed_mind')),
+        evidence_json TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','retired','kept')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        decided_at TEXT
+      );
+      INSERT INTO retire_proposals_v16 (id, rule_id, reason, evidence_json, status, created_at, decided_at)
+        SELECT id, rule_id, reason, evidence_json, status, created_at, decided_at FROM retire_proposals;
+      DROP TABLE retire_proposals;
+      ALTER TABLE retire_proposals_v16 RENAME TO retire_proposals;
+      CREATE INDEX IF NOT EXISTS idx_retire_proposals_status ON retire_proposals(status);
+    `,
+  },
 ];

@@ -51,6 +51,8 @@ test("judge.tsx: exists, is not in NAV, and carries the exact confounder lines, 
   // TEST_ONE_BUILD_LINE, harness-ux.ts).
   assert.match(code, /testCopyConfounderLine/);
   assert.match(code, /TEST_ONE_BUILD_LINE/);
+  // Round 7: the copy inherits Lovable's current project memory -- said plainly.
+  assert.match(code, /TEST_MEMORY_CONFOUNDER_LINE/);
 
   // Back link to the suggestion.
   assert.match(code, /←\s*Suggestion/);
@@ -90,16 +92,16 @@ test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts 
   assert.match(code, /testThisRuleBudgetLine/);
   assert.match(code, /TEST_ONE_AT_A_TIME_LINE/);
   assert.match(code, /confirmLabel=\{START_TEST_LABEL\}/);
-  assert.match(code, /action: "test", id: item\.id/);
+  assert.match(code, /action: "test", id: item\.id, show_original: showOriginal/);
 
   const uxCode = codeOnly(readApp(HARNESS_UX));
   assert.match(
     uxCode,
-    /export const TEST_THIS_RULE_TITLE = "Test this rule in a temporary copy\?";/,
+    /export const TEST_THIS_RULE_TITLE = "Test this rule in a copy of your project\?";/,
   );
   assert.match(
     uxCode,
-    /export const TEST_THIS_RULE_BODY =\s*"Harness copies your project as it was just before your original request, adds this rule to the copy's Knowledge, sends the same request, and shows you both builds side by side\. The copy is deleted afterwards\.";/,
+    /export const TEST_THIS_RULE_BODY =\s*"Harness copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request\. You get both builds side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done\.";/,
   );
   assert.match(
     uxCode,
@@ -131,7 +133,8 @@ test("local-settings.tsx: a 'Lovable credits' section with a budget input, a mea
   assert.match(code, /lovable_monthly_credit_budget: creditBudget/);
   assert.match(code, /keep_test_copies: keepTestCopies/);
   assert.match(code, /min=\{0\}\s*\n?\s*max=\{1000\}/s);
-  assert.match(code, /Keep test copies \(delete them by hand\)/);
+  // Round 7: builds are kept by default as real projects.
+  assert.match(code, /Keep test builds as projects/);
   // Evidence's own paired checkbox: enabled once a judged run exists.
   assert.match(code, /pairedTestsAvailable/);
   assert.match(code, /judged_runs/);
@@ -209,4 +212,12 @@ test('TimelineNode.kind gained "test" (Round 6 Task 6b), in both the client type
     codeOnly(improvementsSrc),
     /kind: "version" \| "external_change" \| "decision" \| "skill" \| "verdict" \| "test";/,
   );
+});
+
+test("testCopyConfounderLine: an unknown edit count is never shown as 0", async () => {
+  const ux = await import("../../src/lib/harness-ux.ts");
+  assert.equal(ux.testCopyConfounderLine(null), "This copy started from the project as it was before that request.");
+  assert.match(ux.testCopyConfounderLine(0), /0 edits have landed since\.$/);
+  assert.match(ux.testCopyConfounderLine(1), /1 edit has landed since\.$/);
+  assert.match(ux.testCopyConfounderLine(3), /3 edits have landed since\.$/);
 });

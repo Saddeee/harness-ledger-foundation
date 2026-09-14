@@ -171,6 +171,11 @@ test("autoAcceptProposals: confident, uncontested -> accepted, decided_by='autom
   const item = imp.getImprovement(ccId)!;
   assert.equal(item.decision.status, "accepted");
   assert.equal(item.lovable.write_status, "pending", "a snapshot existed, so the write is staged");
+  // The staged write is Harness's, not the user's: History showed the
+  // automatic write as "Written to Lovable · YOU".
+  const staged = store.listKnowledgeVersions(ruleId)[0]!;
+  assert.equal(staged.actor, "harness (automatic)");
+  assert.doesNotMatch(staged.reason ?? "", /user chose/);
 
   const events = store.listEvents(200) as { kind: string; payload: string | null }[];
   const autoEvent = events.find(

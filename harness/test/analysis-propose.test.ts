@@ -13,6 +13,7 @@ const store = await import("../src/store.js");
 const segment = await import("../src/analysis/segment.js");
 const propose = await import("../src/analysis/propose.js");
 const improvements = await import("../src/improvements.js");
+const { db } = await import("../src/db.js");
 import type { CallLlm, LlmRequest, LlmResult } from "../src/llm/types.js";
 import { LlmBudgetExceeded } from "../src/llm/types.js";
 
@@ -193,13 +194,14 @@ function seedEpisode(
  * round-4/task-A1-report.md's concern #2, same issue, same fix).
  */
 function drainEpisode(episodeId: number): void {
-  store.createCorrectionCandidate({
-    task_episode_id: episodeId,
-    classification: "other",
-    is_correction: false,
-    summary: "drained by test cleanup",
-    evidence_history_item_ids: [],
-  });
+  // Round 7: mining is per correction, so draining marks every correction
+  // in the episode as already asked about.
+  const ids = (
+    db
+      .prepare(`SELECT history_item_id AS id FROM task_episode_evidence WHERE task_episode_id = ?`)
+      .all(episodeId) as { id: number }[]
+  ).map((r) => r.id);
+  store.recordCorrectionMining(ids, "no_proposal");
 }
 
 /** A live rule that exists independently of the rule writer (for dedupe/
@@ -395,9 +397,9 @@ test("proposeRules counts propose:false as skippedNoProposal and writes nothing"
     "createdCandidateIds carries one id per proposed rule",
   );
 
-  // Nothing was written, so the episode is still minable.
-  assert.ok(store.listMinableEpisodes(500).some((e) => e.id === seeded.episodeId));
-  drainEpisode(seeded.episodeId);
+  // Round 7: a "no rule here" answer is remembered, so the same correction
+  // is not re-asked (and re-paid for) on every Analyse now.
+  assert.ok(!store.listMinableEpisodes(500).some((e) => e.id === seeded.episodeId));
 });
 
 test("proposeRules rejects and logs an evidence id outside the episode's corrections", async () => {
@@ -995,4 +997,61 @@ test("proposeRules drops a new proposal that dice-matches a skipped suggestion (
       JSON.parse(e.payload ?? "{}").episode_id === seeded.episodeId,
   );
   assert.ok(repeatEvent, "expected a suggestion.skipped_repeat event");
+});
+
+test("rule writer: a missing confidence is stored as null (unknown), never as 0, and the prompt defines confidence", async () => {
+  assert.equal(propose.parseConfidence(undefined), null);
+  assert.equal(propose.parseConfidence(null), null);
+  assert.equal(propose.parseConfidence("0.9"), null);
+  assert.equal(propose.parseConfidence(0.85), 0.85);
+  assert.equal(propose.parseConfidence(1.4), 1);
+  assert.equal(propose.parseConfidence(-1), 0);
+  assert.match(propose.ruleWriterSystemPrompt(), /confidence is a number from 0 to 1/);
+});
+
+test("rule writer: one suggestion per correction -- two unrelated corrections in one episode become two suggestions, and a 'no rule' answer is not re-asked", async () => {
+  // Live: kronor + fonts corrections in one episode produced one suggestion;
+  // the fonts correction was silently dropped.
+  const PROJECT_TWO = "propose-two-corrections";
+  store.allowProject(PROJECT_TWO, "Two corrections");
+  const seeded = seedEpisode(PROJECT_TWO, {
+    request: "Add a Round up switch.",
+    assistantAfterRequest: "Added the switch.",
+    corrections: ["No, not dollars: show every amount in kronor.", "Also remove the custom fonts.", "Thanks, looks good now."],
+  });
+  const [krId, fontsId, thanksId] = seeded.correctionExternalIds;
+  const base = { scope: "project", contradicts_rule_id: null, duplicate_of_rule_id: null, confidence: 0.9 };
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: `only: [${krId}]`, json: { ...base, propose: true, instruction: "Show every amount in kronor.", prediction: "Amounts in dollars.", failure_signature: "dollars", evidence_message_ids: [krId] } },
+    { match: `only: [${fontsId}]`, json: { ...base, propose: true, instruction: "Never add web fonts unless asked.", prediction: "Custom fonts added.", failure_signature: "web-fonts", evidence_message_ids: [fontsId] } },
+    { match: `only: [${thanksId}]`, json: { ...base, propose: false, instruction: null, prediction: null, failure_signature: null, evidence_message_ids: null, confidence: null } },
+  ]);
+
+  const first = await propose.proposeRules(callLlm, { limit: 500 });
+  const mine = improvements.listImprovements().filter((i) => i.project.id === PROJECT_TWO);
+  assert.deepEqual(mine.map((i) => i.proposed_instruction).sort(), ["Never add web fonts unless asked.", "Show every amount in kronor."]);
+  assert.ok(first.proposed >= 2);
+
+  // Everything was asked once; nothing in this episode is minable again.
+  assert.equal(store.listMinableEpisodes(500).filter((e) => e.project_id === PROJECT_TWO).length, 0);
+  const again = await propose.proposeRules(fakeRuleWriterCallLlm([]), { limit: 500 });
+  assert.equal(again.failed, 0, "no call was made for this project's corrections");
+});
+
+test("rule writer: a correction another correction's suggestion already cites is not asked about again (same expectation, one suggestion)", async () => {
+  const PROJECT_SAME = "propose-same-expectation";
+  store.allowProject(PROJECT_SAME, "Same expectation");
+  const seeded = seedEpisode(PROJECT_SAME, {
+    request: "Build a signup form.",
+    corrections: ["Use kronor, not dollars.", "Again: kronor everywhere please."],
+  });
+  const [a, b] = seeded.correctionExternalIds;
+  const prompts: string[] = [];
+  const inner = fakeRuleWriterCallLlm([
+    { match: `only: [${a}]`, json: { propose: true, instruction: "Use kronor for all money.", prediction: "Dollars shown.", failure_signature: "dollars", evidence_message_ids: [a, b], confidence: 0.9, scope: "project", contradicts_rule_id: null, duplicate_of_rule_id: null } },
+  ]);
+  const callLlm: CallLlm = async (req) => { prompts.push(req.user); return inner(req); };
+  await propose.proposeRules(callLlm, { limit: 500 });
+  assert.equal(prompts.filter((p) => p.includes(PROJECT_SAME) || p.includes("Same expectation")).length, 1, "one call covered both corrections");
+  assert.equal(improvements.listImprovements().filter((i) => i.project.id === PROJECT_SAME).length, 1);
 });

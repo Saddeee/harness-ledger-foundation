@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { WhatChangedLines } from "@/components/harness/timeline";
+import { ConfirmAction } from "@/components/harness/decision-layout";
 import { AddConfirm, RemoveFromKnowledgeConfirm, useRun } from "@/components/harness/improvement";
 import {
   CORRECTIONS_FROM_FOLLOW_UPS_LINE,
@@ -22,6 +23,7 @@ import {
   testedResultLine,
   testFailedLine,
   TEST_ONE_BUILD_LINE,
+  TEST_MEMORY_CONFOUNDER_LINE,
 } from "@/lib/harness-ux";
 import {
   fetchExperimentRun,
@@ -29,6 +31,7 @@ import {
   lovableOf,
   postImprovementAction as post,
   type ExperimentRunView,
+  type TestBuildCopy,
 } from "@/lib/improvements-client";
 import { toast } from "sonner";
 
@@ -295,7 +298,12 @@ function Page() {
         </Link>
       </div>
 
-      <h1 className="text-2xl font-semibold">{view.rule_text}</h1>
+      <div className="space-y-1">
+        {view.project_name ? (
+          <p className="text-sm font-semibold text-muted-foreground">{view.project_name}</p>
+        ) : null}
+        <h1 className="text-2xl font-semibold">{view.rule_text}</h1>
+      </div>
 
       {IN_PROGRESS_STATUSES.has(view.status) ? (
         <StageLine run={view} />
@@ -309,68 +317,60 @@ function Page() {
         />
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-2">
-            <section aria-labelledby="original-build" className="space-y-3 rounded-md border p-4">
-              <h2 id="original-build" className="text-lg font-medium">
-                Your original build
-              </h2>
-              <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  You asked
-                </p>
-                <p className="whitespace-pre-wrap text-sm">{view.request_text}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Lovable replied
-                </p>
-                <p className="whitespace-pre-wrap text-sm">{view.original_reply}</p>
-              </div>
-              <DiffDetails diff={view.original_diff} />
-              {view.corrections.length > 0 ? (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Corrections you made
-                  </p>
-                  {view.corrections_source === "follow_ups" ? (
-                    <p className="text-xs text-muted-foreground">
-                      {CORRECTIONS_FROM_FOLLOW_UPS_LINE}
-                    </p>
-                  ) : null}
-                  <ul className="list-disc space-y-1 pl-5 text-sm">
-                    {view.corrections.map((c, i) => (
-                      <li key={i}>{c}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </section>
+          <section className="space-y-1 rounded-md border p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              You asked Lovable
+            </p>
+            <p className="whitespace-pre-wrap text-sm">{view.request_text}</p>
+          </section>
 
-            <section aria-labelledby="with-the-rule" className="space-y-3 rounded-md border p-4">
-              <h2 id="with-the-rule" className="text-lg font-medium">
-                With the rule
-              </h2>
-              {view.copy_summary ? (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Summary
-                  </p>
-                  <p className="whitespace-pre-wrap text-sm">{view.copy_summary}</p>
-                </div>
-              ) : null}
-              <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Lovable replied
-                </p>
-                <p className="whitespace-pre-wrap text-sm">{view.copy_reply}</p>
-              </div>
-              <DiffDetails diff={view.copy_diff} />
-              <p className="text-xs text-muted-foreground">{testCostLine(view.cost_credits)}</p>
-            </section>
+          <div className="grid gap-4 md:grid-cols-2">
+            <BuildColumn
+              id="original-build"
+              title="Without the rule"
+              subtitle="Your original build"
+              copy={view.original_copy}
+              noCopyLine={
+                view.original_copy_error
+                  ? `Harness could not copy your original build: ${view.original_copy_error}`
+                  : view.show_original
+                    ? null
+                    : "No copy of the original build was made for this test."
+              }
+              summary={view.original_summary}
+              reply={view.original_reply}
+              diff={view.original_diff}
+              busy={actionBusy}
+              onDelete={() =>
+                void runAction(
+                  { action: "delete_copy", run_id: view.id, which: "original" },
+                  "Deleted the copy of your original build.",
+                )
+              }
+            />
+            <BuildColumn
+              id="with-the-rule"
+              title="With the rule"
+              subtitle="The same request, built again with this rule"
+              copy={view.copy}
+              noCopyLine={null}
+              summary={view.copy_summary}
+              reply={view.copy_reply ?? ""}
+              diff={view.copy_diff}
+              footer={testCostLine(view.cost_credits)}
+              busy={actionBusy}
+              onDelete={() =>
+                void runAction(
+                  { action: "delete_copy", run_id: view.id, which: "with_rule" },
+                  "Deleted the build with the rule.",
+                )
+              }
+            />
           </div>
 
           <div className="space-y-1 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
             <p>{testCopyConfounderLine(view.edits_since_episode)}</p>
+            <p>{TEST_MEMORY_CONFOUNDER_LINE}</p>
             <p>{TEST_ONE_BUILD_LINE}</p>
           </div>
 
@@ -402,6 +402,13 @@ function Page() {
           ) : (
             <div className="space-y-3 rounded-md border p-4">
               <h2 className="text-lg font-medium">Still needed?</h2>
+              <p className="text-sm text-muted-foreground">
+                For each correction you made after the original build: would you still have had to
+                make it with the rule in place?
+              </p>
+              {view.corrections_source === "follow_ups" ? (
+                <p className="text-xs text-muted-foreground">{CORRECTIONS_FROM_FOLLOW_UPS_LINE}</p>
+              ) : null}
               {view.corrections.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   Nothing on record for this episode to judge.
@@ -483,5 +490,123 @@ function Page() {
         )}
       </section>
     </div>
+  );
+}
+
+// Round 7: one build, laid out the same way on both sides -- a look at it
+// (screenshot, open in Lovable, open the preview), Lovable's own summary, what
+// Lovable said, and the code diff. Both are real Lovable projects the owner
+// can keep building on, or delete from here.
+function BuildColumn({
+  id,
+  title,
+  subtitle,
+  copy,
+  noCopyLine,
+  summary,
+  reply,
+  diff,
+  footer,
+  busy,
+  onDelete,
+}: {
+  id: string;
+  title: string;
+  subtitle: string;
+  copy: TestBuildCopy | null;
+  noCopyLine: string | null;
+  summary: string | null;
+  reply: string;
+  diff: ExperimentRunView["copy_diff"];
+  footer?: string;
+  busy: boolean;
+  onDelete: () => void;
+}) {
+  return (
+    <section aria-labelledby={id} className="space-y-3 rounded-md border p-4">
+      <div>
+        <h2 id={id} className="text-lg font-medium">
+          {title}
+        </h2>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </div>
+
+      {copy?.screenshot_url ? (
+        copy.deleted ? (
+          <img
+            src={copy.screenshot_url}
+            alt={`Screenshot: ${title.toLowerCase()}`}
+            className="w-full rounded-md border"
+          />
+        ) : (
+          <a href={copy.preview_url} target="_blank" rel="noreferrer">
+            <img
+              src={copy.screenshot_url}
+              alt={`Screenshot: ${title.toLowerCase()}`}
+              className="w-full rounded-md border"
+            />
+          </a>
+        )
+      ) : copy && !copy.deleted ? (
+        <p className="text-xs text-muted-foreground">
+          No screenshot yet. Open the build to look at it.
+        </p>
+      ) : null}
+
+      {copy && !copy.deleted ? (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <a
+            href={copy.preview_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline underline-offset-2"
+          >
+            Open the app
+          </a>
+          <a
+            href={copy.editor_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline underline-offset-2"
+          >
+            Open in Lovable
+          </a>
+          <ConfirmAction
+            trigger="Delete copy"
+            variant="ghost"
+            size="sm"
+            title="Delete this copy in Lovable?"
+            body="The project is deleted from your Lovable workspace. This can't be undone."
+            consequences={["Your own project is not touched."]}
+            confirmLabel="Delete copy"
+            disabled={busy}
+            onConfirm={onDelete}
+          />
+        </div>
+      ) : copy?.deleted ? (
+        <p className="text-xs text-muted-foreground">
+          The project copy was deleted; the screenshot above is what it looked like.
+        </p>
+      ) : noCopyLine ? (
+        <p className="text-xs text-muted-foreground">{noCopyLine}</p>
+      ) : null}
+
+      {summary ? (
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Lovable's summary of the change
+          </p>
+          <p className="whitespace-pre-wrap text-sm">{summary}</p>
+        </div>
+      ) : null}
+      <div className="space-y-1">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Lovable replied
+        </p>
+        <p className="whitespace-pre-wrap text-sm">{reply}</p>
+      </div>
+      <DiffDetails diff={diff} />
+      {footer ? <p className="text-xs text-muted-foreground">{footer}</p> : null}
+    </section>
   );
 }

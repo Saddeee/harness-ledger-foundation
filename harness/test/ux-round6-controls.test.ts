@@ -58,7 +58,7 @@ test("improvement.tsx: no 'Restore previous version' anywhere; history.tsx and t
   const history = readApp(HISTORY_PAGE);
   const timeline = readApp(TIMELINE);
   assert.match(codeOnly(history), /action: "restore"/);
-  assert.ok(/Restore this version/.test(timeline));
+  assert.ok(/Undo this change/.test(timeline));
 });
 
 test("improvement.tsx: Remove from Knowledge replaces Restore on a written rule's card, through the retire action", () => {

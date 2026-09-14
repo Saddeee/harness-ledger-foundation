@@ -44,19 +44,21 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
   assert.match(confirm, /aria-label="How to add it"/);
   assert.equal(count(confirm, 'role="radio"'), 2, "exactly two radio buttons");
   assert.match(confirm, /Add it now/);
-  // Round 6 Task 6b / spec §6: renamed -- this is now the real paired test
-  // (accept, then a `test` action), not the old test_first staging.
-  assert.match(confirm, /Add and test it first/);
+  // Round 7 (owner): "Test it first" adds nothing -- you test, compare both
+  // builds, and add it afterwards. The old "Add and test it first" added
+  // the rule before testing it.
+  assert.match(confirm, /\{TEST_FIRST_LABEL\}/);
+  assert.ok(!/Add and test it first/.test(confirm));
   assert.match(confirm, /aria-checked=\{choice === "now"\}/);
   assert.match(confirm, /aria-checked=\{choice === "test"\}/);
   // nothing pre-selected
   assert.match(confirm, /useState<"now" \| "test" \| null>\(null\)/);
   // confirm disabled until a choice is made (Round 3 §5 also disables it
   // when the project is already over its active-rule cap)
-  assert.match(confirm, /confirmDisabled=\{overCap \|\| overRules \|\| choice == null\}/);
+  assert.match(confirm, /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/);
   assert.match(
     confirm,
-    /confirmLabel=\{wantsTest \? "Add and test" : preview \? "Add" : "Save choice"\}/,
+    /confirmLabel=\{wantsTest \? START_TEST_LABEL : preview \? "Add" : "Save choice"\}/,
   );
   // the choice resets when the dialog closes
   assert.match(confirm, /onOpenChange=\{/);
@@ -68,7 +70,7 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
   assert.ok(!/test_first/.test(confirm), "test_first is no longer staged from this dialog");
   assert.match(
     confirm,
-    /if \(accepted && wantsTest\) await run\(\{ action: "test", id: item\.id \}/,
+    /if \(wantsTest\) \{\s*await run\(\s*\{ action: "test", id: item\.id, show_original: showOriginal \},\s*TEST_STARTED_TOAST,?\s*\);\s*return;\s*\}/,
   );
 });
 
@@ -80,10 +82,12 @@ test("AddConfirm help text: exact copy for each choice", () => {
   );
   // Round 6 Task 6b / spec §6: the real paired-test flow's own help text --
   // "not switched on yet" is gone (it is switched on now).
+  const ux = codeOnly(readApp("lib/harness-ux.ts"));
   assert.match(
-    detail,
-    /Harness adds it now, then runs your original request again in a temporary copy with the rule and shows you both builds side by side\./,
+    ux,
+    /export const TEST_FIRST_HELP =\s*"Nothing is added yet\. Harness runs your original request again in a copy with this rule, you compare both builds, and you add it afterwards if it worked\.";/,
   );
+  assert.match(detail, /TEST_FIRST_HELP/);
   assert.match(detail, /proveCostLine\(\)/);
   assert.ok(!/Testing is not switched on yet/.test(detail));
 });

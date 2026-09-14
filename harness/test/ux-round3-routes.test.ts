@@ -152,3 +152,18 @@ test("improvements-client.ts: fetchSkills/skillsQueryOptions and the new Round 3
     "/api/public/harness/skills",
   ]);
 });
+
+test("llm_settings: the Settings page sends exactly the body keys the executor route reads", () => {
+  // The page once sent llm_provider/llm_models while the route read
+  // provider/models: nothing was saved and the toast still said "saved".
+  const route = codeOnly(readApp(EXECUTOR_ROUTE));
+  const branch = route.slice(route.indexOf('if (action === "llm_settings")'));
+  const routeKeys = [...branch.slice(0, branch.indexOf("return")).matchAll(/body\["(\w+)"\]/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(routeKeys)].sort(), ["models", "monthly_token_budget", "provider"]);
+
+  const page = codeOnly(readApp("components/harness/local-settings.tsx"));
+  const call = page.slice(page.indexOf('action: "llm_settings"'));
+  const sent = call.slice(0, call.indexOf("})"));
+  for (const key of routeKeys) assert.match(sent, new RegExp(`\\b${key}:`), `page must send ${key}`);
+  assert.doesNotMatch(sent, /llm_provider:|llm_models:/);
+});

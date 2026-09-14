@@ -24,12 +24,13 @@ export const Route = createFileRoute("/_authenticated/projects")({
   component: Page,
 });
 
-// While the runtime is still loading, `mode` is undefined -- not "local" --
-// so the hosted page renders by default and nothing flashes when the answer
-// turns out to be hosted (the common case in the preview environment).
+// Render nothing until the runtime answers: the hosted page fetches the
+// hosted-only Lovable connection route on mount, which fails (500) on a
+// local runtime if it renders even briefly while `mode` is still loading.
 function Page() {
   const runtime = useQuery(runtimeQueryOptions);
   const { connected } = Route.useSearch();
   const mode = runtime.data?.mode;
+  if (runtime.isLoading) return null;
   return mode === "local" ? <LocalProjects /> : <HostedProjects connected={connected} />;
 }

@@ -67,20 +67,19 @@ test("tests.tsx: the credits line comes from harness-ux.ts's own testsPageCredit
 
 test("tests.tsx: the table's own Status column uses the exact plain-word phrases (Queued/Copying/Building/Your verdict is needed/Judged:.../Failed:...)", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
-  assert.match(code, />Queued</);
-  assert.match(code, />Copying</);
-  assert.match(code, />Building</);
-  assert.match(code, /Your verdict is needed/);
+  assert.match(code, /"Queued"/);
+  assert.match(code, /"Copying"/);
+  assert.match(code, /"Building"/);
+  assert.match(code, /"Your verdict is needed"/);
   assert.match(code, /`Judged: \$\{no\} of \$\{run\.corrections\} correction/);
   assert.match(code, /`Failed: \$\{run\.error/);
 });
 
-test("tests.tsx: judging, judged, and failed rows are all a Link to /judge?run=<id> -- a judged or failed run must be openable, not just judging", () => {
+test("tests.tsx: every test row opens that test (/judge?run=<id>), never the suggestion -- the owner clicked a test and landed on Suggestions", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
-  const judgeLinks = code.match(/to="\/judge"/g) ?? [];
-  assert.equal(judgeLinks.length, 3, "judging, judged, and failed all link to /judge");
-  const runSearch = code.match(/search=\{\{\s*run:\s*run\.id\s*\}\}/g) ?? [];
-  assert.equal(runSearch.length, 3);
+  assert.doesNotMatch(code, /to="\/ledger"/, "the Tests page links to tests, not suggestions");
+  assert.match(code, /<Link\s+to="\/judge"\s+search=\{\{\s*run:\s*run\.id\s*\}\}/);
+  assert.match(code, /navigate\(\{\s*to:\s*"\/judge",\s*search:\s*\{\s*run:\s*run\.id\s*\}\s*\}\)/);
 });
 
 test("tests.tsx: the Cost column reads 'N credits · measured' or '—', never a hardcoded number", () => {

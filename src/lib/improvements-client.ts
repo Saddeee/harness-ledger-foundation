@@ -1,6 +1,7 @@
 // Client-side types and fetch helpers for the Improvements API. Kept out of
 // the component file so React fast-refresh sees only components there.
 // Only ever talks to the local Harness routes; never to Lovable.
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
   improvementGroup,
@@ -24,6 +25,15 @@ export type { WriteOutcome };
 // as a last-resort default if a response somehow carries no `write`).
 export function writeToastText(write: WriteOutcome | undefined, fallback: string): string {
   return writeOutcomeLine(write) ?? fallback;
+}
+
+/** Shows an action's result: an error toast when its Knowledge write did not
+ * land (a green check on "Not written: …" read as success), else success. */
+export function toastWriteOutcome(write: WriteOutcome | undefined, fallback: string): string {
+  const text = writeToastText(write, fallback);
+  if (write && !write.written) toast.error(text);
+  else toast.success(text);
+  return text;
 }
 
 // Round 6 Task 2 / spec §2: "Sync now" runs inline and the button shows the
@@ -223,6 +233,23 @@ export type ExperimentRunView = {
   // Round 6c part B: the same feedback box as the Tests page's own list.
   feedback: string | null;
   feedback_at: string | null;
+  // Round 7: both builds as real Lovable projects you can open.
+  project_id: string;
+  project_name: string | null;
+  original_summary: string | null;
+  show_original: boolean;
+  copy: TestBuildCopy | null;
+  original_copy: TestBuildCopy | null;
+  original_copy_error: string | null;
+};
+
+/** One test build as a Lovable project (harness/src/improvements.ts). */
+export type TestBuildCopy = {
+  project_id: string;
+  editor_url: string;
+  preview_url: string;
+  screenshot_url: string | null;
+  deleted: boolean;
 };
 
 export type Improvement = {
@@ -381,6 +408,9 @@ export type ExperimentRunSummary = {
   copy_deleted: number;
   feedback: string | null;
   feedback_at: string | null;
+  project_name: string | null;
+  copy: TestBuildCopy | null;
+  original_copy: TestBuildCopy | null;
 };
 
 export type TestRunsResponse =
@@ -532,6 +562,7 @@ export type TimelineNode = {
   improvement_id: number | null;
   version_id: number | null;
   restorable: boolean;
+  latest_version?: boolean;
   // Round 6 fix wave item 3: only ever set on a `test` node -- the run this
   // node is about, so timeline.tsx can link straight to /judge?run=.
   run_id?: number | null;

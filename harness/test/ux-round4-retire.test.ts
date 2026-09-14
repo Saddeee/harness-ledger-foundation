@@ -284,3 +284,14 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     "verdict",
   ]);
 });
+
+test("harness-ux.ts: a 'changed_mind' retirement says you asked for the opposite, and the card quotes your message", async () => {
+  const base = { health: { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null }, since: null };
+  assert.equal(
+    ux.retireReasonSentence({ ...base, reason: "changed_mind" }),
+    "Harness suggests retiring this rule because you asked Lovable for the opposite.",
+  );
+  assert.doesNotMatch(ux.retireSinceLine({ ...base, reason: "changed_mind" }), /below/);
+  const card = readFileSync(new URL("../../src/components/harness/improvement.tsx", import.meta.url), "utf8");
+  assert.match(card, /retire\.reason === "changed_mind" && item\.evidence\[0\]/);
+});

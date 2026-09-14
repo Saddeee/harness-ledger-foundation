@@ -85,7 +85,7 @@ test("improvements.ts (server): every spec §3b timeline label string appears ve
   const LABELS = [
     "Written to Lovable",
     "Staged",
-    "Restored to version #",
+    "Went back to before version #",
     "Needs attention",
     "Failed",
     "Cancelled",
