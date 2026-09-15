@@ -117,6 +117,9 @@ test("local-projects.tsx: connection card, sync card, allowed switch, connect fl
   for (const text of ["Connect Lovable", "Sync now", "Allowed"]) {
     assert.ok(raw.includes(text), `local-projects.tsx missing "${text}"`);
   }
+  // A blocked login tab is never a dead end: the URL is offered as a link while waiting.
+  assert.match(code, /Lovable's login didn't open\?/);
+  assert.match(code, /href=\{connectUrl\}/);
   assert.match(raw, /uses no credits/);
   assert.equal(
     count(raw, CONNECT_LOVABLE_SENTENCE),

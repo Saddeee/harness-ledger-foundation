@@ -143,6 +143,8 @@ export function LocalProjects() {
   const executor = useQuery(executorQueryOptions);
   const projects = useQuery({ queryKey: PROJECTS_KEY, queryFn: fetchProjects });
   const [connecting, setConnecting] = useState(false);
+  // The login URL, kept so it can be opened by hand if the browser blocked the tab.
+  const [connectUrl, setConnectUrl] = useState<string | null>(null);
 
   // Polls GET executor every 3 s until the connection shows as connected,
   // and gives up after 10 minutes so a closed/abandoned OAuth tab doesn't
@@ -175,7 +177,10 @@ export function LocalProjects() {
     mutationFn: () => postExecutor({ action: "connect" }),
     onSuccess: (r) => {
       const url = (r as { url?: string }).url;
-      if (url) window.open(url, "_blank", "noopener");
+      if (url) {
+        setConnectUrl(url);
+        window.open(url, "_blank", "noopener");
+      }
       setConnecting(true);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not start connecting"),
@@ -319,6 +324,15 @@ export function LocalProjects() {
             </Button>
           )}
         </div>
+        {connecting && !conn.connected && connectUrl ? (
+          <p className="text-sm">
+            Lovable's login didn't open?{" "}
+            <a href={connectUrl} target="_blank" rel="noopener noreferrer" className="underline">
+              Open it here
+            </a>
+            . Approve access there and this page updates by itself.
+          </p>
+        ) : null}
         <p className="text-sm text-muted-foreground">{MCP_CREDITS_LINE}</p>
       </section>
 

@@ -20,6 +20,9 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# npm writes this on install; Lovable itself uses bun.lock
+/package-lock.json
+
 # Env files (never commit secrets)
 .env
 .env.local
