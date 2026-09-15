@@ -55,7 +55,10 @@ test("AddConfirm: a two-choice radiogroup above the preview, nothing pre-selecte
   assert.match(confirm, /useState<"now" \| "test" \| null>\(null\)/);
   // confirm disabled until a choice is made (Round 3 §5 also disables it
   // when the project is already over its active-rule cap)
-  assert.match(confirm, /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/);
+  assert.match(
+    confirm,
+    /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/,
+  );
   assert.match(
     confirm,
     /confirmLabel=\{wantsTest \? START_TEST_LABEL : preview \? "Add" : "Save choice"\}/,

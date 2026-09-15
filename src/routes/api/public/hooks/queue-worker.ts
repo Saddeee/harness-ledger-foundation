@@ -15,7 +15,10 @@ const handlers: Record<string, (job: Job, db: SupabaseClient) => Promise<unknown
 };
 
 async function killSwitchOwners(db: SupabaseClient): Promise<Set<string>> {
-  const { data } = await db.from("settings").select("owner_user_id, value").eq("key", "kill_switch");
+  const { data } = await db
+    .from("settings")
+    .select("owner_user_id, value")
+    .eq("key", "kill_switch");
   const set = new Set<string>();
   for (const row of data ?? []) {
     if (row.value === true && row.owner_user_id) set.add(row.owner_user_id as string);

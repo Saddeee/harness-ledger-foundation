@@ -12,7 +12,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -37,14 +39,28 @@ test("MessageBlock: Open in Lovable link on each user message, with correct attr
   assert.match(code, /lovable\.dev\/projects\//, "link goes to lovable.dev/projects/");
 
   // Verify the link only appears for non-Lovable messages
-  const messageBlock = detail.slice(detail.indexOf("function MessageBlock"), detail.indexOf("export function ImprovementDetail"));
-  assert.match(messageBlock, /\{\!isLovable && projectId/, "link only shown when isLovable is false and projectId exists");
+  const messageBlock = detail.slice(
+    detail.indexOf("function MessageBlock"),
+    detail.indexOf("export function ImprovementDetail"),
+  );
+  assert.match(
+    messageBlock,
+    /\{!isLovable && projectId/,
+    "link only shown when isLovable is false and projectId exists",
+  );
 });
 
 test("MessageBlock: cost wording still correct ('Lovable credits' ≤ 2, 'Harness Ledger analysis' exactly 1)", () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.ok(count(detail, "Lovable credits") <= 2, `Lovable credits x${count(detail, "Lovable credits")}`);
-  assert.equal(count(detail, "Harness Ledger analysis"), 1, "Harness Ledger analysis mentioned exactly once");
+  assert.ok(
+    count(detail, "Lovable credits") <= 2,
+    `Lovable credits x${count(detail, "Lovable credits")}`,
+  );
+  assert.equal(
+    count(detail, "Harness Ledger analysis"),
+    1,
+    "Harness Ledger analysis mentioned exactly once",
+  );
 });
 
 test("MessageBlock: no <details open attribute", () => {
@@ -58,7 +74,15 @@ test("MessageBlock: projectId prop passed from ImprovementDetail", () => {
   const detail = readApp(DETAIL);
   const code = codeOnly(detail);
   // Check that MessageBlock receives projectId prop
-  assert.match(code, /projectId=\{item\.project\.id\}/, "ImprovementDetail passes item.project.id to MessageBlock");
+  assert.match(
+    code,
+    /projectId=\{item\.project\.id\}/,
+    "ImprovementDetail passes item.project.id to MessageBlock",
+  );
   // Check MessageBlock accepts projectId
-  assert.match(code, /function MessageBlock\(\{ m, projectId \}/, "MessageBlock accepts projectId parameter");
+  assert.match(
+    code,
+    /function MessageBlock\(\{ m, projectId \}/,
+    "MessageBlock accepts projectId parameter",
+  );
 });

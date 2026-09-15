@@ -7,7 +7,8 @@ import { getClientId, getRedirectUri } from "./app-origin";
 export const LOVABLE_AUTHORIZE_URL = "https://lovable.dev/oauth/authorize";
 export const LOVABLE_TOKEN_URL = "https://lovable.dev/oauth/token";
 export const LOVABLE_API_BASE = "https://api.lovable.dev";
-export const LOVABLE_SCOPE = "offline projects:read projects:write workspaces:read workspaces:write";
+export const LOVABLE_SCOPE =
+  "offline projects:read projects:write workspaces:read workspaces:write";
 const REFRESH_WINDOW_MS = 60 * 60 * 1000;
 
 type TokenResponse = {
@@ -127,7 +128,11 @@ export async function ensureFreshConnection(ownerUserId: string, request?: Reque
 }
 
 async function isOperator(ownerUserId: string): Promise<boolean> {
-  const { data } = await db.from("profiles").select("role").eq("user_id", ownerUserId).maybeSingle();
+  const { data } = await db
+    .from("profiles")
+    .select("role")
+    .eq("user_id", ownerUserId)
+    .maybeSingle();
   return data?.role === "operator";
 }
 

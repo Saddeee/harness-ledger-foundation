@@ -67,7 +67,9 @@ function makeClaudeExec(opts: ClaudeExecOpts) {
   const exec: Exec = async (cmd, args, input) => {
     calls.push({ cmd, args, input });
     if (args.includes("--version")) {
-      return opts.versionOk === false ? { stdout: "", code: 1 } : { stdout: "2.1.0 (Claude Code)", code: 0 };
+      return opts.versionOk === false
+        ? { stdout: "", code: 1 }
+        : { stdout: "2.1.0 (Claude Code)", code: 0 };
     }
     if (args.includes("--help")) {
       return { stdout: opts.helpText ?? "Usage: claude [options]\n  -p, --print\n", code: 0 };
@@ -99,7 +101,11 @@ test("openai: request shape (URL, auth header, json_schema strict flag), respons
     return {
       status: 200,
       body: {
-        choices: [{ message: { content: JSON.stringify({ classification: "correction", confidence: 0.9 }) } }],
+        choices: [
+          {
+            message: { content: JSON.stringify({ classification: "correction", confidence: 0.9 }) },
+          },
+        ],
         usage: { prompt_tokens: 120, completion_tokens: 10 },
       },
     };
@@ -153,7 +159,10 @@ test("openai: auth header value never appears in a thrown error message", async 
     () => callLlm({ role: "classifier", system: "s", user: "u", schema: SCHEMA, schemaName: "X" }),
     (err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
-      assert.ok(!message.includes("sk-must-never-leak-999"), "error message must not include the key");
+      assert.ok(
+        !message.includes("sk-must-never-leak-999"),
+        "error message must not include the key",
+      );
       return true;
     },
   );
@@ -169,14 +178,19 @@ test("openai: retry once on invalid JSON, second attempt succeeds; both attempts
     if (call === 1) {
       return {
         status: 200,
-        body: { choices: [{ message: { content: "not valid json" } }], usage: { prompt_tokens: 10, completion_tokens: 5 } },
+        body: {
+          choices: [{ message: { content: "not valid json" } }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        },
       };
     }
     assert.match(body.messages[1].content, /Return only JSON matching the schema\./);
     return {
       status: 200,
       body: {
-        choices: [{ message: { content: JSON.stringify({ classification: "other", confidence: 0.2 }) } }],
+        choices: [
+          { message: { content: JSON.stringify({ classification: "other", confidence: 0.2 }) } },
+        ],
         usage: { prompt_tokens: 12, completion_tokens: 6 },
       },
     };
@@ -201,7 +215,10 @@ test("openai: retry fails twice -> throws, both attempts still logged", async ()
   setRoleModel("openai", "gpt-5.4-mini");
   const { fetchFn } = makeFakeFetch(() => ({
     status: 200,
-    body: { choices: [{ message: { content: "still not json" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } },
+    body: {
+      choices: [{ message: { content: "still not json" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    },
   }));
   const callLlm = llm.createCallLlm({ fetchFn });
   const before = llmCallCount();
@@ -274,7 +291,10 @@ test("google: request shape (URL has model but not key, x-goog-api-key header, r
   setRoleModel("google", "gemini-3.1-flash-lite");
 
   const { fetchFn, calls } = makeFakeFetch((url, init) => {
-    assert.equal(url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent");
+    assert.equal(
+      url,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+    );
     assert.ok(!url.includes("goog-secret-key-4321"), "the key must not be in the URL");
     const body = JSON.parse(init.body as string);
     assert.equal(body.generationConfig.responseMimeType, "application/json");
@@ -283,7 +303,13 @@ test("google: request shape (URL has model but not key, x-goog-api-key header, r
     return {
       status: 200,
       body: {
-        candidates: [{ content: { parts: [{ text: JSON.stringify({ classification: "question", confidence: 0.5 }) }] } }],
+        candidates: [
+          {
+            content: {
+              parts: [{ text: JSON.stringify({ classification: "question", confidence: 0.5 }) }],
+            },
+          },
+        ],
         usageMetadata: { promptTokenCount: 80, candidatesTokenCount: 8 },
       },
     };
@@ -357,8 +383,16 @@ test("claude_code: no key needed, args include -p/--output-format json/--model, 
   assert.deepEqual(runCall.args, ["-p", "--output-format", "json", "--model", "sonnet"]);
   assert.equal(runCall.input, "SYSTEM:\nSYSTEM TEXT\n\nUSER:\nUSER TEXT");
 
-  const row = store.listLlmCalls(1)[0] as { cost_usd: number; provider: string; estimated_tokens: number };
-  assert.equal(row.cost_usd, 0, "the llm_calls column is NOT NULL -- null cost is represented as 0 there");
+  const row = store.listLlmCalls(1)[0] as {
+    cost_usd: number;
+    provider: string;
+    estimated_tokens: number;
+  };
+  assert.equal(
+    row.cost_usd,
+    0,
+    "the llm_calls column is NOT NULL -- null cost is represented as 0 there",
+  );
   assert.equal(row.provider, "claude_code");
   assert.ok(row.estimated_tokens > 0);
 });
@@ -368,15 +402,35 @@ test("claude_code: uses --system-prompt and puts only the user text on stdin whe
   const { exec, calls } = makeClaudeExec({
     helpText: "Usage: claude [options]\n  --system-prompt <text>\n",
     runResponses: [
-      { stdout: JSON.stringify({ result: JSON.stringify({ classification: "other", confidence: 0.1 }), usage: {} }), code: 0 },
+      {
+        stdout: JSON.stringify({
+          result: JSON.stringify({ classification: "other", confidence: 0.1 }),
+          usage: {},
+        }),
+        code: 0,
+      },
     ],
   });
 
   const callLlm = llm.createCallLlm({ exec });
-  await callLlm({ role: "classifier", system: "SYS", user: "USR", schema: SCHEMA, schemaName: "X" });
+  await callLlm({
+    role: "classifier",
+    system: "SYS",
+    user: "USR",
+    schema: SCHEMA,
+    schemaName: "X",
+  });
 
   const runCall = calls.find((c) => c.args.includes("-p"))!;
-  assert.deepEqual(runCall.args, ["-p", "--output-format", "json", "--model", "sonnet", "--system-prompt", "SYS"]);
+  assert.deepEqual(runCall.args, [
+    "-p",
+    "--output-format",
+    "json",
+    "--model",
+    "sonnet",
+    "--system-prompt",
+    "SYS",
+  ]);
   assert.equal(runCall.input, "USR");
 });
 
@@ -384,8 +438,20 @@ test("claude_code: --help is only invoked once per exec (cached)", async () => {
   setRoleModel("claude_code", "sonnet");
   const { exec, calls } = makeClaudeExec({
     runResponses: [
-      { stdout: JSON.stringify({ result: JSON.stringify({ classification: "other", confidence: 0.1 }), usage: {} }), code: 0 },
-      { stdout: JSON.stringify({ result: JSON.stringify({ classification: "other", confidence: 0.1 }), usage: {} }), code: 0 },
+      {
+        stdout: JSON.stringify({
+          result: JSON.stringify({ classification: "other", confidence: 0.1 }),
+          usage: {},
+        }),
+        code: 0,
+      },
+      {
+        stdout: JSON.stringify({
+          result: JSON.stringify({ classification: "other", confidence: 0.1 }),
+          usage: {},
+        }),
+        code: 0,
+      },
     ],
   });
   const callLlm = llm.createCallLlm({ exec });
@@ -398,10 +464,23 @@ test("claude_code: --help is only invoked once per exec (cached)", async () => {
 test("claude_code: defensive fallback to 0 tokens when usage is missing from the envelope", async () => {
   setRoleModel("claude_code", "sonnet");
   const { exec } = makeClaudeExec({
-    runResponses: [{ stdout: JSON.stringify({ result: JSON.stringify({ classification: "other", confidence: 0.1 }) }), code: 0 }],
+    runResponses: [
+      {
+        stdout: JSON.stringify({
+          result: JSON.stringify({ classification: "other", confidence: 0.1 }),
+        }),
+        code: 0,
+      },
+    ],
   });
   const callLlm = llm.createCallLlm({ exec });
-  const result = await callLlm({ role: "classifier", system: "s", user: "u", schema: SCHEMA, schemaName: "X" });
+  const result = await callLlm({
+    role: "classifier",
+    system: "s",
+    user: "u",
+    schema: SCHEMA,
+    schemaName: "X",
+  });
   assert.equal(result.tokensIn, 0);
   assert.equal(result.tokensOut, 0);
 });
@@ -456,8 +535,16 @@ test("claude_code: LlmProviderUnavailable when `claude --version` fails; the fai
     () => callLlm({ role: "classifier", system: "s", user: "u", schema: SCHEMA, schemaName: "X" }),
     LlmProviderUnavailable,
   );
-  assert.equal(llmCallCount(), before + 1, "a CLI failure is a failed attempt, not a no-op -- it must still be logged");
-  const row = store.listLlmCalls(1)[0] as { tokens_in: number; tokens_out: number; cost_usd: number };
+  assert.equal(
+    llmCallCount(),
+    before + 1,
+    "a CLI failure is a failed attempt, not a no-op -- it must still be logged",
+  );
+  const row = store.listLlmCalls(1)[0] as {
+    tokens_in: number;
+    tokens_out: number;
+    cost_usd: number;
+  };
   assert.equal(row.tokens_in, 0);
   assert.equal(row.tokens_out, 0);
   assert.equal(row.cost_usd, 0);
@@ -501,7 +588,9 @@ test("transport retry: a 503 then a 200 succeeds after one 2s-delayed retry; bot
     return {
       status: 200,
       body: {
-        choices: [{ message: { content: JSON.stringify({ classification: "other", confidence: 0.3 }) } }],
+        choices: [
+          { message: { content: JSON.stringify({ classification: "other", confidence: 0.3 }) } },
+        ],
         usage: { prompt_tokens: 20, completion_tokens: 4 },
       },
     };
@@ -524,7 +613,11 @@ test("transport retry: a 503 then a 200 succeeds after one 2s-delayed retry; bot
   assert.equal(call, 2, "exactly one transport retry -- not a loop");
   assert.deepEqual(sleeps, [2000]);
   assert.deepEqual(result.json, { classification: "other", confidence: 0.3 });
-  assert.equal(llmCallCount(), before + 2, "both the failed 503 attempt and the retried 200 attempt are logged");
+  assert.equal(
+    llmCallCount(),
+    before + 2,
+    "both the failed 503 attempt and the retried 200 attempt are logged",
+  );
   const rows = store.listLlmCalls(2) as { tokens_in: number; tokens_out: number }[];
   assert.equal(rows[0]!.tokens_in, 20, "most recent row is the successful retry");
   assert.equal(rows[1]!.tokens_in, 0, "earlier row is the failed 503 attempt");

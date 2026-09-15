@@ -474,10 +474,16 @@ function correctionsForSuggestion(
 /** A run's corrections as they were judged (saved at judge time), else as
  * they would be judged now. For a run judged before those were saved, the
  * episode-wide list is what its verdicts line up with. */
-function correctionsForRun(run: store.ExperimentRunRow): { texts: string[]; source: CorrectionsSource } {
+function correctionsForRun(run: store.ExperimentRunRow): {
+  texts: string[];
+  source: CorrectionsSource;
+} {
   if (run.judged_corrections_json) {
     try {
-      const saved = JSON.parse(run.judged_corrections_json) as { texts: string[]; source: CorrectionsSource };
+      const saved = JSON.parse(run.judged_corrections_json) as {
+        texts: string[];
+        source: CorrectionsSource;
+      };
       if (Array.isArray(saved.texts)) return saved;
     } catch {
       // fall through

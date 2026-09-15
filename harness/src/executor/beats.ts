@@ -433,14 +433,22 @@ function reconcileRulesWithKnowledge(
     // Any wording the rule has had counts (undoing a wording change brings
     // the old one back), matched as the rule's own "- " entry in the block
     // so an instruction written over several lines still matches.
-    const inKnowledge = store
-      .ruleWordings(rule.id)
-      .some((text) => block.includes(`\n- ${text}\n`));
+    const inKnowledge = store.ruleWordings(rule.id).some((text) => block.includes(`\n- ${text}\n`));
     const live = rule.state === "active" || rule.state === "approved" || rule.state === "supported";
     if (live && !inKnowledge) {
-      store.updateRule({ id: rule.id, state: "rolled_back", actor: "harness", reason: `went back to an earlier Knowledge text (version ${versionId})` });
+      store.updateRule({
+        id: rule.id,
+        state: "rolled_back",
+        actor: "harness",
+        reason: `went back to an earlier Knowledge text (version ${versionId})`,
+      });
     } else if (!live && inKnowledge && (rule.state === "rolled_back" || rule.state === "retired")) {
-      store.updateRule({ id: rule.id, state: "active", actor: "harness", reason: `back in Knowledge after going back (version ${versionId})` });
+      store.updateRule({
+        id: rule.id,
+        state: "active",
+        actor: "harness",
+        reason: `back in Knowledge after going back (version ${versionId})`,
+      });
     }
   }
 }
@@ -709,7 +717,8 @@ export async function executeVersionNow(
           liveLines.every((line) => activeRules.some((r) => r.instruction === line));
 
         if (!allLinesKnown) {
-          const reason = "Someone edited the Harness Ledger block in Lovable — re-check the preview";
+          const reason =
+            "Someone edited the Harness Ledger block in Lovable — re-check the preview";
           store.markKnowledgeWriteStale(versionId, reason);
           return { written: false, version_id: versionId, reason, kind: "stale" };
         }

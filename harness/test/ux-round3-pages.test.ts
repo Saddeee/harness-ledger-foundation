@@ -132,7 +132,9 @@ test("skills.tsx: heading, read-only line, per-skill fields, history, empty stat
   const code = codeOnly(raw);
 
   assert.match(code, /<h1[^>]*>Skills<\/h1>/);
-  assert.ok(raw.includes("Harness Ledger reads your workspace Skills; it does not write them yet."));
+  assert.ok(
+    raw.includes("Harness Ledger reads your workspace Skills; it does not write them yet."),
+  );
   assert.ok(
     raw.includes(
       "Your workspace has no Skills yet. Harness Ledger will show them here as soon as it reads one.",
@@ -327,7 +329,10 @@ test("improvement.tsx AddConfirm: over_rules disables confirm and shows the reti
   );
 
   assert.match(detail, /const overRules = preview\?\.over_rules === true;/);
-  assert.match(confirm, /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/);
+  assert.match(
+    confirm,
+    /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/,
+  );
   assert.match(confirm, /\{overRules \? \(/);
   assert.match(confirm, /role="alert"/);
   assert.match(confirm, /overRulesLine\(preview\.active_rules_count\)/);

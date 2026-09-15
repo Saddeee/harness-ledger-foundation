@@ -23,20 +23,44 @@ function tool(
     } catch (err) {
       return {
         isError: true,
-        content: [{ type: "text" as const, text: err instanceof Error ? err.message : String(err) }],
+        content: [
+          { type: "text" as const, text: err instanceof Error ? err.message : String(err) },
+        ],
       };
     }
   });
 }
 
-const provenance = z.enum(["lovable_mcp", "git_history", "build_log", "spec", "manual", "llm_derived"]);
+const provenance = z.enum([
+  "lovable_mcp",
+  "git_history",
+  "build_log",
+  "spec",
+  "manual",
+  "llm_derived",
+]);
 const classification = z.enum([
-  "defect_correction", "constraint_restatement", "missing_requirement",
-  "preference_revision", "scope_extension", "new_task", "question", "approval", "other",
+  "defect_correction",
+  "constraint_restatement",
+  "missing_requirement",
+  "preference_revision",
+  "scope_extension",
+  "new_task",
+  "question",
+  "approval",
+  "other",
 ]);
 const ruleState = z.enum([
-  "proposed", "approved", "testing", "supported", "active", "questioned",
-  "disabled", "retired", "rolled_back", "rejected",
+  "proposed",
+  "approved",
+  "testing",
+  "supported",
+  "active",
+  "questioned",
+  "disabled",
+  "retired",
+  "rolled_back",
+  "rejected",
 ]);
 
 // ---- Checkpoint A ----
@@ -175,7 +199,14 @@ tool(
   "Apply a human review action to a correction candidate: confirm, reclassify, mark_one_time, mark_reusable, change_scope, or exclude.",
   {
     id: z.number().int(),
-    action: z.enum(["confirm", "reclassify", "mark_one_time", "mark_reusable", "change_scope", "exclude"]),
+    action: z.enum([
+      "confirm",
+      "reclassify",
+      "mark_one_time",
+      "mark_reusable",
+      "change_scope",
+      "exclude",
+    ]),
     classification: classification.optional(),
     proposed_scope: z.enum(["project", "workspace", "one_time"]).optional(),
     reviewer: z.string().optional(),
@@ -252,7 +283,14 @@ tool(
 
 const verifierType = z.enum(["structural", "diff_pattern", "ai_rubric", "human_only"]);
 const scope = z.enum(["project", "workspace"]);
-const provenanceEnum = z.enum(["lovable_mcp", "git_history", "build_log", "spec", "manual", "llm_derived"]);
+const provenanceEnum = z.enum([
+  "lovable_mcp",
+  "git_history",
+  "build_log",
+  "spec",
+  "manual",
+  "llm_derived",
+]);
 
 tool(
   "create_verification_definition",
@@ -321,7 +359,12 @@ tool(
     source_project_id: z.string(),
     task_episode_id: z.number().int().optional(),
     experiment_type: z.enum(["treatment_only", "paired_control_treatment", "ablation"]),
-    starting_state_quality: z.enum(["controlled_equivalent", "approximate", "historical_only", "blocked"]),
+    starting_state_quality: z.enum([
+      "controlled_equivalent",
+      "approximate",
+      "historical_only",
+      "blocked",
+    ]),
     control_configuration: z.string(),
     treatment_configuration: z.string(),
     exact_prompt: z.string(),

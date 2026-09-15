@@ -150,7 +150,9 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
   assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="Details"'));
   // proof is hidden until it can run
   assert.ok(
-    !/Run proof|Prove it first|How Harness Ledger would prove this|PROVE_INTRO|proveCostLine/.test(body),
+    !/Run proof|Prove it first|How Harness Ledger would prove this|PROVE_INTRO|proveCostLine/.test(
+      body,
+    ),
   );
 });
 
@@ -268,7 +270,10 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
     detail.indexOf("function SkipConfirm"),
   );
   // Round 7: with "Test it first" picked the dialog speaks about the test.
-  assert.match(confirm, /title=\{wantsTest \? TEST_THIS_RULE_TITLE : `Add to \$\{targetLabel\}\?`\}/);
+  assert.match(
+    confirm,
+    /title=\{wantsTest \? TEST_THIS_RULE_TITLE : `Add to \$\{targetLabel\}\?`\}/,
+  );
   assert.match(confirm, /Your existing Knowledge \(unchanged\)/);
   assert.match(confirm, /\{preview\.managed_block\}/);
   assert.match(
@@ -286,7 +291,10 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
     detail,
     /\[\s*"You can remove it from Knowledge or restore an earlier version from History at any time\.",?\s*\]/,
   );
-  assert.match(confirm, /consequences=\{\s*wantsTest && item\.test \? testConfirmLines\(item\.test\) : preview \? PREVIEW_CONSEQUENCES : \[\]\s*\}/);
+  assert.match(
+    confirm,
+    /consequences=\{\s*wantsTest && item\.test \? testConfirmLines\(item\.test\) : preview \? PREVIEW_CONSEQUENCES : \[\]\s*\}/,
+  );
   // no snapshot yet -> save the choice, say so, and promise the read-back
   assert.match(
     detail,
@@ -306,7 +314,10 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   );
   // ... and so is an unmade choice, or the project's over its rule cap
   // (Round 3 §5: over_rules mirrors over_cap)
-  assert.match(confirm, /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/);
+  assert.match(
+    confirm,
+    /confirmDisabled=\{\(!wantsTest && \(overCap \|\| overRules\)\) \|\| choice == null\}/,
+  );
   assert.match(confirm, /\{overCap \? \(/);
   assert.match(confirm, /\{overRules \? \(/);
   assert.match(detail, /Retire one on the Instructions page first\./);

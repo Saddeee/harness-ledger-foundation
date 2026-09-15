@@ -107,7 +107,10 @@ export async function judgeAdherence(
     opts.limit,
     rules.reduce((n, rule) => {
       if (!rule.first_written_at) return n;
-      const start = windowStart(rule.first_written_at, store.getRuleHealth(rule.id)?.baseline_at ?? null);
+      const start = windowStart(
+        rule.first_written_at,
+        store.getRuleHealth(rule.id)?.baseline_at ?? null,
+      );
       const projectId = rule.scope === "project" ? rule.project_id : null;
       return n + store.listUnjudgedEpisodesForRule(rule.id, start, projectId, opts.limit).length;
     }, 0),

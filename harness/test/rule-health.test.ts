@@ -930,9 +930,30 @@ test("recomputeRuleHealth: a paired test judged all 'Unclear' is not a hurt -- n
     writtenAt: RULE_WRITTEN_AT,
     scopeTags: ["paired-gate-unclear-tag"],
   });
-  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0, judgedAt: "2026-09-05T00:00:00Z", verdicts: ["unclear"] });
-  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0.5, judgedAt: "2026-09-06T00:00:00Z", verdicts: ["no", "unclear"] });
-  makeJudgedRun({ ruleId, correctionId, episodeId, score: 0, judgedAt: "2026-09-07T00:00:00Z", verdicts: ["yes", "unclear"] });
+  makeJudgedRun({
+    ruleId,
+    correctionId,
+    episodeId,
+    score: 0,
+    judgedAt: "2026-09-05T00:00:00Z",
+    verdicts: ["unclear"],
+  });
+  makeJudgedRun({
+    ruleId,
+    correctionId,
+    episodeId,
+    score: 0.5,
+    judgedAt: "2026-09-06T00:00:00Z",
+    verdicts: ["no", "unclear"],
+  });
+  makeJudgedRun({
+    ruleId,
+    correctionId,
+    episodeId,
+    score: 0,
+    judgedAt: "2026-09-07T00:00:00Z",
+    verdicts: ["yes", "unclear"],
+  });
 
   setPaired(true);
   recomputeRuleHealth(NOW);

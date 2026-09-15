@@ -275,7 +275,10 @@ async function countEditsSinceEpisode(
   for (let page = 0; page < EDITS_MAX_PAGES; page += 1) {
     const { edits, has_more } = await rest.listEdits(source, { limit: EDITS_PAGE_LIMIT, before });
     const times = edits.map((e) => e.created_at);
-    count += store.countEditsSince(new Date(startedMs).toISOString(), times.map((t) => new Date(parseTimestampMs(t)).toISOString()));
+    count += store.countEditsSince(
+      new Date(startedMs).toISOString(),
+      times.map((t) => new Date(parseTimestampMs(t)).toISOString()),
+    );
     const oldestMs = Math.min(...times.map(parseTimestampMs));
     if (!has_more || edits.length === 0 || oldestMs <= startedMs) break;
     before = new Date(oldestMs).toISOString();
@@ -675,8 +678,7 @@ export async function cleanupCopy(
       store.updateExperimentRun(run.id, { original_copy_deleted: 1 });
     } catch {
       store.updateExperimentRun(run.id, {
-        copy_cleanup_note:
-          "Could not delete a test copy; delete it by hand in Lovable.",
+        copy_cleanup_note: "Could not delete a test copy; delete it by hand in Lovable.",
       });
     }
   }

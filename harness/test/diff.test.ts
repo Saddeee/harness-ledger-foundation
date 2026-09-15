@@ -93,8 +93,14 @@ test("context collapsing on a 50-line document with two distant single-line edit
     { kind: " ", text: "line46" },
     { kind: " ", text: "line47" },
   ]);
-  assert.ok(!out.lines.some((l) => l.text === "line20"), "far-away unchanged lines must be dropped");
-  assert.ok(!out.lines.some((l) => l.text === "line30"), "far-away unchanged lines must be dropped");
+  assert.ok(
+    !out.lines.some((l) => l.text === "line20"),
+    "far-away unchanged lines must be dropped",
+  );
+  assert.ok(
+    !out.lines.some((l) => l.text === "line30"),
+    "far-away unchanged lines must be dropped",
+  );
 
   // The default context is 2.
   assert.deepEqual(lineDiff(before, after).lines, out.lines);
@@ -124,7 +130,10 @@ test("composeManagedKnowledge's output diffs cleanly against input that ends in 
     { id: 1, instruction: "Demo: never add a cron job without asking." },
   ]);
   assert.ok(base.endsWith("\n"), "precondition: the input ends with a newline");
-  assert.ok(!composed.final_content.endsWith("\n"), "precondition: the managed block adds no trailing newline");
+  assert.ok(
+    !composed.final_content.endsWith("\n"),
+    "precondition: the managed block adds no trailing newline",
+  );
 
   const out = lineDiff(base, composed.final_content);
   // Nothing is ever removed here -- composing only appends. If the trailing

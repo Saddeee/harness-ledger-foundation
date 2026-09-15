@@ -47,7 +47,12 @@ export interface LovableReader {
   // said there are more than it returned -- a missing skill then can't be
   // read as "deleted".
   listWorkspaceSkills(workspaceId: string): Promise<{
-    skills: { name: string; description: string | null; content: string; updated_at: string | null }[];
+    skills: {
+      name: string;
+      description: string | null;
+      content: string;
+      updated_at: string | null;
+    }[];
     complete: boolean;
   }>;
 }
@@ -152,7 +157,10 @@ function toSkill(raw: unknown): {
  * Same rule as knowledge.ts#realKnowledgeText, kept local so this client
  * stays free of the store/database import. Exported for its unit test. */
 export function knowledgeContent(parsed: unknown): string {
-  const raw = typeof parsed === "string" ? parsed : (str(asRecord(parsed).content) ?? str(asRecord(parsed).knowledge) ?? "");
+  const raw =
+    typeof parsed === "string"
+      ? parsed
+      : (str(asRecord(parsed).content) ?? str(asRecord(parsed).knowledge) ?? "");
   return raw.trim() === "(empty)" ? "" : raw;
 }
 
@@ -160,7 +168,12 @@ export function knowledgeContent(parsed: unknown): string {
  * list: false for a malformed answer (no skills array) or has_more. Exported
  * for its unit test. */
 export function skillListFromResponse(parsed: unknown): {
-  skills: { name: string; description: string | null; content: string; updated_at: string | null }[];
+  skills: {
+    name: string;
+    description: string | null;
+    content: string;
+    updated_at: string | null;
+  }[];
   complete: boolean;
 } {
   const o = asRecord(parsed);

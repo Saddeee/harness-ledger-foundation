@@ -12,7 +12,9 @@ function codeOnly(source: string): string {
     .split("\n")
     .filter((l) => {
       const t = l.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+      return (
+        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
+      );
     })
     .join("\n");
 }
@@ -33,8 +35,11 @@ test("route.tsx: Uses improvements query with 60s refetch interval", () => {
   const src = readApp(ROUTE);
   const code = codeOnly(src);
   assert(code.includes("refetchInterval: 60_000"), "Missing refetchInterval: 60_000");
-  assert(code.includes('new Notification('), "Missing Notification constructor");
-  assert(code.includes('queryKey: ["harness-improvements"]'), "Missing harness-improvements query key");
+  assert(code.includes("new Notification("), "Missing Notification constructor");
+  assert(
+    code.includes('queryKey: ["harness-improvements"]'),
+    "Missing harness-improvements query key",
+  );
 });
 
 test("browser-prefs.ts: Exports NOTIFY_KEY and helper functions", () => {
@@ -52,8 +57,10 @@ test("pages only fetch from local harness routes", () => {
   const allFetches = code.match(/fetch\([^)]+\)/g) || [];
   for (const f of allFetches) {
     assert(
-      f.includes("/api/public/harness/") || f.includes("queryFn:") || f.includes("runtimeQueryOptions"),
-      `Unexpected fetch in pages: ${f}`
+      f.includes("/api/public/harness/") ||
+        f.includes("queryFn:") ||
+        f.includes("runtimeQueryOptions"),
+      `Unexpected fetch in pages: ${f}`,
     );
   }
 });

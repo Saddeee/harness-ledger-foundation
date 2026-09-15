@@ -1017,23 +1017,69 @@ test("rule writer: one suggestion per correction -- two unrelated corrections in
   const seeded = seedEpisode(PROJECT_TWO, {
     request: "Add a Round up switch.",
     assistantAfterRequest: "Added the switch.",
-    corrections: ["No, not dollars: show every amount in kronor.", "Also remove the custom fonts.", "Thanks, looks good now."],
+    corrections: [
+      "No, not dollars: show every amount in kronor.",
+      "Also remove the custom fonts.",
+      "Thanks, looks good now.",
+    ],
   });
   const [krId, fontsId, thanksId] = seeded.correctionExternalIds;
-  const base = { scope: "project", contradicts_rule_id: null, duplicate_of_rule_id: null, confidence: 0.9 };
+  const base = {
+    scope: "project",
+    contradicts_rule_id: null,
+    duplicate_of_rule_id: null,
+    confidence: 0.9,
+  };
   const callLlm = fakeRuleWriterCallLlm([
-    { match: `only: [${krId}]`, json: { ...base, propose: true, instruction: "Show every amount in kronor.", prediction: "Amounts in dollars.", failure_signature: "dollars", evidence_message_ids: [krId] } },
-    { match: `only: [${fontsId}]`, json: { ...base, propose: true, instruction: "Never add web fonts unless asked.", prediction: "Custom fonts added.", failure_signature: "web-fonts", evidence_message_ids: [fontsId] } },
-    { match: `only: [${thanksId}]`, json: { ...base, propose: false, instruction: null, prediction: null, failure_signature: null, evidence_message_ids: null, confidence: null } },
+    {
+      match: `only: [${krId}]`,
+      json: {
+        ...base,
+        propose: true,
+        instruction: "Show every amount in kronor.",
+        prediction: "Amounts in dollars.",
+        failure_signature: "dollars",
+        evidence_message_ids: [krId],
+      },
+    },
+    {
+      match: `only: [${fontsId}]`,
+      json: {
+        ...base,
+        propose: true,
+        instruction: "Never add web fonts unless asked.",
+        prediction: "Custom fonts added.",
+        failure_signature: "web-fonts",
+        evidence_message_ids: [fontsId],
+      },
+    },
+    {
+      match: `only: [${thanksId}]`,
+      json: {
+        ...base,
+        propose: false,
+        instruction: null,
+        prediction: null,
+        failure_signature: null,
+        evidence_message_ids: null,
+        confidence: null,
+      },
+    },
   ]);
 
   const first = await propose.proposeRules(callLlm, { limit: 500 });
   const mine = improvements.listImprovements().filter((i) => i.project.id === PROJECT_TWO);
-  assert.deepEqual(mine.map((i) => i.proposed_instruction).sort(), ["Never add web fonts unless asked.", "Show every amount in kronor."]);
+  assert.deepEqual(mine.map((i) => i.proposed_instruction).sort(), [
+    "Never add web fonts unless asked.",
+    "Show every amount in kronor.",
+  ]);
   assert.ok(first.proposed >= 2);
 
   // Everything was asked once; nothing in this episode is minable again.
-  assert.equal(store.listMinableEpisodes(500).filter((e) => e.project_id === PROJECT_TWO).length, 0);
+  assert.equal(
+    store.listMinableEpisodes(500).filter((e) => e.project_id === PROJECT_TWO).length,
+    0,
+  );
   const again = await propose.proposeRules(fakeRuleWriterCallLlm([]), { limit: 500 });
   assert.equal(again.failed, 0, "no call was made for this project's corrections");
 });
@@ -1048,10 +1094,33 @@ test("rule writer: a correction another correction's suggestion already cites is
   const [a, b] = seeded.correctionExternalIds;
   const prompts: string[] = [];
   const inner = fakeRuleWriterCallLlm([
-    { match: `only: [${a}]`, json: { propose: true, instruction: "Use kronor for all money.", prediction: "Dollars shown.", failure_signature: "dollars", evidence_message_ids: [a, b], confidence: 0.9, scope: "project", contradicts_rule_id: null, duplicate_of_rule_id: null } },
+    {
+      match: `only: [${a}]`,
+      json: {
+        propose: true,
+        instruction: "Use kronor for all money.",
+        prediction: "Dollars shown.",
+        failure_signature: "dollars",
+        evidence_message_ids: [a, b],
+        confidence: 0.9,
+        scope: "project",
+        contradicts_rule_id: null,
+        duplicate_of_rule_id: null,
+      },
+    },
   ]);
-  const callLlm: CallLlm = async (req) => { prompts.push(req.user); return inner(req); };
+  const callLlm: CallLlm = async (req) => {
+    prompts.push(req.user);
+    return inner(req);
+  };
   await propose.proposeRules(callLlm, { limit: 500 });
-  assert.equal(prompts.filter((p) => p.includes(PROJECT_SAME) || p.includes("Same expectation")).length, 1, "one call covered both corrections");
-  assert.equal(improvements.listImprovements().filter((i) => i.project.id === PROJECT_SAME).length, 1);
+  assert.equal(
+    prompts.filter((p) => p.includes(PROJECT_SAME) || p.includes("Same expectation")).length,
+    1,
+    "one call covered both corrections",
+  );
+  assert.equal(
+    improvements.listImprovements().filter((i) => i.project.id === PROJECT_SAME).length,
+    1,
+  );
 });

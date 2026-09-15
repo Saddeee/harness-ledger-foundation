@@ -1784,8 +1784,7 @@ export function recordSkillSnapshot(input: {
       `SELECT id, sha256, deleted FROM skill_snapshots WHERE workspace_id = ? AND name = ? ORDER BY id DESC LIMIT 1`,
     )
     .get(input.workspace_id, input.name) as
-    | { id: number; sha256: string; deleted: number }
-    | undefined;
+    { id: number; sha256: string; deleted: number } | undefined;
   if (latest && latest.sha256 === sha && latest.deleted === 0) {
     return { id: latest.id, inserted: false };
   }
@@ -4560,13 +4559,18 @@ export function writtenRulesForTarget(
  * or later one from rule_revisions. */
 export function ruleWordings(ruleId: number): string[] {
   const current = db.prepare(`SELECT instruction FROM rules WHERE id = ?`).get(ruleId) as
-    | { instruction: string }
-    | undefined;
+    { instruction: string } | undefined;
   const revisions = db
-    .prepare(`SELECT previous_instruction AS a, new_instruction AS b FROM rule_revisions WHERE rule_id = ?`)
+    .prepare(
+      `SELECT previous_instruction AS a, new_instruction AS b FROM rule_revisions WHERE rule_id = ?`,
+    )
     .all(ruleId) as { a: string; b: string }[];
   return Array.from(
-    new Set([current?.instruction, ...revisions.flatMap((r) => [r.a, r.b])].filter((t): t is string => !!t)),
+    new Set(
+      [current?.instruction, ...revisions.flatMap((r) => [r.a, r.b])].filter(
+        (t): t is string => !!t,
+      ),
+    ),
   );
 }
 
@@ -4610,7 +4614,11 @@ export function runningAnalysisProgress(): {
 export function testCopyProjects(): Record<string, number> {
   const rows = db
     .prepare(`SELECT id, copy_project_id, original_copy_project_id FROM experiment_runs`)
-    .all() as { id: number; copy_project_id: string | null; original_copy_project_id: string | null }[];
+    .all() as {
+    id: number;
+    copy_project_id: string | null;
+    original_copy_project_id: string | null;
+  }[];
   const out: Record<string, number> = {};
   for (const r of rows) {
     if (r.copy_project_id) out[r.copy_project_id] = r.id;

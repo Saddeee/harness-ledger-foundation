@@ -96,7 +96,11 @@ test("setKey tightens a pre-existing, more permissive data directory to 0700 (e.
   try {
     llmKeys.setKey("openai", "sk-tighten-dir-test-1234");
     const dirMode = statSync(preexisting).mode & 0o777;
-    assert.equal(dirMode, 0o700, `expected the pre-existing dir to be tightened to 0700, got ${dirMode.toString(8)}`);
+    assert.equal(
+      dirMode,
+      0o700,
+      `expected the pre-existing dir to be tightened to 0700, got ${dirMode.toString(8)}`,
+    );
   } finally {
     delete process.env.HARNESS_LLM_KEYS_PATH;
   }

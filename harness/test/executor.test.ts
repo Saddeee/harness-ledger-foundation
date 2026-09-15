@@ -42,7 +42,12 @@ class FakeLovable implements LovableClient {
   pages: Record<string, Page[]> = {};
   projectKnowledge: Record<string, string> = {};
   workspaceKnowledge = "";
-  skills: { name: string; description: string | null; content: string; updated_at: string | null }[] = [];
+  skills: {
+    name: string;
+    description: string | null;
+    content: string;
+    updated_at: string | null;
+  }[] = [];
   setCalls: { kind: "project" | "workspace"; id: string; content: string }[] = [];
   setProjectThrows: string | null = null;
   closed = false;
@@ -90,11 +95,19 @@ class FakeLovable implements LovableClient {
 function twoPages(): Page[] {
   return [
     {
-      messages: [msg("m5", "user", "five"), msg("m4", "assistant", "four"), msg("m3", "user", "three")],
+      messages: [
+        msg("m5", "user", "five"),
+        msg("m4", "assistant", "four"),
+        msg("m3", "user", "three"),
+      ],
       next_cursor: "1",
       has_more: true,
     },
-    { messages: [msg("m2", "user", "two"), msg("m1", "user", "one")], next_cursor: null, has_more: false },
+    {
+      messages: [msg("m2", "user", "two"), msg("m1", "user", "one")],
+      next_cursor: null,
+      has_more: false,
+    },
   ];
 }
 
@@ -141,7 +154,9 @@ test("syncHistory redacts secrets in message content and backfills the project w
   ];
   await beats.syncHistory(fake);
   const row = db
-    .prepare(`SELECT content, role, source_ref, occurred_at FROM history_items WHERE external_id = 'm9'`)
+    .prepare(
+      `SELECT content, role, source_ref, occurred_at FROM history_items WHERE external_id = 'm9'`,
+    )
     .get() as { content: string; role: string; source_ref: string; occurred_at: string };
   assert.equal(row.content, "use [redacted:key] to call it");
   assert.equal(row.role, "assistant");
@@ -165,7 +180,10 @@ test("syncHistory parks a cursor when the page budget runs out and resumes it ne
   const afterFirst = db
     .prepare(`SELECT external_id FROM history_items WHERE project_id = ? ORDER BY id`)
     .all(BIG) as { external_id: string }[];
-  assert.deepEqual(afterFirst.map((r) => r.external_id), ["p9", "p8"]);
+  assert.deepEqual(
+    afterFirst.map((r) => r.external_id),
+    ["p9", "p8"],
+  );
 
   const second = await beats.syncHistory(fake, { maxPages: 2 });
   assert.equal(second.truncated, 0);
@@ -173,7 +191,10 @@ test("syncHistory parks a cursor when the page budget runs out and resumes it ne
   const afterSecond = db
     .prepare(`SELECT external_id FROM history_items WHERE project_id = ? ORDER BY id`)
     .all(BIG) as { external_id: string }[];
-  assert.deepEqual(afterSecond.map((r) => r.external_id), ["p9", "p8", "p7"]);
+  assert.deepEqual(
+    afterSecond.map((r) => r.external_id),
+    ["p9", "p8", "p7"],
+  );
 
   store.disallowProject(BIG);
 });
@@ -200,7 +221,12 @@ test("snapshotKnowledge records once per distinct content", async () => {
 test("snapshotSkills records changed skills only", async () => {
   const fake = new FakeLovable();
   fake.skills = [
-    { name: "review", description: "Review code", content: "# Review\n", updated_at: "2026-09-01T00:00:00Z" },
+    {
+      name: "review",
+      description: "Review code",
+      content: "# Review\n",
+      updated_at: "2026-09-01T00:00:00Z",
+    },
   ];
   assert.deepEqual(await beats.snapshotSkills(fake, WORKSPACE), { skills: 1, changed: 1 });
   assert.deepEqual(await beats.snapshotSkills(fake, WORKSPACE), { skills: 1, changed: 0 });
@@ -303,9 +329,15 @@ test("executeWrites skips a pending project-target write when the project has au
     skipped_auto_write: 1,
     skipped_demo: 0,
   });
-  assert.equal(store.getKnowledgeVersion(projectVersion.id)?.status, "pending", "left pending, not touched at all");
+  assert.equal(
+    store.getKnowledgeVersion(projectVersion.id)?.status,
+    "pending",
+    "left pending, not touched at all",
+  );
   assert.equal(store.getKnowledgeVersion(workspaceVersion.id)?.status, "written");
-  assert.deepEqual(fake.setCalls, [{ kind: "workspace", id: WORKSPACE, content: "workspace write is unaffected" }]);
+  assert.deepEqual(fake.setCalls, [
+    { kind: "workspace", id: WORKSPACE, content: "workspace write is unaffected" },
+  ]);
 
   // Turning it back on lets the same pending write through on the next pass.
   store.setProjectSettings(PROJECT, { auto_write: true });
@@ -468,7 +500,9 @@ test("runOnce refuses to start while another run is in flight", async () => {
 test("runAll completes the open sync request, records counts and finishes the run", async () => {
   const requested = store.requestSync();
   const fake = new FakeLovable();
-  fake.pages[PROJECT] = [{ messages: [msg("m7", "user", "seven")], next_cursor: null, has_more: false }];
+  fake.pages[PROJECT] = [
+    { messages: [msg("m7", "user", "seven")], next_cursor: null, has_more: false },
+  ];
   fake.projectKnowledge[PROJECT] = "runAll knowledge";
 
   const result = await beats.runAll(fake, "manual");
@@ -476,7 +510,9 @@ test("runAll completes the open sync request, records counts and finishes the ru
   assert.equal(typeof result.runId, "number");
   assert.equal(result.counts.messages, 1);
 
-  const row = db.prepare(`SELECT status, run_id FROM sync_requests WHERE id = ?`).get(requested.id) as {
+  const row = db
+    .prepare(`SELECT status, run_id FROM sync_requests WHERE id = ?`)
+    .get(requested.id) as {
     status: string;
     run_id: number;
   };
@@ -1034,11 +1070,17 @@ test("lock.currentLockHolder: null when unheld or stale, the holder when fresh",
 
 test("toIdName: prefers Lovable's display_name, falls back to the slug, then the id", async () => {
   const { toIdName } = await import("../src/executor/lovable-mcp.js");
-  assert.deepEqual(toIdName({ id: "p1", name: "harness-ledger-start", display_name: "Harness Ledger Foundation" }), {
-    id: "p1",
-    name: "Harness Ledger Foundation",
+  assert.deepEqual(
+    toIdName({ id: "p1", name: "harness-ledger-start", display_name: "Harness Ledger Foundation" }),
+    {
+      id: "p1",
+      name: "Harness Ledger Foundation",
+    },
+  );
+  assert.deepEqual(toIdName({ id: "p2", display_name: "Frontier Forge" }), {
+    id: "p2",
+    name: "Frontier Forge",
   });
-  assert.deepEqual(toIdName({ id: "p2", display_name: "Frontier Forge" }), { id: "p2", name: "Frontier Forge" });
   assert.deepEqual(toIdName({ id: "p3", name: "slug-only" }), { id: "p3", name: "slug-only" });
   assert.deepEqual(toIdName({ id: "p4" }), { id: "p4", name: "p4" });
 });
@@ -1055,7 +1097,11 @@ test("syncHistory names a newly allowed project after its Projects-page label, a
   assert.equal(store.getProjectMeta(NEW_PROJECT)?.workspace_id, WORKSPACE);
 
   store.upsertProject({ lovable_project_id: NEW_PROJECT, workspace_id: WORKSPACE });
-  assert.equal(store.getProjectMeta(NEW_PROJECT)?.name, "Quick Tip Calculator", "an upsert without a name keeps the name");
+  assert.equal(
+    store.getProjectMeta(NEW_PROJECT)?.name,
+    "Quick Tip Calculator",
+    "an upsert without a name keeps the name",
+  );
   store.disallowProject(NEW_PROJECT);
 });
 
@@ -1117,7 +1163,10 @@ test("executeVersionNow: removing a rule right after adding it writes, even when
   });
   const outcome = await beats.executeVersionNow(remove.id, fake);
   assert.equal(outcome.written, true, JSON.stringify(outcome));
-  assert.ok(!fake.projectKnowledge[project]!.includes(rule.instruction), "the rule is gone from Lovable");
+  assert.ok(
+    !fake.projectKnowledge[project]!.includes(rule.instruction),
+    "the rule is gone from Lovable",
+  );
 
   // A line Harness never wrote is still refused.
   fake.projectKnowledge[project] = managedBlock(["Something a human typed inside the markers."]);
@@ -1142,19 +1191,39 @@ test("snapshotSkills records a deleted skill, the Skills list drops it, History 
   const fake = new FakeLovable();
   fake.skills = [{ name: "temp-skill", description: "d", content: "# v1", updated_at: null }];
   await beats.snapshotSkills(fake, WS);
-  assert.deepEqual(store.latestSkillSnapshots(WS).map((s) => s.name), ["temp-skill"]);
+  assert.deepEqual(
+    store.latestSkillSnapshots(WS).map((s) => s.name),
+    ["temp-skill"],
+  );
 
   fake.skills = [];
   assert.deepEqual(await beats.snapshotSkills(fake, WS), { skills: 0, changed: 1 });
   assert.deepEqual(store.latestSkillSnapshots(WS), [], "a deleted skill is not listed as current");
-  assert.deepEqual(await beats.snapshotSkills(fake, WS), { skills: 0, changed: 0 }, "deletion recorded once");
+  assert.deepEqual(
+    await beats.snapshotSkills(fake, WS),
+    { skills: 0, changed: 0 },
+    "deletion recorded once",
+  );
 
-  const labels = imp.buildTimeline("workspace", WS).filter((n) => n.kind === "skill").map((n) => n.label);
-  assert.deepEqual(labels.sort(), ["Skill temp-skill deleted", "Skill temp-skill first read"].sort());
+  const labels = imp
+    .buildTimeline("workspace", WS)
+    .filter((n) => n.kind === "skill")
+    .map((n) => n.label);
+  assert.deepEqual(
+    labels.sort(),
+    ["Skill temp-skill deleted", "Skill temp-skill first read"].sort(),
+  );
 
   fake.skills = [{ name: "temp-skill", description: "d", content: "# v1", updated_at: null }];
-  assert.deepEqual(await beats.snapshotSkills(fake, WS), { skills: 1, changed: 1 }, "same content after deletion is a new snapshot");
-  assert.deepEqual(store.latestSkillSnapshots(WS).map((s) => s.name), ["temp-skill"]);
+  assert.deepEqual(
+    await beats.snapshotSkills(fake, WS),
+    { skills: 1, changed: 1 },
+    "same content after deletion is a new snapshot",
+  );
+  assert.deepEqual(
+    store.latestSkillSnapshots(WS).map((s) => s.name),
+    ["temp-skill"],
+  );
 });
 
 test("executeVersionNow: retrying an older failed write merges with the rules Harness Ledger wrote since -- it never drops a newer rule or re-adds a retired one", async () => {
@@ -1170,16 +1239,24 @@ test("executeVersionNow: retrying an older failed write merges with the rules Ha
   fake.projectKnowledge[project] = "";
 
   const vB = store.createPendingKnowledgeVersion({
-    rule_id: b.id, target: "project", project_id: project,
-    previous_content: "", new_content: managedBlock([b.instruction, retired.instruction]),
-    rule_ids: [b.id, retired.id], actor: "test",
+    rule_id: b.id,
+    target: "project",
+    project_id: project,
+    previous_content: "",
+    new_content: managedBlock([b.instruction, retired.instruction]),
+    rule_ids: [b.id, retired.id],
+    actor: "test",
   });
   store.markKnowledgeWriteFailed(vB.id, "timed out");
 
   const vA = store.createPendingKnowledgeVersion({
-    rule_id: a.id, target: "project", project_id: project,
-    previous_content: "", new_content: managedBlock([a.instruction, b.instruction]),
-    rule_ids: [a.id, b.id], actor: "test",
+    rule_id: a.id,
+    target: "project",
+    project_id: project,
+    previous_content: "",
+    new_content: managedBlock([a.instruction, b.instruction]),
+    rule_ids: [a.id, b.id],
+    actor: "test",
   });
   assert.equal((await beats.executeVersionNow(vA.id, fake)).written, true);
 
@@ -1193,7 +1270,6 @@ test("executeVersionNow: retrying an older failed write merges with the rules Ha
   store.disallowProject(project);
 });
 
-
 test("snapshotSkills never marks skills deleted from an incomplete or malformed answer", async () => {
   // Review finding: an unexpected response shape read as "no skills" and
   // would have marked every skill in the workspace deleted.
@@ -1204,13 +1280,22 @@ test("snapshotSkills never marks skills deleted from an incomplete or malformed 
   fake.skills = [];
   fake.skillsComplete = false;
   assert.deepEqual(await beats.snapshotSkills(fake, WS), { skills: 0, changed: 0 });
-  assert.deepEqual(store.latestSkillSnapshots(WS).map((s) => s.name), ["keep-me"]);
+  assert.deepEqual(
+    store.latestSkillSnapshots(WS).map((s) => s.name),
+    ["keep-me"],
+  );
 });
 
 test("lovable-mcp listWorkspaceSkills: complete only for a well-formed answer without has_more", async () => {
   const { skillListFromResponse } = await import("../src/executor/lovable-mcp.js");
-  assert.deepEqual(skillListFromResponse({ skills: [], total: 0, has_more: false }), { skills: [], complete: true });
-  assert.equal(skillListFromResponse({ skills: [{ name: "a", markdown: "# a" }], has_more: true }).complete, false);
+  assert.deepEqual(skillListFromResponse({ skills: [], total: 0, has_more: false }), {
+    skills: [],
+    complete: true,
+  });
+  assert.equal(
+    skillListFromResponse({ skills: [{ name: "a", markdown: "# a" }], has_more: true }).complete,
+    false,
+  );
   assert.deepEqual(skillListFromResponse({ error: "unexpected" }), { skills: [], complete: false });
 });
 
@@ -1222,9 +1307,25 @@ test("executeVersionNow: 'Go back to before this change' on an older version wri
   for (const r of [a, b]) store.updateRule({ id: r.id, state: "active", actor: "test" });
   const fake = new FakeLovable();
   fake.projectKnowledge[project] = "Notes.";
-  const v1 = store.createPendingKnowledgeVersion({ rule_id: a.id, target: "project", project_id: project, previous_content: "Notes.", new_content: `Notes.\n\n${managedBlock([a.instruction])}`, rule_ids: [a.id], actor: "test" });
+  const v1 = store.createPendingKnowledgeVersion({
+    rule_id: a.id,
+    target: "project",
+    project_id: project,
+    previous_content: "Notes.",
+    new_content: `Notes.\n\n${managedBlock([a.instruction])}`,
+    rule_ids: [a.id],
+    actor: "test",
+  });
   assert.equal((await beats.executeVersionNow(v1.id, fake)).written, true);
-  const v2 = store.createPendingKnowledgeVersion({ rule_id: b.id, target: "project", project_id: project, previous_content: fake.projectKnowledge[project]!, new_content: `Notes.\n\n${managedBlock([a.instruction, b.instruction])}`, rule_ids: [a.id, b.id], actor: "test" });
+  const v2 = store.createPendingKnowledgeVersion({
+    rule_id: b.id,
+    target: "project",
+    project_id: project,
+    previous_content: fake.projectKnowledge[project]!,
+    new_content: `Notes.\n\n${managedBlock([a.instruction, b.instruction])}`,
+    rule_ids: [a.id, b.id],
+    actor: "test",
+  });
   assert.equal((await beats.executeVersionNow(v2.id, fake)).written, true);
 
   const goBack = store.createRestoreVersion(v1.id, "test") as { id: number };
@@ -1232,7 +1333,8 @@ test("executeVersionNow: 'Go back to before this change' on an older version wri
   assert.equal(outcome.written, true, JSON.stringify(outcome));
   assert.equal(fake.projectKnowledge[project], "Notes.", "the text from before version 1 is back");
   // Both rules left Lovable, so both read as reverted.
-  const stateOf = (id: number) => (db.prepare(`SELECT state FROM rules WHERE id = ?`).get(id) as { state: string }).state;
+  const stateOf = (id: number) =>
+    (db.prepare(`SELECT state FROM rules WHERE id = ?`).get(id) as { state: string }).state;
   assert.equal(stateOf(a.id), "rolled_back");
   assert.equal(stateOf(b.id), "rolled_back");
 
@@ -1250,10 +1352,16 @@ test("executeVersionNow: 'Go back to before this change' on an older version wri
 test("parseToolResult: a Lovable error result throws -- its message is never returned as data (it was saved as Knowledge)", async () => {
   const { parseToolResult } = await import("../src/executor/lovable-mcp.js");
   assert.throws(
-    () => parseToolResult({ isError: true, content: [{ type: "text", text: "Lovable API error: 401 unauthorized: Unauthorized" }] }),
+    () =>
+      parseToolResult({
+        isError: true,
+        content: [{ type: "text", text: "Lovable API error: 401 unauthorized: Unauthorized" }],
+      }),
     /401 unauthorized/,
   );
-  assert.deepEqual(parseToolResult({ content: [{ type: "text", text: '{"content":"Notes"}' }] }), { content: "Notes" });
+  assert.deepEqual(parseToolResult({ content: [{ type: "text", text: '{"content":"Notes"}' }] }), {
+    content: "Notes",
+  });
 });
 
 test("going back keeps a rule active when Knowledge holds an earlier wording of it, or a rule written over several lines", async () => {
@@ -1268,18 +1376,40 @@ test("going back keeps a rule active when Knowledge holds an earlier wording of 
   const fake = new FakeLovable();
   fake.projectKnowledge[project] = "";
   const blockOld = managedBlock(["Use kronor.", "First line.\nSecond line."]);
-  const v1 = store.createPendingKnowledgeVersion({ rule_id: worded.id, target: "project", project_id: project, previous_content: "", new_content: blockOld, rule_ids: [worded.id, multi.id], actor: "test" });
+  const v1 = store.createPendingKnowledgeVersion({
+    rule_id: worded.id,
+    target: "project",
+    project_id: project,
+    previous_content: "",
+    new_content: blockOld,
+    rule_ids: [worded.id, multi.id],
+    actor: "test",
+  });
   assert.equal((await beats.executeVersionNow(v1.id, fake)).written, true);
-  store.updateRule({ id: worded.id, instruction: "Show money in kronor.", actor: "test", reason: "reworded" });
+  store.updateRule({
+    id: worded.id,
+    instruction: "Show money in kronor.",
+    actor: "test",
+    reason: "reworded",
+  });
   const blockNew = managedBlock(["Show money in kronor.", "First line.\nSecond line."]);
-  const v2 = store.createPendingKnowledgeVersion({ rule_id: worded.id, target: "project", project_id: project, previous_content: blockOld, new_content: blockNew, rule_ids: [worded.id, multi.id], actor: "test" });
+  const v2 = store.createPendingKnowledgeVersion({
+    rule_id: worded.id,
+    target: "project",
+    project_id: project,
+    previous_content: blockOld,
+    new_content: blockNew,
+    rule_ids: [worded.id, multi.id],
+    actor: "test",
+  });
   assert.equal((await beats.executeVersionNow(v2.id, fake)).written, true);
 
   // Undo the wording change: the old wording is back in Lovable.
   const undo = store.createRestoreVersion(v2.id, "test") as { id: number };
   assert.equal((await beats.executeVersionNow(undo.id, fake)).written, true);
   assert.equal(fake.projectKnowledge[project], blockOld);
-  const stateOf = (id: number) => (db.prepare(`SELECT state FROM rules WHERE id = ?`).get(id) as { state: string }).state;
+  const stateOf = (id: number) =>
+    (db.prepare(`SELECT state FROM rules WHERE id = ?`).get(id) as { state: string }).state;
   assert.notEqual(stateOf(worded.id), "rolled_back", "its earlier wording is in Lovable");
   assert.equal(stateOf(multi.id), "active", "a multi-line rule that is present stays active");
   store.disallowProject(project);

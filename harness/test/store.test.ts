@@ -1393,7 +1393,11 @@ function r6Fixture(msgExternalId = `r6-ext-${Math.random().toString(36).slice(2)
 
 test("settings: lovable_monthly_credit_budget/keep_test_copies defaults and validation", () => {
   assert.equal(store.getSetting("lovable_monthly_credit_budget"), "12");
-  assert.equal(store.getSetting("keep_test_copies"), "true", "Round 7: test builds are kept by default");
+  assert.equal(
+    store.getSetting("keep_test_copies"),
+    "true",
+    "Round 7: test builds are kept by default",
+  );
 
   assert.throws(
     () => store.setSettings({ lovable_monthly_credit_budget: "-1" }),
@@ -1675,7 +1679,15 @@ test("judge text: the original build is Lovable's reply to the request only, and
   const tag = Math.random().toString(36).slice(2);
   const at = (m: string) => `2026-09-13T18:${m}Z`;
   const row = (external: string, role: "user" | "assistant", content: string, when: string) =>
-    store.upsertHistoryItem({ project_id: P, kind: "message", external_id: `${external}-${tag}`, role, content, occurred_at: when, provenance: "lovable_mcp" }) as { id: number };
+    store.upsertHistoryItem({
+      project_id: P,
+      kind: "message",
+      external_id: `${external}-${tag}`,
+      role,
+      content,
+      occurred_at: when,
+      provenance: "lovable_mcp",
+    }) as { id: number };
   // inserted newest first, like the sync
   const fontsReply = row("a4", "assistant", "Fonts removed.", at("31:30"));
   const fonts = row("u3", "user", "Remove the custom fonts.", at("31:00"));
@@ -1684,17 +1696,34 @@ test("judge text: the original build is Lovable's reply to the request only, and
   row("a1", "assistant", "Added the Round up switch.", at("29:40"));
   const request = row("u1", "user", "Add a Round up switch.", at("29:14"));
   const episode = store.createTaskEpisode({
-    project_id: P, title: "t", provenance: "llm_derived", started_at: at("29:14"), ended_at: at("31:30"),
+    project_id: P,
+    title: "t",
+    provenance: "llm_derived",
+    started_at: at("29:14"),
+    ended_at: at("31:30"),
     evidence_history_item_ids: [fontsReply.id, fonts.id, krReply.id, kr.id, request.id],
   }) as { id: number };
-  store.insertMessageClassification({ history_item_id: fonts.id, classification: "correction", tags: [], summary: "fonts" });
-  store.insertMessageClassification({ history_item_id: kr.id, classification: "correction", tags: [], summary: "kronor" });
+  store.insertMessageClassification({
+    history_item_id: fonts.id,
+    classification: "correction",
+    tags: [],
+    summary: "fonts",
+  });
+  store.insertMessageClassification({
+    history_item_id: kr.id,
+    classification: "correction",
+    tags: [],
+    summary: "kronor",
+  });
 
   const judge = store.episodeTextForJudge(episode.id);
   assert.equal(judge.request, "Add a Round up switch.");
   assert.equal(judge.reply, "Added the Round up switch.");
   assert.deepEqual(store.episodeCorrections(episode.id), ["kronor", "fonts"]);
-  assert.deepEqual(store.episodeFollowUpCorrections(episode.id), ["No, use kronor.", "Remove the custom fonts."]);
+  assert.deepEqual(store.episodeFollowUpCorrections(episode.id), [
+    "No, use kronor.",
+    "Remove the custom fonts.",
+  ]);
 });
 
 test("episodes 'after' a rule was written compare real times: a same-day episode before the write is not after it", () => {
@@ -1703,12 +1732,24 @@ test("episodes 'after' a rule was written compare real times: a same-day episode
   // so a rule written a minute earlier showed "4 builds since added".
   const P = "r7-episodes-after";
   store.allowProject(P, "episodes after");
-  const early = store.createTaskEpisode({ project_id: P, title: "before the write", provenance: "llm_derived", started_at: "2026-09-13T18:27:49Z" }) as { id: number };
-  const late = store.createTaskEpisode({ project_id: P, title: "after the write", provenance: "llm_derived", started_at: "2026-09-13T19:30:00Z" }) as { id: number };
+  const early = store.createTaskEpisode({
+    project_id: P,
+    title: "before the write",
+    provenance: "llm_derived",
+    started_at: "2026-09-13T18:27:49Z",
+  }) as { id: number };
+  const late = store.createTaskEpisode({
+    project_id: P,
+    title: "after the write",
+    provenance: "llm_derived",
+    started_at: "2026-09-13T19:30:00Z",
+  }) as { id: number };
   const after = store.listEpisodesAfter(P, "2026-09-13 19:16:48").map((e) => e.id);
   assert.deepEqual(after, [late.id]);
   assert.ok(!after.includes(early.id));
-  const unjudged = store.listUnjudgedEpisodesForRule(999999, "2026-09-13 19:16:48", P, 10).map((e) => e.id);
+  const unjudged = store
+    .listUnjudgedEpisodesForRule(999999, "2026-09-13 19:16:48", P, 10)
+    .map((e) => e.id);
   assert.deepEqual(unjudged, [late.id]);
 });
 
@@ -1731,8 +1772,18 @@ test("creditsThisMonth is rounded to cents, never a float artefact", () => {
 
 test("testCopyProjects labels both copies of a test; setProjectName follows a rename in Lovable", () => {
   const { ruleId, candidateId, episodeId, externalId } = r6Fixture();
-  const { id: run } = store.createExperimentRun({ rule_id: ruleId, correction_candidate_id: candidateId, task_episode_id: episodeId, source_project_id: R6_PROJECT, request_message_external_id: externalId });
-  store.updateExperimentRun(run, { status: "cancelled", copy_project_id: "prj_copy_label", original_copy_project_id: "prj_original_label" });
+  const { id: run } = store.createExperimentRun({
+    rule_id: ruleId,
+    correction_candidate_id: candidateId,
+    task_episode_id: episodeId,
+    source_project_id: R6_PROJECT,
+    request_message_external_id: externalId,
+  });
+  store.updateExperimentRun(run, {
+    status: "cancelled",
+    copy_project_id: "prj_copy_label",
+    original_copy_project_id: "prj_original_label",
+  });
   const copies = store.testCopyProjects();
   assert.equal(copies["prj_copy_label"], run);
   assert.equal(copies["prj_original_label"], run);

@@ -15,8 +15,15 @@ async function handle({ request }: { request: Request }) {
   const { db } = await import("@/lib/server/db");
   const { logEvent } = await import("@/lib/server/events");
   const { getClientId, getRedirectUri } = await import("@/lib/server/app-origin");
-  const { randomToken, s256, LOVABLE_AUTHORIZE_URL, LOVABLE_SCOPE, getConnection, needsRefresh, refreshConnection } =
-    await import("@/lib/server/lovable");
+  const {
+    randomToken,
+    s256,
+    LOVABLE_AUTHORIZE_URL,
+    LOVABLE_SCOPE,
+    getConnection,
+    needsRefresh,
+    refreshConnection,
+  } = await import("@/lib/server/lovable");
 
   // Opportunistic refresh of an existing connection that is close to expiry.
   const existing = await getConnection(userId);

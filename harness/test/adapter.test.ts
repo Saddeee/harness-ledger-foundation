@@ -4,14 +4,20 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-process.env.HARNESS_DB_PATH = join(mkdtempSync(join(tmpdir(), "harness-adapter-test-")), "harness.db");
+process.env.HARNESS_DB_PATH = join(
+  mkdtempSync(join(tmpdir(), "harness-adapter-test-")),
+  "harness.db",
+);
 
 const { db } = await import("../src/db.js");
 const store = await import("../src/store.js");
 const adapter = await import("../src/adapter.js");
 
 const PROJECT = "adapter-test-project";
-db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(PROJECT, "test");
+db.prepare(`INSERT INTO allowed_projects (lovable_project_id, label) VALUES (?, ?)`).run(
+  PROJECT,
+  "test",
+);
 
 const evidence = store.upsertHistoryItem({
   project_id: PROJECT,
@@ -63,7 +69,9 @@ test("correction mutation validation: rejects an invalid action, accepts a valid
 });
 
 test("reclassification preserves previous classification in history", () => {
-  const before = adapter.getCorrection(correction.id) as { correction_candidate: { classification: string } };
+  const before = adapter.getCorrection(correction.id) as {
+    correction_candidate: { classification: string };
+  };
   assert.equal(before.correction_candidate.classification, "other");
 
   store.proposeReclassification({
@@ -77,7 +85,11 @@ test("reclassification preserves previous classification in history", () => {
     classification_history: { structured_output: string }[];
   };
   assert.equal(after.correction_candidate.classification, "constraint_restatement");
-  assert.equal(after.correction_candidate.reviewed, 0, "a proposed reclassification must leave it awaiting review");
+  assert.equal(
+    after.correction_candidate.reviewed,
+    0,
+    "a proposed reclassification must leave it awaiting review",
+  );
   assert.equal(after.classification_history.length, 1);
   const parsed = JSON.parse(after.classification_history[0].structured_output);
   assert.equal(parsed.previous_classification, "other");
@@ -107,22 +119,39 @@ test("rule editing via the adapter creates a revision", () => {
   }) as { id: number };
   ruleId = rule.id;
 
-  adapter.updateRuleAction({ id: ruleId, instruction: "revised instruction", actor: "operator (local UI)" });
+  adapter.updateRuleAction({
+    id: ruleId,
+    instruction: "revised instruction",
+    actor: "operator (local UI)",
+  });
   const revisions = db.prepare(`SELECT * FROM rule_revisions WHERE rule_id = ?`).all(ruleId);
   assert.equal(revisions.length, 1);
 });
 
 test("approval remains local only: state change through the adapter never leaves this process", () => {
-  const approved = adapter.updateRuleAction({ id: ruleId, state: "approved", actor: "operator (local UI)" }) as {
+  const approved = adapter.updateRuleAction({
+    id: ruleId,
+    state: "approved",
+    actor: "operator (local UI)",
+  }) as {
     state: string;
   };
   assert.equal(approved.state, "approved");
 
   for (const file of ["../src/adapter.ts", "../src/store.ts"]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    const code = source.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
-    assert.ok(!/^\s*import.*lovable/im.test(code), `${file} must not import anything Lovable-related`);
-    assert.ok(!/fetch\(|http\.request|https\.request/.test(code), `${file} must not make network calls`);
+    const code = source
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("//"))
+      .join("\n");
+    assert.ok(
+      !/^\s*import.*lovable/im.test(code),
+      `${file} must not import anything Lovable-related`,
+    );
+    assert.ok(
+      !/fetch\(|http\.request|https\.request/.test(code),
+      `${file} must not make network calls`,
+    );
   }
 });
 
@@ -135,7 +164,10 @@ test("no Lovable action is created by correction or rule review (audit trail is 
 // ---- Round 3 re-exports ----
 
 test("adapter re-exports per-project settings and the effective max reader", () => {
-  assert.deepEqual(adapter.getProjectSettings(PROJECT), { max_active_rules: null, auto_write: true });
+  assert.deepEqual(adapter.getProjectSettings(PROJECT), {
+    max_active_rules: null,
+    auto_write: true,
+  });
   const patched = adapter.setProjectSettings(PROJECT, { max_active_rules: 5 });
   assert.deepEqual(patched, { max_active_rules: 5, auto_write: true });
   assert.equal(adapter.effectiveMaxActiveRules(PROJECT), 5);

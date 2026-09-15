@@ -292,8 +292,9 @@ The same read, write, read-back shape is used for Remove, Re-add, wording change
 ## 9. Development
 
 ```sh
-cd harness && npm test          # 700+ tests, no network: fake Lovable server and fake LLM
+cd harness && npm test          # 732 tests, no network: fake Lovable server and fake LLM
 npm run typecheck               # web app (and `npm run typecheck` in harness/)
+npm run lint                    # ESLint + Prettier (generated Supabase files are skipped)
 npm run build                   # production build
 cd harness && npm run llm:smoke # one real model call, after changing harness/src/llm
 ```

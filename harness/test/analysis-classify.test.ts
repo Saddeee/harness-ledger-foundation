@@ -435,10 +435,11 @@ test("humanVisibleText: Lovable's current replies put the visible text after the
   const raw =
     '\n<lov-tool-use id="thinking" name="lov-think" data="I&apos;ll round the per-person amount up, then derive the total > bill.\n\n">\n</lov-tool-use>\n\n' +
     '<lov-tool-use id="toolu_1" name="code--line_replace" data="{\\"file_path\\": \\"src/routes/index.tsx\\", \\"new_content\\": \\"<Switch id=\\\\\\"round-up\\\\\\" />\\"}">\n</lov-tool-use>\n' +
-    'Now the fonts:\n' +
+    "Now the fonts:\n" +
     '<lov-tool-use id="toolu_2" name="code--exec" data="{\\"command\\": \\"sleep 6\\"}">\n</lov-tool-use>\n' +
     'There\'s now a "Round up" switch under People — flipping it rounds each share up to a whole dollar.';
-  const expected = 'Now the fonts:\n\nThere\'s now a "Round up" switch under People — flipping it rounds each share up to a whole dollar.';
+  const expected =
+    'Now the fonts:\n\nThere\'s now a "Round up" switch under People — flipping it rounds each share up to a whole dollar.';
   assert.equal(replyText.humanVisibleText(raw), expected);
   const ux = await import("../../src/lib/harness-ux.ts");
   assert.equal(ux.lovableReplyText(raw), expected);
@@ -453,41 +454,122 @@ test("classifier: a message asking for the opposite of a live rule opens a Retir
   const P = "classify-changed-mind";
   store.allowProject(P, "Changed mind");
   const seedMsg = insertMessage(P, "user", "seed correction", ts(1));
-  const episode = store.createTaskEpisode({ project_id: P, title: "seed", provenance: "manual", evidence_history_item_ids: [seedMsg.id] }) as { id: number };
-  const cc = store.createCorrectionCandidate({ task_episode_id: episode.id, classification: "constraint_restatement", is_correction: true, summary: "kr", evidence_history_item_ids: [seedMsg.id] }) as { id: number };
-  const learning = store.createLearning({ correction_candidate_id: cc.id, observed_problem: "p", desired_behavior: "Show money in kronor.", reuse_rationale: "r", proposed_scope: "project", provenance: "manual", created_by: "test" }) as { id: number };
-  const rule = store.createRule({ learning_id: learning.id, correction_candidate_id: cc.id, instruction: "Show money in kronor.", scope: "project", applies_when: "always", predicted_failure: "dollars", ownership: "harness", created_by: "test" }) as { id: number };
+  const episode = store.createTaskEpisode({
+    project_id: P,
+    title: "seed",
+    provenance: "manual",
+    evidence_history_item_ids: [seedMsg.id],
+  }) as { id: number };
+  const cc = store.createCorrectionCandidate({
+    task_episode_id: episode.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    summary: "kr",
+    evidence_history_item_ids: [seedMsg.id],
+  }) as { id: number };
+  const learning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: "Show money in kronor.",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "test",
+  }) as { id: number };
+  const rule = store.createRule({
+    learning_id: learning.id,
+    correction_candidate_id: cc.id,
+    instruction: "Show money in kronor.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "dollars",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
   store.updateRule({ id: rule.id, state: "active", actor: "test" });
   // The rule is in Lovable: a written Knowledge version.
-  const v = store.createPendingKnowledgeVersion({ rule_id: rule.id, target: "project", project_id: P, previous_content: "", new_content: "- Show money in kronor.", rule_ids: [rule.id], actor: "test" }) as { id: number; new_content: string };
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: P,
+    previous_content: "",
+    new_content: "- Show money in kronor.",
+    rule_ids: [rule.id],
+    actor: "test",
+  }) as { id: number; new_content: string };
   store.recordKnowledgeReadback(v.id, v.new_content);
   store.updateRule({ id: rule.id, state: "active", actor: "test" });
   // A suggestion still waiting in the Inbox (never added) is not shown.
-  const pendingLearning = store.createLearning({ correction_candidate_id: cc.id, observed_problem: "p", desired_behavior: "Use pounds.", reuse_rationale: "r", proposed_scope: "project", provenance: "manual", created_by: "test" }) as { id: number };
-  store.createRule({ learning_id: pendingLearning.id, correction_candidate_id: cc.id, instruction: "Pending: use pounds.", scope: "project", applies_when: "always", predicted_failure: "x", ownership: "harness", created_by: "test" });
-  store.insertMessageClassification({ history_item_id: seedMsg.id, classification: "correction", tags: [], summary: "seed" });
+  const pendingLearning = store.createLearning({
+    correction_candidate_id: cc.id,
+    observed_problem: "p",
+    desired_behavior: "Use pounds.",
+    reuse_rationale: "r",
+    proposed_scope: "project",
+    provenance: "manual",
+    created_by: "test",
+  }) as { id: number };
+  store.createRule({
+    learning_id: pendingLearning.id,
+    correction_candidate_id: cc.id,
+    instruction: "Pending: use pounds.",
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "x",
+    ownership: "harness",
+    created_by: "test",
+  });
+  store.insertMessageClassification({
+    history_item_id: seedMsg.id,
+    classification: "correction",
+    tags: [],
+    summary: "seed",
+  });
 
   const euros = insertMessage(P, "user", "Change of plan: use euros everywhere now.", ts(2));
   const prompts: string[] = [];
   const inner = fakeCallLlmFor({
-    "Change of plan": { classification: "new_task", tags: ["copy"], summary: "Switch to euros.", contradicts_rule_ids: [rule.id, 999999] },
+    "Change of plan": {
+      classification: "new_task",
+      tags: ["copy"],
+      summary: "Switch to euros.",
+      contradicts_rule_ids: [rule.id, 999999],
+    },
   });
-  const callLlm: CallLlm = async (req) => { prompts.push(req.user); return inner(req); };
+  const callLlm: CallLlm = async (req) => {
+    prompts.push(req.user);
+    return inner(req);
+  };
   await classify.classifyPending(callLlm, { limit: 100 });
 
   const prompt = prompts.find((p) => p.includes("Change of plan"))!;
-  assert.match(prompt, new RegExp(`\\[${rule.id}\\] Show money in kronor\\.`), "rules in Lovable are shown");
+  assert.match(
+    prompt,
+    new RegExp(`\\[${rule.id}\\] Show money in kronor\\.`),
+    "rules in Lovable are shown",
+  );
   assert.doesNotMatch(prompt, /Pending: use pounds/, "suggestions not yet added are not shown");
   const open = store.listOpenRetireProposals().filter((p) => p.rule_id === rule.id);
   assert.equal(open.length, 1);
   assert.equal(open[0]!.reason, "changed_mind");
   assert.deepEqual(open[0]!.evidence, [euros.id]);
-  assert.equal(store.listOpenRetireProposals().filter((p) => p.rule_id === 999999).length, 0, "unknown ids are ignored");
+  assert.equal(
+    store.listOpenRetireProposals().filter((p) => p.rule_id === 999999).length,
+    0,
+    "unknown ids are ignored",
+  );
 
   // A second contradicting message does not open a second proposal.
   insertMessage(P, "user", "Change of plan again: euros, really.", ts(3));
   await classify.classifyPending(
-    fakeCallLlmFor({ "Change of plan": { classification: "new_task", tags: [], summary: "euros", contradicts_rule_ids: [rule.id] } }),
+    fakeCallLlmFor({
+      "Change of plan": {
+        classification: "new_task",
+        tags: [],
+        summary: "euros",
+        contradicts_rule_ids: [rule.id],
+      },
+    }),
     { limit: 100 },
   );
   assert.equal(store.listOpenRetireProposals().filter((p) => p.rule_id === rule.id).length, 1);

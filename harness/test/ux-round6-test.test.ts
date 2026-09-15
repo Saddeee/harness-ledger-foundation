@@ -216,7 +216,10 @@ test('TimelineNode.kind gained "test" (Round 6 Task 6b), in both the client type
 
 test("testCopyConfounderLine: an unknown edit count is never shown as 0", async () => {
   const ux = await import("../../src/lib/harness-ux.ts");
-  assert.equal(ux.testCopyConfounderLine(null), "This copy started from the project as it was before that request.");
+  assert.equal(
+    ux.testCopyConfounderLine(null),
+    "This copy started from the project as it was before that request.",
+  );
   assert.match(ux.testCopyConfounderLine(0), /0 edits have landed since\.$/);
   assert.match(ux.testCopyConfounderLine(1), /1 edit has landed since\.$/);
   assert.match(ux.testCopyConfounderLine(3), /3 edits have landed since\.$/);

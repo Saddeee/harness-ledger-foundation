@@ -3842,9 +3842,14 @@ test("listTestRunSummaries: every run, newest first, with the rule's own text, t
 test("titleFor: a long single-sentence instruction gets a clipped heading, so the card doesn't repeat it word for word", () => {
   const one =
     'In this app, display all monetary amounts in Swedish kronor as a whole number followed by "kr" (e.g., "125 kr") — never dollars or decimals — for every feature.';
-  assert.equal(imp.titleFor(one), "In this app, display all monetary amounts in Swedish kronor as a whole…");
   assert.equal(
-    imp.titleFor("Do not enable recurring background work by default. Prefer user-triggered execution."),
+    imp.titleFor(one),
+    "In this app, display all monetary amounts in Swedish kronor as a whole…",
+  );
+  assert.equal(
+    imp.titleFor(
+      "Do not enable recurring background work by default. Prefer user-triggered execution.",
+    ),
     "Do not enable recurring background work by default.",
   );
   assert.equal(imp.titleFor("Use kr for money."), "Use kr for money.");
@@ -3874,7 +3879,15 @@ test("buildTimeline: a stale or failed attempt is not the baseline for the next 
   const P = "timeline-stale-baseline";
   store.allowProject(P, "Stale baseline");
   const mk = (prev: string, next: string) =>
-    store.createPendingKnowledgeVersion({ rule_id: null, target: "project", project_id: P, previous_content: prev, new_content: next, rule_ids: [], actor: "test" }) as { id: number; new_content: string };
+    store.createPendingKnowledgeVersion({
+      rule_id: null,
+      target: "project",
+      project_id: P,
+      previous_content: prev,
+      new_content: next,
+      rule_ids: [],
+      actor: "test",
+    }) as { id: number; new_content: string };
   const v1 = mk("", "one\ntwo");
   store.recordKnowledgeReadback(v1.id, v1.new_content);
   const refused = mk("one\ntwo", "one\ntwo\nthree");

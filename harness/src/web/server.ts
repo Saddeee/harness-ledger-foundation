@@ -62,8 +62,15 @@ async function readBody(req: import("node:http").IncomingMessage): Promise<URLSe
 }
 
 const CLASSIFICATIONS = [
-  "defect_correction", "constraint_restatement", "missing_requirement",
-  "preference_revision", "scope_extension", "new_task", "question", "approval", "other",
+  "defect_correction",
+  "constraint_restatement",
+  "missing_requirement",
+  "preference_revision",
+  "scope_extension",
+  "new_task",
+  "question",
+  "approval",
+  "other",
 ];
 const SCOPES = ["project", "workspace", "one_time"];
 
@@ -74,7 +81,9 @@ function correctionsPage(): string {
     .map((r) => {
       const id = r.id as number;
       const options = (values: string[], selected: unknown) =>
-        values.map((v) => `<option value="${v}" ${v === selected ? "selected" : ""}>${v}</option>`).join("");
+        values
+          .map((v) => `<option value="${v}" ${v === selected ? "selected" : ""}>${v}</option>`)
+          .join("");
       return `<div class="card">
         <div class="meta">project ${esc(r.project_id)} &middot; episode: ${esc(r.episode_title)}</div>
         <p><span class="badge">${esc(r.classification)}</span>
@@ -194,7 +203,9 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(404, { "Content-Type": "text/plain" }).end("not found");
   } catch (err) {
-    res.writeHead(500, { "Content-Type": "text/plain" }).end(err instanceof Error ? err.message : String(err));
+    res
+      .writeHead(500, { "Content-Type": "text/plain" })
+      .end(err instanceof Error ? err.message : String(err));
   }
 });
 

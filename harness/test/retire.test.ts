@@ -485,11 +485,14 @@ test("readd resets the rule_health baseline: hurt episodes from before the re-ad
   // A new episode dated after the re-add, applicable but not hurting -- only
   // 1 applicable task (MIN_APPLICABLE_FOR_RETIRE is 3), so this alone proves
   // the two pre-readd hurt episodes are excluded from the new window.
-  const reqZ = message("Add a third upload field.", "2026-09-15T00:00:00Z");
+  // Dated from the real clock: baseline_at is "now", so a fixed date would
+  // eventually fall before it.
+  const afterReaddIso = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const reqZ = message("Add a third upload field.", afterReaddIso);
   classify(reqZ, "new_task", ["uploads"]);
-  episode("2026-09-15T00:00:00Z", [reqZ]);
+  episode(afterReaddIso, [reqZ]);
 
-  recomputeRuleHealth(new Date("2026-09-20T00:00:00Z"));
+  recomputeRuleHealth(new Date(Date.now() + 5 * 24 * 60 * 60 * 1000));
   const afterRecompute = store.getRuleHealth(rebaselineRuleId)!;
   assert.equal(afterRecompute.hurt, 0, "the pre-readd hurt episodes no longer count");
   assert.equal(

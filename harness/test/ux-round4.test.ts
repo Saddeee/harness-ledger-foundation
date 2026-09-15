@@ -70,11 +70,7 @@ test("analyse-notice.tsx: Analyse now, analyse_now, running/last-run/not-ready c
 test("instructions.tsx and inbox.tsx render the shared AnalyseNotice", () => {
   for (const page of [INSTRUCTIONS_PAGE, INBOX_PAGE]) {
     const raw = readApp(page);
-    assert.match(
-      codeOnly(raw),
-      /<AnalyseNotice/,
-      `${page} should render <AnalyseNotice`,
-    );
+    assert.match(codeOnly(raw), /<AnalyseNotice/, `${page} should render <AnalyseNotice`);
   }
 });
 

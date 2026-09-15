@@ -28,7 +28,10 @@ async function handle({ request }: { request: Request }) {
   try {
     const tok = await exchangeCode(code, st.code_verifier, request);
 
-    const me = await new LovableClient({ bearerToken: tok.access_token, baseUrl: LOVABLE_API_BASE }).me();
+    const me = await new LovableClient({
+      bearerToken: tok.access_token,
+      baseUrl: LOVABLE_API_BASE,
+    }).me();
 
     const { data: row, error } = await db
       .from("lovable_connections")

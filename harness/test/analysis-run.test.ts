@@ -528,18 +528,41 @@ test("runAnalysis: records its step and counts while it runs, for the Inbox's pr
   const PROJECT = "proj-run-progress";
   store.allowProject(PROJECT, "Run Progress");
   insertMessage(PROJECT, "user", "Build a pricing page.", ts(20));
-  const correction = insertMessage(PROJECT, "user", "No, prices must include VAT everywhere.", ts(21));
+  const correction = insertMessage(
+    PROJECT,
+    "user",
+    "No, prices must include VAT everywhere.",
+    ts(21),
+  );
   store.requestAnalysis();
 
   const inner = fakeCallLlm({
     classify: {
-      "Build a pricing page.": { classification: "new_task", tags: ["copy"], summary: "Pricing page." },
-      "No, prices must include VAT everywhere.": { classification: "correction", tags: ["copy"], summary: "Include VAT." },
+      "Build a pricing page.": {
+        classification: "new_task",
+        tags: ["copy"],
+        summary: "Pricing page.",
+      },
+      "No, prices must include VAT everywhere.": {
+        classification: "correction",
+        tags: ["copy"],
+        summary: "Include VAT.",
+      },
     },
     mine: [
       {
         match: "Build a pricing page.",
-        json: { propose: true, instruction: "Show prices including VAT.", scope: "project", prediction: "Prices shown without VAT.", failure_signature: "no-vat", evidence_message_ids: [correction.external_id], confidence: 0.9, contradicts_rule_id: null, duplicate_of_rule_id: null },
+        json: {
+          propose: true,
+          instruction: "Show prices including VAT.",
+          scope: "project",
+          prediction: "Prices shown without VAT.",
+          failure_signature: "no-vat",
+          evidence_message_ids: [correction.external_id],
+          confidence: 0.9,
+          contradicts_rule_id: null,
+          duplicate_of_rule_id: null,
+        },
       },
     ],
   });
@@ -553,6 +576,8 @@ test("runAnalysis: records its step and counts while it runs, for the Inbox's pr
   assert.equal(result.ok, true, result.error);
   assert.deepEqual(seen, ["classify 0/2", "classify 1/2", "rules 0/1"]);
   assert.equal(store.runningAnalysisProgress(), null, "nothing is running afterwards");
-  const last = db.prepare(`SELECT progress_json FROM analysis_runs WHERE id = ?`).get(result.runId) as { progress_json: string };
+  const last = db
+    .prepare(`SELECT progress_json FROM analysis_runs WHERE id = ?`)
+    .get(result.runId) as { progress_json: string };
   assert.equal(JSON.parse(last.progress_json).stage, "health");
 });

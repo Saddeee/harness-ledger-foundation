@@ -1374,7 +1374,10 @@ test("knowledgeBaseAtOrBefore: compares real times, not strings -- a same-day sn
   assert.equal(knowledgeBaseAtOrBefore(snapshots, "2026-09-13T18:29:36Z"), "before");
   assert.equal(knowledgeBaseAtOrBefore(snapshots, "2026-09-13T18:40:00Z"), "after");
   assert.equal(
-    knowledgeBaseAtOrBefore([{ content: "only later", fetched_at: "2026-09-13 18:33:05" }], "2026-09-13T18:29:36Z"),
+    knowledgeBaseAtOrBefore(
+      [{ content: "only later", fetched_at: "2026-09-13 18:33:05" }],
+      "2026-09-13T18:29:36Z",
+    ),
     "only later",
     "falls back to the newest snapshot when none precedes the request",
   );
@@ -1388,7 +1391,9 @@ test("edits since the request: pages Lovable's edits 50 at a time with `before`,
   // Earlier tests in this file spend the fake month's credit budget.
   db.prepare(`DELETE FROM credit_ledger`).run();
   const newest = Array.from({ length: 50 }, (_, i) => ({
-    id: `n${i}`, commit_sha: `s${i}`, commit_message: "m",
+    id: `n${i}`,
+    commit_sha: `s${i}`,
+    commit_message: "m",
     created_at: new Date(Date.UTC(2026, 8, 10, 0, 0, i)).toISOString(),
   }));
   const older = [
@@ -1401,7 +1406,10 @@ test("edits since the request: pages Lovable's edits 50 at a time with `before`,
     listEdits: (req) => {
       seenQueries.push(req.query);
       if (Number(req.query.limit) > 50) {
-        return { status: 422, body: { status: 422, type: "unprocessable_entity", detail: "validation failed" } };
+        return {
+          status: 422,
+          body: { status: 422, type: "unprocessable_entity", detail: "validation failed" },
+        };
       }
       return req.query.before
         ? { status: 200, body: { has_more: false, edits: older } }
@@ -1415,14 +1423,20 @@ test("edits since the request: pages Lovable's edits 50 at a time with `before`,
     const runId = (started as { run_id: number }).run_id;
     const result = await runExperiment(runId, { rest, sleep: noopSleep });
     assert.equal(result.status, "judging");
-    assert.equal(result.edits_since_episode, 51, "50 on the newest page + 1 older one after the request");
+    assert.equal(
+      result.edits_since_episode,
+      51,
+      "50 on the newest page + 1 older one after the request",
+    );
     assert.ok(seenQueries.every((q) => Number(q.limit) <= 50));
-    assert.ok(seenQueries.some((q) => q.before), "asked for the older page");
+    assert.ok(
+      seenQueries.some((q) => q.before),
+      "asked for the older page",
+    );
   } finally {
     await fake.close();
   }
 });
-
 
 // ---------------------------------------------- Round 7: builds you can look at
 
@@ -1438,11 +1452,17 @@ test("visible builds: the original build is copied too (remix including the requ
     postProjects: (req) => {
       const body = req.body as Record<string, unknown>;
       remixBodies.push(body);
-      return { status: 201, body: { job_id: body.remix_mode === "including" ? "job_original" : "job_copy" } };
+      return {
+        status: 201,
+        body: { job_id: body.remix_mode === "including" ? "job_original" : "job_copy" },
+      };
     },
     remixProgress: (req) => ({
       status: 200,
-      body: { status: "completed", result: { project_id: req.query.job_id === "job_original" ? originalCopyId : copyId } },
+      body: {
+        status: "completed",
+        result: { project_id: req.query.job_id === "job_original" ? originalCopyId : copyId },
+      },
     }),
     getProject: (req) => {
       const id = req.params.project_id;
@@ -1460,12 +1480,39 @@ test("visible builds: the original build is copied too (remix including the requ
     },
     getMessage: (req) =>
       req.params.project_id === copyId
-        ? { status: 200, body: { status: "completed", response: { status: "completed", commit_sha: "sha_copy_1234", summary: "Added a validated contact form", cost_credits: 0.5, content: "Done." } } }
-        : { status: 200, body: { status: "running", response: { status: "completed", commit_sha: "sha_original", summary: "Added the contact form (original)", content: "original reply" } } },
+        ? {
+            status: 200,
+            body: {
+              status: "completed",
+              response: {
+                status: "completed",
+                commit_sha: "sha_copy_1234",
+                summary: "Added a validated contact form",
+                cost_credits: 0.5,
+                content: "Done.",
+              },
+            },
+          }
+        : {
+            status: 200,
+            body: {
+              status: "running",
+              response: {
+                status: "completed",
+                commit_sha: "sha_original",
+                summary: "Added the contact form (original)",
+                content: "original reply",
+              },
+            },
+          },
   });
   try {
     const rest = restFor(fake);
-    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED }, { showOriginal: true });
+    const started = await startExperiment(
+      seed.candidateId,
+      { rest, ...CONNECTED },
+      { showOriginal: true },
+    );
     assert.ok("run_id" in started, JSON.stringify(started));
     const runId = (started as { run_id: number }).run_id;
     const result = await runExperiment(runId, { rest, sleep: noopSleep });
@@ -1479,7 +1526,12 @@ test("visible builds: the original build is copied too (remix including the requ
 
     const original = remixBodies.find((b) => b.remix_mode === "including")!;
     assert.equal(original.message_id, DEFAULT_REST_REQUEST_ID);
-    assert.ok(!fake.calls.some((c) => c.method === "POST" && c.path === `/v1/projects/${originalCopyId}/messages`), "never chats in the original copy");
+    assert.ok(
+      !fake.calls.some(
+        (c) => c.method === "POST" && c.path === `/v1/projects/${originalCopyId}/messages`,
+      ),
+      "never chats in the original copy",
+    );
     assert.ok(!fake.calls.some((c) => c.method === "DELETE"), "copies are kept by default");
     assert.equal(result.copy_deleted, 0);
   } finally {
@@ -1494,17 +1546,35 @@ test("visible builds: with keep_test_copies off, both copies are deleted after t
   const copyId = "prj_copy_delete_both";
   const fake = await startFakeLovable({
     ...happyPathScript(copyId),
-    postProjects: (req) => ({ status: 201, body: { job_id: (req.body as { remix_mode: string }).remix_mode === "including" ? "job_o" : "job_c" } }),
-    remixProgress: (req) => ({ status: 200, body: { status: "completed", result: { project_id: req.query.job_id === "job_o" ? "prj_original_delete_both" : copyId } } }),
+    postProjects: (req) => ({
+      status: 201,
+      body: {
+        job_id: (req.body as { remix_mode: string }).remix_mode === "including" ? "job_o" : "job_c",
+      },
+    }),
+    remixProgress: (req) => ({
+      status: 200,
+      body: {
+        status: "completed",
+        result: { project_id: req.query.job_id === "job_o" ? "prj_original_delete_both" : copyId },
+      },
+    }),
   });
   try {
     const rest = restFor(fake);
-    const started = await startExperiment(seed.candidateId, { rest, ...CONNECTED }, { showOriginal: true });
+    const started = await startExperiment(
+      seed.candidateId,
+      { rest, ...CONNECTED },
+      { showOriginal: true },
+    );
     const runId = (started as { run_id: number }).run_id;
     const result = await runExperiment(runId, { rest, sleep: noopSleep });
     assert.equal(result.copy_deleted, 1);
     assert.equal(result.original_copy_deleted, 1);
-    const deleted = fake.calls.filter((c) => c.method === "DELETE").map((c) => c.path).sort();
+    const deleted = fake.calls
+      .filter((c) => c.method === "DELETE")
+      .map((c) => c.path)
+      .sort();
     assert.deepEqual(deleted, [`/v1/projects/${copyId}`, "/v1/projects/prj_original_delete_both"]);
   } finally {
     await fake.close();
@@ -1521,7 +1591,11 @@ test("deleteTestCopy: deletes only a copy this run recorded, never the source pr
     source_project_id: SOURCE,
     request_message_external_id: seed.requestExternalId,
   });
-  store.updateExperimentRun(runId, { status: "judged", copy_project_id: "prj_kept_copy", original_copy_project_id: "prj_kept_original" });
+  store.updateExperimentRun(runId, {
+    status: "judged",
+    copy_project_id: "prj_kept_copy",
+    original_copy_project_id: "prj_kept_original",
+  });
   const fake = await startFakeLovable({ deleteProject: () => ({ status: 204 }) });
   try {
     const rest = restFor(fake);
@@ -1530,7 +1604,10 @@ test("deleteTestCopy: deletes only a copy this run recorded, never the source pr
     const row = store.getExperimentRun(runId)!;
     assert.equal(row.copy_deleted, 1);
     assert.equal(row.original_copy_deleted, 1);
-    assert.deepEqual(fake.calls.map((c) => c.path).sort(), ["/v1/projects/prj_kept_copy", "/v1/projects/prj_kept_original"]);
+    assert.deepEqual(fake.calls.map((c) => c.path).sort(), [
+      "/v1/projects/prj_kept_copy",
+      "/v1/projects/prj_kept_original",
+    ]);
 
     store.updateExperimentRun(runId, { copy_project_id: SOURCE, copy_deleted: 0 });
     await assert.rejects(() => deleteTestCopy(runId, "with_rule", rest), /source project/);
@@ -1541,8 +1618,14 @@ test("deleteTestCopy: deletes only a copy this run recorded, never the source pr
 
 test("testCopyName: copies are named by test number, which build, and project -- never a rule cut mid-word", async () => {
   const { testCopyName } = await import("../src/executor/experiments.js");
-  assert.equal(testCopyName(7, "with the rule", SOURCE), "Harness Ledger test 7 · with the rule · Source project");
-  assert.equal(testCopyName(7, "original build", SOURCE), "Harness Ledger test 7 · original build · Source project");
+  assert.equal(
+    testCopyName(7, "with the rule", SOURCE),
+    "Harness Ledger test 7 · with the rule · Source project",
+  );
+  assert.equal(
+    testCopyName(7, "original build", SOURCE),
+    "Harness Ledger test 7 · original build · Source project",
+  );
   // Only characters Lovable accepts in a display name (it refused "#").
   const allowed = /^[\p{L}\p{N} \-_.'·&()[\]|,!:]+$/u;
   store.upsertProject({ lovable_project_id: "prj_odd_name", name: "Café #1 — my.app/shop?" });

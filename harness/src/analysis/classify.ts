@@ -153,7 +153,9 @@ function rulesInLovable(projectId: string): { id: number; instruction: string }[
   return store
     .listLiveRulesWithTargets()
     .filter((r) =>
-      r.scope === "workspace" ? r.workspace_id != null && r.workspace_id === workspaceId : r.project_id === projectId,
+      r.scope === "workspace"
+        ? r.workspace_id != null && r.workspace_id === workspaceId
+        : r.project_id === projectId,
     )
     .map((r) => ({ id: r.id, instruction: r.instruction }));
 }
@@ -200,7 +202,11 @@ export async function classifyPending(
       for (const ruleId of validated.contradicts_rule_ids) {
         if (!liveRules.some((r) => r.id === ruleId)) continue;
         if (store.openRetireProposalForRule(ruleId)) continue;
-        store.createRetireProposal({ rule_id: ruleId, reason: "changed_mind", evidence: [message.id] });
+        store.createRetireProposal({
+          rule_id: ruleId,
+          reason: "changed_mind",
+          evidence: [message.id],
+        });
       }
       classified++;
     } catch (err) {

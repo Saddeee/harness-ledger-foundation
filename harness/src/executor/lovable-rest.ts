@@ -345,7 +345,8 @@ export function createLovableRest(deps?: {
     // Round 7: the screenshot the judging screen shows, and the commit it
     // must belong to (its URL carries the first 8 characters of that sha).
     if (raw.latest_commit_sha !== undefined) out.latest_commit_sha = raw.latest_commit_sha;
-    if (raw.latest_screenshot_url !== undefined) out.latest_screenshot_url = raw.latest_screenshot_url;
+    if (raw.latest_screenshot_url !== undefined)
+      out.latest_screenshot_url = raw.latest_screenshot_url;
     return out;
   }
 
