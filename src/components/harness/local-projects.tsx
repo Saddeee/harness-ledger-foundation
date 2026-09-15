@@ -135,7 +135,7 @@ function lastSyncLine(
   const messages = lastRun.counts?.["messages"] ?? 0;
   const snapshots = lastRun.counts?.["knowledge_snapshots"] ?? 0;
   const when = lastRun.finished_at ?? lastRun.started_at;
-  return `Last sync ${formatDate(when)}: ${messages} messages, ${snapshots} Knowledge snapshots`;
+  return `Last sync ${formatDate(when)}: ${messages} message${messages === 1 ? "" : "s"}, ${snapshots} Knowledge snapshot${snapshots === 1 ? "" : "s"}`;
 }
 
 export function LocalProjects() {

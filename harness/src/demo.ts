@@ -55,6 +55,11 @@ import { improvementAction } from "./improvements.js";
 import { recomputeRuleHealth } from "./analysis/health.js";
 import { proposeRetirements } from "./analysis/retire.js";
 
+// Used only when no project is allowed yet, so the demo works before Lovable
+// is connected. Removed again by removeDemoData.
+export const DEMO_PROJECT_ID = "demo-project";
+const DEMO_PROJECT_LABEL = "Demo project";
+
 const EPISODE_TITLE_PENDING = "Demo: keep the sidebar order stable";
 const EPISODE_TITLE_WRITTEN = "Demo: never add a cron job without asking";
 const RULE_INSTRUCTION_PENDING = "Demo: keep the sidebar order stable.";
@@ -373,15 +378,7 @@ export function addDemoData(): AddDemoResult {
     return { added: false, message: "Demo data is already loaded." };
   }
   const projects = store.getAllowedProjects() as { lovable_project_id: string }[];
-  const project = projects[0];
-  if (!project) {
-    return {
-      added: false,
-      message:
-        "No allowed project found -- seed one first (npm run seed -- <lovable_project_id> [label]).",
-    };
-  }
-  const projectId = project.lovable_project_id;
+  const projectId = projects[0]?.lovable_project_id ?? addDemoProject();
   const workspaceId = store.getProjectMeta(projectId)?.workspace_id ?? "demo-workspace";
 
   // ---- Improvement 1: pending (sidebar order) -- decision never recorded ----
@@ -1391,7 +1388,10 @@ export function removeDemoData(): RemoveDemoResult {
   ).n;
 
   if (episodes.length === 0 && skillCount === 0) {
-    return { removed: false, counts: {} };
+    const removedProject = removeDemoProject();
+    return removedProject
+      ? { removed: true, counts: { allowed_projects: 1 } }
+      : { removed: false, counts: {} };
   }
 
   const episodeIds = episodes.map((e) => e.id);
@@ -1785,8 +1785,25 @@ export function removeDemoData(): RemoveDemoResult {
       : 0;
   });
   run();
+  if (removeDemoProject()) counts.allowed_projects = 1;
 
   return { removed: true, counts };
+}
+
+function addDemoProject(): string {
+  store.allowProject(DEMO_PROJECT_ID, DEMO_PROJECT_LABEL);
+  store.upsertProject({ lovable_project_id: DEMO_PROJECT_ID, name: DEMO_PROJECT_LABEL });
+  return DEMO_PROJECT_ID;
+}
+
+function removeDemoProject(): boolean {
+  const exists = db
+    .prepare(`SELECT 1 FROM allowed_projects WHERE lovable_project_id = ?`)
+    .get(DEMO_PROJECT_ID);
+  if (!exists) return false;
+  store.disallowProject(DEMO_PROJECT_ID);
+  db.prepare(`DELETE FROM projects WHERE lovable_project_id = ?`).run(DEMO_PROJECT_ID);
+  return true;
 }
 
 // Finds every `events` row whose kind starts with one of a group's prefixes
@@ -1856,7 +1873,7 @@ function main(): void {
   if (arg === "--add") {
     const result = addDemoData();
     console.log(result.message);
-    console.log(DEMO_ISOLATION_WARNING);
+    if (result.added) console.log(DEMO_ISOLATION_WARNING);
     return;
   }
   if (arg === "--remove") {

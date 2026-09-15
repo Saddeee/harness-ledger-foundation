@@ -22,7 +22,7 @@ Harness Ledger turns the corrections you give Lovable into standing instructions
 
 ## 1. What it is
 
-Every time you correct Lovable ("no, use kronor", "don't touch the login page", "sentence case, please") you teach it something. Lovable has a place to keep that lesson permanently, **Knowledge**, but almost nobody maintains it. So the same corrections come back, chat after chat.
+Every time you correct Lovable ("no, use kronor", "don't touch the login page", "sentence case, please") you teach it something. Lovable has a place to keep that lesson permanently, **Knowledge**: instructions for a project (or your whole workspace) that Lovable's agent reads on every request. Almost nobody maintains it. So the same corrections come back, chat after chat.
 
 Harness Ledger reads your own chat history with Lovable, finds where you corrected it, and proposes one instruction per correction. You decide: add it to this project, add it to all your projects, skip it, or test it first. What you approve is written into your Knowledge inside a marked block that Harness Ledger owns, every version is kept, and anything can be undone. Once a rule is live, Harness Ledger watches your later builds and suggests retiring rules that don't hold up.
 
@@ -34,7 +34,7 @@ Autonomy is available (it can accept confident suggestions for you), but the def
 
 ## 2. How it works
 
-Four words, four different things:
+Four words, four different things. Analysis has three AI roles: the **Classifier**, the **Rule writer** and the **Judge**.
 
 | Word           | Meaning                                                                                                                                                                                | Cost      |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
@@ -160,6 +160,8 @@ It takes about ten minutes. Everything runs on your computer, and the only outsi
 
 ### Step 1: Install and start
 
+The repo has two parts, installed separately: the web app at the root, and the local runtime in `harness/` (its own Node package, with a native SQLite module, compiled before the app can load it).
+
 ```sh
 git clone https://github.com/Saddeee/harness-ledger-foundation.git
 cd harness-ledger-foundation
@@ -172,7 +174,7 @@ npm run harness:build           # compile the local runtime
 HARNESS_RUNTIME=local HARNESS_DB_PATH="$PWD/harness/data/harness.db" npm run dev
 ```
 
-Open **http://127.0.0.1:8080**. Keep this terminal running.
+Open the address it prints, normally **http://127.0.0.1:8080** (Vite picks the next free port if 8080 is taken). Keep this terminal running.
 
 - `HARNESS_RUNTIME=local` switches on the local runtime. Without it the pages only say "available when Harness Ledger runs on your machine".
 - `HARNESS_DB_PATH` is where your data lives: one SQLite file, created on first start and ignored by git.
@@ -184,10 +186,10 @@ On the sign-in page, open **Sign up**, enter any email and password, and press *
 ### Step 3: Connect Lovable
 
 1. Go to **Projects** and press **Connect Lovable**.
-2. Your browser opens Lovable's login. Approve access.
+2. A new tab opens Lovable's login. Sign in and approve access. If no tab opens, use the **Open it here** link that appears under the button.
 3. The page shows you as connected, with a list of your Lovable projects.
 
-The login returns to `127.0.0.1:8765` on the computer running the app. If you run the app on a remote machine, forward that port first (`ssh -L 8765:127.0.0.1:8765 -L 8080:127.0.0.1:8080 your-server`).
+The login returns to `127.0.0.1:8765` on the computer running the app. If you run the app on a remote machine, forward both the app port and 8765 first (`ssh -L 8080:127.0.0.1:8080 -L 8765:127.0.0.1:8765 your-server`).
 
 ### Step 4: Choose projects and sync
 
@@ -201,7 +203,7 @@ In **Settings › AI analysis**, choose **Claude Code (your subscription)**, or 
 ### Step 6: Analyse and decide
 
 1. Go to **Inbox** and press **Analyse now**. A progress bar shows each step: reading your new messages, grouping them into tasks, writing suggestions, checking your rules against recent builds.
-2. Each suggestion card shows the correction it came from. Choose **Add to this project**, **Add to all my projects**, **Skip**, or **Test this rule** first.
+2. Each suggestion card shows the correction it came from. Choose **Add to this project**, **Add to all my projects**, **Skip**, or **Test this rule** first (a paired test, see [Proof](#3-proof-paired-tests); it runs one real Lovable build, so it uses credits).
 3. An added rule appears in your Lovable Knowledge within seconds, and on **Instructions** and **History** here.
 
 That's the whole loop. From then on: chat with Lovable as usual, and press Analyse now whenever you want new suggestions.
@@ -212,7 +214,7 @@ That's the whole loop. From then on: chat with Lovable as usual, and press Analy
 
 ### Command line (optional)
 
-Everything above also works without the browser. Run these from the repo root, without setting `HARNESS_DB_PATH` (they use `harness/data/harness.db` by default):
+Everything above also works without the browser. Run these from the repo root. They don't need `HARNESS_RUNTIME` (that only switches on the web app's local mode), and without `HARNESS_DB_PATH` they use the same `harness/data/harness.db`:
 
 ```sh
 npm run harness:executor -- --connect      # Lovable login
@@ -292,7 +294,7 @@ The same read, write, read-back shape is used for Remove, Re-add, wording change
 ## 9. Development
 
 ```sh
-cd harness && npm test          # 732 tests, no network: fake Lovable server and fake LLM
+cd harness && npm test          # 700+ tests, no network: fake Lovable server and fake LLM
 npm run typecheck               # web app (and `npm run typecheck` in harness/)
 npm run lint                    # ESLint + Prettier (generated Supabase files are skipped)
 npm run build                   # production build

@@ -18,6 +18,12 @@ import { proposeRetirements } from "./retire.js";
 import { keyStatus } from "../llm-keys.js";
 import { defaultExec, type Exec } from "../llm/claude-code.js";
 
+const PROVIDER_NAMES: Partial<Record<LlmProvider, string>> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google",
+};
+
 /** Per-run cap on LLM calls (spec §2): classify gets at most this many of it. */
 const PER_RUN_CALL_CAP = 200;
 const CLASSIFY_CALL_CAP = 150;
@@ -111,7 +117,10 @@ export async function providerReady(deps?: {
     } else {
       const status = keyStatus()[provider];
       if (!status?.has_key) {
-        return { ok: false, reason: `No API key saved for ${provider}. Add one in Settings.` };
+        return {
+          ok: false,
+          reason: `No API key saved for ${PROVIDER_NAMES[provider] ?? provider}. Add one in Settings.`,
+        };
       }
     }
   }

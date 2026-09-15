@@ -51,7 +51,7 @@ export const Route = createFileRoute("/_authenticated/history")({
 
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
 const EMPTY_LINE =
-  "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions will show up here.";
+  "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions about those rules will show up here. Skipped suggestions are under Suggestions.";
 
 function Page() {
   const qc = useQueryClient();

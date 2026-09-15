@@ -121,7 +121,7 @@ test("runAnalysis: provider not ready (no API key) finishes ok:false with the re
   const result = await run.runAnalysis(fakeCallLlm({}));
 
   assert.equal(result.ok, false);
-  assert.match(result.error ?? "", /No API key saved for openai/);
+  assert.match(result.error ?? "", /No API key saved for OpenAI/);
   assert.deepEqual(result.counts, {
     classified: 0,
     failed: 0,
@@ -396,7 +396,7 @@ test("run.providerReady: key checks (non-claude_code providers) stay live, never
   const before = await run.providerReady();
   assert.deepEqual(before, {
     ok: false,
-    reason: "No API key saved for openai. Add one in Settings.",
+    reason: "No API key saved for OpenAI. Add one in Settings.",
   });
 
   llmKeys.setKey("openai", "sk-test-not-a-real-key");

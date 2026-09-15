@@ -117,7 +117,7 @@ test("history.tsx: fetches the timeline, has a target selector and the empty-sta
 
   assert.ok(
     raw.includes(
-      "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions will show up here.",
+      "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions about those rules will show up here. Skipped suggestions are under Suggestions.",
     ),
   );
 
