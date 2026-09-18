@@ -28,7 +28,7 @@ import { db } from "../db.js";
 import {
   HARNESS_END,
   HARNESS_START,
-  MANAGED_HEADING,
+  managedBlockHeader,
   extractManagedBlock,
   realKnowledgeText,
   type ManagedRule,
@@ -194,7 +194,7 @@ export function composeReplayKnowledge(rawBase: string, candidate: ManagedRule):
   const candidateLine = candidate.instruction.trim();
   const already = historical.includes(candidateLine);
   const bullets = already ? historical : [...historical, candidateLine];
-  const newBlock = `${HARNESS_START}\n${MANAGED_HEADING}\n${bullets.map((b) => `- ${b}`).join("\n")}\n${HARNESS_END}`;
+  const newBlock = `${HARNESS_START}\n${managedBlockHeader()}\n${bullets.map((b) => `- ${b}`).join("\n")}\n${HARNESS_END}`;
 
   let final_content: string;
   if (block === null) {

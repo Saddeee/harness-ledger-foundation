@@ -16,7 +16,7 @@ process.env.HARNESS_AUTH_PATH = join(tmp, "lovable-auth.json");
 
 const store = await import("../src/store.js");
 const { db } = await import("../src/db.js");
-const { HARNESS_START, HARNESS_END, MANAGED_HEADING } = await import("../src/knowledge.js");
+const { HARNESS_START, HARNESS_END, managedBlockHeader } = await import("../src/knowledge.js");
 const {
   selectProjectKnowledgeAt,
   composeReplayKnowledge,
@@ -27,7 +27,7 @@ const {
 } = await import("../src/executor/replay-environment.js");
 
 const block = (bullets: string[]) =>
-  `${HARNESS_START}\n${MANAGED_HEADING}\n${bullets.map((b) => `- ${b}`).join("\n")}\n${HARNESS_END}`;
+  `${HARNESS_START}\n${managedBlockHeader()}\n${bullets.map((b) => `- ${b}`).join("\n")}\n${HARNESS_END}`;
 
 // ------------------------------------------------- selectProjectKnowledgeAt
 
@@ -108,7 +108,7 @@ test("composeReplayKnowledge: a candidate already in the historical block is not
 });
 
 test("composeReplayKnowledge: an empty historical block (all rules retired) yields a block with just the candidate", () => {
-  const base = `${HARNESS_START}\n${MANAGED_HEADING}\n\n${HARNESS_END}`;
+  const base = `${HARNESS_START}\n${managedBlockHeader()}\n\n${HARNESS_END}`;
   const out = composeReplayKnowledge(base, { id: 24, instruction: "Use sentence case." });
   assert.equal(out.final_content, block(["Use sentence case."]));
   assert.deepEqual(out.other_active_rules, []);

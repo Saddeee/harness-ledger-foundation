@@ -16,7 +16,12 @@ import {
   stageApprovedWrites,
   type Improvement,
 } from "../improvements.js";
-import { composeManagedKnowledge, extractManagedBlock, sha256 } from "../knowledge.js";
+import {
+  composeManagedKnowledge,
+  extractManagedBlock,
+  sha256,
+  normalizeBlockForCompare,
+} from "../knowledge.js";
 import { redact } from "./redact.js";
 import { recomputeRuleHealth } from "../analysis/health.js";
 import { proposeRetirements } from "../analysis/retire.js";
@@ -677,11 +682,16 @@ export async function executeVersionNow(
       }[];
       const isActiveNow = (id: number) => activeNow.some((r) => r.id === id);
 
-      if (knownBlock === liveBlock) {
+      // Checkpoint 2026-09-18: blocks are compared by their bullet lines, so
+      // a block Harness Ledger wrote under an earlier heading is still its
+      // own after the heading changed (knowledge.ts LEGACY_HEADINGS).
+      const sameBlock = (a: string | null, b: string | null) =>
+        a != null && b != null && normalizeBlockForCompare(a) === normalizeBlockForCompare(b);
+      if (knownBlock === liveBlock || sameBlock(knownBlock, liveBlock)) {
         // Only the user's own text outside the block changed -- recompose
         // the exact same rule set this version already carries.
         rules = ruleObjectsFor(parseRuleIds(rowForRun.rule_ids_json));
-      } else if (liveBlock != null && liveBlock === lastWrittenBlock) {
+      } else if (liveBlock != null && sameBlock(liveBlock, lastWrittenBlock)) {
         // Harness's own newer write is live (e.g. Remove right after Add, or
         // "Try again" on an older failed version). Merge, like the concurrent
         // write case below: this version's rules plus the live block's rules,

@@ -9,8 +9,33 @@ import { getSetting } from "./store.js";
 
 export const HARNESS_START = "<!-- harness:start -->";
 export const HARNESS_END = "<!-- harness:end -->";
-export const MANAGED_HEADING =
-  "## Instructions managed by Harness Ledger (edit above this line, not inside)";
+export const MANAGED_HEADING = "## Instructions managed by Harness Ledger";
+// The line under the heading. It tells a person reading Knowledge in Lovable
+// what happens to a manual edit inside the block: the next Harness Ledger
+// write stops with a conflict instead of overwriting it (executor/beats.ts).
+export const MANAGED_NOTE =
+  "<!-- Manage this section in Harness Ledger. Manual edits cause a conflict and are never overwritten automatically. -->";
+// Headings Harness Ledger wrote in earlier versions. A live block that still
+// carries one of these is Harness Ledger's own; only its bullet lines matter
+// when blocks are compared (normalizeBlockForCompare below).
+export const LEGACY_HEADINGS = [
+  "## Instructions managed by Harness Ledger (edit above this line, not inside)",
+  "## Instructions managed by Harness (edit above this line, not inside)",
+] as const;
+/** The lines between the start marker and the first bullet. */
+export function managedBlockHeader(): string {
+  return `${MANAGED_HEADING}\n${MANAGED_NOTE}`;
+}
+/** A block reduced to what carries meaning: its bullet lines, in order.
+ * Heading and note lines (current or legacy) are dropped so two blocks that
+ * hold the same rules compare equal across a heading change. */
+export function normalizeBlockForCompare(block: string | null): string | null {
+  if (block == null) return null;
+  return block
+    .split("\n")
+    .filter((line) => line.startsWith("- "))
+    .join("\n");
+}
 // Lovable's hard limit is 10,000 characters; Harness keeps headroom.
 export const KNOWLEDGE_CAP = 9000;
 
@@ -31,7 +56,7 @@ export type ManagedRule = { id: number; instruction: string };
 
 export function buildManagedBlock(rules: ManagedRule[]): string {
   const lines = [...rules].sort((a, b) => a.id - b.id).map((r) => `- ${r.instruction}`);
-  return `${HARNESS_START}\n${MANAGED_HEADING}\n${lines.join("\n")}\n${HARNESS_END}`;
+  return `${HARNESS_START}\n${managedBlockHeader()}\n${lines.join("\n")}\n${HARNESS_END}`;
 }
 
 export type Composed = {

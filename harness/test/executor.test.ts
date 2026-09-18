@@ -15,7 +15,8 @@ const imp = await import("../src/improvements.js");
 const beats = await import("../src/executor/beats.js");
 const schedule = await import("../src/executor/schedule.js");
 const lock = await import("../src/executor/lock.js");
-const { sha256, HARNESS_START, HARNESS_END, MANAGED_HEADING } = await import("../src/knowledge.js");
+const { sha256, HARNESS_START, HARNESS_END, managedBlockHeader } =
+  await import("../src/knowledge.js");
 import type { LovableClient, LovableMessage } from "../src/executor/lovable-mcp.ts";
 
 const PROJECT = "exec-project";
@@ -545,7 +546,7 @@ test("runAll captures a beat failure into the run instead of throwing", async ()
 
 function managedBlock(rules: string[]): string {
   const lines = rules.map((r) => `- ${r}`).join("\n");
-  return `${HARNESS_START}\n${MANAGED_HEADING}\n${lines}\n${HARNESS_END}`;
+  return `${HARNESS_START}\n${managedBlockHeader()}\n${lines}\n${HARNESS_END}`;
 }
 
 // A real rule row (not just a bare knowledge_version) so executeVersionNow's
@@ -1413,4 +1414,88 @@ test("going back keeps a rule active when Knowledge holds an earlier wording of 
   assert.notEqual(stateOf(worded.id), "rolled_back", "its earlier wording is in Lovable");
   assert.equal(stateOf(multi.id), "active", "a multi-line rule that is present stays active");
   store.disallowProject(project);
+});
+
+// ---- Checkpoint 2026-09-18 WP2: heading transition and the write sequence ----
+
+const LEGACY_HEADING =
+  "## Instructions managed by Harness Ledger (edit above this line, not inside)";
+function legacyManagedBlock(rules: string[]): string {
+  const lines = rules.map((r) => `- ${r}`).join("\n");
+  return `${HARNESS_START}\n${LEGACY_HEADING}\n${lines}\n${HARNESS_END}`;
+}
+
+test("executeVersionNow: a live block under the previous heading is still Harness Ledger's own -- the write proceeds and the new heading and note are written, user text preserved byte-for-byte", async () => {
+  const rule = makeRule("Use sentence case everywhere.");
+  store.updateRule({ id: rule.id, state: "active", actor: "test" });
+  const userText = "My own notes.\n\nSecond paragraph, untouched.\n\n";
+  const liveContent = `${userText}${legacyManagedBlock([rule.instruction])}\n\nTrailing user text.`;
+  const fake = new FakeLovable();
+  fake.projectKnowledge[PROJECT] = liveContent;
+
+  // Staged against a base with the legacy heading too (an older install).
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: PROJECT,
+    previous_content: `Older notes.\n\n${legacyManagedBlock([rule.instruction])}`,
+    new_content: "(stale; recomposed on the live base)",
+    rule_ids: [rule.id],
+    actor: "test",
+  });
+  const outcome = await beats.executeVersionNow(v.id, fake);
+  assert.equal(outcome.written, true, JSON.stringify(outcome));
+  const written = fake.setCalls[0]!.content;
+  assert.ok(written.startsWith(userText), "text before the block preserved");
+  assert.ok(written.endsWith("\n\nTrailing user text."), "text after the block preserved");
+  assert.ok(written.includes(managedBlockHeader()), "new heading and note written");
+  assert.ok(!written.includes(LEGACY_HEADING), "legacy heading replaced");
+  assert.ok(written.includes(`- ${rule.instruction}`));
+});
+
+test("executeVersionNow: the write sequence -- fresh read, compare, compose, write, read back, exact match, version marked written; a read-back that differs marks the version failed", async () => {
+  const rule = makeRule("Never use dollars.");
+  const fake = new FakeLovable();
+  fake.projectKnowledge[PROJECT] = "live text";
+  const v = stagePending("live text", `live text\n\n${managedBlock([rule.instruction])}`);
+  const calls: string[] = [];
+  const origGet = fake.getProjectKnowledge.bind(fake);
+  const origSet = fake.setProjectKnowledge.bind(fake);
+  fake.getProjectKnowledge = async (id: string) => {
+    calls.push("read");
+    return origGet(id);
+  };
+  fake.setProjectKnowledge = async (id: string, content: string) => {
+    calls.push("write");
+    return origSet(id, content);
+  };
+  const outcome = await beats.executeVersionNow(v.id, fake);
+  assert.equal(outcome.written, true);
+  assert.deepEqual(calls, ["read", "write", "read"], "fresh read, one write, one read-back");
+  assert.equal(store.getKnowledgeVersion(v.id)?.status, "written");
+
+  // Read-back mismatch: Lovable "changed" the text between write and read-back.
+  const v2 = stagePending(
+    fake.projectKnowledge[PROJECT]!,
+    `live text\n\n${managedBlock([rule.instruction, "Extra"])}`,
+  );
+  fake.setProjectKnowledge = async (id: string, content: string) => {
+    await origSet(id, content + "\n(altered by Lovable)");
+  };
+  const outcome2 = await beats.executeVersionNow(v2.id, fake);
+  assert.equal(outcome2.written, false);
+  assert.equal(store.getKnowledgeVersion(v2.id)?.status, "failed");
+});
+
+test("normalizeBlockForCompare: legacy and current headings compare equal when the bullets match, and differ when a bullet differs", async () => {
+  const { normalizeBlockForCompare } = await import("../src/knowledge.js");
+  assert.equal(
+    normalizeBlockForCompare(legacyManagedBlock(["A", "B"])),
+    normalizeBlockForCompare(managedBlock(["A", "B"])),
+  );
+  assert.notEqual(
+    normalizeBlockForCompare(legacyManagedBlock(["A", "B"])),
+    normalizeBlockForCompare(managedBlock(["A", "C"])),
+  );
+  assert.equal(normalizeBlockForCompare(null), null);
 });

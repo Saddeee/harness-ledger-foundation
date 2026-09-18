@@ -41,7 +41,7 @@ test("composer preserves text outside the markers byte-for-byte (before, after, 
   assert.equal(out.final_content, before + out.managed_block + after);
   assert.equal(
     out.managed_block,
-    `${HARNESS_START}\n${knowledge.MANAGED_HEADING}\n- A\n- B\n${HARNESS_END}`,
+    `${HARNESS_START}\n${knowledge.managedBlockHeader()}\n- A\n- B\n${HARNESS_END}`,
   );
   assert.ok(!out.final_content.includes("old stuff"));
 });
@@ -568,7 +568,7 @@ test("Lovable's MCP '(empty)' placeholder is never treated as Knowledge text", a
 });
 
 test("removing the last rule removes Harness Ledger's whole block (no empty heading left behind); adding again brings it back", () => {
-  const block = `${HARNESS_START}\n${knowledge.MANAGED_HEADING}\n- Use kr.\n${HARNESS_END}`;
+  const block = `${HARNESS_START}\n${knowledge.managedBlockHeader()}\n- Use kr.\n${HARNESS_END}`;
   // Only Harness's block: removing the last rule leaves nothing.
   const onlyBlock = composeManagedKnowledge(block, []);
   assert.equal(onlyBlock.final_content, "");
