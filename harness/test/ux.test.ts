@@ -875,7 +875,7 @@ test("landing page: public, copy from landing-copy.ts, never redirects, fetches 
   // detail by ux-landing.test.ts. HOW_IT_WORKS_STEPS/LANDING_INTRO stay in
   // harness-ux.ts for the in-app "How Harness Ledger works" link only.
   const landing = codeOnly(readApp("routes/index.tsx"));
-  assert.match(landing, /STORY_STEPS\.map/);
+  assert.match(landing, /LOOP_STEPS\.map/);
   assert.match(landing, /\{HERO_TITLE\}/);
   assert.match(landing, /signedIn \? "\/inbox" : "\/login"/);
   assert.ok(!/navigate\(|redirect\(/.test(landing), "the landing page never redirects");

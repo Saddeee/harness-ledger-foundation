@@ -4,21 +4,27 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   ARCHITECTURE_CHAIN,
-  ARCHITECTURE_MCP_LINE,
-  ARCHITECTURE_MCP_TEXT,
+  ARCHITECTURE_TEXT,
   ARCHITECTURE_TITLE,
-  EVIDENCE_CAVEAT,
   EVIDENCE_COST_LINE,
   EVIDENCE_LEVELS,
+  EVIDENCE_TEXT,
   EVIDENCE_TITLE,
   HERO_ACTIONS,
   HERO_TEXT,
   HERO_TITLE,
   HOSTED_TEXT,
-  HOSTED_TITLE,
   LIMITATIONS,
   LIMITATIONS_TITLE,
+  LOOP_STEPS,
+  LOOP_TITLE,
   MCP_DOC_URL,
+  MCP_LINE,
+  MCP_TEXT,
+  MCP_TITLE,
+  MODES_NOTE,
+  MODES_TEXT,
+  MODES_TITLE,
   PRIMITIVES,
   PRIMITIVES_STATUS,
   PRIMITIVES_TITLE,
@@ -26,11 +32,11 @@ import {
   RUN_LOCALLY_COMMANDS,
   RUN_LOCALLY_TEXT,
   RUN_LOCALLY_TITLE,
-  SAFETY_POINTS,
-  SAFETY_TITLE,
+  SOURCE_TEXT,
+  SOURCE_TITLE,
   SOURCE_URL,
-  STORY_STEPS,
-  STORY_TITLE,
+  VERSIONING_POINTS,
+  VERSIONING_TITLE,
 } from "@/lib/landing-copy";
 
 export const Route = createFileRoute("/")({
@@ -102,7 +108,7 @@ function Landing() {
               {HERO_ACTIONS.source}
             </a>
             <a
-              href="#how-it-runs"
+              href="#mcp"
               className="text-sm font-medium underline underline-offset-4 opacity-90 hover:opacity-100"
             >
               {HERO_ACTIONS.mcp}
@@ -112,12 +118,12 @@ function Landing() {
       </header>
 
       <div className="mx-auto max-w-3xl space-y-20 px-6 py-16 sm:py-20">
-        <section id="how-it-works" aria-labelledby="story-title" className="scroll-mt-8">
-          <h2 id="story-title" className="text-2xl font-semibold">
-            {STORY_TITLE}
+        <section id="how-it-works" aria-labelledby="loop-title" className="scroll-mt-8">
+          <h2 id="loop-title" className="text-2xl font-semibold">
+            {LOOP_TITLE}
           </h2>
           <ol className="mt-8 space-y-7">
-            {STORY_STEPS.map((step, i) => (
+            {LOOP_STEPS.map((step, i) => (
               <li key={step.title} className="flex gap-5">
                 <span
                   aria-hidden="true"
@@ -157,36 +163,41 @@ function Landing() {
           <h2 id="evidence-title" className="text-2xl font-semibold">
             {EVIDENCE_TITLE}
           </h2>
-          <dl className="mt-6 divide-y border-y">
+          <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
+            {EVIDENCE_TEXT}
+          </p>
+          <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-2 text-sm">
             {EVIDENCE_LEVELS.map((level) => (
-              <div key={level.name} className="grid gap-1 py-4 sm:grid-cols-[11rem_1fr] sm:gap-6">
-                <dt className="font-semibold">
-                  {level.name}
-                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                    {level.status}
-                  </span>
-                </dt>
-                <dd className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-                  {level.text}
-                </dd>
+              <div key={level.name} className="flex gap-2">
+                <dt className="font-semibold">{level.name}</dt>
+                <dd className="text-muted-foreground">{level.status}</dd>
               </div>
             ))}
           </dl>
-          <p className="mt-4 max-w-prose text-sm leading-relaxed">{EVIDENCE_CAVEAT}</p>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground">
+          <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
             {EVIDENCE_COST_LINE}
           </p>
         </section>
 
-        <section aria-labelledby="safety-title">
-          <h2 id="safety-title" className="text-2xl font-semibold">
-            {SAFETY_TITLE}
+        <section aria-labelledby="versioning-title">
+          <h2 id="versioning-title" className="text-2xl font-semibold">
+            {VERSIONING_TITLE}
           </h2>
           <ul className="mt-6 max-w-prose list-disc space-y-2 pl-5 text-sm leading-relaxed text-muted-foreground">
-            {SAFETY_POINTS.map((point) => (
+            {VERSIONING_POINTS.map((point) => (
               <li key={point}>{point}</li>
             ))}
           </ul>
+        </section>
+
+        <section aria-labelledby="modes-title">
+          <h2 id="modes-title" className="text-2xl font-semibold">
+            {MODES_TITLE}
+          </h2>
+          <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
+            {MODES_TEXT}
+          </p>
+          <p className="mt-2 max-w-prose text-sm leading-relaxed">{MODES_NOTE}</p>
         </section>
 
         <section id="how-it-runs" aria-labelledby="architecture-title" className="scroll-mt-8">
@@ -205,9 +216,21 @@ function Landing() {
               </span>
             ))}
           </p>
-          <p className="mt-6 max-w-prose font-medium">{ARCHITECTURE_MCP_LINE}</p>
+          <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
+            {ARCHITECTURE_TEXT}
+          </p>
           <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground">
-            {ARCHITECTURE_MCP_TEXT}{" "}
+            {HOSTED_TEXT}
+          </p>
+        </section>
+
+        <section id="mcp" aria-labelledby="mcp-title" className="scroll-mt-8">
+          <h2 id="mcp-title" className="text-2xl font-semibold">
+            {MCP_TITLE}
+          </h2>
+          <p className="mt-4 max-w-prose font-medium">{MCP_LINE}</p>
+          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground">
+            {MCP_TEXT}{" "}
             <a
               href={MCP_DOC_URL}
               target="_blank"
@@ -218,6 +241,17 @@ function Landing() {
             </a>
           </p>
         </section>
+
+        <details className="group rounded-md border">
+          <summary className="cursor-pointer px-4 py-3 text-base font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {LIMITATIONS_TITLE}
+          </summary>
+          <ul className="max-w-prose list-disc space-y-2 border-t px-4 py-4 pl-9 text-sm leading-relaxed text-muted-foreground">
+            {LIMITATIONS.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </details>
 
         <section id="run-locally" aria-labelledby="run-title" className="scroll-mt-8">
           <h2 id="run-title" className="text-2xl font-semibold">
@@ -241,30 +275,22 @@ function Landing() {
           </p>
         </section>
 
-        <details className="group rounded-md border">
-          <summary className="cursor-pointer px-4 py-3 text-base font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            {HOSTED_TITLE}
-          </summary>
-          <p className="max-w-prose border-t px-4 py-4 text-sm leading-relaxed text-muted-foreground">
-            {HOSTED_TEXT}
+        <section aria-labelledby="source-title">
+          <h2 id="source-title" className="text-2xl font-semibold">
+            {SOURCE_TITLE}
+          </h2>
+          <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
+            {SOURCE_TEXT}{" "}
+            <a
+              href={SOURCE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary underline underline-offset-2"
+            >
+              github.com/Saddeee/harness-ledger-foundation
+            </a>
           </p>
-        </details>
-
-        <details className="group rounded-md border">
-          <summary className="cursor-pointer px-4 py-3 text-base font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            {LIMITATIONS_TITLE}
-          </summary>
-          <ul className="max-w-prose list-disc space-y-2 border-t px-4 py-4 pl-9 text-sm leading-relaxed text-muted-foreground">
-            {LIMITATIONS.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </details>
-
-        <footer className="border-t pt-6 text-xs text-muted-foreground">
-          No metrics, testimonials or recorded demos on this page: the product has one owner and a
-          handful of real test runs so far. What it shows is what the code does.
-        </footer>
+        </section>
       </div>
     </main>
   );

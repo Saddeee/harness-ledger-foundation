@@ -2,11 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// Checkpoint 2026-09-18: the public landing page. Pins the hero, the story,
-// the honest status lines and the absence of anything the product cannot
-// back (metrics, testimonials, "proof", writable Skills, a paired comparison
-// that exists). Reads the source files as text, like every other ux test.
+// Checkpoint 2: the public landing page, understandable in under a minute.
+// Pins the hero, the five-step loop, the section order, the honest status
+// lines, and validates the page's claims against the capability manifest
+// (src/lib/capabilities-copy.ts). No images, no metrics, no testimonials.
 const copy = await import("../../src/lib/landing-copy.ts");
+const { CAPABILITIES } = await import("../../src/lib/capabilities-copy.ts");
 
 const INDEX = new URL("../../src/routes/index.tsx", import.meta.url);
 const raw = readFileSync(INDEX, "utf8");
@@ -15,11 +16,17 @@ const code = raw
   .filter((l) => !l.trim().startsWith("//"))
   .join("\n");
 
-test("landing: hero title and supporting text, verbatim", () => {
+function status(id: string): string {
+  const c = CAPABILITIES.find((x) => x.id === id);
+  assert.ok(c, `capability ${id} missing from the manifest`);
+  return c!.status;
+}
+
+test("landing: hero title, product promise and actions, verbatim", () => {
   assert.equal(copy.HERO_TITLE, "Teach Lovable once. Keep the lesson.");
   assert.equal(
     copy.HERO_TEXT,
-    "Harness Ledger turns your corrections into versioned Knowledge and Skills, tests them against real project history, and shows whether they still deserve to remain.",
+    "Harness Ledger learns from the corrections you give Lovable, turns reusable lessons into Knowledge or Skills, and helps you decide whether those instructions should remain.",
   );
   assert.deepEqual(Object.values(copy.HERO_ACTIONS), [
     "Open Harness Ledger",
@@ -30,31 +37,26 @@ test("landing: hero title and supporting text, verbatim", () => {
   ]);
 });
 
-test("landing: the eight story steps, in order", () => {
+test("landing: the five-step loop, in order", () => {
   assert.deepEqual(
-    copy.STORY_STEPS.map((s) => s.title),
+    copy.LOOP_STEPS.map((s) => s.title),
     [
       "Correct Lovable",
-      "Harness Ledger finds a reusable lesson",
-      "Choose Knowledge or Skill",
-      "Review or edit the instruction",
-      "Test against a real previous request",
-      "Add the instruction",
-      "Observe later builds",
-      "Revise, retire, or restore",
+      "Harness Ledger finds the lesson",
+      "Review Knowledge or Skill",
+      "Test if you want",
+      "Add to Lovable, then observe",
     ],
   );
 });
 
-test("landing: Knowledge vs Skills comparison and the honest Skills status", () => {
-  assert.deepEqual(
-    copy.PRIMITIVES.map((p) => p.name),
-    ["Knowledge", "Skills", "Knowledge plus Skill"],
-  );
+test("landing: claims match the capability manifest", () => {
+  assert.equal(status("knowledge_write"), "working");
+  assert.equal(status("local_skill_proposal"), "working");
+  assert.notEqual(status("remote_skill_write"), "working");
   assert.match(copy.PRIMITIVES_STATUS, /not wired yet/);
-});
-
-test("landing: three evidence levels, none called proof, uncontrolled context named", () => {
+  assert.equal(status("historical_replay"), "working");
+  assert.equal(status("paired_comparison"), "planned");
   assert.deepEqual(
     copy.EVIDENCE_LEVELS.map((l) => [l.name, l.status]),
     [
@@ -63,21 +65,25 @@ test("landing: three evidence levels, none called proof, uncontrolled context na
       ["Repeated paired evidence", "Planned"],
     ],
   );
-  assert.match(copy.EVIDENCE_CAVEAT, /None of these is proof/);
-  assert.match(
-    copy.EVIDENCE_CAVEAT,
-    /project memory, workspace Knowledge, Skills and the builder version/,
-  );
-});
-
-test("landing: the MCP sentence and the hosted status wording, verbatim", () => {
-  assert.equal(
-    copy.ARCHITECTURE_MCP_LINE,
-    "Lovable MCP lets Harness Ledger operate Lovable. Harness Ledger MCP lets your agent operate Harness Ledger.",
-  );
+  assert.equal(status("hosted_lovable_execution"), "blocked");
   assert.equal(
     copy.HOSTED_TEXT,
-    "The operational prototype runs locally today because local Lovable clients can complete the supported localhost authorization flow. The hosted Lovable deployment presents the product and preserves the hosted adapter for a future approved application authorization path.",
+    "The operational prototype currently runs locally because local Lovable clients can complete the supported sign-in flow. The hosted Lovable app presents the product and preserves the hosted adapter for an approved hosted authorization path.",
+  );
+  assert.equal(status("harness_ledger_mcp"), "working");
+  assert.equal(
+    copy.MCP_LINE,
+    "Lovable MCP lets Harness Ledger operate Lovable. Harness Ledger MCP lets your agent operate Harness Ledger.",
+  );
+  assert.equal(status("behavioral_verification"), "planned");
+  assert.ok(copy.LIMITATIONS.some((l) => /Behavioural checks/.test(l)));
+  assert.equal(
+    copy.EVIDENCE_COST_LINE,
+    "Creating project copies currently uses no Lovable builder credits. Running a Lovable build in a copy consumes normal builder credits.",
+  );
+  assert.equal(
+    copy.MODES_TEXT,
+    "Both modes sync, analyse and recommend. Ask me first waits for approval before persistent or credit-spending actions. Automatic performs only the actions, projects and budgets the user has allowed.",
   );
   assert.equal(
     copy.RUN_LOCALLY_TEXT,
@@ -85,35 +91,23 @@ test("landing: the MCP sentence and the hosted status wording, verbatim", () => 
   );
 });
 
-test("landing: limitations name Skills, paired comparison, behavioural checks, history, hosted, setup", () => {
-  const joined = copy.LIMITATIONS.join(" ");
-  for (const needle of [
-    "Skills cannot yet be created",
-    "Paired comparison is not implemented",
-    "Behavioural checks",
-    "Historical context",
-    "Hosted authorization",
-    "developer-oriented",
-  ]) {
-    assert.ok(joined.includes(needle), `limitation missing: ${needle}`);
-  }
-});
-
-test("landing page source: sections in order, hosted status and limitations collapsed, no fetch, no redirect, no fake assets", () => {
+test("landing page source: sections in the required order, limitations collapsed, no fetch, no redirect, no fake assets, one product name", () => {
   const order = [
     "HERO_TITLE",
-    'id="how-it-works"',
+    "LOOP_TITLE",
     "PRIMITIVES_TITLE",
     "EVIDENCE_TITLE",
-    "SAFETY_TITLE",
-    'id="how-it-runs"',
-    'id="run-locally"',
-    "HOSTED_TITLE",
+    "VERSIONING_TITLE",
+    "MODES_TITLE",
+    "ARCHITECTURE_TITLE",
+    "MCP_TITLE",
     "LIMITATIONS_TITLE",
+    "RUN_LOCALLY_TITLE",
+    "SOURCE_TITLE",
   ];
   let last = -1;
   for (const marker of order) {
-    const idx = code.indexOf(marker, last + 1);
+    const idx = code.indexOf(`{${marker}}`, last + 1);
     assert.ok(idx > last, `landing page section out of order or missing: ${marker}`);
     last = idx;
   }
@@ -121,7 +115,6 @@ test("landing page source: sections in order, hosted status and limitations coll
   assert.ok(!/fetch\(/.test(code), "the landing page fetches nothing");
   assert.ok(!/<img|<video|\.png|\.mp4/.test(code), "no screenshots, recordings or images");
   assert.match(code, /signedIn \? "\/inbox" : "\/login"/);
-  // Collapsed by default: no <details open>.
   assert.ok(!/<details[^>]*\bopen\b/.test(code), "details must be collapsed by default");
   const banned = [
     /\bproves\b/i,
@@ -131,6 +124,7 @@ test("landing page source: sections in order, hosted status and limitations coll
     /customers?\b/i,
     /\d+%/,
     /\bhelped\b/,
+    /\bHarness(?! Ledger)\b/,
   ];
   const allCopy = Object.values(copy)
     .flatMap((v) => (Array.isArray(v) ? v.map((x) => JSON.stringify(x)) : [String(v)]))
