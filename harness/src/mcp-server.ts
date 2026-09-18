@@ -1,25 +1,59 @@
+// Harness MCP: an agent's window onto Harness Ledger. Every tool below is a
+// thin wrapper over harness/src/adapter.ts -- the exact module the web app's
+// own routes (src/routes/api/public/harness/*.ts) import -- so an MCP caller
+// can never do anything the web app's buttons could not also do: the same
+// decision-mode gating, the same monthly Lovable credit budget, the same
+// project allowlist, the same fresh-read/sha-check/read-back sequence on a
+// Knowledge write. This file never imports "./store.js" directly (see
+// harness/test/mcp-server.test.ts's structural test) -- every read and
+// every mutation goes through adapter.ts, the same boundary the web app is
+// held to.
+//
+// D5 (DECISIONS.md) replaces the previous 33-tool surface: raw store
+// primitives that bypassed improvements.ts's checks (update_rule,
+// create_rule, review_correction_candidate, record_knowledge_readback) and
+// ten experiment-plan/verification-plan/resource tools that wrote tables
+// nothing in the live product reads (docs/audit/mcp-security.md). The 13
+// tools here are the full replacement surface; there is no other way to
+// mutate Harness Ledger state through this server.
+import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import * as store from "./store.js";
+import * as adapter from "./adapter.js";
+import type { Improvement } from "./adapter.js";
 
-const server = new McpServer({ name: "harness-mcp", version: "0.2.0" });
+const SERVER_INSTRUCTIONS =
+  "Harness MCP lets your agent operate Harness Ledger with the same permissions as the web app. " +
+  "Lovable MCP (a different server) lets Harness operate Lovable.";
 
-function json(value: unknown) {
+/** Every mutating tool's actor string, so the audit trail (rule_revisions,
+ * events) can tell an MCP-driven decision apart from one made by clicking a
+ * button in the browser -- the checks that run are identical either way. */
+const MCP_ACTOR = "agent via Harness MCP";
+
+const PARITY_NOTE =
+  " Goes through the exact same adapter.ts call the web app's own button uses, " +
+  "so it is gated by the same decision mode, Lovable credit budget and project allowlist, " +
+  "and refuses in exactly the same words.";
+const READ_ONLY_NOTE = " Read-only: reads exactly what the equivalent page in the web app shows.";
+
+function jsonResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
 }
 
-function tool(
+function registerTool(
+  server: McpServer,
   name: string,
   description: string,
   shape: z.ZodRawShape,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handler: (input: any) => unknown,
+  handler: (input: any) => unknown | Promise<unknown>,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   server.tool(name, description, shape, async (input: any) => {
     try {
-      return json(handler(input));
+      return jsonResult(await handler(input));
     } catch (err) {
       return {
         isError: true,
@@ -31,454 +65,444 @@ function tool(
   });
 }
 
-const provenance = z.enum([
-  "lovable_mcp",
-  "git_history",
-  "build_log",
-  "spec",
-  "manual",
-  "llm_derived",
+/** Same fail-closed default the web app's own isConnected() helper uses
+ * (src/routes/api/public/harness/improvements.ts): a status read that
+ * throws (no auth file yet, a corrupt one) reads as "not connected", never
+ * as an error a caller has to handle. */
+function isConnected(): boolean {
+  try {
+    return adapter.lovableAuthStatus().connected;
+  } catch {
+    return false;
+  }
+}
+
+type Target = { target: "project" | "workspace"; id: string; name: string };
+
+/** Every project/workspace target this local runtime knows about, mirroring
+ * src/routes/api/public/harness/knowledge.ts's own resolveTargets -- with
+ * the web-only loadHarnessExecutor() workspace fallback replaced by the
+ * plain adapter.lovableAuthStatus() re-export (Checkpoint 2026-09-18 WP6),
+ * since mcp-server.ts cannot import anything under src/. */
+function resolveTargets(): Target[] {
+  const allowed = adapter.getAllowedProjects() as { lovable_project_id: string }[];
+  const targets: Target[] = [];
+  let workspaceId: string | null = null;
+  for (const p of allowed) {
+    const meta = adapter.getProjectMeta(p.lovable_project_id) as {
+      name: string | null;
+      workspace_id: string | null;
+    } | null;
+    targets.push({
+      target: "project",
+      id: p.lovable_project_id,
+      name: meta?.name ?? p.lovable_project_id,
+    });
+    if (!workspaceId && meta?.workspace_id) workspaceId = meta.workspace_id;
+  }
+  if (!workspaceId) {
+    try {
+      workspaceId = adapter.lovableAuthStatus().workspaces[0]?.id ?? null;
+    } catch {
+      workspaceId = null;
+    }
+  }
+  if (workspaceId) targets.push({ target: "workspace", id: workspaceId, name: "Workspace" });
+  return targets;
+}
+
+/** Same workspace resolution as src/routes/api/public/harness/skills.ts's
+ * resolveWorkspaceId, minus the web-only executor loader. */
+function resolveWorkspaceId(): string | null {
+  const allowed = adapter.getAllowedProjects() as { lovable_project_id: string }[];
+  for (const p of allowed) {
+    const meta = adapter.getProjectMeta(p.lovable_project_id) as {
+      workspace_id: string | null;
+    } | null;
+    if (meta?.workspace_id) return meta.workspace_id;
+  }
+  try {
+    return adapter.lovableAuthStatus().workspaces[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function statusLine(item: Improvement): string {
+  if (item.kind === "retire") {
+    return `retirement proposed for rule ${item.retire?.rule_id ?? "?"} (reason: ${
+      item.retire?.reason ?? "unknown"
+    })`;
+  }
+  if (item.decision.retired) return "retired";
+  if (item.decision.status === "pending") return "pending decision";
+  if (item.decision.status === "skipped") return "skipped";
+  const dest = item.destination ? ` to ${item.destination}` : "";
+  return `accepted${dest} (knowledge write: ${item.lovable.write_status})`;
+}
+
+/** id, rule text, corrections, destination fields if present, status line --
+ * the same fields the Inbox card shows, trimmed of the developer-only
+ * fields (verification plans, raw events) the full Improvement view carries
+ * for the app's own debug panel. */
+function trimSuggestion(item: Improvement) {
+  return {
+    id: item.id,
+    kind: item.kind,
+    rule_text: item.proposed_instruction,
+    correction: { classification: item.classification, summary: item.title },
+    destination: item.destination,
+    status: statusLine(item),
+  };
+}
+
+const decideAction = z.enum([
+  "accept_project",
+  "accept_workspace",
+  "skip",
+  "test_first",
+  "change_wording",
 ]);
-const classification = z.enum([
-  "defect_correction",
-  "constraint_restatement",
-  "missing_requirement",
-  "preference_revision",
-  "scope_extension",
-  "new_task",
-  "question",
-  "approval",
-  "other",
-]);
-const ruleState = z.enum([
-  "proposed",
-  "approved",
-  "testing",
-  "supported",
-  "active",
-  "questioned",
-  "disabled",
-  "retired",
-  "rolled_back",
-  "rejected",
-]);
+const skipReason = z.enum(["not_useful", "wrong_wording", "one_time", "already_covered"]);
 
-// ---- Checkpoint A ----
+/** Maps decide_suggestion's own vocabulary onto exactly the action bodies
+ * improvements.ts's actionInput union (and beats.ts's "test" interception)
+ * already accept -- the same bodies the web app's buttons send. */
+function mapDecideAction(input: {
+  id: number;
+  action: z.infer<typeof decideAction>;
+  skip_reason?: z.infer<typeof skipReason>;
+  new_instruction?: string;
+}): unknown {
+  switch (input.action) {
+    case "accept_project":
+      return { action: "accept", id: input.id, destination: "project" };
+    case "accept_workspace":
+      return { action: "accept", id: input.id, destination: "workspace" };
+    case "skip":
+      return {
+        action: "skip",
+        id: input.id,
+        ...(input.skip_reason ? { reason: input.skip_reason } : {}),
+      };
+    case "test_first":
+      // Mirrors the Inbox's "Add and test it first" choice (Round 7:
+      // src/components/harness/improvement.tsx AddConfirm) -- that dialog
+      // calls exactly { action: "test", id, show_original: true }, never
+      // accept with a test_first flag (the old staging-only path Round 7
+      // retired). show_original defaults true, matching that dialog's own
+      // default.
+      return { action: "test", id: input.id, show_original: true };
+    case "change_wording":
+      if (!input.new_instruction) {
+        throw new Error("new_instruction is required for the change_wording action");
+      }
+      return { action: "change_wording", id: input.id, instruction: input.new_instruction };
+  }
+}
 
-tool("health", "Report local Harness Ledger service health and DB path.", {}, () => store.health());
+function matchesTarget(
+  v: { target: string; project_id: string | null; workspace_id: string | null },
+  target: "project" | "workspace",
+  targetId: string,
+): boolean {
+  if (v.target !== target) return false;
+  return target === "project" ? v.project_id === targetId : v.workspace_id === targetId;
+}
 
-tool(
-  "create_test_record",
-  "Insert a throwaway test record (proves writes work end to end).",
-  { note: z.string().optional() },
-  (input) => store.createTestRecord(input.note),
-);
+export function createHarnessMcpServer(): McpServer {
+  const server = new McpServer(
+    { name: "harness-mcp", version: "0.3.0" },
+    { instructions: SERVER_INSTRUCTIONS },
+  );
 
-tool(
-  "get_allowed_projects",
-  "List Lovable project IDs this Harness Ledger instance permits Claude Code to read or act on. Read-only: curated out-of-band (npm run seed), never by an agent.",
-  {},
-  () => store.getAllowedProjects(),
-);
+  registerTool(
+    server,
+    "health",
+    "Report local Harness Ledger service health and the SQLite database path." + READ_ONLY_NOTE,
+    {},
+    () => adapter.health(),
+  );
 
-tool(
-  "upsert_project",
-  "Store or update cached, redacted metadata for an approved Lovable project.",
-  {
-    lovable_project_id: z.string(),
-    name: z.string().optional(),
-    status: z.string().optional(),
-    url: z.string().optional(),
-    tech_stack: z.string().optional(),
-    raw_json: z.string().optional(),
-  },
-  (input) => store.upsertProject(input),
-);
+  registerTool(
+    server,
+    "list_suggestions",
+    "List Harness's suggestions (the same items the Inbox and Improvements pages show): " +
+      "id, rule text, the underlying correction, destination, and a plain status line. " +
+      "filter: 'open' (awaiting a decision, the default), 'decided' (accepted or skipped), or 'all'." +
+      READ_ONLY_NOTE,
+    { filter: z.enum(["open", "decided", "all"]).optional() },
+    (input: { filter?: "open" | "decided" | "all" }) => {
+      const filter = input.filter ?? "open";
+      const items = adapter.listImprovements({ connected: isConnected() });
+      const open = (item: Improvement) =>
+        item.kind === "retire" ? true : item.decision.status === "pending";
+      const filtered = items.filter((item) =>
+        filter === "all" ? true : filter === "open" ? open(item) : !open(item),
+      );
+      return filtered.map(trimSuggestion);
+    },
+  );
 
-tool(
-  "append_event",
-  "Append an audit-log event.",
-  { kind: z.string(), ref: z.string().optional(), payload: z.unknown().optional() },
-  (input) => store.insertEvent(input.kind, input.ref, input.payload),
-);
+  registerTool(
+    server,
+    "explain_suggestion",
+    "Full detail for one suggestion (the same view the Inbox/Improvements card expands into), " +
+      "plus a preview of the Knowledge block Harness would write for its destination." +
+      READ_ONLY_NOTE,
+    { id: z.number().int() },
+    (input: { id: number }) => {
+      const item = adapter.getImprovement(input.id, { connected: isConnected() });
+      if (!item) throw new Error(`suggestion ${input.id} not found`);
+      const destination =
+        item.destination === "project" || item.destination === "workspace"
+          ? item.destination
+          : null;
+      const knowledge_preview = destination ? item.lovable.previews[destination] : null;
+      return { ...item, knowledge_preview };
+    },
+  );
 
-tool(
-  "list_events",
-  "List recent audit-log events, newest first.",
-  { limit: z.number().int().positive().max(500).optional() },
-  (input) => store.listEvents(input.limit ?? 50),
-);
+  registerTool(
+    server,
+    "decide_suggestion",
+    "Decide one suggestion: accept_project, accept_workspace, skip (with an optional " +
+      "skip_reason), test_first (queue a historical replay before deciding, like 'Add and " +
+      "test it first'), or change_wording (with new_instruction). Calls adapter.ts's " +
+      "improvementActionAndWrite -- the exact function the web app's Inbox/Improvements POST " +
+      "route calls -- so an accept writes to Lovable Knowledge immediately when connected, " +
+      "exactly like pressing the button, and a refusal (not connected, over budget, a test " +
+      "already running) comes back worded exactly as the app would show it." +
+      PARITY_NOTE,
+    {
+      id: z.number().int(),
+      action: decideAction,
+      skip_reason: skipReason.optional(),
+      new_instruction: z.string().min(1).max(2000).optional(),
+    },
+    (input: {
+      id: number;
+      action: z.infer<typeof decideAction>;
+      skip_reason?: z.infer<typeof skipReason>;
+      new_instruction?: string;
+    }) => adapter.improvementActionAndWrite(mapDecideAction(input), MCP_ACTOR),
+  );
 
-// ---- Checkpoint B: correction pipeline ----
+  registerTool(
+    server,
+    "list_rules",
+    "Active and retired rules per Knowledge target (project or workspace), the same " +
+      "adapter.activeRulesForTarget/retiredRulesForTarget reads the Instructions page uses. " +
+      "Pass project_id to see just that project's rules; omit it to see every allowed " +
+      "project plus the workspace." +
+      READ_ONLY_NOTE,
+    { project_id: z.string().optional() },
+    (input: { project_id?: string }) => {
+      const targets: Target[] = input.project_id
+        ? [
+            {
+              target: "project",
+              id: input.project_id,
+              name:
+                (adapter.getProjectMeta(input.project_id) as { name: string | null } | null)
+                  ?.name ?? input.project_id,
+            },
+          ]
+        : resolveTargets();
+      return targets.map((t) => ({
+        target: t.target,
+        id: t.id,
+        name: t.name,
+        active_rules: (
+          adapter.activeRulesForTarget(t.target, t.id) as { id: number; instruction: string }[]
+        ).map((r) => ({ id: r.id, text: r.instruction })),
+        retired_rules: (
+          adapter.retiredRulesForTarget(t.target, t.id) as { id: number; instruction: string }[]
+        ).map((r) => ({ id: r.id, text: r.instruction })),
+      }));
+    },
+  );
 
-tool(
-  "create_project_snapshot",
-  "Store a point-in-time metadata snapshot for an allowed Lovable project. Rejects projects not in allowed_projects.",
-  {
-    lovable_project_id: z.string(),
-    label: z.string().optional(),
-    snapshot_json: z.string(),
-    provenance,
-    source_ref: z.string().optional(),
-  },
-  (input) => store.createProjectSnapshot(input),
-);
+  registerTool(
+    server,
+    "list_skills",
+    "The connected workspace's current Skill snapshots -- the same adapter.latestSkillSnapshots " +
+      "read the Skills page uses for its top-level list (not each Skill's full version history)." +
+      READ_ONLY_NOTE,
+    {},
+    () => {
+      const workspaceId = resolveWorkspaceId();
+      if (!workspaceId) return { workspace_id: null, fetched_at: null, skills: [] };
+      const snapshots = adapter.latestSkillSnapshots(workspaceId);
+      const fetched_at = snapshots.length
+        ? snapshots.reduce(
+            (max, s) => (s.fetched_at > max ? s.fetched_at : max),
+            snapshots[0]!.fetched_at,
+          )
+        : null;
+      return {
+        workspace_id: workspaceId,
+        fetched_at,
+        skills: snapshots.map((s) => ({
+          name: s.name,
+          description: s.description,
+          content: s.content,
+          sha256: s.sha256,
+          updated_at_remote: s.updated_at_remote,
+          fetched_at: s.fetched_at,
+        })),
+      };
+    },
+  );
 
-tool(
-  "upsert_history_item",
-  "Store or update one piece of raw evidence (a chat message, diff, edit, build-log row, spec excerpt, or manual note). Idempotent per (project_id, kind, external_id).",
-  {
-    project_id: z.string().optional(),
-    kind: z.enum(["message", "diff", "edit", "build_log_row", "spec_excerpt", "manual_note"]),
-    external_id: z.string().optional(),
-    role: z.enum(["user", "assistant", "system", "operator"]).optional(),
-    content: z.string(),
-    occurred_at: z.string().optional(),
-    provenance,
-    source_ref: z.string().optional(),
-  },
-  (input) => store.upsertHistoryItem(input),
-);
+  registerTool(
+    server,
+    "start_replay",
+    "Start a historical replay for one suggestion -- the same 'Test this rule' action the " +
+      "Tests/Improvements pages offer (adapter.improvementActionAndWrite's 'test' " +
+      "interception: startExperiment then kickExperimentRunner, queued, not awaited here). " +
+      "show_original also makes a free copy of the original build to compare against. " +
+      "Refuses -- with the exact same sentence the app shows -- when Harness is not " +
+      "connected, a replay is already running, or this would exceed the monthly Lovable " +
+      "credit budget." +
+      PARITY_NOTE,
+    { id: z.number().int(), show_original: z.boolean().optional() },
+    (input: { id: number; show_original?: boolean }) =>
+      adapter.improvementActionAndWrite(
+        { action: "test", id: input.id, show_original: input.show_original },
+        MCP_ACTOR,
+      ),
+  );
 
-tool(
-  "create_task_episode",
-  "Create a reconstructed task episode for an allowed project (or a cross-project one if project_id is omitted), optionally linking evidence history_item ids.",
-  {
-    project_id: z.string().optional(),
-    title: z.string(),
-    summary: z.string().optional(),
-    provenance,
-    started_at: z.string().optional(),
-    ended_at: z.string().optional(),
-    evidence_history_item_ids: z.array(z.number().int()).optional(),
-  },
-  (input) => store.createTaskEpisode(input),
-);
+  registerTool(
+    server,
+    "get_replay",
+    "One historical replay run's full detail (adapter.buildExperimentRunView) -- the same " +
+      "view the judging screen renders." +
+      READ_ONLY_NOTE,
+    { run_id: z.number().int() },
+    (input: { run_id: number }) => {
+      const run = adapter.buildExperimentRunView(input.run_id);
+      return run
+        ? { available: true, run }
+        : { available: false, reason: `run ${input.run_id} not found` };
+    },
+  );
 
-tool(
-  "update_task_episode",
-  "Update a task episode's title/summary/status/end time, and/or attach more evidence.",
-  {
-    id: z.number().int(),
-    title: z.string().optional(),
-    summary: z.string().optional(),
-    status: z.enum(["reconstructed", "reviewed"]).optional(),
-    ended_at: z.string().optional(),
-    add_evidence_history_item_ids: z.array(z.number().int()).optional(),
-  },
-  (input) => store.updateTaskEpisode(input),
-);
+  registerTool(
+    server,
+    "list_replays",
+    "Every historical replay run, summarized -- adapter.listTestRunSummaries, the same read " +
+      "the Tests page lists." +
+      READ_ONLY_NOTE,
+    {},
+    () => ({ available: true, runs: adapter.listTestRunSummaries() }),
+  );
 
-tool(
-  "create_correction_candidate",
-  "Create a structured correction candidate for a task episode, linked to its supporting evidence.",
-  {
-    task_episode_id: z.number().int(),
-    classification,
-    is_correction: z.boolean(),
-    reusable: z.boolean().optional(),
-    proposed_scope: z.enum(["project", "workspace", "one_time"]).optional(),
-    summary: z.string(),
-    confidence: z.number().min(0).max(1).optional(),
-    evidence_reason: z.string().optional(),
-    evidence_history_item_ids: z.array(z.number().int()),
-    classification_meta: z
-      .object({
-        provider: z.string(),
-        model: z.string(),
-        role: z.string(),
-        structured_output: z.unknown(),
-      })
-      .optional(),
-  },
-  (input) => store.createCorrectionCandidate(input),
-);
+  registerTool(
+    server,
+    "list_knowledge_versions",
+    "Full Knowledge write history for one target (project or workspace) -- the same rows the " +
+      "History and Instructions pages read via adapter.listKnowledgeVersions, filtered to the " +
+      "target given." +
+      READ_ONLY_NOTE,
+    { target: z.enum(["project", "workspace"]), target_id: z.string() },
+    (input: { target: "project" | "workspace"; target_id: string }) =>
+      (
+        adapter.listKnowledgeVersions() as {
+          target: string;
+          project_id: string | null;
+          workspace_id: string | null;
+        }[]
+      ).filter((v) => matchesTarget(v, input.target, input.target_id)),
+  );
 
-tool(
-  "review_correction_candidate",
-  "Apply a human review action to a correction candidate: confirm, reclassify, mark_one_time, mark_reusable, change_scope, or exclude.",
-  {
-    id: z.number().int(),
-    action: z.enum([
-      "confirm",
-      "reclassify",
-      "mark_one_time",
-      "mark_reusable",
-      "change_scope",
-      "exclude",
-    ]),
-    classification: classification.optional(),
-    proposed_scope: z.enum(["project", "workspace", "one_time"]).optional(),
-    reviewer: z.string().optional(),
-  },
-  (input) => store.reviewCorrectionCandidate(input),
-);
+  registerTool(
+    server,
+    "restore_knowledge_version",
+    "Restore a previously written Knowledge version -- the same action the History page's " +
+      "'Restore' button takes: adapter.createRestoreVersion stages the old content as a new " +
+      "pending write, then adapter.retryKnowledgeWrite runs it through the same write path " +
+      "every other write uses (fresh read, sha check against what Harness expects to be " +
+      "live, then a read-back) -- it refuses, worded the same way, if Harness is not " +
+      "connected or the live content no longer matches." +
+      PARITY_NOTE,
+    { version_id: z.number().int() },
+    async (input: { version_id: number }) => {
+      const version = adapter.createRestoreVersion(input.version_id, MCP_ACTOR) as { id: number };
+      const write = await adapter.retryKnowledgeWrite(version.id);
+      return { version_id: version.id, write };
+    },
+  );
 
-tool(
-  "create_learning",
-  "Create a learning from a reviewed correction candidate. Refuses a 4th learning on the same correction candidate.",
-  {
-    correction_candidate_id: z.number().int(),
-    observed_problem: z.string(),
-    desired_behavior: z.string(),
-    reuse_rationale: z.string(),
-    proposed_scope: z.enum(["project", "workspace"]),
-    applicability: z.string().optional(),
-    confidence: z.number().min(0).max(1).optional(),
-    overlap_notes: z.string().optional(),
-    provenance,
-    created_by: z.string(),
-  },
-  (input) => store.createLearning(input),
-);
+  registerTool(
+    server,
+    "rule_observations",
+    "One rule's health/adherence/verdict view -- the same observed-corrections, AI-adherence " +
+      "and human-verdict lines the Instructions page shows for a rule, read via " +
+      "adapter.getRuleHealth/listRuleAdherence/adherenceCounts/latestRuleVerdict." +
+      READ_ONLY_NOTE,
+    { rule_id: z.number().int() },
+    (input: { rule_id: number }) => {
+      const health = adapter.getRuleHealth(input.rule_id) as {
+        applicable_tasks: number;
+        helped: number;
+        hurt: number;
+        last_applicable_at: string | null;
+      } | null;
+      const verdict = adapter.latestRuleVerdict(input.rule_id);
+      const adherenceRows = adapter.listRuleAdherence(input.rule_id);
+      const adherence = adherenceRows.length > 0 ? adapter.adherenceCounts(input.rule_id) : null;
+      const live = (
+        adapter.listLiveRulesWithTargets() as { id: number; first_written_at: string | null }[]
+      ).find((r) => r.id === input.rule_id);
+      return {
+        rule_id: input.rule_id,
+        health: health
+          ? {
+              applicable_tasks: health.applicable_tasks,
+              helped: health.helped,
+              hurt: health.hurt,
+              last_applicable_at: health.last_applicable_at,
+              since: live?.first_written_at ?? null,
+            }
+          : null,
+        verdict,
+        adherence,
+        adherence_quotes: adherenceRows,
+      };
+    },
+  );
 
-tool(
-  "create_rule",
-  "Create a proposed rule from a learning. Never touches Lovable -- state starts at 'proposed' and stays local until a later checkpoint.",
-  {
-    learning_id: z.number().int(),
-    correction_candidate_id: z.number().int(),
-    instruction: z.string(),
-    scope: z.enum(["project", "workspace"]),
-    applies_when: z.string(),
-    predicted_failure: z.string(),
-    ownership: z.enum(["user", "harness"]),
-    overlap_notes: z.string().optional(),
-    created_by: z.string(),
-  },
-  (input) => store.createRule(input),
-);
+  registerTool(
+    server,
+    "timeline",
+    "The History page's own per-target timeline (adapter.buildTimeline): every decision, " +
+      "write and restore recorded against a project or workspace's Knowledge, oldest first." +
+      READ_ONLY_NOTE,
+    { target: z.enum(["project", "workspace"]), target_id: z.string() },
+    (input: { target: "project" | "workspace"; target_id: string }) => ({
+      target: input.target,
+      id: input.target_id,
+      nodes: adapter.buildTimeline(input.target, input.target_id),
+    }),
+  );
 
-tool(
-  "update_rule",
-  "Edit a rule's instruction and/or change its state (approve/reject/return to proposed/etc). Always creates a rule_revision preserving the previous text. Local-only: never writes Lovable Knowledge, never touches a Skill, never runs an experiment.",
-  {
-    id: z.number().int(),
-    instruction: z.string().optional(),
-    state: ruleState.optional(),
-    reason: z.string().optional(),
-    actor: z.string(),
-  },
-  (input) => store.updateRule(input),
-);
+  return server;
+}
 
-tool(
-  "get_rule",
-  "Get a rule with its revision history, linked learning, and linked correction candidate.",
-  { id: z.number().int() },
-  (input) => store.getRule(input.id),
-);
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(entry).href;
+  } catch {
+    return false;
+  }
+}
 
-tool(
-  "list_project_rules",
-  "List rules, optionally filtered to one Lovable project (via its task episodes).",
-  { project_id: z.string().optional() },
-  (input) => store.listProjectRules(input.project_id),
-);
-
-// ---- Checkpoint C: verification and experiment planning ----
-// None of these tools execute a verifier or an experiment -- they only
-// define and record plans. There is deliberately no arbitrary-SQL or
-// generic-remote-operation tool anywhere in this file.
-
-const verifierType = z.enum(["structural", "diff_pattern", "ai_rubric", "human_only"]);
-const scope = z.enum(["project", "workspace"]);
-const provenanceEnum = z.enum([
-  "lovable_mcp",
-  "git_history",
-  "build_log",
-  "spec",
-  "manual",
-  "llm_derived",
-]);
-
-tool(
-  "create_verification_definition",
-  "Define a reusable check (structural, diff_pattern, ai_rubric, or human_only). Does not run it.",
-  {
-    scope,
-    project_id: z.string().optional(),
-    name: z.string(),
-    description: z.string(),
-    verifier_type: verifierType,
-    configuration: z.string(),
-    source: provenanceEnum,
-    ownership: z.enum(["user", "harness"]),
-    confidence: z.number().min(0).max(1).optional(),
-    enabled: z.boolean().optional(),
-  },
-  (input) => store.createVerificationDefinition(input),
-);
-
-tool(
-  "update_verification_definition",
-  "Edit a verification definition's text/configuration or enable/disable it. Bumps its version.",
-  {
-    id: z.number().int(),
-    name: z.string().optional(),
-    description: z.string().optional(),
-    configuration: z.string().optional(),
-    confidence: z.number().min(0).max(1).optional(),
-    enabled: z.boolean().optional(),
-  },
-  (input) => store.updateVerificationDefinition(input),
-);
-
-tool(
-  "link_verification_to_rule",
-  "Attach an existing verification definition to a rule.",
-  { rule_id: z.number().int(), verification_definition_id: z.number().int() },
-  (input) => store.linkVerificationToRule(input.rule_id, input.verification_definition_id),
-);
-
-tool(
-  "create_verification_plan",
-  "Create a verification plan for a rule: a failure signature/condition plus one or more verification definitions, each starting as not_run.",
-  {
-    rule_id: z.number().int(),
-    failure_signature: z.string(),
-    failure_condition: z.string(),
-    created_by: z.string(),
-    verification_definition_ids: z.array(z.number().int()).min(1),
-  },
-  (input) => store.createVerificationPlan(input),
-);
-
-tool(
-  "get_verification_plan",
-  "Get a verification plan with its items (each item's verifier type and current passed/failed/unclear/not_run status).",
-  { id: z.number().int() },
-  (input) => store.getVerificationPlan(input.id),
-);
-
-tool(
-  "create_experiment_plan",
-  "Record a proposed experiment plan (status always starts 'proposed'). Does not create any Lovable resource or send any prompt.",
-  {
-    rule_id: z.number().int(),
-    source_project_id: z.string(),
-    task_episode_id: z.number().int().optional(),
-    experiment_type: z.enum(["treatment_only", "paired_control_treatment", "ablation"]),
-    starting_state_quality: z.enum([
-      "controlled_equivalent",
-      "approximate",
-      "historical_only",
-      "blocked",
-    ]),
-    control_configuration: z.string(),
-    treatment_configuration: z.string(),
-    exact_prompt: z.string(),
-    protected_checks: z.string(),
-    estimated_credits: z.number(),
-    max_permitted_credits: z.number(),
-    resource_strategy: z.string(),
-    cleanup_requirements: z.string(),
-    risks: z.string(),
-    success_conditions: z.string(),
-    inconclusive_conditions: z.string(),
-    stop_conditions: z.string(),
-    created_by: z.string(),
-    verification_definition_ids: z.array(z.number().int()),
-  },
-  (input) => store.createExperimentPlan(input),
-);
-
-tool(
-  "get_experiment_plan",
-  "Get an experiment plan with its linked verification definitions and any registered resources.",
-  { id: z.number().int() },
-  (input) => store.getExperimentPlan(input.id),
-);
-
-tool(
-  "register_experiment_resource",
-  "Register a resource an experiment plan intends to use (e.g. a remix). safe_to_delete always starts false regardless of input -- set it later, explicitly, via update_experiment_resource_status.",
-  {
-    experiment_plan_id: z.number().int(),
-    resource_type: z.enum(["remix_project", "variant", "skill", "other"]),
-    experiment_arm: z.enum(["control", "treatment", "ablation"]),
-    source_project_id: z.string(),
-    safe_to_modify: z.boolean().optional(),
-    lovable_resource_id: z.string().optional(),
-  },
-  (input) => store.registerExperimentResource(input),
-);
-
-tool(
-  "update_experiment_resource_status",
-  "Update a resource's lifecycle status. safe_to_delete only ever changes when explicitly passed here -- it is never inferred.",
-  {
-    id: z.number().int(),
-    lovable_resource_id: z.string().optional(),
-    creation_status: z.enum(["planned", "creating", "created", "failed"]).optional(),
-    cleanup_status: z.enum(["not_required", "pending", "cleaned", "failed"]).optional(),
-    safe_to_delete: z.boolean().optional(),
-    cleaned_at: z.string().optional(),
-  },
-  (input) => store.updateExperimentResourceStatus(input),
-);
-
-tool(
-  "list_cleanup_required_resources",
-  "List experiment resources that were created and still need cleanup.",
-  {},
-  () => store.listCleanupRequiredResources(),
-);
-
-// ---- Checkpoint D: Knowledge snapshots and versions ----
-// Bookkeeping around Lovable Knowledge writes that Claude Code performs over
-// the Lovable MCP server. None of these tools touch Lovable; they record what
-// was read, what the UI approved, and what was read back after writing.
-
-const knowledgeTarget = z.enum(["project", "workspace"]);
-
-tool(
-  "record_knowledge_snapshot",
-  "Store the verbatim Knowledge content just read from Lovable (get_project_knowledge / get_workspace_knowledge) so previews and pending writes can be composed from it.",
-  {
-    target: knowledgeTarget,
-    project_id: z.string().optional(),
-    workspace_id: z.string().optional(),
-    content: z.string(),
-    fetched_by: z.string(),
-  },
-  (input) => store.recordKnowledgeSnapshot(input),
-);
-
-tool(
-  "list_pending_knowledge_writes",
-  "Knowledge writes the user approved in the UI that have not been executed yet, with the sha256 the live content must still match before writing.",
-  {},
-  () => store.listPendingKnowledgeWrites(),
-);
-
-tool(
-  "mark_knowledge_write_stale",
-  "Record that live Lovable Knowledge no longer matched the snapshot a pending write was composed from; the write must NOT be performed.",
-  { version_id: z.number().int(), reason: z.string() },
-  (input) => store.markKnowledgeWriteStale(input.version_id, input.reason),
-);
-
-tool(
-  "record_knowledge_readback",
-  "After writing, pass the content read back from Lovable. A byte-identical read-back marks the version written and the rule active; anything else marks it failed.",
-  { version_id: z.number().int(), read_back_content: z.string() },
-  (input) => store.recordKnowledgeReadback(input.version_id, input.read_back_content),
-);
-
-tool(
-  "mark_knowledge_write_failed",
-  "Record that a pending write could not be performed.",
-  { version_id: z.number().int(), error: z.string() },
-  (input) => store.markKnowledgeWriteFailed(input.version_id, input.error),
-);
-
-tool(
-  "list_knowledge_versions",
-  "Full Knowledge write history (optionally for one rule), newest first.",
-  { rule_id: z.number().int().optional() },
-  (input) => store.listKnowledgeVersions(input.rule_id),
-);
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
+if (isMainModule()) {
+  const server = createHarnessMcpServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
