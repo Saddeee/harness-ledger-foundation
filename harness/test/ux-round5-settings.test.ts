@@ -49,20 +49,16 @@ test("local-settings.tsx: the radio pair uses the spec's exact copy, and the def
   const raw = readApp(SETTINGS);
   const code = codeOnly(raw);
 
-  assert.ok(raw.includes("Ask me about every suggestion"));
+  // Checkpoint 2 (spec §14): only the two mode names, plus the shared
+  // explanation and the autonomy note from onboarding-copy.ts, and the
+  // unimplemented fine-grained controls named as planned.
+  assert.ok(raw.includes('const ASK_LABEL = "Ask me first";'));
+  assert.ok(raw.includes('const AUTOMATIC_LABEL = "Automatic";'));
+  assert.ok(raw.includes("{MODE_EXPLANATION}") && raw.includes("{MODE_AUTONOMY_NOTE}"));
   assert.ok(
     raw.includes(
-      "Automatic: accept suggestions Harness Ledger is confident about; ask me about the rest.",
+      "Planned, not available yet: per-Skill permissions, frequency limits and risk restrictions.",
     ),
-  );
-
-  // spec §4's help text -- Round 6 Task 2 dropped "at the next sync" (the
-  // phrase is banned from UI copy repo-wide now), keeping the rest verbatim.
-  assert.ok(
-    raw.includes(
-      "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge the next time Harness Ledger syncs, if that project allows automatic writes (Projects page). Everything Harness Ledger does automatically is listed in the Instructions page history, and you can retire or restore any of it.",
-    ),
-    "the automatic-mode help text must match spec §4 (minus the banned 'next sync' phrase)",
   );
 
   assert.match(code, /DEFAULT_DECISION_MODE:\s*"ask"\s*\|\s*"automatic"\s*=\s*"ask"/);

@@ -198,7 +198,9 @@ test("history.tsx: restore's toast reads the write outcome", () => {
 test("local-settings.tsx: the automatic-mode help text no longer says 'next sync'", () => {
   const raw = readApp(LOCAL_SETTINGS);
   assert.ok(!/next sync/i.test(raw));
-  assert.ok(raw.includes("the next time Harness Ledger syncs"));
+  // Checkpoint 2: the help text no longer mentions when writes happen at all
+  // (writes are inline since Round 6); it names the conditions instead.
+  assert.ok(raw.includes("allows automatic writes (Projects page)"));
 });
 
 // ---- improvements-client.ts: WriteOutcome type and helpers exist ----

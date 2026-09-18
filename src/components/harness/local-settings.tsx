@@ -44,6 +44,7 @@ import {
   TEST_PROVIDER_BUTTON_LABEL,
   TEST_PROVIDER_CONSEQUENCE_LINE,
 } from "@/lib/harness-ux";
+import { MODE_AUTONOMY_NOTE, MODE_EXPLANATION } from "@/lib/onboarding-copy";
 
 const DEFAULT_SCHEDULE: ExecutorSchedule = {
   enabled: true,
@@ -63,11 +64,11 @@ const APPROVAL_LINE = "Nothing is written to Lovable until you approve it here."
 // ---- Decisions (Round 5 Task 6 / spec §4, §4b). decision_mode defaults to
 // "ask" -- automatic is opt-in, and switching to it never changes anything
 // already decided. Copy below is verbatim from the spec. ----
-const ASK_LABEL = "Ask me about every suggestion";
-const AUTOMATIC_LABEL =
-  "Automatic: accept suggestions Harness Ledger is confident about; ask me about the rest.";
+// Checkpoint 2 (spec §14): only the two mode names, one shared explanation.
+const ASK_LABEL = "Ask me first";
+const AUTOMATIC_LABEL = "Automatic";
 const AUTOMATIC_HELP =
-  "Confident means the analysis gave the rule a confidence of at least 0.8, found no similar or conflicting rule, and the project is under its rule limit and Knowledge limit. Accepted rules are written to your Lovable Knowledge the next time Harness Ledger syncs, if that project allows automatic writes (Projects page). Everything Harness Ledger does automatically is listed in the Instructions page history, and you can retire or restore any of it.";
+  "Automatic accepts a suggestion only when the analysis gave it a confidence of at least the value below, found no similar or conflicting rule, and the project is under its rule and Knowledge limits and allows automatic writes (Projects page). Retirements and Skill changes are never automatic. Everything done automatically is listed in History, and you can retire or restore any of it. Planned, not available yet: per-Skill permissions, frequency limits and risk restrictions.";
 const DEFAULT_DECISION_MODE: "ask" | "automatic" = "ask";
 const DEFAULT_AUTO_CONFIDENCE = 0.8;
 
@@ -560,6 +561,8 @@ export function LocalSettings() {
 
       <section className="space-y-4 rounded-md border p-4">
         <h2 className="text-lg font-medium">Decisions</h2>
+        <p className="text-sm text-muted-foreground">{MODE_EXPLANATION}</p>
+        <p className="text-xs text-muted-foreground">{MODE_AUTONOMY_NOTE}</p>
 
         <RadioGroup
           value={decisionMode}
