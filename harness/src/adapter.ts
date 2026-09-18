@@ -362,3 +362,62 @@ export type { ExperimentRunView } from "./improvements.js";
 export { listTestRunSummaries } from "./improvements.js";
 export type { ExperimentRunSummary } from "./improvements.js";
 // ---- end Round 6c ----
+
+// ---- Checkpoint 2026-09-18 WP5 ----
+// D7: the automatic-analysis-after-sync setting (getSettings/setSettings
+// above can't carry it -- store.ts's SettingKey union is owned by WP4 this
+// checkpoint; see analysis/context.ts's header), and "Reanalyse history"
+// (estimate, request, and the disagreement review-item actions) -- all
+// re-exported the same plain way every other executor-route primitive in
+// this file is.
+export {
+  getAutomaticAnalysisSetting,
+  setAutomaticAnalysisSetting,
+  AUTOMATIC_ANALYSIS_SETTING_KEY,
+} from "./analysis/context.js";
+export {
+  estimateReanalysis,
+  requestReanalysis,
+  listAnalysisDisagreements,
+  acceptDisagreement,
+  dismissDisagreement,
+} from "./analysis/reanalyse.js";
+export type {
+  ReanalyseScope,
+  ReanalysisEstimate,
+  AnalysisDisagreementRow,
+} from "./analysis/reanalyse.js";
+// ---- end Checkpoint 2026-09-18 WP5 ----
+
+// ---- Checkpoint 2026-09-18 WP6 ----
+// harness/src/mcp-server.ts (D5: MCP over the same paths as the UI) needs
+// two more plain reads the web app's own routes already had another way to
+// reach: store.health() (the web app never needed it -- the dev server
+// binding itself is the health signal there) and the "is Harness connected
+// to Lovable" flag the improvements/knowledge/executor routes read via
+// loadHarnessExecutor().auth.status().connected. That loader lives in the
+// TanStack app (src/lib/server/harness-runtime.ts) and cannot be imported
+// from harness/src, so mcp-server.ts needs the same underlying, store.ts-
+// free status() function directly -- re-exported here under a name that
+// says what it is, not just what it wraps, the same convention
+// createLovableRest/acquireLock above already follow.
+export { health } from "./store.js";
+export { status as lovableAuthStatus } from "./executor/lovable-auth.js";
+// ---- end Checkpoint 2026-09-18 WP6 ----
+
+// ---- Checkpoint 2026-09-18 WP4 ----
+// Skills as a first-class destination (D4): the Skills page's own read
+// (src/routes/api/public/harness/skills.ts) needs the local Skill proposals
+// list alongside the existing workspace-Skill snapshots already re-exported
+// above (latestSkillSnapshots/listSkillSnapshots) -- everything else (the
+// destination fields on an Improvement, and every skill-proposal action) is
+// already reachable through the existing listImprovements/getImprovement/
+// improvementAction re-exports at the top of this file, so no separate
+// export is needed for those.
+export { listSkillProposalsForSkillsView } from "./store.js";
+export type {
+  SkillProposalStatus,
+  SkillProposalOwnership,
+  SkillProposalLovableState,
+} from "./store.js";
+// ---- end Checkpoint 2026-09-18 WP4 ----

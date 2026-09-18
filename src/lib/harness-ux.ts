@@ -405,10 +405,8 @@ export function improvementGroup(input: {
   return "Waiting to be written";
 }
 
-// ---- Proof copy ----
-
-export const PROVE_INTRO =
-  "Harness Ledger runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.";
+// ---- "Test it first" cost line (Add dialog only; the real historical-
+// replay flow's own cost line is TEST_THIS_RULE_CREDITS_LINE below) ----
 
 export function proveCostLine(): string {
   return "Uses Lovable credits like any build; the cost is recorded after the test.";
@@ -647,32 +645,35 @@ function ranSuffix(hasRun: boolean): string {
 export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefined): string[] {
   const s = sources ?? { observed: false, adherence: false, verdicts: false, paired: false };
   return [
-    `Observed from your real builds: Harness Ledger counts builds in this rule's area and any repeat correction, automatically, for free. ${ranSuffix(s.observed)}`,
+    `Observed from your real builds: Harness Ledger counts builds in this rule's area and any repeat correction, automatically, using no Lovable credits. ${ranSuffix(s.observed)}`,
     `Your verdict: you can say directly whether a rule helped, didn't help, or you're not sure, any time. ${ranSuffix(s.verdicts)}`,
     `AI adherence check: Harness Ledger's AI reads the request and Lovable's reply and says whether the rule was followed, broken, or didn't apply, with a quote. ${ranSuffix(s.adherence)}`,
-    // Round 6 Task 6b: paired tests are wired now -- the "not available yet"
-    // line was only ever true while Phase B hadn't been built.
-    `Paired test: the same request run with and without the rule, side by side, to see the difference directly. ${ranSuffix(s.paired)}`,
+    // Checkpoint 2026-09-18: renamed away from "paired" -- every run so far
+    // is a historical replay (one new build next to the historical result),
+    // not a fresh two-arm comparison. See docs/audit/replay.md.
+    `Historical replay: the original request built again with the rule, next to the historical result. ${ranSuffix(s.paired)}`,
   ];
 }
 
 // ---- Round 6 Task 6b / spec §6: "Test this rule" -- the confirm dialog's
-// exact copy, the card's own status line for a rule's latest paired-test
-// run, and the judging screen's confounder lines. Kept here, verbatim, so
-// every caller (the card, the Add dialog's "Add and test it first" choice,
-// the judging screen) reads the same words. ----
+// exact copy, the card's own status line for a rule's latest historical-
+// replay run, and the judging screen's confounder lines. Kept here,
+// verbatim, so every caller (the card, the Add dialog's "Add and test it
+// first" choice, the judging screen) reads the same words. ----
 
 export const TEST_THIS_RULE_TITLE = "Test this rule in a copy of your project?";
 export const TEST_THIS_RULE_BODY =
-  "Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request. You get both builds side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done.";
-// Round 7: the second, free copy that shows the original build.
-export const SHOW_ORIGINAL_LABEL = "Also copy my original build so I can open both (free)";
+  "Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request. You get the historical result and the new build side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done.";
+// Round 7 / Checkpoint 2026-09-18: the second copy that shows the historical
+// result -- creating it uses no Lovable builder credits (D1/D2, DECISIONS.md).
+export const SHOW_ORIGINAL_LABEL =
+  "Also copy the historical result so I can open it (no builder credits)";
 export const SHOW_ORIGINAL_HELP =
   "Leave this on when the rule is about something you can see. Turn it off for rules about things you can't, like how data is saved.";
 // Round 7: "Test it first" in the Add dialog adds nothing until you decide.
 export const TEST_FIRST_LABEL = "Test it first";
 export const TEST_FIRST_HELP =
-  "Nothing is added yet. Harness Ledger runs your original request again in a copy with this rule, you compare both builds, and you add it afterwards if it worked.";
+  "Nothing is added yet. Harness Ledger replays your original request in a new copy with this rule, next to the historical result, and you add it afterwards if it worked.";
 /** A warning when a rule going to every project talks about one app. */
 export function workspaceWordingWarning(
   instruction: string | null | undefined,
@@ -686,8 +687,14 @@ export function workspaceWordingWarning(
   const project = projectName ? ` if it's only for ${projectName}` : "";
   return `This rule says "${match[0].trim()}", but every project in your workspace will read it. Edit the wording first${project}, or add it to this project instead.`;
 }
-export const TEST_THIS_RULE_CREDITS_LINE =
-  "Uses Lovable credits like any build; the exact cost is recorded after.";
+// Checkpoint 2026-09-18 (DECISIONS.md D1/D2, PLAN.md "Global constraints"):
+// the exact, mandated cost sentence -- creating a copy is never "free"
+// unqualified, and running a build inside it is a normal Lovable build.
+// Shared verbatim by the test dialog, the Tests page, and Settings ›
+// Lovable credits so the wording can never drift between them.
+export const COPY_CREDITS_LINE =
+  "Creating project copies currently uses no Lovable builder credits. Running a Lovable build inside a copy consumes normal Lovable builder credits.";
+export const TEST_THIS_RULE_CREDITS_LINE = `${COPY_CREDITS_LINE} The exact cost is recorded after.`;
 export function testThisRuleBudgetLine(credits: {
   used_this_month: number;
   budget: number;
@@ -737,7 +744,8 @@ export function testCopyConfounderLine(editsSinceEpisode: number | null): string
   const n = editsSinceEpisode;
   return `This copy started from the project as it was before that request; ${n} edit${n === 1 ? " has" : "s have"} landed since.`;
 }
-export const TEST_ONE_BUILD_LINE = "One build; evidence, not proof.";
+export const TEST_ONE_BUILD_LINE =
+  "One replay build; evidence about this correction, not proof that the rule caused the difference.";
 // Round 7, found in a live test: the copy with the rule came out in euros and
 // lowercase -- preferences given to Lovable hours after the replayed request.
 // Lovable's own project memory is copied as it is now, not as it was then.
@@ -751,6 +759,204 @@ export function testCostLine(costCredits: number | null): string {
   return costCredits == null
     ? "Cost not reported by Lovable"
     : `This test used ${costCredits} credit${costCredits === 1 ? "" : "s"} · measured`;
+}
+
+// ---- Checkpoint 2026-09-18 (WP1b, docs/audit/replay.md + ux.md, DECISIONS.md
+// D1/D2): the judging screen's required section order -- the original
+// correction, then Historical result / Replay with rule, a "Key difference"
+// section (Lovable's own summaries, never an invented automatic verdict),
+// the per-correction verdict question, a plain-sentence Replay environment
+// summary (one row per instruction surface, never a silent fallback), and
+// one collapsed "Full technical details" section. ----
+
+export const ORIGINAL_CORRECTION_LABEL = "The original correction";
+export const CORRECTIONS_LIST_LABEL = "Then you corrected it";
+
+export const HISTORICAL_RESULT_TITLE = "Historical result";
+export const HISTORICAL_RESULT_SUBTITLE =
+  "What actually happened, shown through a copy of that commit";
+export const REPLAY_WITH_RULE_TITLE = "Replay with rule";
+export const REPLAY_WITH_RULE_SUBTITLE =
+  "One new Lovable build from the same starting point, with this rule added";
+
+export const KEY_DIFFERENCE_TITLE = "Key difference";
+export const KEY_DIFFERENCE_INTRO =
+  "Lovable's own account of each build, side by side. Harness Ledger does not compute an automatic verdict on the difference -- that is what the question below is for.";
+
+export const REPLAY_VERDICT_QUESTION =
+  "Would the original correction still be needed in the replay?";
+
+export const REPLAY_ENVIRONMENT_TITLE = "Replay environment";
+export const NO_ENVIRONMENT_RECORD_LINE = "No environment record for this test.";
+export const FULL_TECHNICAL_DETAILS_TITLE = "Full technical details";
+
+// The columns' own short excerpt of Lovable's summary uses the existing
+// `excerpt` helper above (240 chars by default) -- the full text lives in
+// Full technical details.
+
+export type ExperimentKindLike = "historical_replay" | "paired_comparison";
+
+// Every run so far is a historical replay (D1, DECISIONS.md); paired_comparison
+// is deferred (D3) and has no run to label yet, but the map is exhaustive so a
+// future run kind can never fall back to a raw enum value on screen.
+export const EXPERIMENT_KIND_LABEL: Record<ExperimentKindLike, string> = {
+  historical_replay: "Historical replay",
+  paired_comparison: "Fresh two-build comparison",
+};
+
+export type EnvironmentQualityLike =
+  "controlled" | "partially_controlled" | "historical_approximation" | "not_comparable";
+
+export const ENVIRONMENT_QUALITY_LABEL: Record<EnvironmentQualityLike, string> = {
+  controlled: "Controlled",
+  partially_controlled: "Partially controlled",
+  historical_approximation: "Historical approximation",
+  not_comparable: "Not comparable",
+};
+
+/** The Tests page's own short "Evidence" cell -- "—" only when a run
+ * predates the environment record entirely (never possible after backfill,
+ * kept for type safety). */
+export function environmentQualityLabel(
+  quality: EnvironmentQualityLike | null | undefined,
+): string {
+  return quality ? ENVIRONMENT_QUALITY_LABEL[quality] : "—";
+}
+
+// The judging screen's own evidence-strength line, one sentence per quality
+// (DECISIONS.md D2's own quality rule, in plain words) -- null only when
+// there is no environment record at all (NO_ENVIRONMENT_RECORD_LINE covers
+// that case on the page itself, not this function).
+export function evidenceStrengthLine(
+  quality: EnvironmentQualityLike | null | undefined,
+): string | null {
+  switch (quality) {
+    case "historical_approximation":
+      return "Historical approximation: the historical result ran in a different Lovable environment; this replay shows whether the correction would appear again, not that the rule alone caused any difference.";
+    case "not_comparable":
+      return "Not comparable: the historical code state could not be established.";
+    case "partially_controlled":
+      return "Partially controlled";
+    case "controlled":
+      return "Controlled";
+    default:
+      return null;
+  }
+}
+
+// The shape this module needs from harness/src/executor/replay-environment.ts's
+// ReplayEnvironment -- a local, structural type (this file stays dependency-
+// free) rather than an import from the harness/src half of the app.
+export type ReplayEnvironmentLike = {
+  // request_message_id is not read by this module's own logic (only the
+  // Full technical details block on judge.tsx reads it, straight off
+  // ExperimentRunView["environment"]) -- left off this local shape on
+  // purpose so harness-ux.ts's own internal-vocabulary ban keeps covering
+  // "message_id" everywhere it actually matters.
+  code_state: {
+    source: "historical_commit_before_request" | "unavailable";
+  };
+  project_knowledge: {
+    source: "exact_historical" | "nearest_earlier_version" | "current_fallback" | "unavailable";
+    snapshot_id: number | null;
+    snapshot_fetched_at: string | null;
+    episode_started_at: string | null;
+    char_count: number;
+  };
+  workspace_knowledge: { source: "current_uncontrolled" };
+  skills: { source: "current_uncontrolled" };
+  chat_history: { included: boolean };
+  candidate_rule: { rule_id: number; instruction: string; already_present: boolean };
+  other_active_rules: string[];
+  uncontrolled: readonly string[];
+  quality: EnvironmentQualityLike;
+  historical_rules_dropped_by_run?: boolean;
+};
+
+export type ReplayEnvironmentRow = { label: string; text: string };
+
+// "13 Sep 19:06" -- like formatDate, but without its ", " separator, to
+// match the exact wording spec §... gives for the Project Knowledge row.
+function dayTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${formatDay(iso)} ${hh}:${mm}`;
+}
+
+function beforeRequestPhrase(diffMs: number): string {
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 1) return "less than a minute before the request";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} before the request`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} before the request`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} before the request`;
+}
+
+function projectKnowledgeText(pk: ReplayEnvironmentLike["project_knowledge"]): string {
+  switch (pk.source) {
+    case "exact_historical":
+      return "Exact version at the time of the request";
+    case "nearest_earlier_version": {
+      if (!pk.snapshot_fetched_at) return "Nearest earlier version on file";
+      const when = dayTime(pk.snapshot_fetched_at);
+      if (pk.episode_started_at) {
+        const gapMs =
+          new Date(pk.episode_started_at).getTime() - new Date(pk.snapshot_fetched_at).getTime();
+        if (Number.isFinite(gapMs) && gapMs >= 0) {
+          return `Nearest earlier version, read ${when}, ${beforeRequestPhrase(gapMs)}`;
+        }
+      }
+      return `Nearest earlier version, read ${when}`;
+    }
+    case "current_fallback":
+      return "Today's Knowledge (no version from before the request was on file)";
+    case "unavailable":
+      return "None on file; the copy started with empty Knowledge";
+  }
+}
+
+// The Replay environment section's exact eight rows (docs/audit/replay.md
+// §2/§3, DECISIONS.md D2) -- every instruction surface a replay can and
+// cannot control, in one place, never a silent fallback.
+export function replayEnvironmentRows(
+  env: ReplayEnvironmentLike | null | undefined,
+): ReplayEnvironmentRow[] {
+  if (!env) return [];
+  const codeStateText =
+    env.code_state.source === "historical_commit_before_request"
+      ? "Exact version at the time of the request"
+      : "Could not be established; the copy could not be started from the historical commit";
+  const otherRules =
+    env.other_active_rules.length === 0
+      ? "None"
+      : env.other_active_rules.join("; ") +
+        (env.historical_rules_dropped_by_run
+          ? " -- these rules were live at the time but were not in this replay's Knowledge (an older test); newer tests keep them"
+          : "");
+  return [
+    { label: "Code state", text: codeStateText },
+    { label: "Project Knowledge", text: projectKnowledgeText(env.project_knowledge) },
+    {
+      label: "Workspace Knowledge",
+      text: "As it is today; Harness Ledger cannot reconstruct the version at the time",
+    },
+    { label: "Skills", text: "As they are today (workspace Skills apply to the copy)" },
+    { label: "Chat history", text: env.chat_history.included ? "Copied" : "Not copied" },
+    {
+      label: "Candidate rule",
+      text: env.candidate_rule.already_present
+        ? `${env.candidate_rule.instruction} (already present in the historical Knowledge)`
+        : env.candidate_rule.instruction,
+    },
+    { label: "Other active rules", text: otherRules },
+    {
+      label: "Uncontrolled context",
+      text: "Lovable's own project memory, workspace Knowledge, Skills and the builder version come from today, not from the time of the request",
+    },
+  ];
 }
 // ---- end Round 6 Task 6b ----
 
@@ -779,3 +985,140 @@ export function testsPageCreditsLine(credits: { used_this_month: number; budget:
   return `This month: ${credits.used_this_month} credits used of your budget of ${credits.budget} · measured`;
 }
 // ---- end Round 6c part B ----
+
+// ---- Checkpoint 2026-09-18 WP4: destination ----
+// Skills as a first-class destination (D4, docs/audit/skills.md §3): a
+// suggestion's `content_destination` (Knowledge / Skill / both), and the
+// local Skill proposal that goes with it. Named CONTENT_DESTINATION_* --
+// not DESTINATION_* -- because DESTINATION_LABELS/DESTINATION_PHRASES above
+// already name a DIFFERENT, older concept (which Knowledge target --
+// project vs workspace vs one-time -- an accepted rule writes to); reusing
+// that name here would silently repoint every existing caller of
+// DESTINATION_LABELS (the Add dialog, the Knowledge-versions list) at the
+// wrong map.
+
+export const DESTINATION_RECOMMENDED = "Recommended destination";
+export const DESTINATION_WHY = "Why";
+export const DESTINATION_ALTERNATIVE = "Alternative";
+export const DESTINATION_CHANGE = "Change destination";
+
+export type ContentDestinationValue = "knowledge" | "skill" | "both";
+
+export const CONTENT_DESTINATION_LABELS: Record<ContentDestinationValue, string> = {
+  knowledge: "Knowledge",
+  skill: "Skill",
+  both: "Knowledge + Skill",
+};
+
+// The generic sentence shown when the Rule writer (or a human's own later
+// choice) gave no reason of its own.
+export const CONTENT_DESTINATION_REASON_DEFAULT: Record<ContentDestinationValue, string> = {
+  knowledge: "A short standing preference that should be available on every relevant request.",
+  skill: "A multi-step procedure that applies only to one kind of task.",
+  both: "A short reminder in Knowledge that points to the detailed procedure in a Skill.",
+};
+
+/** The "Why" line for a suggestion's recommended destination: its own
+ * reason when one was given, else the generic sentence for that
+ * destination value. */
+export function contentDestinationReason(
+  value: ContentDestinationValue,
+  reason: string | null | undefined,
+): string {
+  return reason && reason.trim() ? reason : CONTENT_DESTINATION_REASON_DEFAULT[value];
+}
+
+/** The "Alternative" line: the Rule writer's own free-text alternative when
+ * given, else a plain fallback naming the other destination by its label. */
+export function contentDestinationAlternative(
+  alternativeLabel: string,
+  alternative: string | null | undefined,
+): string {
+  return alternative && alternative.trim() ? alternative : `Could also go as: ${alternativeLabel}.`;
+}
+
+// Skill proposals: status and honesty copy. `lovable_state` never has any
+// value other than 'not_created' in this checkpoint -- SKILL_NOT_IN_LOVABLE_LINE
+// is the one sentence responsible for saying so everywhere a Skill proposal
+// is shown (the Skills page and the suggestion detail's DestinationChoice).
+export const SKILL_PROPOSAL_STATUS_LABELS: Record<string, string> = {
+  proposed: "Proposed",
+  approved: "Approved",
+  retired: "Retired",
+  skipped: "Skipped",
+};
+
+export const SKILL_NOT_IN_LOVABLE_LINE =
+  "Not in Lovable yet: Harness Ledger keeps this Skill locally with its versions. Creating and updating Skills in Lovable is not wired in this version.";
+
+export const SKILL_OWNED_BY_USER_LINE =
+  "This Skill is yours; Harness Ledger does not change user-owned Skills.";
+
+export function skillProposalStatusLabel(status: string | null | undefined): string {
+  return (status && SKILL_PROPOSAL_STATUS_LABELS[status]) || "Proposed";
+}
+
+/** "N version" / "N versions" -- the Skills page's per-proposal count. */
+export function skillProposalVersionCountLine(count: number): string {
+  return `${count} version${count === 1 ? "" : "s"}`;
+}
+// ---- end Checkpoint 2026-09-18 WP4: destination ----
+
+// ---- Checkpoint 2026-09-18 WP5: analysis ----
+// D7: the automatic-analysis-after-sync setting (default off -- the
+// Settings toggle itself is wired by the orchestrator; this file only owns
+// the key and its label), the "Analyse now" scope disclosure, and
+// "Reanalyse history" (scope dialog copy, the estimate line, and the
+// disagreement review-item card).
+
+// Matches harness/src/analysis/context.ts's own AUTOMATIC_ANALYSIS_SETTING_KEY
+// constant exactly -- kept as a plain string literal here (not imported)
+// since src/ and harness/ are separate packages; the two are asserted equal
+// by this file's own structural test.
+export const AUTOMATIC_ANALYSIS_SETTING_KEY = "automatic_analysis_after_sync";
+export const AUTOMATIC_ANALYSIS_SETTING_LABEL =
+  "Run analysis automatically after each sync (uses AI tokens)";
+
+export const ANALYSE_NOW_SCOPE_LINE =
+  "Only new messages and corrections are analysed; older context may be read as context without being analysed again.";
+
+export const REANALYSE_TITLE = "Reanalyse history";
+export const REANALYSE_BODY =
+  "Re-checks messages Harness Ledger already looked at, using the current classifier. A decision you already made is never changed automatically: if the new result disagrees with it, that becomes a review item here in the Inbox instead of overwriting anything.";
+
+export const REANALYSE_PROJECTS_LABEL = "Projects";
+export const REANALYSE_FROM_LABEL = "From";
+export const REANALYSE_TO_LABEL = "To";
+export const REANALYSE_INCLUDE_REVIEWED_LABEL = "Include records I already decided on";
+export const REANALYSE_REASON_LABEL = "Why are you re-checking this?";
+export const REANALYSE_REASON_PLACEHOLDER =
+  "e.g. checking whether an updated rule changes past corrections";
+export const REANALYSE_CONFIRM_BUTTON = "Reanalyse";
+export const REANALYSE_CANCEL_BUTTON = "Cancel";
+export const REANALYSE_TRIGGER_BUTTON = "Reanalyse history";
+
+/** "About N messages · ≈ T tokens · model M · budget remaining R" -- shown
+ * in the confirm dialog before a reanalyse request is sent. */
+export function reanalyseEstimateLine(input: {
+  messages: number;
+  estimated_tokens: number;
+  model: string;
+  budget_remaining: number;
+}): string {
+  const messages = `${input.messages} message${input.messages === 1 ? "" : "s"}`;
+  return `About ${messages} · ≈ ${input.estimated_tokens.toLocaleString()} tokens · model ${input.model} · budget remaining ${input.budget_remaining.toLocaleString()}`;
+}
+
+export const DISAGREEMENT_TITLE = "A newer analysis disagrees with your previous decision.";
+export const DISAGREEMENT_ACCEPT_BUTTON = "Accept the new result";
+export const DISAGREEMENT_DISMISS_BUTTON = "Keep my decision";
+
+/** The disagreement card's own body line -- what changed, not why (the
+ * reason a person gave for reanalysing is shown separately). */
+export function disagreementBodyLine(
+  previousClassification: string,
+  proposedClassification: string,
+): string {
+  return `You classified this as "${previousClassification}". The newest analysis says "${proposedClassification}".`;
+}
+// ---- end Checkpoint 2026-09-18 WP5: analysis ----

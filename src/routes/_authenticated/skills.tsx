@@ -6,8 +6,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { DetailSection } from "@/components/harness/decision-layout";
-import { formatDate } from "@/lib/harness-ux";
-import { skillsQueryOptions, type Skill } from "@/lib/improvements-client";
+import {
+  formatDate,
+  SKILL_NOT_IN_LOVABLE_LINE,
+  skillProposalStatusLabel,
+  skillProposalVersionCountLine,
+} from "@/lib/harness-ux";
+import {
+  skillsQueryOptions,
+  type Skill,
+  type SkillProposalListItem,
+} from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/skills")({
   head: () => ({
@@ -32,6 +41,37 @@ export const Route = createFileRoute("/_authenticated/skills")({
 const READ_ONLY_LINE = "Harness Ledger reads your workspace Skills; it does not write them yet.";
 const EMPTY_LINE =
   "Your workspace has no Skills yet. Harness Ledger will show them here as soon as it reads one.";
+
+// Checkpoint 2026-09-18 WP4 (D4): "Proposed by Harness Ledger" -- local
+// Skill proposals, above the existing read-only workspace list, which stays
+// unchanged.
+const PROPOSED_HEADING = "Proposed by Harness Ledger";
+const PROPOSED_EMPTY_LINE = "Harness Ledger hasn't proposed a Skill from any suggestion yet.";
+const WORKSPACE_HEADING = "In your workspace";
+
+function ProposalRow({ proposal }: { proposal: SkillProposalListItem }) {
+  return (
+    <li className="space-y-1 rounded-md border p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-medium">{proposal.name}</p>
+        <span className="text-xs text-muted-foreground">
+          {skillProposalStatusLabel(proposal.status)}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {skillProposalVersionCountLine(proposal.version_count)}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">{SKILL_NOT_IN_LOVABLE_LINE}</p>
+      <Link
+        to="/ledger"
+        search={{ improvement: proposal.correction_candidate_id }}
+        className="text-sm text-primary underline underline-offset-2"
+      >
+        See the suggestion
+      </Link>
+    </li>
+  );
+}
 
 function SkillSection({ skill, workspaceId }: { skill: Skill; workspaceId: string | null }) {
   const lastChanged = skill.updated_at_remote ?? skill.fetched_at;
@@ -99,20 +139,42 @@ function Page() {
   }
 
   const skills = query.data?.skills ?? [];
+  const proposals = query.data?.proposals ?? [];
   const workspaceId = query.data?.workspace_id ?? null;
 
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Skills</h1>
-      <p className="text-sm text-muted-foreground">{READ_ONLY_LINE}</p>
 
-      {skills.length === 0 ? (
-        <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
-          {EMPTY_LINE}
-        </div>
-      ) : (
-        skills.map((s) => <SkillSection key={s.name} skill={s} workspaceId={workspaceId} />)
-      )}
+      <section aria-labelledby="proposed-skills" className="space-y-3">
+        <h2 id="proposed-skills" className="text-lg font-semibold">
+          {PROPOSED_HEADING}
+        </h2>
+        {proposals.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{PROPOSED_EMPTY_LINE}</p>
+        ) : (
+          <ul className="space-y-3">
+            {proposals.map((p) => (
+              <ProposalRow key={p.id} proposal={p} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section aria-labelledby="workspace-skills" className="space-y-3">
+        <h2 id="workspace-skills" className="text-lg font-semibold">
+          {WORKSPACE_HEADING}
+        </h2>
+        <p className="text-sm text-muted-foreground">{READ_ONLY_LINE}</p>
+
+        {skills.length === 0 ? (
+          <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
+            {EMPTY_LINE}
+          </div>
+        ) : (
+          skills.map((s) => <SkillSection key={s.name} skill={s} workspaceId={workspaceId} />)
+        )}
+      </section>
     </div>
   );
 }

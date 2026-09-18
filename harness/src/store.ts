@@ -305,12 +305,24 @@ export function createCorrectionCandidate(input: {
   evidence_reason?: string;
   evidence_history_item_ids: number[];
   classification_meta?: ClassificationMeta;
+  // Checkpoint 2026-09-18 WP4 (migration v19): where this suggestion's
+  // lesson belongs -- Knowledge, a Skill, or both -- and who decided
+  // (the Rule writer at proposal time, by default; a human can change it
+  // later via setCandidateContentDestination). Optional so every existing
+  // caller (a human-authored candidate) keeps the column's own DB default
+  // ('knowledge', chosen_by null) without having to know about it.
+  destination?: "knowledge" | "skill" | "both";
+  destination_reason?: string | null;
+  destination_alternative?: string | null;
+  destination_chosen_by?: "rule_writer" | "user";
 }) {
   const row = db
     .prepare(
       `INSERT INTO correction_candidates
-         (task_episode_id, classification, is_correction, reusable, proposed_scope, summary, confidence, evidence_reason)
-       VALUES (@task_episode_id, @classification, @is_correction, @reusable, @proposed_scope, @summary, @confidence, @evidence_reason)
+         (task_episode_id, classification, is_correction, reusable, proposed_scope, summary, confidence, evidence_reason,
+          destination, destination_reason, destination_alternative, destination_chosen_by)
+       VALUES (@task_episode_id, @classification, @is_correction, @reusable, @proposed_scope, @summary, @confidence, @evidence_reason,
+               @destination, @destination_reason, @destination_alternative, @destination_chosen_by)
        RETURNING *`,
     )
     .get({
@@ -322,6 +334,10 @@ export function createCorrectionCandidate(input: {
       summary: input.summary,
       confidence: input.confidence ?? null,
       evidence_reason: input.evidence_reason ?? null,
+      destination: input.destination ?? "knowledge",
+      destination_reason: input.destination_reason ?? null,
+      destination_alternative: input.destination_alternative ?? null,
+      destination_chosen_by: input.destination_chosen_by ?? null,
     }) as { id: number };
   linkEvidence(
     "correction_candidate_evidence",
@@ -1403,6 +1419,10 @@ export function listExperimentPlansForRule(ruleId: number) {
 
 export type SettingKey =
   | "sync_enabled"
+  // Checkpoint 2026-09-18 (D7): a successful sync may queue an analysis
+  // request only when this is "true"; default off, so scheduled Sync never
+  // spends AI tokens on its own. Read/written by analysis/context.ts too.
+  | "automatic_analysis_after_sync"
   | "sync_interval_minutes"
   | "sync_window_start_hour"
   | "sync_window_end_hour"
@@ -1469,6 +1489,7 @@ const DEFAULT_LLM_MODELS: LlmModels = {
 
 export const SETTING_DEFAULTS: Record<SettingKey, string> = {
   sync_enabled: "true",
+  automatic_analysis_after_sync: "false",
   sync_interval_minutes: "60",
   sync_window_start_hour: "10",
   sync_window_end_hour: "22",
@@ -1495,6 +1516,7 @@ export const SETTING_DEFAULTS: Record<SettingKey, string> = {
 const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
 const BOOLEAN_SETTING_KEYS: SettingKey[] = [
   "sync_enabled",
+  "automatic_analysis_after_sync",
   "require_approval_before_write",
   "keep_test_copies",
 ];
@@ -4679,3 +4701,297 @@ export function candidateCorrections(correctionCandidateId: number): string[] {
   return rows.map((r) => (r.summary && r.summary.length > 0 ? r.summary : r.content.slice(0, 200)));
 }
 // ---- end Round 7 ----
+
+// ---- Checkpoint 2026-09-18 WP4 ----
+// Skills as a first-class destination (D4, migration v19): a suggestion
+// records where its lesson belongs (destination fields on
+// correction_candidates, extended above in createCorrectionCandidate); a
+// Skill proposal is the draft SKILL.md itself -- kept and versioned locally,
+// never written to Lovable (lovable_state stays 'not_created' -- there is no
+// column value other than that one, and no code path here ever changes it).
+
+export type SkillProposalStatus = "proposed" | "approved" | "retired" | "skipped";
+export type SkillProposalOwnership = "harness" | "user";
+export type SkillProposalLovableState = "not_created";
+
+export type SkillProposalRow = {
+  id: number;
+  correction_candidate_id: number;
+  rule_id: number | null;
+  name: string;
+  content: string;
+  status: SkillProposalStatus;
+  ownership: SkillProposalOwnership;
+  lovable_state: SkillProposalLovableState;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SkillProposalRevisionRow = {
+  id: number;
+  skill_proposal_id: number;
+  previous_name: string | null;
+  previous_content: string | null;
+  previous_status: string | null;
+  new_name: string;
+  new_content: string;
+  new_status: string;
+  reason: string;
+  actor: string;
+  created_at: string;
+};
+
+/** Thrown by every skill-proposal mutation below on a proposal whose
+ * ownership is 'user' -- Harness Ledger never edits, approves or retires a
+ * Skill it did not itself propose. The exact sentence the UI shows. */
+export class SkillProposalOwnershipError extends Error {
+  constructor() {
+    super("This Skill is yours; Harness Ledger does not change user-owned Skills.");
+    this.name = "SkillProposalOwnershipError";
+  }
+}
+
+function requireHarnessOwnedSkillProposal(row: SkillProposalRow): void {
+  if (row.ownership !== "harness") throw new SkillProposalOwnershipError();
+}
+
+function writeSkillProposalRevision(
+  row: SkillProposalRow,
+  newName: string,
+  newContent: string,
+  newStatus: string,
+  reason: string,
+  actor: string,
+): void {
+  db.prepare(
+    `INSERT INTO skill_proposal_revisions
+       (skill_proposal_id, previous_name, previous_content, previous_status, new_name, new_content, new_status, reason, actor)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(row.id, row.name, row.content, row.status, newName, newContent, newStatus, reason, actor);
+}
+
+/** Proposes a Skill for a correction candidate: the row itself plus its
+ * first revision (previous_* all null -- there was nothing before it). Used
+ * both by the Rule writer (propose.ts, destination 'skill'/'both') and by a
+ * human choosing "Skill"/"Knowledge + Skill" for a suggestion that had none
+ * yet (improvements.ts's set_content_destination/accept). */
+export function createSkillProposal(input: {
+  correction_candidate_id: number;
+  rule_id?: number | null;
+  name: string;
+  content: string;
+  ownership?: SkillProposalOwnership;
+  created_by: string;
+  reason?: string;
+}): SkillProposalRow {
+  const row = db
+    .prepare(
+      `INSERT INTO skill_proposals (correction_candidate_id, rule_id, name, content, ownership, created_by)
+       VALUES (@correction_candidate_id, @rule_id, @name, @content, @ownership, @created_by)
+       RETURNING *`,
+    )
+    .get({
+      correction_candidate_id: input.correction_candidate_id,
+      rule_id: input.rule_id ?? null,
+      name: input.name,
+      content: input.content,
+      ownership: input.ownership ?? "harness",
+      created_by: input.created_by,
+    }) as SkillProposalRow;
+  // First revision: previous_* stay NULL (there was nothing before it) --
+  // written directly rather than through writeSkillProposalRevision, which
+  // always carries an existing row's own name/content/status forward as
+  // "previous".
+  db.prepare(
+    `INSERT INTO skill_proposal_revisions
+       (skill_proposal_id, previous_name, previous_content, previous_status, new_name, new_content, new_status, reason, actor)
+     VALUES (?, NULL, NULL, NULL, ?, ?, 'proposed', ?, ?)`,
+  ).run(row.id, row.name, row.content, input.reason ?? "proposed", input.created_by);
+  insertEvent("skill_proposal.created", null, {
+    id: row.id,
+    correction_candidate_id: input.correction_candidate_id,
+  });
+  return row;
+}
+
+export function getSkillProposal(id: number): SkillProposalRow | null {
+  return (
+    (db.prepare(`SELECT * FROM skill_proposals WHERE id = ?`).get(id) as
+      SkillProposalRow | undefined) ?? null
+  );
+}
+
+/** The most recently created Skill proposal for this correction candidate,
+ * if any (there is at most one active lineage per candidate in practice --
+ * set_content_destination reuses an existing non-retired/skipped one rather
+ * than creating a second). */
+export function getSkillProposalForCandidate(
+  correctionCandidateId: number,
+): SkillProposalRow | null {
+  return (
+    (db
+      .prepare(
+        `SELECT * FROM skill_proposals WHERE correction_candidate_id = ? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(correctionCandidateId) as SkillProposalRow | undefined) ?? null
+  );
+}
+
+export function listSkillProposalRevisions(skillProposalId: number): SkillProposalRevisionRow[] {
+  return db
+    .prepare(`SELECT * FROM skill_proposal_revisions WHERE skill_proposal_id = ? ORDER BY id ASC`)
+    .all(skillProposalId) as SkillProposalRevisionRow[];
+}
+
+/** The Skills page's "Proposed by Harness Ledger" section: every proposal
+ * except 'skipped' ones (a skipped proposal was never really offered -- the
+ * user changed the destination back to Knowledge before ever seeing it), the
+ * revision count, and the correction candidate id to link back to the
+ * suggestion. */
+export function listSkillProposalsForSkillsView(): (SkillProposalRow & {
+  version_count: number;
+})[] {
+  const rows = db
+    .prepare(`SELECT * FROM skill_proposals WHERE status != 'skipped' ORDER BY updated_at DESC`)
+    .all() as SkillProposalRow[];
+  return rows.map((row) => ({
+    ...row,
+    version_count: (
+      db
+        .prepare(`SELECT COUNT(*) as n FROM skill_proposal_revisions WHERE skill_proposal_id = ?`)
+        .get(row.id) as { n: number }
+    ).n,
+  }));
+}
+
+/** A harness-owned proposal's name/content changes, as a new revision.
+ * Throws SkillProposalOwnershipError on a user-owned one. */
+export function editSkillProposal(input: {
+  id: number;
+  name: string;
+  content: string;
+  actor: string;
+  reason?: string;
+}): SkillProposalRow {
+  const existing = getSkillProposal(input.id);
+  if (!existing) throw new Error(`skill proposal ${input.id} not found`);
+  requireHarnessOwnedSkillProposal(existing);
+  writeSkillProposalRevision(
+    existing,
+    input.name,
+    input.content,
+    existing.status,
+    input.reason ?? "edited",
+    input.actor,
+  );
+  db.prepare(
+    `UPDATE skill_proposals SET name = ?, content = ?, updated_at = datetime('now') WHERE id = ?`,
+  ).run(input.name, input.content, input.id);
+  insertEvent("skill_proposal.edited", null, { id: input.id, actor: input.actor });
+  return getSkillProposal(input.id)!;
+}
+
+/** approved / retired: a status change on a harness-owned proposal, as a new
+ * revision (name/content unchanged). Throws SkillProposalOwnershipError on a
+ * user-owned one. */
+export function setSkillProposalStatus(input: {
+  id: number;
+  status: SkillProposalStatus;
+  actor: string;
+  reason?: string;
+}): SkillProposalRow {
+  const existing = getSkillProposal(input.id);
+  if (!existing) throw new Error(`skill proposal ${input.id} not found`);
+  requireHarnessOwnedSkillProposal(existing);
+  writeSkillProposalRevision(
+    existing,
+    existing.name,
+    existing.content,
+    input.status,
+    input.reason ?? input.status,
+    input.actor,
+  );
+  db.prepare(
+    `UPDATE skill_proposals SET status = ?, updated_at = datetime('now') WHERE id = ?`,
+  ).run(input.status, input.id);
+  insertEvent("skill_proposal.status_changed", null, {
+    id: input.id,
+    status: input.status,
+    actor: input.actor,
+  });
+  return getSkillProposal(input.id)!;
+}
+
+/** Restores name/content from an earlier revision of this same proposal, as
+ * a fresh revision of its own (reason: "restored revision <id>") -- the
+ * status is left exactly as it is now; restoring content is not a status
+ * change. Throws SkillProposalOwnershipError on a user-owned proposal. */
+export function restoreSkillProposalRevision(input: {
+  id: number;
+  revision_id: number;
+  actor: string;
+}): SkillProposalRow {
+  const existing = getSkillProposal(input.id);
+  if (!existing) throw new Error(`skill proposal ${input.id} not found`);
+  requireHarnessOwnedSkillProposal(existing);
+  const revision = db
+    .prepare(`SELECT * FROM skill_proposal_revisions WHERE id = ? AND skill_proposal_id = ?`)
+    .get(input.revision_id, input.id) as SkillProposalRevisionRow | undefined;
+  if (!revision)
+    throw new Error(`revision ${input.revision_id} not found for skill proposal ${input.id}`);
+  writeSkillProposalRevision(
+    existing,
+    revision.new_name,
+    revision.new_content,
+    existing.status,
+    `restored revision ${input.revision_id}`,
+    input.actor,
+  );
+  db.prepare(
+    `UPDATE skill_proposals SET name = ?, content = ?, updated_at = datetime('now') WHERE id = ?`,
+  ).run(revision.new_name, revision.new_content, input.id);
+  insertEvent("skill_proposal.restored", null, {
+    id: input.id,
+    revision_id: input.revision_id,
+    actor: input.actor,
+  });
+  return getSkillProposal(input.id)!;
+}
+
+/** A human's own choice of destination for a suggestion (chosen_by: 'user')
+ * -- overrides the Rule writer's own destination, or sets one for a
+ * human-authored candidate that never had a Rule writer opinion at all.
+ * destination_reason/destination_alternative are left as they were (a user
+ * picking a destination is not writing a new explanation for it) unless
+ * explicitly given. */
+export function setCandidateContentDestination(input: {
+  id: number;
+  destination: "knowledge" | "skill" | "both";
+  chosen_by: "rule_writer" | "user";
+  reason?: string | null;
+  alternative?: string | null;
+}): void {
+  const existing = db.prepare(`SELECT id FROM correction_candidates WHERE id = ?`).get(input.id);
+  if (!existing) throw new Error(`correction_candidate ${input.id} not found`);
+  db.prepare(
+    `UPDATE correction_candidates SET
+       destination = ?, destination_chosen_by = ?,
+       destination_reason = COALESCE(?, destination_reason),
+       destination_alternative = COALESCE(?, destination_alternative),
+       updated_at = datetime('now')
+     WHERE id = ?`,
+  ).run(
+    input.destination,
+    input.chosen_by,
+    input.reason ?? null,
+    input.alternative ?? null,
+    input.id,
+  );
+  insertEvent("correction_candidate.destination_changed", null, {
+    id: input.id,
+    destination: input.destination,
+    chosen_by: input.chosen_by,
+  });
+}
+// ---- end Checkpoint 2026-09-18 WP4 ----

@@ -261,15 +261,25 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
   );
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
+    // Checkpoint 2026-09-18 WP5: the Inbox's disagreement cards and the
+    // Reanalyse history dialog post these to the executor route.
+    "accept_disagreement",
+    // Checkpoint 2026-09-18 WP4: the local Skill proposal lifecycle.
+    "approve_skill_proposal",
     // Round 6 Task 3: cancel the Instructions page's own staged write.
     "cancel_write",
     "change_wording",
+    "edit_skill_proposal",
     "keep",
     "mark_seen",
     "readd",
+    "reanalyse",
+    "reanalyse_estimate",
     "retire",
+    "retire_skill_proposal",
     // Round 6 Task 2: "Try again" on a not-written outcome.
     "retry_write",
+    "set_content_destination",
     "skip",
     // Round 6 Task 6b / spec §6: "Test this rule"'s own confirm, and the Add
     // dialog's "Add and test it first" choice (accept, then this).

@@ -201,11 +201,51 @@ export type TestInfo = {
   credits: { used_this_month: number; budget: number };
 };
 
+// Checkpoint 2026-09-18 (WP1a, migration v18): what kind of test a run was,
+// and its environment record -- mirrors harness/src/executor/
+// replay-environment.ts's ExperimentKind/ReplayEnvironment exactly, as a
+// plain structural type (this file has no dependency on harness/src).
+export type ExperimentKind = "historical_replay" | "paired_comparison";
+
+export type EnvironmentQuality =
+  "controlled" | "partially_controlled" | "historical_approximation" | "not_comparable";
+
+export type ReplayEnvironment = {
+  version: 1;
+  kind: ExperimentKind;
+  code_state: {
+    source: "historical_commit_before_request" | "unavailable";
+    request_message_id: string | null;
+  };
+  project_knowledge: {
+    source: "exact_historical" | "nearest_earlier_version" | "current_fallback" | "unavailable";
+    snapshot_id: number | null;
+    snapshot_fetched_at: string | null;
+    episode_started_at: string | null;
+    char_count: number;
+  };
+  workspace_knowledge: { source: "current_uncontrolled" };
+  skills: { source: "current_uncontrolled" };
+  chat_history: { included: boolean };
+  candidate_rule: { rule_id: number; instruction: string; already_present: boolean };
+  other_active_rules: string[];
+  uncontrolled: string[];
+  quality: EnvironmentQuality;
+  knowledge_for_copy: string;
+  backfilled?: boolean;
+  historical_rules_dropped_by_run?: boolean;
+};
+
 // The judging screen's own read (GET .../improvements?run=<id>), served
 // from the same route as everything else here (not a seventh route) --
 // harness/src/improvements.ts's buildExperimentRunView.
 export type ExperimentRunView = {
   id: number;
+  // Checkpoint 2026-09-18: every run so far is a historical replay (D1,
+  // DECISIONS.md); `environment` is null only for a run that failed before
+  // its Knowledge was chosen.
+  kind: ExperimentKind;
+  environment: ReplayEnvironment | null;
   status: ExperimentStatus;
   stage_note: string | null;
   started_at: string;
@@ -252,6 +292,42 @@ export type TestBuildCopy = {
   deleted: boolean;
 };
 
+// Checkpoint 2026-09-18 WP4 (D4): mirrors harness/src/improvements.ts's own
+// ContentDestination/SkillProposalView exactly. Named `content_destination`
+// (not `destination`) to avoid colliding with the existing `destination`
+// field below (the Knowledge target -- project/workspace/one_time -- a
+// different axis: which Knowledge belongs to, not what kind of thing this
+// suggestion is).
+export type ContentDestinationValue = "knowledge" | "skill" | "both";
+export type ContentDestination = {
+  value: ContentDestinationValue;
+  reason: string | null;
+  alternative: string | null;
+  chosen_by: "rule_writer" | "user" | null;
+  recommended_label: string;
+  alternative_label: string;
+};
+
+export type SkillProposalStatus = "proposed" | "approved" | "retired" | "skipped";
+export type SkillProposalRevision = {
+  id: number;
+  new_name: string;
+  new_content: string;
+  new_status: string;
+  reason: string;
+  actor: string;
+  created_at: string;
+};
+export type SkillProposal = {
+  id: number;
+  name: string;
+  content: string;
+  status: SkillProposalStatus;
+  ownership: "harness" | "user";
+  lovable_state: "not_created";
+  revisions: SkillProposalRevision[];
+} | null;
+
 export type Improvement = {
   id: number;
   kind: "improvement" | "retire";
@@ -263,6 +339,9 @@ export type Improvement = {
   title: string;
   proposed_instruction: string | null;
   destination: "workspace" | "project" | "one_time" | null;
+  // Checkpoint 2026-09-18 WP4: null only for a "retire" item.
+  content_destination: ContentDestination | null;
+  skill_proposal: SkillProposal;
   classification: string;
   decision: {
     status: "pending" | "accepted" | "skipped";
@@ -392,6 +471,9 @@ export async function fetchExperimentRun(runId: number): Promise<ExperimentRunRe
 // harness/src/improvements.ts's own ExperimentRunSummary/listTestRunSummaries.
 export type ExperimentRunSummary = {
   id: number;
+  // Checkpoint 2026-09-18: the Tests page's own Kind/Evidence columns.
+  kind: ExperimentKind;
+  environment_quality: EnvironmentQuality | null;
   rule_id: number;
   improvement_id: number;
   rule_text: string;
@@ -633,12 +715,30 @@ export type Skill = {
   history: SkillHistoryEntry[];
 };
 
+// Checkpoint 2026-09-18 WP4 (D4): the Skills page's "Proposed by Harness
+// Ledger" section -- a local Skill proposal, never a workspace Skill (see
+// Skill above). `correction_candidate_id` links back to the suggestion
+// (/ledger?improvement=<id>); `lovable_state` is always "not_created" --
+// Harness Ledger keeps this Skill locally with its versions, it does not
+// create or update it in Lovable.
+export type SkillProposalListItem = {
+  id: number;
+  name: string;
+  status: SkillProposalStatus;
+  ownership: "harness" | "user";
+  lovable_state: "not_created";
+  version_count: number;
+  correction_candidate_id: number;
+  updated_at: string;
+};
+
 export type SkillsResponse = {
   available: boolean;
   reason?: string;
   workspace_id?: string | null;
   fetched_at?: string | null;
   skills?: Skill[];
+  proposals?: SkillProposalListItem[];
 };
 
 export async function fetchSkills(): Promise<SkillsResponse> {
@@ -742,6 +842,8 @@ export type ExecutorSettings = {
   feedback: FeedbackStats;
   // Round 6 Task 6b / spec §6: "Keep test copies (delete them by hand)".
   keep_test_copies: boolean;
+  // Checkpoint 2026-09-18 (D7): scheduled Sync queues an analysis only when true.
+  automatic_analysis_after_sync?: boolean;
 };
 
 // Round 4 Task A3 (spec §2): "Analyse now" status, independent of the

@@ -1124,3 +1124,117 @@ test("rule writer: a correction another correction's suggestion already cites is
     1,
   );
 });
+
+// ---- Checkpoint 2026-09-18 WP4 (D4): destination ----
+
+test("RULE_WRITER_JSON_SCHEMA (with destination/skill_draft) is still strict-mode compatible", async () => {
+  const { assertStrictCompatible } = await import("../src/llm/schema.js");
+  assert.doesNotThrow(() =>
+    assertStrictCompatible(propose.RULE_WRITER_JSON_SCHEMA, "mined_rule_proposal"),
+  );
+  // Every property the model can fill in is listed as required (strict mode
+  // rejects an absent key even for a logically optional value) -- destination
+  // and skill_draft included.
+  assert.deepEqual(
+    [...propose.RULE_WRITER_JSON_SCHEMA.required].sort(),
+    Object.keys(propose.RULE_WRITER_JSON_SCHEMA.properties).sort(),
+  );
+});
+
+test("rule writer: destination 'both' + a skill_draft creates the candidate's destination fields, a skill_proposals row, and its first revision", async () => {
+  const PROJECT_SKILL = "propose-destination-both";
+  store.allowProject(PROJECT_SKILL, "Skill Co");
+  store.upsertProject({ lovable_project_id: PROJECT_SKILL, name: "Skill Co" });
+
+  const seeded = seedEpisode(PROJECT_SKILL, {
+    request: "Set up the deploy pipeline.",
+    corrections: ["You always forget to run the smoke test checklist before deploying."],
+  });
+
+  const ruleWriterJson = {
+    propose: true,
+    instruction: "For deploys, follow the deploy-checklist Skill.",
+    scope: "project",
+    prediction: "Deploys ship without the smoke test checklist.",
+    failure_signature: "missing-smoke-test",
+    evidence_message_ids: seeded.correctionExternalIds,
+    confidence: 0.9,
+    contradicts_rule_id: null,
+    duplicate_of_rule_id: null,
+    destination: "both",
+    destination_reason:
+      "The reminder is short, but the checklist itself is a multi-step procedure.",
+    destination_alternative:
+      "Could stay Knowledge-only, but the full checklist would add weight there.",
+    skill_draft: {
+      name: "Deploy Checklist",
+      markdown: "# Deploy checklist\n\n1. Run the smoke tests.\n2. Deploy.\n3. Verify.\n",
+    },
+  };
+  const callLlm = fakeRuleWriterCallLlm([
+    { match: seeded.requestExternalId, json: ruleWriterJson },
+  ]);
+
+  const result = await propose.proposeRules(callLlm, { limit: 500 });
+  assert.equal(result.proposed, 1);
+  assert.equal(result.createdCandidateIds.length, 1);
+
+  const candidateId = result.createdCandidateIds[0]!;
+  const item = improvements.getImprovement(candidateId)!;
+  assert.equal(item.content_destination?.value, "both");
+  assert.equal(item.content_destination?.chosen_by, "rule_writer");
+  assert.equal(
+    item.content_destination?.reason,
+    "The reminder is short, but the checklist itself is a multi-step procedure.",
+  );
+  assert.ok(item.content_destination?.alternative);
+  assert.equal(item.content_destination?.recommended_label, "Knowledge + Skill");
+
+  assert.ok(item.skill_proposal);
+  assert.equal(item.skill_proposal?.name, "deploy-checklist");
+  assert.match(item.skill_proposal!.content, /^# Deploy checklist/);
+  assert.equal(item.skill_proposal?.status, "proposed");
+  assert.equal(item.skill_proposal?.ownership, "harness");
+  assert.equal(item.skill_proposal?.lovable_state, "not_created");
+  assert.equal(item.skill_proposal?.revisions.length, 1);
+  assert.equal(item.skill_proposal?.revisions[0]!.new_status, "proposed");
+});
+
+test("rule writer: destination 'skill' with no usable skill_draft is rejected, not silently downgraded to Knowledge", async () => {
+  const PROJECT_BAD_DRAFT = "propose-destination-skill-no-draft";
+  store.allowProject(PROJECT_BAD_DRAFT, "Bad Draft Co");
+  const seeded = seedEpisode(PROJECT_BAD_DRAFT, {
+    request: "Set up backups.",
+    corrections: ["You always forget the backup rotation steps."],
+  });
+
+  const callLlm = fakeRuleWriterCallLlm([
+    {
+      match: seeded.requestExternalId,
+      json: {
+        propose: true,
+        instruction: "For backups, follow the backup-rotation Skill.",
+        scope: "project",
+        prediction: "Backups ship without rotation.",
+        failure_signature: "missing-backup-rotation",
+        evidence_message_ids: seeded.correctionExternalIds,
+        confidence: 0.9,
+        contradicts_rule_id: null,
+        duplicate_of_rule_id: null,
+        destination: "skill",
+        destination_reason: null,
+        destination_alternative: null,
+        skill_draft: null,
+      },
+    },
+  ]);
+
+  const result = await propose.proposeRules(callLlm, { limit: 500 });
+  assert.equal(result.proposed, 0);
+  assert.equal(result.failed, 1);
+  assert.equal(
+    improvements.listImprovements().filter((i) => i.project.id === PROJECT_BAD_DRAFT).length,
+    0,
+  );
+});
+// ---- end Checkpoint 2026-09-18 WP4 ----

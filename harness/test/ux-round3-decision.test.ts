@@ -174,9 +174,9 @@ test("Improvements: passes the on-page section order (Open, Waiting to be writte
   );
 });
 
-test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 Task 5 "Why?" radiogroup, six total', () => {
+test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 Task 5 "Why?" radiogroup, one radiogroup mapped over three options in DestinationChoice (checkpoint 2026-09-18 WP4), seven in source', () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.equal(count(detail, 'role="radio"'), 6);
+  assert.equal(count(detail, 'role="radio"'), 7);
 });
 
 test("cost wording stays honest: 'Lovable credits' <= 2 and 'Harness Ledger analysis' == 1 on improvement.tsx", () => {

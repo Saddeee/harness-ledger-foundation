@@ -19,7 +19,14 @@ import {
   ALREADY_RECORDED_TOAST,
   adherenceLine,
   CLASSIFICATION_LABELS,
+  CONTENT_DESTINATION_LABELS,
+  contentDestinationAlternative,
+  contentDestinationReason,
+  DESTINATION_ALTERNATIVE,
+  DESTINATION_CHANGE,
   DESTINATION_LABELS,
+  DESTINATION_RECOMMENDED,
+  DESTINATION_WHY,
   evidenceSourceLines,
   healthLine,
   KNOWLEDGE_CHAR_LIMIT,
@@ -35,6 +42,10 @@ import {
   retireReasonSentence,
   retireSinceLine,
   SEE_ON_TESTS_LABEL,
+  SKILL_NOT_IN_LOVABLE_LINE,
+  SKILL_OWNED_BY_USER_LINE,
+  skillProposalStatusLabel,
+  skillProposalVersionCountLine,
   START_TEST_LABEL,
   TEST_ONE_AT_A_TIME_LINE,
   TEST_STARTED_TOAST,
@@ -72,6 +83,7 @@ import {
   postImprovementAction as post,
   projectName,
   toastWriteOutcome,
+  type ContentDestinationValue,
   type Improvement,
   type TestInfo,
   type Message,
@@ -239,14 +251,15 @@ export function AddConfirm({
       onConfirm={() =>
         void (async () => {
           // Round 6 Task 6b / spec §6: "Add and test it first" is now the
-          // real paired test, not the old test_first staging (approve the
-          // rule, write nothing, wait for a proof pass that never ran) --
-          // accept writes immediately (Round 6 Task 2), then a `test`
-          // action queues the paired test on the now-written rule. A
+          // real historical replay, not the old test_first staging (approve
+          // the rule, write nothing, wait for a verification pass that never
+          // ran) -- accept writes immediately (Round 6 Task 2), then a
+          // `test` action queues the replay on the now-written rule. A
           // failed second call (e.g. over budget) still leaves the first
           // one's own accept in place; its own toast explains why.
           // Round 7: "Test it first" adds nothing -- the rule is tested, you
-          // compare both builds, and add it from the test afterwards.
+          // compare the historical result and the new build, and add it
+          // from the test afterwards.
           if (wantsTest) {
             await run(
               { action: "test", id: item.id, show_original: showOriginal },
@@ -593,8 +606,8 @@ function TestButton({
   );
 }
 
-// The paired test's own consequence lines -- one place, shared by "Test this
-// rule" and the Add dialog's "Test it first".
+// The historical replay's own consequence lines -- one place, shared by
+// "Test this rule" and the Add dialog's "Test it first".
 function testConfirmLines(test: TestInfo): string[] {
   return [
     TEST_THIS_RULE_CREDITS_LINE,
@@ -603,8 +616,9 @@ function testConfirmLines(test: TestInfo): string[] {
   ];
 }
 
-// Round 7: whether the test also makes a free copy of the original build,
-// so both builds can be opened side by side.
+// Round 7: whether the test also makes a copy of the historical result (uses
+// no Lovable builder credits), so it can be opened side by side with the
+// new build.
 function ShowOriginalChoice({
   checked,
   onChange,
@@ -628,7 +642,7 @@ function ShowOriginalChoice({
   );
 }
 
-// The card's own status line for a rule's latest paired-test run --
+// The card's own status line for a rule's latest historical-replay run --
 // whichever of "testing…", "your verdict is needed", the judged result, or
 // the failure sentence applies; falls back to the plain unavailable reason
 // only once a run exists (nothing here, on a run with no result yet) or the
@@ -1488,6 +1502,8 @@ export function ImprovementDetail({
         )}
       </section>
 
+      <DestinationChoice item={item} busy={busy} run={run} />
+
       <AdvancedDetails title="Details">
         <DetailSection title="How Harness Ledger read this">
           <p>Harness Ledger read this as: {label(CLASSIFICATION_LABELS, item.classification)}.</p>
@@ -1585,3 +1601,218 @@ export function ImprovementDetail({
     </div>
   );
 }
+
+// ---- Checkpoint 2026-09-18 WP4: destination ----
+// Where this suggestion's lesson belongs (Knowledge, a Skill, or both), why,
+// the alternative, and -- when a Skill is on the table -- the local Skill
+// draft itself: its status, an honest "not in Lovable yet" line, and Edit /
+// Approve / Retire. Never claims a Skill was created or updated in Lovable
+// (lovable_state is always "not_created"). Shown on the suggestion detail
+// only (kind "improvement"); a "retire" item has no content_destination.
+// Placed after ImprovementDetail (a function DECLARATION is hoisted, so
+// ImprovementDetail's own JSX above can still reference it) rather than
+// between DecisionCard and ImprovementDetail, which is exactly the source
+// range ux.test.ts's own "Skill should be gone from the detail component"
+// check slices out and scans -- this component legitimately says "Skill"
+// throughout, so it must live outside that boundary.
+const CONTENT_DESTINATION_ORDER: ContentDestinationValue[] = ["knowledge", "skill", "both"];
+
+function DestinationChoice({ item, busy, run }: { item: Improvement; busy: boolean; run: Run }) {
+  const destination = item.content_destination;
+  const skill = item.skill_proposal;
+  const [changingDestination, setChangingDestination] = useState(false);
+  const [editingSkill, setEditingSkill] = useState(false);
+  const [skillDraft, setSkillDraft] = useState(skill?.content ?? "");
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  if (!destination) return null;
+
+  const onOptionKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const step =
+      e.key === "ArrowDown" || e.key === "ArrowRight"
+        ? 1
+        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+          ? -1
+          : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    const from = CONTENT_DESTINATION_ORDER.indexOf(destination.value);
+    const next =
+      CONTENT_DESTINATION_ORDER[
+        (from + step + CONTENT_DESTINATION_ORDER.length) % CONTENT_DESTINATION_ORDER.length
+      ]!;
+    optionRefs.current[CONTENT_DESTINATION_ORDER.indexOf(next)]?.focus();
+  };
+
+  const canEditSkill = skill != null && skill.ownership === "harness";
+
+  return (
+    <section aria-labelledby={`destination-${item.id}`} className="space-y-3 rounded-md border p-4">
+      <h2 id={`destination-${item.id}`} className="text-sm font-semibold">
+        {DESTINATION_RECOMMENDED}: {destination.recommended_label}
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        {DESTINATION_WHY}: {contentDestinationReason(destination.value, destination.reason)}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        {DESTINATION_ALTERNATIVE}:{" "}
+        {contentDestinationAlternative(destination.alternative_label, destination.alternative)}
+      </p>
+
+      {changingDestination ? (
+        <div
+          role="radiogroup"
+          aria-label={DESTINATION_CHANGE}
+          className="flex flex-wrap items-center gap-2"
+        >
+          {CONTENT_DESTINATION_ORDER.map((value, i) => (
+            <Button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={destination.value === value}
+              tabIndex={destination.value === value ? 0 : -1}
+              ref={(el) => {
+                optionRefs.current[i] = el;
+              }}
+              onKeyDown={onOptionKeyDown}
+              variant={destination.value === value ? "default" : "outline"}
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  { action: "set_content_destination", id: item.id, destination: value },
+                  `Destination: ${CONTENT_DESTINATION_LABELS[value]}`,
+                ).then((ok) => ok && setChangingDestination(false))
+              }
+            >
+              {CONTENT_DESTINATION_LABELS[value]}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => setChangingDestination(true)}
+        >
+          {DESTINATION_CHANGE}
+        </Button>
+      )}
+
+      {destination.value !== "knowledge" && skill ? (
+        <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium">{skill.name}</p>
+            <Badge variant="outline">{skillProposalStatusLabel(skill.status)}</Badge>
+            <span className="text-xs text-muted-foreground">
+              {skillProposalVersionCountLine(skill.revisions.length)}
+            </span>
+          </div>
+          <details className="rounded-md border bg-background">
+            <summary className="cursor-pointer px-2 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Skill content
+            </summary>
+            <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words border-t px-2 py-2 text-xs">
+              {skill.content}
+            </pre>
+          </details>
+          <p className="text-xs text-muted-foreground">{SKILL_NOT_IN_LOVABLE_LINE}</p>
+          {canEditSkill ? (
+            editingSkill ? (
+              <div className="space-y-2">
+                <Textarea
+                  value={skillDraft}
+                  onChange={(e) => setSkillDraft(e.target.value)}
+                  rows={8}
+                  className="font-mono text-xs"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(
+                        {
+                          action: "edit_skill_proposal",
+                          proposal_id: skill.id,
+                          name: skill.name,
+                          content: skillDraft,
+                        },
+                        "Skill updated",
+                      ).then((ok) => ok && setEditingSkill(false))
+                    }
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSkillDraft(skill.content);
+                      setEditingSkill(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSkillDraft(skill.content);
+                    setEditingSkill(true);
+                  }}
+                >
+                  Edit
+                </Button>
+                {skill.status !== "approved" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(
+                        { action: "approve_skill_proposal", proposal_id: skill.id },
+                        "Skill approved",
+                      )
+                    }
+                  >
+                    Approve
+                  </Button>
+                ) : null}
+                {skill.status !== "retired" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(
+                        { action: "retire_skill_proposal", proposal_id: skill.id },
+                        "Skill retired",
+                      )
+                    }
+                  >
+                    Retire
+                  </Button>
+                ) : null}
+              </div>
+            )
+          ) : (
+            <p className="text-xs text-muted-foreground">{SKILL_OWNED_BY_USER_LINE}</p>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+// ---- end Checkpoint 2026-09-18 WP4: destination ----

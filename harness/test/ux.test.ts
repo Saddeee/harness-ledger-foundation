@@ -156,7 +156,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
   );
 });
 
-test("decision card: three buttons for pending items, decision buttons shown inline for decided ones, no Skill, no Decide later", () => {
+test("decision card: three buttons for pending items, decision buttons shown inline for decided ones, no Decide later", () => {
   const detail = codeOnly(readApp(DETAIL));
   const card = detail.slice(
     detail.indexOf("export function DecisionCard"),
@@ -214,8 +214,10 @@ test("decision card: three buttons for pending items, decision buttons shown inl
   // "role=\"radio\"" used to be forbidden here (an earlier deferred-decision
   // design); Task 8 reintroduces it deliberately for the Add-confirmation
   // choice, tested separately in ux-decision.test.ts.
+  // Checkpoint 2026-09-18 WP4: "Skill" is back on purpose -- a real,
+  // honest destination (DestinationChoice) -- so only the old stub's own
+  // SKILL_NOT_ON marker stays banned.
   for (const gone of [
-    "Skill",
     "SKILL_NOT_ON",
     "Decide later",
     "Decide now",
@@ -237,11 +239,14 @@ test("decision card: three buttons for pending items, decision buttons shown inl
   assert.match(detail, /title="Skip this suggestion\?"/);
 });
 
-test("proof copy stays defined for later but nothing on screen runs or mentions a proof", () => {
-  assert.equal(
-    ux.PROVE_INTRO,
-    "Harness Ledger runs the same request twice in a temporary copy of this project, with and without the instruction, and shows you the difference.",
-  );
+// Checkpoint 2026-09-18: PROVE_INTRO (the "runs the same request twice...
+// with and without the instruction" copy) is gone -- it was dead code
+// (never imported by any page) and factually described a fresh two-arm
+// comparison that has never existed; the real, live "Test it first" cost
+// line is proveCostLine(), kept and pinned below. "no screen runs or
+// mentions a proof" still holds.
+test("PROVE_INTRO is gone; nothing on screen runs or mentions a proof, apart from the Add dialog's own honest cost line", () => {
+  assert.ok(!("PROVE_INTRO" in ux), "PROVE_INTRO must be removed, not just unused");
   assert.equal(
     ux.proveCostLine(),
     "Uses Lovable credits like any build; the cost is recorded after the test.",
@@ -257,8 +262,7 @@ test("proof copy stays defined for later but nothing on screen runs or mentions 
     // Task 8: the Add confirmation's "Test it first" choice legitimately
     // states its cost via proveCostLine -- everything else still shows no
     // proof-running UI.
-    const forbidden =
-      page === DETAIL ? /Run proof|PROVE_INTRO/ : /Run proof|PROVE_INTRO|proveCostLine/;
+    const forbidden = page === DETAIL ? /Run proof/ : /Run proof|proveCostLine/;
     assert.ok(!forbidden.test(code), `${page} still shows proof UI`);
   }
 });
@@ -702,11 +706,13 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   // the client lib carries the contract field name lovable_credits_max, but no user-facing credit copy
   assert.equal(count(codeOnly(readApp(CLIENT)), "Lovable credits"), 0);
   // harness-ux.ts (Round 5 Task 2): "Lovable credits" appeared once, in
-  // proveCostLine. Round 6 Task 6b / spec §6 adds a second, deliberate one:
-  // TEST_THIS_RULE_CREDITS_LINE ("Uses Lovable credits like any build; the
-  // exact cost is recorded after."), the "Test this rule" confirm's own
-  // credits line -- a distinct sentence for a distinct dialog, not a
-  // duplicate of proveCostLine's.
+  // proveCostLine. Checkpoint 2026-09-18 (WP1b) keeps the count at exactly
+  // two, but the second one moved: TEST_THIS_RULE_CREDITS_LINE no longer
+  // spells it out literally (it now reads "Lovable builder credits" via the
+  // shared COPY_CREDITS_LINE, D1/D2 DECISIONS.md's mandated cost sentence);
+  // the second "Lovable credits" is now evidenceSourceLines' own "observed"
+  // sentence ("...automatically, using no Lovable credits."), replacing the
+  // old unqualified "for free".
   const uxSource = codeOnly(readApp("lib/harness-ux.ts"));
   assert.equal(count(uxSource, "Lovable credits"), 2);
   // Count case-insensitive: use regex to match credit/credits/Credit/Credits/CREDITS.
@@ -715,10 +721,14 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   // TestRunResultLike type and its own doc comments) is the entire jump
   // from 5 to 16; Round 6c part B's own testsPageCreditsLine (the Tests
   // page's credits line, with its own "· measured" suffix) is the jump
-  // from 16 to 21 -- inventoried here so a FUTURE bump still gets looked
-  // at, rather than this assertion silently loosening forever.
+  // from 16 to 21. Checkpoint 2026-09-18 (WP1b) adds the shared
+  // COPY_CREDITS_LINE constant (its own name and two literal "credits") and
+  // the observed-evidence sentence's "using no Lovable credits" -- the jump
+  // from 21 to 26, recomputed directly against the file rather than
+  // hand-counted, inventoried here so a FUTURE bump still gets looked at,
+  // rather than this assertion silently loosening forever.
   const creditMatches = (uxSource.match(/credit/gi) || []).length;
-  assert.equal(creditMatches, 21);
+  assert.equal(creditMatches, 26);
 });
 
 test("no internal vocabulary in user-facing JSX outside the Developer view", () => {
@@ -744,11 +754,16 @@ test("no internal vocabulary in user-facing JSX outside the Developer view", () 
     // Round 5 Task 6 / spec §4 gives it a real, typed field
     // (ExecutorSettings.decision_auto_confidence, mirroring the setting
     // local-settings.tsx now shows as "Confidence needed") -- the client's
-    // own honest contract, not a leak. Every other page here keeps the
-    // full ban.
+    // own honest contract, not a leak. Checkpoint 2026-09-18 (WP1b) drops
+    // "message_id" from CLIENT's ban too: ReplayEnvironment.code_state.
+    // request_message_id is a real, typed field mirroring
+    // harness/src/executor/replay-environment.ts's own field name exactly
+    // (the judging screen's Full technical details reads it) -- the same
+    // "honest contract, not a leak" reasoning as confidence above. Every
+    // other page here keeps the full ban.
     const words =
       page === CLIENT
-        ? ["checkpoint", "message_id", "provenance"]
+        ? ["checkpoint", "provenance"]
         : ["checkpoint", "message_id", "provenance", "confidence"];
     for (const word of words) {
       assert.ok(!new RegExp(word, "i").test(code), `${word} leaks into ${page}`);
@@ -798,11 +813,16 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
   // the Add dialog's "Add and test it first" choice both post it.
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
+    // Checkpoint 2026-09-18 WP4: the local Skill proposal lifecycle.
+    "approve_skill_proposal",
     "change_wording",
+    "edit_skill_proposal",
     "keep",
     "readd",
     "retire",
+    "retire_skill_proposal",
     "retry_write",
+    "set_content_destination",
     "skip",
     "test",
     "undo",
@@ -835,29 +855,16 @@ test("evidence rendering only knows two authors and labels them for a person", (
   assert.match(detail, /lovableReplyText\(m\.text\)/);
 });
 
-test("landing page: public, four steps from HOW_IT_WORKS_STEPS (spec 6.5), one button, never redirects", () => {
-  // Task 8: the three onboarding steps become the four steps from spec
-  // §6.5, and the landing intro becomes LANDING_INTRO.
-  assert.deepEqual(
-    ux.HOW_IT_WORKS_STEPS.map((s) => s.title),
-    ["Synced", "Proposed", "Approved by you", "Written and versioned"],
-  );
-  assert.deepEqual(
-    ux.HOW_IT_WORKS_STEPS.map((s) => s.text),
-    [
-      "Harness Ledger reads your Lovable chats and Knowledge every hour. No credits, no AI.",
-      "Where you corrected Lovable, Harness Ledger's AI analysis proposes one rule, with the exact messages as evidence.",
-      "Add it now, test it first in a temporary copy, or skip. Nothing changes until you say so.",
-      "Harness Ledger writes the exact text you saw, reads it back to verify, and keeps every version so you can always go back.",
-    ],
-  );
+test("landing page: public, copy from landing-copy.ts, never redirects, fetches nothing", () => {
+  // Checkpoint 2026-09-18: the landing page moved to src/lib/landing-copy.ts
+  // (hero, eight-step story, evidence levels, limitations) -- pinned in
+  // detail by ux-landing.test.ts. HOW_IT_WORKS_STEPS/LANDING_INTRO stay in
+  // harness-ux.ts for the in-app "How Harness Ledger works" link only.
   const landing = codeOnly(readApp("routes/index.tsx"));
-  assert.match(landing, /HOW_IT_WORKS_STEPS\.map/);
-  assert.match(landing, /\{LANDING_INTRO\}/);
+  assert.match(landing, /STORY_STEPS\.map/);
+  assert.match(landing, /\{HERO_TITLE\}/);
   assert.match(landing, /signedIn \? "\/inbox" : "\/login"/);
-  assert.match(landing, /signedIn \? "Open Inbox" : "Sign in"/);
   assert.ok(!/navigate\(|redirect\(/.test(landing), "the landing page never redirects");
-  assert.equal(count(landing, "<Button"), 1, "one button");
   assert.ok(!/fetch\(/.test(landing), "the landing page fetches nothing");
   const login = codeOnly(readApp("routes/login.tsx"));
   assert.equal(count(login, 'to: "/inbox"'), 3);

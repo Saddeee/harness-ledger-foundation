@@ -48,11 +48,36 @@ async function resolveWorkspaceId(adapter: Adapter): Promise<string | null> {
   return workspaceId;
 }
 
+// Checkpoint 2026-09-18 WP4 (D4): the local Skill proposals Harness Ledger
+// has drafted from suggestions (any status except 'skipped' -- a skipped
+// one was never really offered), regardless of which workspace they belong
+// to (a proposal has no workspace_id of its own; correction_candidate_id is
+// how the page links back to the suggestion that carries the project).
+function buildProposals(adapter: Adapter) {
+  return adapter.listSkillProposalsForSkillsView().map((p) => ({
+    id: p.id,
+    name: p.name,
+    status: p.status,
+    ownership: p.ownership,
+    lovable_state: p.lovable_state,
+    version_count: p.version_count,
+    correction_candidate_id: p.correction_candidate_id,
+    updated_at: p.updated_at,
+  }));
+}
+
 async function buildSkillsResponse(adapter: Adapter) {
   const workspaceId = await resolveWorkspaceId(adapter);
+  const proposals = buildProposals(adapter);
 
   if (!workspaceId) {
-    return { available: true as const, workspace_id: null, fetched_at: null, skills: [] };
+    return {
+      available: true as const,
+      workspace_id: null,
+      fetched_at: null,
+      skills: [],
+      proposals,
+    };
   }
 
   const snapshots = adapter.latestSkillSnapshots(workspaceId);
@@ -87,7 +112,7 @@ async function buildSkillsResponse(adapter: Adapter) {
     };
   });
 
-  return { available: true as const, workspace_id: workspaceId, fetched_at, skills };
+  return { available: true as const, workspace_id: workspaceId, fetched_at, skills, proposals };
 }
 
 async function handleGet({ request }: { request: Request }) {

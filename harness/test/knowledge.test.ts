@@ -207,16 +207,15 @@ test("accept without a snapshot: choice recorded, write_status stays none, previ
   assert.equal(rule.evidence_level, "human_grounded");
 });
 
-test("skill destination is rejected with a clear error", () => {
-  assert.throws(
-    () =>
-      improvements.improvementAction({
-        action: "accept",
-        id: A.correctionId,
-        destination: "skill",
-      }),
-    /Skill isn't available yet/,
-  );
+test("skill destination: accepting as a Skill approves a local Skill proposal and never stages a Knowledge write (checkpoint 2026-09-18 WP4)", () => {
+  const before = store.listPendingKnowledgeWrites().length;
+  improvements.improvementAction({ action: "accept", id: A.correctionId, destination: "skill" });
+  assert.equal(store.listPendingKnowledgeWrites().length, before, "no Knowledge write staged");
+  const view = improvements.getImprovement(A.correctionId)!;
+  assert.ok(view.skill_proposal, "a Skill proposal exists");
+  assert.equal(view.skill_proposal!.status, "approved");
+  assert.equal(view.skill_proposal!.lovable_state, "not_created");
+  improvements.improvementAction({ action: "reopen", id: A.correctionId });
 });
 
 const USER_KNOWLEDGE = "# My project notes\n\nAlways use the design tokens.\n";

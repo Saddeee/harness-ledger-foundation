@@ -149,6 +149,45 @@ export type TestInfo = {
   credits: { used_this_month: number; budget: number };
 };
 
+// Checkpoint 2026-09-18 WP4 (D4): the destination model. `value` is what the
+// Rule writer recommended (or a user later chose); `recommended_label` /
+// `alternative_label` are its own small copy of the label map
+// (harness-ux.ts's CONTENT_DESTINATION_LABELS -- this file may not import
+// the web app's src/lib, the same reason TARGET_LABEL above is a local
+// copy too), so a caller never has to duplicate the mapping itself.
+// `reason`/`alternative` are the Rule writer's own free text when it gave
+// one, else null -- the generic fallback sentences live in harness-ux.ts,
+// not here, so this file stays a plain read with no display-copy opinion of
+// its own beyond the two label maps.
+export type ContentDestinationValue = "knowledge" | "skill" | "both";
+export type ContentDestination = {
+  value: ContentDestinationValue;
+  reason: string | null;
+  alternative: string | null;
+  chosen_by: "rule_writer" | "user" | null;
+  recommended_label: string;
+  alternative_label: string;
+};
+
+export type SkillProposalRevisionView = {
+  id: number;
+  new_name: string;
+  new_content: string;
+  new_status: string;
+  reason: string;
+  actor: string;
+  created_at: string;
+};
+export type SkillProposalView = {
+  id: number;
+  name: string;
+  content: string;
+  status: store.SkillProposalStatus;
+  ownership: store.SkillProposalOwnership;
+  lovable_state: store.SkillProposalLovableState;
+  revisions: SkillProposalRevisionView[];
+} | null;
+
 export type Improvement = {
   id: number;
   // "retire" items come from an open retire_proposals row, not a
@@ -164,6 +203,21 @@ export type Improvement = {
   title: string;
   proposed_instruction: string | null;
   destination: "workspace" | "project" | "one_time" | null;
+  // Checkpoint 2026-09-18 WP4 (D4): a SEPARATE axis from `destination` above
+  // (which Knowledge target -- project vs workspace -- an accepted rule
+  // writes to). This is what belongs where at all: Knowledge, a Skill, or
+  // both. Named `content_destination` rather than `destination` only to
+  // avoid colliding with the existing field name above, which every other
+  // page (judge.tsx, tests.tsx, local-settings.tsx, the Add dialog here)
+  // already reads for a different meaning. Null only for a "retire" item
+  // (there is no correction_candidate to read it from).
+  content_destination: ContentDestination | null;
+  // Checkpoint 2026-09-18 WP4: the local Skill proposal for this suggestion,
+  // if the Rule writer (or a later user choice) put a Skill on the table --
+  // null otherwise, and always null for a "retire" item. `lovable_state` is
+  // always 'not_created': creating or updating a Skill in Lovable is not
+  // wired in this checkpoint (D4).
+  skill_proposal: SkillProposalView;
   classification: string;
   decision: {
     status: "pending" | "accepted" | "skipped";
@@ -291,6 +345,15 @@ type CorrectionRow = {
   task_episode_id: number;
   confidence: number | null;
   decided_by: "user" | "automatic" | null;
+  // Checkpoint 2026-09-18 WP4 (migration v19): where this suggestion's
+  // lesson belongs -- see buildContentDestination below. `destination`
+  // defaults to 'knowledge' at the DB layer, so this is never null; the
+  // other three are null until the Rule writer (or a later user choice)
+  // sets them.
+  destination: "knowledge" | "skill" | "both";
+  destination_reason: string | null;
+  destination_alternative: string | null;
+  destination_chosen_by: "rule_writer" | "user" | null;
 };
 type RuleRow = {
   id: number;
@@ -367,6 +430,93 @@ const TARGET_LABEL: Record<"project" | "workspace", string> = {
   project: "This project's Knowledge in Lovable",
   workspace: "Workspace Knowledge — all your projects",
 };
+
+// Checkpoint 2026-09-18 WP4: mirrors harness-ux.ts's own
+// CONTENT_DESTINATION_LABELS by hand (see ContentDestination's doc comment
+// above for why this file can't import it). Keep the two in lockstep.
+const CONTENT_DESTINATION_LABELS: Record<ContentDestinationValue, string> = {
+  knowledge: "Knowledge",
+  skill: "Skill",
+  both: "Knowledge + Skill",
+};
+// The single-destination alternative shown next to a recommendation: the
+// other side of the knowledge/skill split. "both" has no one obvious single
+// alternative, so it defaults to naming "Skill" (dropping the Knowledge
+// reminder line is the smaller change from "both").
+const CONTENT_DESTINATION_ALTERNATIVE: Record<ContentDestinationValue, ContentDestinationValue> = {
+  knowledge: "skill",
+  skill: "knowledge",
+  both: "skill",
+};
+
+function buildContentDestination(c: CorrectionRow): ContentDestination {
+  const value = c.destination;
+  const alternativeValue = CONTENT_DESTINATION_ALTERNATIVE[value];
+  return {
+    value,
+    reason: c.destination_reason,
+    alternative: c.destination_alternative,
+    chosen_by: c.destination_chosen_by,
+    recommended_label: CONTENT_DESTINATION_LABELS[value],
+    alternative_label: CONTENT_DESTINATION_LABELS[alternativeValue],
+  };
+}
+
+function buildSkillProposalView(correctionCandidateId: number): SkillProposalView {
+  const proposal = store.getSkillProposalForCandidate(correctionCandidateId);
+  if (!proposal) return null;
+  const revisions = store.listSkillProposalRevisions(proposal.id);
+  return {
+    id: proposal.id,
+    name: proposal.name,
+    content: proposal.content,
+    status: proposal.status,
+    ownership: proposal.ownership,
+    lovable_state: proposal.lovable_state,
+    revisions: revisions.map((r) => ({
+      id: r.id,
+      new_name: r.new_name,
+      new_content: r.new_content,
+      new_status: r.new_status,
+      reason: r.reason,
+      actor: r.actor,
+      created_at: r.created_at,
+    })),
+  };
+}
+
+const SKILL_TITLE_MAX_CHARS = 60;
+
+function toSkillSlug(text: string): string {
+  const slug = text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "harness-ledger-skill";
+}
+
+/**
+ * A deterministic Skill draft built straight from a rule's own instruction
+ * text -- no LLM call (spec: "no LLM call"). Used when a user chooses
+ * "Skill" or "Knowledge + Skill" for a suggestion that had no Skill proposal
+ * yet, and when "accept" is called with destination "skill" for a
+ * suggestion the Rule writer never drafted one for.
+ */
+function deterministicSkillDraft(instruction: string): { name: string; markdown: string } {
+  const title =
+    titleFor(instruction) || instruction.slice(0, SKILL_TITLE_MAX_CHARS) || "Harness Ledger Skill";
+  const name = toSkillSlug(title);
+  const markdown = [
+    `# ${title}`,
+    "",
+    "1. Inspect the existing implementation.",
+    `2. Apply: ${instruction}`,
+    "3. Verify the result.",
+    "",
+  ].join("\n");
+  return { name, markdown };
+}
 
 function proofOutcome(items: PlanItem[]): "not_run" | "passed" | "failed" | "unclear" | null {
   if (items.length === 0) return null;
@@ -811,6 +961,8 @@ function buildImprovement(
     title: title || c.summary,
     proposed_instruction: rule?.instruction ?? null,
     destination: rule ? rule.scope : (c.proposed_scope ?? null),
+    content_destination: buildContentDestination(c),
+    skill_proposal: buildSkillProposalView(c.id),
     classification: c.classification,
     decision: {
       status,
@@ -930,6 +1082,8 @@ function buildRetireItem(
     title: `Retire: ${live.instruction}`,
     proposed_instruction: null,
     destination: live.scope,
+    content_destination: null,
+    skill_proposal: null,
     classification: "retire",
     decision: {
       status: "pending",
@@ -1116,6 +1270,35 @@ const actionInput = z.discriminatedUnion("action", [
     text: z.string().max(2000),
   }),
   // ---- end Round 6c ----
+  // ---- Checkpoint 2026-09-18 WP4 ----
+  // "set_content_destination" addresses a correction candidate's id, same
+  // convention as "accept"/"skip"/"change_wording" above -- named
+  // set_CONTENT_destination, not "set_destination", because that literal is
+  // already taken by the action just above (Knowledge target: project vs
+  // workspace vs one_time -- a different axis, see ContentDestination's own
+  // doc comment in this file).
+  z.object({
+    action: z.literal("set_content_destination"),
+    id: z.number().int(),
+    destination: z.enum(["knowledge", "skill", "both"]),
+  }),
+  // The four Skill-proposal actions address a skill_proposals id directly
+  // (proposal_id), the same convention "retire"/"verdict"/"cancel_write"
+  // above use for their own non-correction-candidate id spaces.
+  z.object({
+    action: z.literal("edit_skill_proposal"),
+    proposal_id: z.number().int(),
+    name: z.string().min(1).max(200),
+    content: z.string().min(1).max(20000),
+  }),
+  z.object({ action: z.literal("approve_skill_proposal"), proposal_id: z.number().int() }),
+  z.object({ action: z.literal("retire_skill_proposal"), proposal_id: z.number().int() }),
+  z.object({
+    action: z.literal("restore_skill_proposal_revision"),
+    proposal_id: z.number().int(),
+    revision_id: z.number().int(),
+  }),
+  // ---- end Checkpoint 2026-09-18 WP4 ----
 ]);
 
 // After the user approves "Add", stage the exact write for the executor --
@@ -1404,6 +1587,51 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
   if (a.action === "feedback") {
     return recordFeedback(a.run_id, a.text);
   }
+  // Checkpoint 2026-09-18 WP4: the four Skill-proposal actions address a
+  // skill_proposals id directly, same reason as "judge"/"feedback"'s run_id
+  // path above -- resolved to the correction candidate it belongs to only
+  // to build the response, the same way every other action here returns the
+  // one Improvement it changed.
+  if (
+    a.action === "edit_skill_proposal" ||
+    a.action === "approve_skill_proposal" ||
+    a.action === "retire_skill_proposal" ||
+    a.action === "restore_skill_proposal_revision"
+  ) {
+    const before = store.getSkillProposal(a.proposal_id);
+    if (!before) throw new Error(`skill proposal ${a.proposal_id} not found`);
+    if (a.action === "edit_skill_proposal") {
+      store.editSkillProposal({
+        id: a.proposal_id,
+        name: a.name,
+        content: a.content,
+        actor,
+      });
+    } else if (a.action === "approve_skill_proposal") {
+      store.setSkillProposalStatus({
+        id: a.proposal_id,
+        status: "approved",
+        actor,
+        reason: "approved",
+      });
+    } else if (a.action === "retire_skill_proposal") {
+      store.setSkillProposalStatus({
+        id: a.proposal_id,
+        status: "retired",
+        actor,
+        reason: "retired",
+      });
+    } else {
+      store.restoreSkillProposalRevision({
+        id: a.proposal_id,
+        revision_id: a.revision_id,
+        actor,
+      });
+    }
+    const improvement = getImprovement(before.correction_candidate_id);
+    if (!improvement) throw new Error(`improvement for skill proposal ${a.proposal_id} not found`);
+    return improvement;
+  }
 
   const current = getImprovement(a.id);
   if (!current) throw new Error(`improvement ${a.id} not found`);
@@ -1411,11 +1639,72 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
 
   switch (a.action) {
     case "accept": {
-      if (a.destination === "skill")
-        throw new Error(
-          "Adding as a Skill isn't available yet — choose this project's Knowledge or Workspace Knowledge",
-        );
-      const destination = a.destination;
+      // Checkpoint 2026-09-18 WP4 (D4): a suggestion whose content
+      // destination is 'skill' (skill-only -- the Rule writer's own
+      // recommendation, or a candidate the user set that way via
+      // set_content_destination) never writes to Knowledge, no matter which
+      // destination this "accept" call itself names -- this also protects
+      // auto-accept.ts, which always calls accept with a project/workspace
+      // destination, from staging a Knowledge write for a Skill-only
+      // suggestion. Accepting with destination "skill" directly (the former
+      // dead/refusing enum value) does the same thing for a 'knowledge' or
+      // 'both' candidate the user wants to treat as a Skill acceptance.
+      if (current.content_destination?.value === "skill" || a.destination === "skill") {
+        store.recordHumanCorrectionDecision({
+          id: a.id,
+          final_classification: current.classification as never,
+          reusable: true,
+          proposed_scope: "one_time",
+          reviewer: actor,
+        });
+        store.setCandidateDecidedBy(a.id, "user");
+        if (rule) {
+          store.updateRule({ id: rule.id, state: "approved", actor });
+          if (!(current.proof?.outcome === "passed"))
+            store.setRuleEvidenceLevel(rule.id, "human_grounded", ACTOR);
+          // Never a Knowledge write for a Skill-only acceptance -- cancel
+          // anything staged from an earlier decision on this same rule.
+          store.cancelPendingKnowledgeWrites(
+            rule.id,
+            "cancelled: this suggestion goes to a Skill, not Knowledge",
+          );
+          const existingProposal = store.getSkillProposalForCandidate(a.id);
+          if (
+            existingProposal &&
+            existingProposal.status !== "retired" &&
+            existingProposal.status !== "skipped"
+          ) {
+            store.setSkillProposalStatus({
+              id: existingProposal.id,
+              status: "approved",
+              actor,
+              reason: "approved via accept",
+            });
+          } else {
+            const draft = deterministicSkillDraft(rule.instruction);
+            const created = store.createSkillProposal({
+              correction_candidate_id: a.id,
+              rule_id: rule.id,
+              name: draft.name,
+              content: draft.markdown,
+              ownership: "harness",
+              created_by: actor,
+              reason: "proposed: accepted as a Skill",
+            });
+            store.setSkillProposalStatus({
+              id: created.id,
+              status: "approved",
+              actor,
+              reason: "approved via accept",
+            });
+          }
+        }
+        break;
+      }
+      // Reaching here means the branch above did not take the Skill path --
+      // a.destination is "project" or "workspace" (the union's third
+      // member, "skill", always breaks out above).
+      const destination = a.destination as "project" | "workspace";
       store.recordHumanCorrectionDecision({
         id: a.id,
         final_classification: current.classification as never,
@@ -1519,6 +1808,57 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
         if (rule) store.updateRule({ id: rule.id, scope: a.destination, actor: ACTOR });
       }
       break;
+    // Checkpoint 2026-09-18 WP4 (D4): the user's own choice of content
+    // destination -- Knowledge, a Skill, or both. Creates a Skill proposal
+    // (deterministic draft, no LLM call) the first time destination comes to
+    // include "skill" with none on file yet; retires/skips whatever Skill
+    // proposal exists the moment it goes back to "knowledge" only (retired
+    // if it had already been approved -- undoing an approved thing is a
+    // retirement -- skipped otherwise, the same word "skip" already carries
+    // for an ordinary suggestion the user declined).
+    case "set_content_destination": {
+      const previousProposal = store.getSkillProposalForCandidate(a.id);
+      store.setCandidateContentDestination({
+        id: a.id,
+        destination: a.destination,
+        chosen_by: "user",
+      });
+      if (a.destination === "knowledge") {
+        if (previousProposal?.status === "approved") {
+          store.setSkillProposalStatus({
+            id: previousProposal.id,
+            status: "retired",
+            actor: ACTOR,
+            reason: "destination changed to Knowledge only",
+          });
+        } else if (previousProposal?.status === "proposed") {
+          store.setSkillProposalStatus({
+            id: previousProposal.id,
+            status: "skipped",
+            actor: ACTOR,
+            reason: "destination changed to Knowledge only",
+          });
+        }
+      } else if (
+        !previousProposal ||
+        previousProposal.status === "retired" ||
+        previousProposal.status === "skipped"
+      ) {
+        const instructionSource =
+          rule?.instruction ?? current.proposed_instruction ?? current.title;
+        const draft = deterministicSkillDraft(instructionSource);
+        store.createSkillProposal({
+          correction_candidate_id: a.id,
+          rule_id: rule?.id ?? null,
+          name: draft.name,
+          content: draft.markdown,
+          ownership: "harness",
+          created_by: ACTOR,
+          reason: "proposed: destination changed to include a Skill",
+        });
+      }
+      break;
+    }
     case "restore": {
       if (!rule) throw new Error("This improvement has no rule to restore");
       const version = store.getKnowledgeVersion(a.version_id);
