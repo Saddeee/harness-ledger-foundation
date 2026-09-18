@@ -3412,7 +3412,7 @@ export function setCandidateDecidedBy(id: number, by: "user" | "automatic"): voi
   insertEvent("correction_candidate.decided_by_set", null, { id, decided_by: by });
 }
 
-export type RuleVerdict = "helped" | "did_not_help" | "not_sure";
+export type RuleVerdict = "keep" | "review" | "retire" | "not_sure";
 
 /** A whole-rule verdict ("did this actually help") -- newest one wins on the
  * Instructions page (latestRuleVerdict below). Distinct from rule_adherence,

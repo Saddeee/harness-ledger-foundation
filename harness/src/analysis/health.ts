@@ -104,7 +104,7 @@ function matchesFailure(
  * applicable/helped when its episode wasn't already counted by the
  * tag-based scan. With the "user verdicts" source on (Round 5 fix wave item
  * 1 / spec §5.2), the rule's own latest whole-rule verdict
- * (store.latestRuleVerdict) adds one more hurt when it is "did_not_help"
+ * (store.latestRuleVerdict) adds one more hurt when it is "review"
  * and was recorded after this same window started -- a "helped" verdict
  * contributes nothing here (its snooze is a carried-forward stored field,
  * not a count); this is what makes a verdict's hurt bump durable across a
@@ -229,7 +229,7 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
 
     // Round 5 fix wave item 1 / spec §5.2: a whole-rule verdict from the
     // Instructions page's verdict buttons is a derived input too -- only
-    // the latest one for this rule counts, only "did_not_help" adds
+    // the latest one for this rule counts, only "review" adds
     // anything (a "helped" verdict's effect is the carried-forward
     // snoozed_until below, not a count), only when Settings › Evidence has
     // the "user verdicts" source on, and only when it was recorded after
@@ -244,7 +244,7 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
       const verdict = store.latestRuleVerdict(rule.id);
       if (
         verdict &&
-        verdict.verdict === "did_not_help" &&
+        verdict.verdict === "review" &&
         new Date(verdict.created_at).getTime() > new Date(start).getTime()
       ) {
         hurt += 1;

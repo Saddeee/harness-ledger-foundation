@@ -171,16 +171,14 @@ test("improvement.tsx: CompactDecisionCard's header row and body are siblings to
 
 // ---- 3. The verdict control: compact, shared, one per rule ----
 
-test("improvement.tsx: VerdictControl is role=\"group\", labelled 'Did this rule help?', with the spec's exact Yes/No/Not sure buttons", () => {
+test("improvement.tsx: VerdictControl is role=\"group\", labelled 'Is this rule still useful?', with Keep / Review / Retire / Not sure", () => {
   const raw = readApp(IMPROVEMENT);
   const code = codeOnly(raw);
   assert.match(code, /export function VerdictControl/);
   const fn = slice(code, "export function VerdictControl", "function DecidedStatus");
   assert.match(fn, /role="group"/);
-  assert.match(fn, /aria-label="Did this rule help\?"/);
-  for (const label of ["Yes", "No", "Not sure"]) {
-    assert.ok(fn.includes(`label: "${label}"`) || raw.includes(`label: "${label}"`));
-  }
+  assert.match(fn, /aria-label=\{VERDICT_QUESTION\}/);
+  assert.match(raw, /VERDICT_CHOICE_LABELS\[value\]/);
   // Ghost, small buttons -- a compact inline control, not a row in the
   // action bar (VerdictControl is never wrapped in ACTION_BAR_CLASS).
   assert.match(fn, /variant="ghost"/);

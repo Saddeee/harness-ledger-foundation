@@ -1159,7 +1159,7 @@ test("buildTimeline: a target with 3 versions (one a restore) + 1 external chang
   setAt("knowledge_versions", "written_at", v3.id, "2026-09-01 16:00:00");
 
   // 1 verdict.
-  const verdict = store.recordRuleVerdict({ rule_id: a.rule.id, verdict: "helped" }) as {
+  const verdict = store.recordRuleVerdict({ rule_id: a.rule.id, verdict: "keep" }) as {
     id: number;
   };
   setAt("rule_verdicts", "created_at", verdict.id, "2026-09-01 17:00:00");
@@ -1177,7 +1177,7 @@ test("buildTimeline: a target with 3 versions (one a restore) + 1 external chang
 
   const [nVerdict, nV3, nExternal, nV2, nV1, nSkip, nAccept] = nodes;
 
-  assert.equal(nVerdict!.label, "You said this rule helped");
+  assert.equal(nVerdict!.label, "You said to keep this rule");
   assert.equal(nVerdict!.actor, "you");
   assert.equal(nVerdict!.content, "Never run migrations automatically.");
   assert.equal(nVerdict!.summary, "Never run migrations automatically.");
@@ -1545,7 +1545,7 @@ test("verdict action: records the row; did_not_help feeds rule_health.hurt throu
   const result = imp.improvementAction({
     action: "verdict",
     rule_id: c.rule.id,
-    verdict: "did_not_help",
+    verdict: "review",
     note: "broke the build",
   });
   assert.equal(result.id, c.cc.id);
@@ -1555,7 +1555,7 @@ test("verdict action: records the row; did_not_help feeds rule_health.hurt throu
     "hurt+1 immediately -- the action records the verdict and recomputes rule_health, which reads it back",
   );
   const verdicts = store.listRuleVerdicts(c.rule.id);
-  assert.equal(verdicts[0]!.verdict, "did_not_help");
+  assert.equal(verdicts[0]!.verdict, "review");
   assert.equal(verdicts[0]!.note, "broke the build");
 
   // A later, unrelated recompute (an executor sync, an analysis run) does
@@ -1577,7 +1577,7 @@ test("verdict action: records the row; did_not_help feeds rule_health.hurt throu
       paired: false,
     }),
   });
-  imp.improvementAction({ action: "verdict", rule_id: c.rule.id, verdict: "did_not_help" });
+  imp.improvementAction({ action: "verdict", rule_id: c.rule.id, verdict: "review" });
   assert.equal(
     store.getRuleHealth(c.rule.id)!.hurt,
     1,
@@ -1604,7 +1604,7 @@ test("verdict action: records the row; did_not_help feeds rule_health.hurt throu
     scope: "project",
   });
   imp.improvementAction({ action: "accept", id: d.cc.id, destination: "project" });
-  imp.improvementAction({ action: "verdict", rule_id: d.rule.id, verdict: "did_not_help" });
+  imp.improvementAction({ action: "verdict", rule_id: d.rule.id, verdict: "review" });
   assert.equal(
     store.getRuleHealth(d.rule.id),
     null,
@@ -1642,7 +1642,7 @@ test("verdict action: helped snoozes for 30 days only when the rule's current he
     snoozed_until: null,
   });
 
-  imp.improvementAction({ action: "verdict", rule_id: e.rule.id, verdict: "helped" });
+  imp.improvementAction({ action: "verdict", rule_id: e.rule.id, verdict: "keep" });
   const health = store.getRuleHealth(e.rule.id)!;
   assert.equal(health.status, "snoozed");
   assert.ok(health.snoozed_until, "snoozed_until is set");
@@ -1670,7 +1670,7 @@ test("verdict action: helped snoozes for 30 days only when the rule's current he
     status: "healthy",
     snoozed_until: null,
   });
-  imp.improvementAction({ action: "verdict", rule_id: f.rule.id, verdict: "helped" });
+  imp.improvementAction({ action: "verdict", rule_id: f.rule.id, verdict: "keep" });
   const healthF = store.getRuleHealth(f.rule.id)!;
   assert.equal(
     healthF.status,

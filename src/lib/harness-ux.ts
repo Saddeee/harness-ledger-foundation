@@ -565,15 +565,26 @@ export function healthLine(health: HealthLike | null | undefined): string | null
 // each number keeps its own label naming exactly which source produced
 // it). ----
 
-export const VERDICT_TEXT: Record<"helped" | "did_not_help" | "not_sure", string> = {
-  helped: "helped",
-  did_not_help: "didn't help",
+// "Is this rule still useful?" -- Keep / Review / Retire / Not sure. A
+// usefulness decision, never a causal claim ("helped" is banned from copy).
+export type RuleVerdictValue = "keep" | "review" | "retire" | "not_sure";
+export const VERDICT_TEXT: Record<RuleVerdictValue, string> = {
+  keep: "keep it",
+  review: "review it",
+  retire: "retire it",
   not_sure: "not sure",
 };
+export const VERDICT_QUESTION = "Is this rule still useful?";
+export const VERDICT_CHOICE_LABELS: Record<RuleVerdictValue, string> = {
+  keep: "Keep",
+  review: "Review",
+  retire: "Retire",
+  not_sure: "Not sure",
+};
 
-export type VerdictLike = { verdict: "helped" | "did_not_help" | "not_sure"; created_at: string };
+export type VerdictLike = { verdict: RuleVerdictValue; created_at: string };
 
-// "You said: helped, 5 Sep" -- replaces the verdict buttons once a verdict
+// "You said: keep it, 5 Sep" -- replaces the verdict buttons once a verdict
 // exists; the buttons come back via a "Change" link next to this line.
 export function verdictLine(verdict: VerdictLike | null | undefined): string | null {
   if (!verdict) return null;

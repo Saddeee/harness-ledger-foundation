@@ -561,7 +561,7 @@ test("verdict action: a did_not_help verdict bumps rule_health.hurt only when ev
   // recomputeRuleHealth (health.ts reads it back via store.latestRuleVerdict)
   // instead of writing hurt+1 into the stored row directly, so the bump
   // shows up immediately here...
-  imp.improvementAction({ action: "verdict", rule_id: ruleId, verdict: "did_not_help" });
+  imp.improvementAction({ action: "verdict", rule_id: ruleId, verdict: "review" });
   assert.equal(
     store.getRuleHealth(ruleId)!.hurt,
     1,
@@ -586,7 +586,7 @@ test("verdict action: a did_not_help verdict bumps rule_health.hurt only when ev
       paired: false,
     }),
   });
-  imp.improvementAction({ action: "verdict", rule_id: ruleId, verdict: "did_not_help" });
+  imp.improvementAction({ action: "verdict", rule_id: ruleId, verdict: "review" });
   assert.equal(
     store.getRuleHealth(ruleId)!.hurt,
     1,
@@ -701,7 +701,7 @@ test("recomputeRuleHealth: a did_not_help verdict survives recompute", () => {
   recomputeRuleHealth(NOW);
   assert.equal(store.getRuleHealth(ruleId)!.hurt, 0, "no episodes, no verdict yet -- hurt is 0");
 
-  store.recordRuleVerdict({ rule_id: ruleId, verdict: "did_not_help" });
+  store.recordRuleVerdict({ rule_id: ruleId, verdict: "review" });
 
   recomputeRuleHealth(NOW);
   assert.equal(
@@ -727,7 +727,7 @@ test("recomputeRuleHealth: a did_not_help verdict contributes nothing when evide
     scopeTags: ["verdict-off-tag"], // no fixture episode uses this tag
     writtenAt: RULE_WRITTEN_AT,
   });
-  store.recordRuleVerdict({ rule_id: ruleId, verdict: "did_not_help" });
+  store.recordRuleVerdict({ rule_id: ruleId, verdict: "review" });
 
   store.setSettings({
     evidence_sources: JSON.stringify({

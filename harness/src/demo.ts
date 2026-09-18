@@ -742,7 +742,7 @@ export function addDemoData(): AddDemoResult {
   });
   store.recordRuleVerdict({
     rule_id: ruleB.ruleId,
-    verdict: "did_not_help",
+    verdict: "review",
     note: "Demo: still happening despite the rule.",
   });
 
@@ -854,7 +854,7 @@ export function addDemoData(): AddDemoResult {
   });
   store.recordRuleVerdict({
     rule_id: ruleA.ruleId,
-    verdict: "helped",
+    verdict: "keep",
     note: "Demo: no more surprise route renames since this was added.",
   });
 

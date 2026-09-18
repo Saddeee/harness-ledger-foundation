@@ -98,16 +98,24 @@ test("retireSinceLine and retireReasonSentence: never say 'helped', for all thre
 
 // ---- verdictLine / adherenceLine (spec §5.2, §5 item 3) ----
 
-test("verdictLine: 'You said: <verdict>, <day>', mapping helped/did_not_help/not_sure", () => {
+test("verdictLine: 'You said: <verdict>, <day>', mapping keep/review/retire/not_sure -- a usefulness decision, never 'helped'", () => {
   assert.equal(ux.verdictLine(null), null);
   assert.equal(
-    ux.verdictLine({ verdict: "helped", created_at: "2026-09-05T00:00:00Z" }),
-    "You said: helped, 5 Sep",
+    ux.verdictLine({ verdict: "keep", created_at: "2026-09-05T00:00:00Z" }),
+    "You said: keep it, 5 Sep",
   );
   assert.equal(
-    ux.verdictLine({ verdict: "did_not_help", created_at: "2026-09-05T00:00:00Z" }),
-    "You said: didn't help, 5 Sep",
+    ux.verdictLine({ verdict: "review", created_at: "2026-09-05T00:00:00Z" }),
+    "You said: review it, 5 Sep",
   );
+  assert.equal(
+    ux.verdictLine({ verdict: "retire", created_at: "2026-09-05T00:00:00Z" }),
+    "You said: retire it, 5 Sep",
+  );
+  assert.equal(ux.VERDICT_QUESTION, "Is this rule still useful?");
+  for (const v of ["keep", "review", "retire", "not_sure"] as const) {
+    assert.ok(!/help/i.test(ux.VERDICT_TEXT[v]), `verdict text must not claim help: ${v}`);
+  }
   assert.equal(
     ux.verdictLine({ verdict: "not_sure", created_at: "2026-09-05T00:00:00Z" }),
     "You said: not sure, 5 Sep",
@@ -162,14 +170,17 @@ test("evidenceSourceLines: four sentences, each ending 'has run for this rule' o
 // live only in improvement.tsx, and instructions.tsx's own contribution is
 // just rendering the shared component with this rule's id and verdict.
 
-test("improvement.tsx: posts action: verdict from the shared VerdictControl, with the spec's exact button labels", () => {
+test("improvement.tsx: posts action: verdict from the shared VerdictControl, asking 'Is this rule still useful?' with Keep / Review / Retire / Not sure", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   assert.match(code, /action:\s*"verdict"/, 'improvement.tsx missing action: "verdict"');
-  assert.match(code, /aria-label="Did this rule help\?"/);
-  const raw = readApp(IMPROVEMENT);
-  for (const label of ["Yes", "No", "Not sure"]) {
-    assert.ok(raw.includes(`label: "${label}"`), `missing verdict button label "${label}"`);
-  }
+  assert.match(code, /aria-label=\{VERDICT_QUESTION\}/);
+  assert.ok(!/Did this rule help/.test(code), "the causal question must be gone");
+  assert.deepEqual(ux.VERDICT_CHOICE_LABELS, {
+    keep: "Keep",
+    review: "Review",
+    retire: "Retire",
+    not_sure: "Not sure",
+  });
 });
 
 test("instructions.tsx and improvement.tsx: both render the shared VerdictControl -- one visible control, not two copies of the same state", () => {

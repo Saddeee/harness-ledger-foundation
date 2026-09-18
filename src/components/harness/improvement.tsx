@@ -52,9 +52,12 @@ import {
   testInProgressLine,
   testThisRuleBudgetLine,
   UNDO_TOAST,
+  VERDICT_CHOICE_LABELS,
+  VERDICT_QUESTION,
   VERDICT_TEXT,
   verdictEffectLine,
   verdictLine,
+  type RuleVerdictValue,
   type StatusCtx,
   type VerdictEffect,
   versionStatusLine,
@@ -764,7 +767,7 @@ function RetireCard({
 
 // ---- Decided items: where it stands, and how to change your mind ----
 
-// Round 6 Task 4 / spec §4: "Did this rule help?" is now a compact, self-
+// Round 6 Task 4 / spec §4: "Is this rule still useful?" is a compact, self-
 // contained control living in the observed line -- not a row of buttons in
 // the action bar. It owns its own network call and local state, so the
 // Suggestions card/detail and the Instructions row render one shared widget
@@ -775,11 +778,9 @@ function RetireCard({
 // other choice's response carries `effect` (harness/src/improvements.ts's
 // recordVerdict) -- what that one click changed in this rule's health,
 // shown right underneath via verdictEffectLine.
-const VERDICT_CHOICES: { value: "helped" | "did_not_help" | "not_sure"; label: string }[] = [
-  { value: "helped", label: "Yes" },
-  { value: "did_not_help", label: "No" },
-  { value: "not_sure", label: "Not sure" },
-];
+const VERDICT_CHOICES: { value: RuleVerdictValue; label: string }[] = (
+  ["keep", "review", "retire", "not_sure"] as const
+).map((value) => ({ value, label: VERDICT_CHOICE_LABELS[value] }));
 
 export function VerdictControl({
   ruleId,
@@ -787,14 +788,14 @@ export function VerdictControl({
   disabled,
 }: {
   ruleId: number;
-  verdict: { verdict: "helped" | "did_not_help" | "not_sure"; created_at: string } | null;
+  verdict: { verdict: RuleVerdictValue; created_at: string } | null;
   disabled?: boolean;
 }) {
   const qc = useQueryClient();
   const [showChoices, setShowChoices] = useState(false);
   const [effect, setEffect] = useState<VerdictEffect | null>(null);
   const mutation = useMutation({
-    mutationFn: (v: "helped" | "did_not_help" | "not_sure") =>
+    mutationFn: (v: "keep" | "review" | "retire" | "not_sure") =>
       post({ action: "verdict", rule_id: ruleId, verdict: v }),
     onSuccess: (data, v) => {
       if (data.improvement?.changed === false) {
@@ -815,7 +816,7 @@ export function VerdictControl({
     <div className="space-y-1">
       <div
         role="group"
-        aria-label="Did this rule help?"
+        aria-label={VERDICT_QUESTION}
         className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
       >
         {verdict ? (
@@ -831,7 +832,7 @@ export function VerdictControl({
             </button>
           </span>
         ) : (
-          <span>Did this rule help?</span>
+          <span>{VERDICT_QUESTION}</span>
         )}
         {showButtons
           ? VERDICT_CHOICES.map((c) => (

@@ -170,7 +170,7 @@ async function buildKnowledgeResponse(adapter: Adapter) {
         const improvement = improvementId != null ? adapter.getImprovement(improvementId) : null;
         const ruleVersions = allVersions.filter((v) => v.rule_id === r.id);
         const latestVerdict = adapter.latestRuleVerdict(r.id) as {
-          verdict: "helped" | "did_not_help" | "not_sure";
+          verdict: "keep" | "review" | "not_sure";
           created_at: string;
         } | null;
         const adherenceRows = adapter.listRuleAdherence(r.id) as unknown[];

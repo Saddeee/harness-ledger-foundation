@@ -1080,7 +1080,7 @@ const actionInput = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("verdict"),
     rule_id: z.number().int(),
-    verdict: z.enum(["helped", "did_not_help", "not_sure"]),
+    verdict: z.enum(["keep", "review", "retire", "not_sure"]),
     note: z.string().max(2000).optional(),
   }),
   // ---- Round 6 Task 3 ----
@@ -1724,9 +1724,10 @@ function testedLabel(run: store.ExperimentRunRow): string {
 }
 
 const VERDICT_LABEL: Record<store.RuleVerdict, string> = {
-  helped: "You said this rule helped",
-  did_not_help: "You said this rule didn't help",
-  not_sure: "You said you're not sure this rule helped",
+  keep: "You said to keep this rule",
+  review: "You said this rule needs a review",
+  retire: "You said to retire this rule",
+  not_sure: "You said you're not sure this rule is still useful",
 };
 
 type CorrectionDecisionRow = {
@@ -2098,10 +2099,10 @@ function recordVerdict(
   const health = changed ? store.getRuleHealth(ruleId) : null;
   let effect: VerdictEffect = "none";
   if (health) {
-    if (verdict === "did_not_help" && store.getEvidenceSources().verdicts) {
+    if (verdict === "review" && store.getEvidenceSources().verdicts) {
       recomputeRuleHealth();
       effect = "counted_hurt";
-    } else if (verdict === "helped" && health.status === "retire_suggested") {
+    } else if (verdict === "keep" && health.status === "retire_suggested") {
       store.upsertRuleHealth({
         rule_id: health.rule_id,
         applicable_tasks: health.applicable_tasks,

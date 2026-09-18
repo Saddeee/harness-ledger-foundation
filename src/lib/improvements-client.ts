@@ -150,7 +150,7 @@ export type ImprovementHealth = {
   // observed/adherence/verdicts have any data at all for this rule, driving
   // the Details paragraph's "has run for this rule" / "hasn't run for this
   // rule yet".
-  verdict: { verdict: "helped" | "did_not_help" | "not_sure"; created_at: string } | null;
+  verdict: { verdict: "keep" | "review" | "not_sure"; created_at: string } | null;
   adherence: {
     followed: number;
     broke: number;
@@ -513,7 +513,7 @@ export type KnowledgeActiveRule = {
   // `health` above).
   status?: "written" | "pending" | "stale" | "failed" | "testing";
   since?: string | null;
-  verdict?: { verdict: "helped" | "did_not_help" | "not_sure"; created_at: string } | null;
+  verdict?: { verdict: "keep" | "review" | "not_sure"; created_at: string } | null;
   adherence?: { followed: number; broke: number; not_applicable: number } | null;
 };
 

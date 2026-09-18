@@ -98,9 +98,10 @@ test("improvements.ts (server): every spec §3b timeline label string appears ve
     "Harness Ledger suggested retiring",
     "You kept it",
     "Skill ",
-    "You said this rule helped",
-    "You said this rule didn't help",
-    "You said you're not sure this rule helped",
+    "You said to keep this rule",
+    "You said this rule needs a review",
+    "You said to retire this rule",
+    "You said you're not sure this rule is still useful",
   ];
   for (const label of LABELS) {
     assert.ok(source.includes(label), `missing timeline label: "${label}"`);
@@ -111,6 +112,6 @@ test("improvementAction: the actionInput union and dispatcher gained a `verdict`
   const code = codeOnly(readHarness(IMPROVEMENTS_SRC));
   assert.match(code, /z\.literal\("verdict"\)/);
   assert.match(code, /rule_id: z\.number\(\)\.int\(\)/);
-  assert.match(code, /verdict: z\.enum\(\["helped", "did_not_help", "not_sure"\]\)/);
+  assert.match(code, /verdict: z\.enum\(\["keep", "review", "retire", "not_sure"\]\)/);
   assert.match(code, /a\.action === "verdict"/);
 });

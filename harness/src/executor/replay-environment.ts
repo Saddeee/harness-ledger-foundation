@@ -37,16 +37,10 @@ import {
 // ------------------------------------------------------------- vocabulary
 
 export type ProjectKnowledgeSource =
-  | "exact_historical"
-  | "nearest_earlier_version"
-  | "current_fallback"
-  | "unavailable";
+  "exact_historical" | "nearest_earlier_version" | "current_fallback" | "unavailable";
 
 export type EnvironmentQuality =
-  | "controlled"
-  | "partially_controlled"
-  | "historical_approximation"
-  | "not_comparable";
+  "controlled" | "partially_controlled" | "historical_approximation" | "not_comparable";
 
 export type ExperimentKind = store.ExperimentKind;
 
@@ -145,7 +139,8 @@ export function selectProjectKnowledgeAt(
       else break;
     }
     if (picked) {
-      const exact = Math.floor(parseTimestampMs(picked.fetched_at) / 1000) === Math.floor(wantMs / 1000);
+      const exact =
+        Math.floor(parseTimestampMs(picked.fetched_at) / 1000) === Math.floor(wantMs / 1000);
       return {
         source: exact ? "exact_historical" : "nearest_earlier_version",
         snapshot_id: picked.id,
@@ -345,7 +340,8 @@ export function backfillReplayEnvironments(): { backfilled: number[] } {
       episode_started_at: episode?.started_at ?? null,
       run_started_at: run.started_at,
       candidate: { id: run.rule_id, instruction: rule?.rule.instruction ?? "" },
-      request_rest_message_id: restId ?? (run.copy_project_id ? run.request_message_external_id : null),
+      request_rest_message_id:
+        restId ?? (run.copy_project_id ? run.request_message_external_id : null),
       chat_history_included: false,
     });
     env.backfilled = true;

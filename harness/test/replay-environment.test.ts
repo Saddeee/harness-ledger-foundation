@@ -80,7 +80,10 @@ test("selectProjectKnowledgeAt: without an episode time the choice is current_fa
 test("composeReplayKnowledge: keeps the rules that were live in the historical block and appends the candidate", () => {
   const base = `My own notes\n\n${block(["Use kronor."])}`;
   const out = composeReplayKnowledge(base, { id: 24, instruction: "Use sentence case." });
-  assert.equal(out.final_content, `My own notes\n\n${block(["Use kronor.", "Use sentence case."])}`);
+  assert.equal(
+    out.final_content,
+    `My own notes\n\n${block(["Use kronor.", "Use sentence case."])}`,
+  );
   assert.deepEqual(out.other_active_rules, ["Use kronor."]);
   assert.equal(out.candidate_already_present, false);
 });
@@ -116,7 +119,11 @@ test("composeReplayKnowledge: an empty historical block (all rules retired) yiel
 test("environmentQuality: a historical replay is at best a historical approximation, whatever the Knowledge source", () => {
   for (const source of ["exact_historical", "nearest_earlier_version"] as const) {
     assert.equal(
-      environmentQuality({ kind: "historical_replay", project_knowledge_source: source, code_state_ok: true }),
+      environmentQuality({
+        kind: "historical_replay",
+        project_knowledge_source: source,
+        code_state_ok: true,
+      }),
       "historical_approximation",
     );
   }
@@ -263,9 +270,10 @@ test("backfillReplayEnvironments: an older run gets an environment computed from
     source_project_id: SOURCE,
     request_message_external_id: "main:user#1",
   });
-  db
-    .prepare(`UPDATE experiment_runs SET started_at = ?, environment_json = NULL WHERE id = ?`)
-    .run("2026-09-13 23:22:23", runId);
+  db.prepare(`UPDATE experiment_runs SET started_at = ?, environment_json = NULL WHERE id = ?`).run(
+    "2026-09-13 23:22:23",
+    runId,
+  );
 
   const { backfilled } = backfillReplayEnvironments();
   assert.ok(backfilled.includes(runId));

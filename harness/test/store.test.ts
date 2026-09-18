@@ -13,13 +13,13 @@ const store = await import("../src/store.js");
 const PROJECT = "test-project-id";
 
 test("schema migration: applies all migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 18);
+  assert.equal(schemaVersion(), 21);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
   );
   const tableNames = new Set(
     (
@@ -1096,13 +1096,13 @@ test("recordRuleVerdict/latestRuleVerdict/listRuleVerdicts: newest verdict wins,
   assert.equal(typeof first.id, "number");
   const second = store.recordRuleVerdict({
     rule_id: ruleId2,
-    verdict: "helped",
+    verdict: "keep",
     note: "confirmed on the next task",
   });
 
   const latest = store.latestRuleVerdict(ruleId2);
   assert.equal(latest?.id, second.id);
-  assert.equal(latest?.verdict, "helped");
+  assert.equal(latest?.verdict, "keep");
   assert.equal(latest?.note, "confirmed on the next task");
 
   const all = store.listRuleVerdicts(ruleId2);
@@ -1284,7 +1284,7 @@ test("feedbackStats/listAcceptedRuleTexts/listSkippedSuggestions/listWordingEdit
   // Round 6 Task 1's recordRuleVerdict upsert makes a repeat of the *same*
   // verdict a no-op (no new row), which would undercount here.
   store.recordRuleVerdict({ rule_id: acceptedRule.id, verdict: "not_sure" });
-  store.recordRuleVerdict({ rule_id: acceptedRule.id, verdict: "helped" });
+  store.recordRuleVerdict({ rule_id: acceptedRule.id, verdict: "keep" });
 
   const after = store.feedbackStats();
   assert.equal(after.accepted - before.accepted, 1);
@@ -1441,14 +1441,14 @@ test("recordRuleVerdict: upsert semantics -- same verdict as current is a no-op 
 
   const changed = store.recordRuleVerdict({
     rule_id: ruleId,
-    verdict: "helped",
+    verdict: "keep",
     note: "actually it did",
   });
   assert.notEqual(changed.id, first.id, "a different verdict inserts a new row");
   assert.equal(changed.changed, true);
   const all = store.listRuleVerdicts(ruleId);
   assert.equal(all.length, 2, "history now has both rows");
-  assert.equal(store.latestRuleVerdict(ruleId)?.verdict, "helped");
+  assert.equal(store.latestRuleVerdict(ruleId)?.verdict, "keep");
 
   // The DB-level invariant migration v12 established: exactly one current row.
   const currentRows = db
@@ -1461,7 +1461,7 @@ test("recordRuleVerdict: upsert semantics -- same verdict as current is a no-op 
   // rewritten (recording a new row is the only way to change the note).
   const sameVerdictNewNote = store.recordRuleVerdict({
     rule_id: ruleId,
-    verdict: "helped",
+    verdict: "keep",
     note: "a different note",
   });
   assert.equal(sameVerdictNewNote.changed, false);

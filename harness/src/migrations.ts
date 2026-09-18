@@ -819,4 +819,172 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE experiment_runs ADD COLUMN environment_json TEXT;
     `,
   },
+  {
+    version: 19,
+    name: "checkpoint_skill_proposals",
+    sql: `
+      -- Skills as a first-class destination. A suggestion recommends where
+      -- its lesson belongs (Knowledge, a Skill, or both), says why, names the
+      -- alternative, and records who chose (the Rule writer or the user). A
+      -- Skill proposal is the draft SKILL.md itself, kept and versioned
+      -- locally; writing it to Lovable is not wired yet (lovable_state stays
+      -- 'not_created'), and the UI says so.
+      ALTER TABLE correction_candidates ADD COLUMN destination TEXT NOT NULL DEFAULT 'knowledge'
+        CHECK (destination IN ('knowledge','skill','both'));
+      ALTER TABLE correction_candidates ADD COLUMN destination_reason TEXT;
+      ALTER TABLE correction_candidates ADD COLUMN destination_alternative TEXT;
+      ALTER TABLE correction_candidates ADD COLUMN destination_chosen_by TEXT
+        CHECK (destination_chosen_by IN ('rule_writer','user'));
+
+      CREATE TABLE IF NOT EXISTS skill_proposals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        correction_candidate_id INTEGER NOT NULL REFERENCES correction_candidates(id),
+        rule_id INTEGER REFERENCES rules(id),
+        name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'proposed'
+          CHECK (status IN ('proposed','approved','retired','skipped')),
+        ownership TEXT NOT NULL DEFAULT 'harness' CHECK (ownership IN ('harness','user')),
+        lovable_state TEXT NOT NULL DEFAULT 'not_created' CHECK (lovable_state IN ('not_created')),
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_skill_proposals_candidate ON skill_proposals(correction_candidate_id);
+
+      CREATE TABLE IF NOT EXISTS skill_proposal_revisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_proposal_id INTEGER NOT NULL REFERENCES skill_proposals(id),
+        previous_name TEXT,
+        previous_content TEXT,
+        previous_status TEXT,
+        new_name TEXT NOT NULL,
+        new_content TEXT NOT NULL,
+        new_status TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_skill_proposal_revisions_proposal
+        ON skill_proposal_revisions(skill_proposal_id, id);
+    `,
+  },
+  {
+    version: 20,
+    name: "checkpoint_analysis_context",
+    sql: `
+      -- What each model call was shown, and why. One row per LLM call that
+      -- classified or proposed: the selected context items (ids and reasons),
+      -- what was left out although relevant, the approximate token size,
+      -- truncation, and the strategy/prompt versions -- so an analysis can be
+      -- explained and repeated.
+      CREATE TABLE IF NOT EXISTS analysis_context (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER,
+        llm_call_id INTEGER,
+        role TEXT NOT NULL,
+        target_history_item_id INTEGER,
+        target_correction_candidate_id INTEGER,
+        selected_json TEXT NOT NULL DEFAULT '[]',
+        omitted_json TEXT NOT NULL DEFAULT '[]',
+        approx_tokens INTEGER,
+        truncated INTEGER NOT NULL DEFAULT 0 CHECK (truncated IN (0,1)),
+        strategy_version TEXT NOT NULL,
+        prompt_version TEXT,
+        content_hash TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_analysis_context_run ON analysis_context(run_id);
+
+      -- A classification remembers what it was computed from, so a changed
+      -- message, prompt or strategy can be found without re-asking everything.
+      ALTER TABLE message_classifications ADD COLUMN content_hash TEXT;
+      ALTER TABLE message_classifications ADD COLUMN prompt_version TEXT;
+      ALTER TABLE message_classifications ADD COLUMN strategy_version TEXT;
+      ALTER TABLE message_classifications ADD COLUMN analyzed_at TEXT;
+
+      -- "Reanalyse history" is a separate, scoped request: which projects,
+      -- which date range, whether records a person already decided on are
+      -- included, and why. Ordinary Analyse now stays 'incremental'.
+      ALTER TABLE analysis_requests ADD COLUMN mode TEXT NOT NULL DEFAULT 'incremental'
+        CHECK (mode IN ('incremental','reanalyse'));
+      ALTER TABLE analysis_requests ADD COLUMN scope_json TEXT;
+
+      -- A newer analysis that disagrees with a decision a person made never
+      -- overwrites it: it opens a review item instead.
+      CREATE TABLE IF NOT EXISTS analysis_disagreements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        correction_candidate_id INTEGER NOT NULL REFERENCES correction_candidates(id),
+        run_id INTEGER,
+        previous_json TEXT NOT NULL,
+        proposed_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','accepted','dismissed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        decided_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_analysis_disagreements_status ON analysis_disagreements(status);
+    `,
+  },
+  {
+    version: 21,
+    name: "checkpoint_rule_usefulness",
+    sql: `
+      -- "Is this rule still useful?" replaces "Did this rule help?". Verdict
+      -- values become keep / review / retire / not_sure (old rows are mapped:
+      -- helped -> keep, did_not_help -> review). rule_health gains a
+      -- 'review' status (inactivity or repeated issues ask for a look, they do
+      -- not retire) and separate observed/AI-review counters so no number
+      -- mixes sources. SQLite cannot alter a CHECK, so both tables are rebuilt
+      -- with every row kept.
+      CREATE TABLE rule_verdicts_v21 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_id INTEGER NOT NULL REFERENCES rules(id),
+        verdict TEXT NOT NULL CHECK (verdict IN ('keep','review','retire','not_sure')),
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        superseded INTEGER NOT NULL DEFAULT 0 CHECK (superseded IN (0,1))
+      );
+      INSERT INTO rule_verdicts_v21 (id, rule_id, verdict, note, created_at, superseded)
+        SELECT id, rule_id,
+               CASE verdict WHEN 'helped' THEN 'keep' WHEN 'did_not_help' THEN 'review' ELSE 'not_sure' END,
+               note, created_at, superseded
+        FROM rule_verdicts;
+      DROP TABLE rule_verdicts;
+      ALTER TABLE rule_verdicts_v21 RENAME TO rule_verdicts;
+      CREATE INDEX IF NOT EXISTS idx_rule_verdicts_rule ON rule_verdicts(rule_id, id);
+
+      CREATE TABLE rule_health_v21 (
+        rule_id INTEGER PRIMARY KEY REFERENCES rules(id),
+        applicable_tasks INTEGER NOT NULL DEFAULT 0,
+        helped INTEGER NOT NULL DEFAULT 0,
+        hurt INTEGER NOT NULL DEFAULT 0,
+        last_applicable_at TEXT,
+        contradicted_by_rule_id INTEGER,
+        unused_since TEXT,
+        status TEXT NOT NULL DEFAULT 'healthy'
+          CHECK (status IN ('healthy','watch','review','retire_suggested','snoozed')),
+        snoozed_until TEXT,
+        computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        baseline_at TEXT,
+        observed_repeat INTEGER NOT NULL DEFAULT 0,
+        observed_clear INTEGER NOT NULL DEFAULT 0,
+        ai_not_followed INTEGER NOT NULL DEFAULT 0,
+        ai_followed INTEGER NOT NULL DEFAULT 0,
+        review_reason TEXT
+      );
+      INSERT INTO rule_health_v21 (rule_id, applicable_tasks, helped, hurt, last_applicable_at,
+          contradicted_by_rule_id, unused_since, status, snoozed_until, computed_at, baseline_at)
+        SELECT rule_id, applicable_tasks, helped, hurt, last_applicable_at,
+          contradicted_by_rule_id, unused_since, status, snoozed_until, computed_at, baseline_at
+        FROM rule_health;
+      DROP TABLE rule_health;
+      ALTER TABLE rule_health_v21 RENAME TO rule_health;
+      CREATE INDEX IF NOT EXISTS idx_rule_health_status ON rule_health(status);
+
+      -- An opposite request is classified before it questions a rule.
+      ALTER TABLE retire_proposals ADD COLUMN contradiction_kind TEXT
+        CHECK (contradiction_kind IN ('one_task_exception','temporary_override','project_specific_override',
+                                      'permanent_preference_change','genuine_contradiction','unclear'));
+    `,
+  },
 ];
