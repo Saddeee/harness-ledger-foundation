@@ -60,11 +60,21 @@ export type RetireInfo = {
     helped: number;
     hurt: number;
     last_applicable_at: string | null;
+    // Checkpoint 2026-09-18 WP3 (D8): the two separately-tracked signals --
+    // see ImprovementHealth below for the full doc comment.
+    observed_repeat: number;
+    observed_clear: number;
+    ai_not_followed: number;
+    ai_followed: number;
   };
   since: string | null;
   // Only set for reason "contradiction": the other live rule's instruction
   // text, for "...because it contradicts <other rule text>."
   contradicts_instruction: string | null;
+  // Checkpoint 2026-09-18 WP3: set only for reason "changed_mind" -- which
+  // contradiction kind the classifier assigned (only genuine_contradiction
+  // or permanent_preference_change ever reach this proposal at all).
+  contradiction_kind: store.ContradictionKind | null;
 };
 
 // Task C3 / spec §4 (v1-lite) + §4b (display): the same free, no-LLM
@@ -95,6 +105,20 @@ export type ImprovementHealth = {
     quotes: { verdict: store.AdherenceVerdict; quote: string; created_at: string }[];
   } | null;
   sources: { observed: boolean; adherence: boolean; verdicts: boolean; paired: boolean };
+  // Checkpoint 2026-09-18 WP3 (D8, spec §9): the two signals rule_health now
+  // tracks separately -- what the free tag/correction scan found (a repeat,
+  // or none) and what the AI Judge said (not followed, or followed) --
+  // never mixed with each other or with the legacy helped/hurt totals
+  // above. Everything a person reads about a rule's usefulness must be
+  // built from these four, via harness-ux.ts's observedLine/aiReviewLine,
+  // never from helped/hurt.
+  observed_repeat: number;
+  observed_clear: number;
+  ai_not_followed: number;
+  ai_followed: number;
+  // The rule's own current health status and, when it's "review", why.
+  status: store.RuleHealthStatus;
+  review_reason: store.RuleHealthReviewReason | null;
   // Round 6 Task 4 / spec §4: set only on the direct response to a
   // just-recorded verdict (recordVerdict below) -- what that one click
   // changed in this rule's health, for the compact VerdictControl
@@ -581,6 +605,12 @@ function computeHealth(
       paired: store.listExperimentRuns({ rule_id: ruleId, status: ["judged"] }).length > 0,
     },
     verdict_effect: null,
+    observed_repeat: row.observed_repeat,
+    observed_clear: row.observed_clear,
+    ai_not_followed: row.ai_not_followed,
+    ai_followed: row.ai_followed,
+    status: row.status,
+    review_reason: row.review_reason,
   };
 }
 
@@ -1128,10 +1158,24 @@ function buildRetireItem(
             helped: health.helped,
             hurt: health.hurt,
             last_applicable_at: health.last_applicable_at,
+            observed_repeat: health.observed_repeat,
+            observed_clear: health.observed_clear,
+            ai_not_followed: health.ai_not_followed,
+            ai_followed: health.ai_followed,
           }
-        : { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null },
+        : {
+            applicable_tasks: 0,
+            helped: 0,
+            hurt: 0,
+            last_applicable_at: null,
+            observed_repeat: 0,
+            observed_clear: 0,
+            ai_not_followed: 0,
+            ai_followed: 0,
+          },
       since: live.first_written_at,
       contradicts_instruction: contradictsInstruction,
+      contradiction_kind: proposal.contradiction_kind,
     },
     rule_id: proposal.rule_id,
     health: null,

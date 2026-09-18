@@ -47,6 +47,19 @@ const CLASSIFICATION_VALUES: readonly MessageClassificationValue[] = [
   "other",
 ];
 
+// Checkpoint 2026-09-18 WP3 (D8, spec §9): the six-way distinction an
+// opposite request is classified into before it ever questions a rule --
+// only the last two ever open a "changed_mind" retire proposal.
+export const CONTRADICTION_KINDS = [
+  "one_task_exception",
+  "temporary_override",
+  "project_specific_override",
+  "permanent_preference_change",
+  "genuine_contradiction",
+  "unclear",
+] as const;
+export type ContradictionKindValue = (typeof CONTRADICTION_KINDS)[number];
+
 // Strict-mode compatible (fix wave item 1): every property is already
 // required (nothing here is optional) and no length/range keyword appears
 // -- summary's SUMMARY_CHAR_LIMIT bound is enforced purely in post-hoc
@@ -61,7 +74,23 @@ export const CLASSIFIER_JSON_SCHEMA = {
     tags: { type: "array", items: { enum: SCOPE_TAGS } },
     summary: { type: "string" },
     // Round 7: live rules this message asks the opposite of (null if none).
-    contradicts_rule_ids: { type: ["array", "null"], items: { type: "integer" } },
+    // Checkpoint 2026-09-18 WP3: each entry is now an object -- which rule,
+    // what kind of opposite request it is, and the quote that shows it --
+    // rather than a bare id, so the classifier commits to a kind before
+    // anything downstream decides whether to question the rule.
+    contradicts_rule_ids: {
+      type: ["array", "null"],
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["rule_id", "kind", "quote"],
+        properties: {
+          rule_id: { type: "integer" },
+          kind: { enum: CONTRADICTION_KINDS },
+          quote: { type: "string" },
+        },
+      },
+    },
   },
 } as const;
 
@@ -79,7 +108,13 @@ Classify the message into exactly one of these categories:
 - approval: the user is confirming/accepting the assistant's last change, not requesting anything.
 - other: none of the above fit.
 
-Separately from the category: if you are shown this project's live rules and the message asks Lovable for the opposite of one of them (the user changed their mind, e.g. a rule says "use kronor" and the message says "use euros from now on"), list those rule ids in contradicts_rule_ids. Only list a rule when the message clearly goes against it; otherwise use null.
+Separately from the category: if you are shown this project's live rules and the message asks Lovable for the opposite of one of them, list it in contradicts_rule_ids as { rule_id, kind, quote } -- quote is the exact words from the message that show the opposite request. Only list a rule when the message clearly goes against it; otherwise use null. Classify "kind" into exactly one of:
+- one_task_exception: the opposite is asked for just this one thing, not as a standing change (e.g. "just for this one page, use lowercase" when the rule says sentence case everywhere else).
+- temporary_override: the opposite is asked for a limited time or until something happens (e.g. "turn off dark mode for now, we'll bring it back after launch").
+- project_specific_override: the opposite is asked because this one project/page is a special case, without saying the rule itself is wrong (e.g. "the admin panel can ignore the branding rule, it's internal only").
+- permanent_preference_change: the user says, in a way that reads as a lasting change of mind, that things should be done the other way from now on (e.g. a rule says "use kronor" and the message says "use euros from now on").
+- genuine_contradiction: the message flatly states the rule's premise is wrong or no longer wanted, without a "from now on" but just as permanent in effect (e.g. a rule says "always show the beta banner" and the message says "there's no beta any more, remove all mentions of it").
+- unclear: it's genuinely ambiguous which of the above this is.
 
 Also choose zero or more tags from this fixed list that describe what area of the app the message concerns (use "general" when nothing more specific applies): ${SCOPE_TAGS.join(", ")}.
 
@@ -136,6 +171,12 @@ export function classifierUserPrompt(
   return parts.join("\n\n");
 }
 
+export type RawContradiction = {
+  rule_id?: unknown;
+  kind?: unknown;
+  quote?: unknown;
+};
+
 export type RawClassifierOutput = {
   classification?: unknown;
   tags?: unknown;
@@ -143,14 +184,42 @@ export type RawClassifierOutput = {
   contradicts_rule_ids?: unknown;
 };
 
+export type ValidatedContradiction = {
+  rule_id: number;
+  kind: ContradictionKindValue;
+  quote: string;
+};
+
 type ValidatedClassifierOutput = {
   classification: MessageClassificationValue;
   tags: ScopeTag[];
   summary: string;
-  contradicts_rule_ids: number[];
+  contradicts_rule_ids: ValidatedContradiction[];
 };
 
 const SCOPE_TAG_SET: ReadonlySet<string> = new Set(SCOPE_TAGS);
+const CONTRADICTION_KIND_SET: ReadonlySet<string> = new Set(CONTRADICTION_KINDS);
+const CONTRADICTION_QUOTE_CHAR_LIMIT = 300;
+
+/** Validates/clamps one raw contradiction entry: an unrecognized or missing
+ * "kind" falls back to "unclear" (the same "unknown value -> safest
+ * fallback" pattern classification/tags already use below) rather than
+ * failing the whole message -- an unclear kind never questions a rule, it
+ * only opens a review, so this is a safe default. `null` when rule_id isn't
+ * a real integer -- there is nothing to record without one. */
+function validateContradiction(raw: unknown): ValidatedContradiction | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as RawContradiction;
+  if (!Number.isInteger(r.rule_id)) return null;
+  const kind = CONTRADICTION_KIND_SET.has(r.kind as string)
+    ? (r.kind as ContradictionKindValue)
+    : "unclear";
+  const quote = truncate(
+    typeof r.quote === "string" ? r.quote : "",
+    CONTRADICTION_QUOTE_CHAR_LIMIT,
+  );
+  return { rule_id: r.rule_id as number, kind, quote };
+}
 
 /** Validates/clamps one raw model response into a safe row to store: an
  * unrecognized classification falls back to "other", tags are filtered to
@@ -166,10 +235,15 @@ export function validateClassifierOutput(raw: RawClassifierOutput): ValidatedCla
     new Set(tagsIn.filter((t): t is ScopeTag => SCOPE_TAG_SET.has(t as string))),
   );
   const summary = truncate(typeof raw.summary === "string" ? raw.summary : "", SUMMARY_CHAR_LIMIT);
-  const idsIn = Array.isArray(raw.contradicts_rule_ids) ? raw.contradicts_rule_ids : [];
-  const contradicts_rule_ids = Array.from(
-    new Set(idsIn.filter((id): id is number => Number.isInteger(id))),
-  );
+  const contradictionsIn = Array.isArray(raw.contradicts_rule_ids) ? raw.contradicts_rule_ids : [];
+  const seen = new Set<number>();
+  const contradicts_rule_ids: ValidatedContradiction[] = [];
+  for (const entry of contradictionsIn) {
+    const validated = validateContradiction(entry);
+    if (!validated || seen.has(validated.rule_id)) continue;
+    seen.add(validated.rule_id);
+    contradicts_rule_ids.push(validated);
+  }
   return { classification, tags, summary, contradicts_rule_ids };
 }
 
@@ -256,16 +330,35 @@ export async function classifyPending(
         promptVersion: PROMPT_VERSION.classifier,
         strategyVersion: CONTEXT_STRATEGY_VERSION,
       });
-      // Round 7: the user asked for the opposite of a live rule -- offer to
-      // retire it (Retire/Keep in the Inbox), once per rule.
-      for (const ruleId of validated.contradicts_rule_ids) {
-        if (!liveRules.some((r) => r.id === ruleId)) continue;
-        if (store.openRetireProposalForRule(ruleId)) continue;
-        store.createRetireProposal({
-          rule_id: ruleId,
-          reason: "changed_mind",
-          evidence: [message.id],
-        });
+      // Checkpoint 2026-09-18 WP3 (D8, spec §9): an opposite request is
+      // classified before it ever questions a rule. Only
+      // permanent_preference_change/genuine_contradiction open a
+      // "changed_mind" retire proposal; one_task_exception/
+      // temporary_override/project_specific_override are recorded as a
+      // note on the rule (shown as a plain line, never a reason to
+      // reconsider it); unclear opens a review, not a retirement.
+      for (const contradiction of validated.contradicts_rule_ids) {
+        if (!liveRules.some((r) => r.id === contradiction.rule_id)) continue;
+        if (
+          contradiction.kind === "permanent_preference_change" ||
+          contradiction.kind === "genuine_contradiction"
+        ) {
+          if (store.openRetireProposalForRule(contradiction.rule_id)) continue;
+          store.createRetireProposal({
+            rule_id: contradiction.rule_id,
+            reason: "changed_mind",
+            evidence: [message.id],
+            contradiction_kind: contradiction.kind,
+          });
+        } else if (contradiction.kind === "unclear") {
+          store.flagRuleForReview(contradiction.rule_id, "unclear_contradiction");
+        } else {
+          store.recordOppositeRequestNote({
+            rule_id: contradiction.rule_id,
+            kind: contradiction.kind,
+            history_item_id: message.id,
+          });
+        }
       }
       classified++;
     } catch (err) {

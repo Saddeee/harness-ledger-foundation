@@ -12,6 +12,12 @@ import { dice } from "./similarity.js";
 const DICE_HURT_THRESHOLD = 0.7;
 const MIN_APPLICABLE_FOR_RETIRE = 3;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+// Checkpoint 2026-09-18 WP3 (D8, spec §9): "review" thresholds -- below the
+// retire threshold, a rule with at least this many repeat corrections (the
+// free scan) or AI "not followed" verdicts is worth a person's look, not yet
+// a retirement suggestion. A single one of either is "watch" only.
+const OBSERVED_REVIEW_THRESHOLD = 2;
+const AI_NOT_FOLLOWED_REVIEW_THRESHOLD = 2;
 
 // A rule's failure_signature is written kebab-case by the miner (Task A2);
 // a correction's summary is free text from the classifier. Normalising both
@@ -115,12 +121,29 @@ function matchesFailure(
  * has for the rule rather than recomputed here -- this function only ever
  * produces the four count/date fields and the status they imply.
  *
- * Status: `retire_suggested` when applicable_tasks >= 3 and hurt > helped,
- * or the rule is contradicted, or it is unused (its last applicable episode
- * -- or, with none, its first write -- is older than the
- * rule_unused_after_days setting); `snoozed` instead of retire_suggested
- * while a prior snooze is still in effect; `watch` when at least one
- * episode hurt it but retirement isn't (yet) suggested; `healthy` otherwise.
+ * Checkpoint 2026-09-18 WP3 (D8, spec §9): helped/hurt/applicable_tasks
+ * above are kept exactly as computed before this checkpoint, for
+ * compatibility -- but `status` no longer reads them. Two further signals
+ * are tracked, each fully separately (no cross-dedup between them):
+ * observed_repeat/observed_clear (the free tag/correction scan only) and
+ * ai_not_followed/ai_followed (rule_adherence Judge rows only). Both are
+ * always computed; the evidence_sources.observed/adherence toggles only
+ * gate whether they count towards `status` below, never whether they're
+ * shown.
+ *
+ * Status: `retire_suggested` when observed_repeat >= 3 and observed_repeat >
+ * observed_clear, or the rule is contradicted (`contradicted_by_rule_id`, a
+ * rule-vs-rule contradiction found by the miner) or has an open
+ * "changed_mind" retire proposal (only ever opened, by classify.ts, for a
+ * genuine or permanent-preference-change contradiction); `snoozed` instead
+ * while a prior snooze is still in effect. `review` when the rule is unused
+ * (review_reason 'inactive'; never retire_suggested for this any more) or
+ * ai_not_followed >= 2 or observed_repeat >= 2 without meeting the retire
+ * condition (review_reason 'repeated_issue'). `watch` when a single repeat
+ * or not-followed exists but neither `review` nor `retire_suggested`
+ * applies. `healthy` otherwise. A person's own fresh "retire"/"review"
+ * verdict overrides all of the above (review_reason 'user_verdict') --
+ * "keep" is handled where it's recorded, not here.
  */
 export function recomputeRuleHealth(now: Date = new Date()): { rules: number; suggested: number } {
   const unusedAfterDays = Number(store.getSetting("rule_unused_after_days"));
@@ -164,6 +187,15 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
     // episode.
     const countedHurt = new Set<number>();
 
+    // Checkpoint 2026-09-18 WP3 (D8): the free tag/correction scan's raw
+    // result, tracked separately from helped/hurt above -- always computed
+    // (never gated by evidence_sources.observed), so a rule's own "what was
+    // actually observed" line stays honest regardless of whether that
+    // toggle currently counts it towards a status. helped/hurt stay exactly
+    // as they were computed before this checkpoint, for compatibility.
+    let observedRepeat = 0;
+    let observedClear = 0;
+
     for (const episode of episodes) {
       if (!isApplicable(episode.tags, rule.scope_tags)) continue;
       applicableTasks += 1;
@@ -171,20 +203,34 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
       if (!lastApplicableAt || episode.started_at > lastApplicableAt) {
         lastApplicableAt = episode.started_at;
       }
+      const matched = episode.corrections.some((c) =>
+        matchesFailure(c.summary, rule.failure_signature, rule.prediction),
+      );
+      if (matched) observedRepeat += 1;
+      else observedClear += 1;
       // spec §5 "which count": with the observed source off, a repeat
       // correction is still visible in the raw rule_adherence/history data,
       // but it no longer counts as hurt here.
-      const wasHurt =
-        sources.observed &&
-        episode.corrections.some((c) =>
-          matchesFailure(c.summary, rule.failure_signature, rule.prediction),
-        );
+      const wasHurt = sources.observed && matched;
       if (wasHurt) {
         hurt += 1;
         countedHurt.add(episode.id);
       } else {
         helped += 1;
       }
+    }
+
+    // Checkpoint 2026-09-18 WP3 (D8): the AI Judge's raw result, entirely
+    // separate from the free scan above -- no cross-dedup with it (an
+    // episode can be counted in both observed_repeat/clear and
+    // ai_not_followed/ai_followed; they are two independent signals, never
+    // merged into one number). Always computed, same reasoning as above.
+    let aiNotFollowed = 0;
+    let aiFollowed = 0;
+    for (const row of store.listRuleAdherence(rule.id)) {
+      if (!episodeById.has(row.task_episode_id)) continue;
+      if (row.verdict === "broke") aiNotFollowed += 1;
+      else if (row.verdict === "followed") aiFollowed += 1;
     }
 
     // spec §5 item 3: with the AI adherence check enabled, a `broke` row
@@ -303,19 +349,69 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
     const unusedSince = unused ? referenceDate : null;
 
     const isSnoozed = snoozedUntil != null && new Date(snoozedUntil).getTime() > now.getTime();
+
+    // Checkpoint 2026-09-18 WP3 (D8, spec §9): status now reasons from the
+    // two separately-tracked signals (observed_repeat/clear, the free scan;
+    // ai_not_followed/ai_followed, the AI Judge), gated by the same
+    // evidence-sources toggles that used to gate hurt/helped -- turning a
+    // source off stops it counting towards a status without hiding the raw
+    // number itself (both are still written to the row below regardless).
+    // A genuine or permanent-preference-change contradiction (classify.ts,
+    // gated there to just those two kinds) opens a 'changed_mind' retire
+    // proposal directly; an open one here means retirement is already being
+    // asked about, so status agrees rather than showing something weaker.
+    const effectiveObservedRepeat = sources.observed ? observedRepeat : 0;
+    const effectiveObservedClear = sources.observed ? observedClear : 0;
+    const effectiveAiNotFollowed = sources.adherence ? aiNotFollowed : 0;
+    const hasQuestioningContradiction =
+      store.openRetireProposalForRule(rule.id)?.reason === "changed_mind";
     const shouldRetire =
-      (applicableTasks >= MIN_APPLICABLE_FOR_RETIRE && hurt > helped) ||
+      (effectiveObservedRepeat >= MIN_APPLICABLE_FOR_RETIRE &&
+        effectiveObservedRepeat > effectiveObservedClear) ||
       contradictedByRuleId != null ||
-      unused;
+      hasQuestioningContradiction;
 
     let status: store.RuleHealthStatus;
+    let reviewReason: store.RuleHealthReviewReason | null = null;
     if (shouldRetire) {
       status = isSnoozed ? "snoozed" : "retire_suggested";
-    } else if (hurt >= 1) {
+    } else if (unused) {
+      // "Keep" on a review snoozes it like a retirement suggestion.
+      status = isSnoozed ? "snoozed" : "review";
+      reviewReason = "inactive";
+    } else if (
+      effectiveAiNotFollowed >= AI_NOT_FOLLOWED_REVIEW_THRESHOLD ||
+      effectiveObservedRepeat >= OBSERVED_REVIEW_THRESHOLD
+    ) {
+      status = isSnoozed ? "snoozed" : "review";
+      reviewReason = "repeated_issue";
+    } else if (effectiveObservedRepeat >= 1 || effectiveAiNotFollowed >= 1) {
       status = "watch";
     } else {
       status = "healthy";
     }
+
+    // A person's own "Is this rule still useful?" verdict is the strongest
+    // signal there is -- a fresh "retire" or "review" verdict (recorded
+    // after this rule's own window started) overrides whatever the
+    // observed/AI counts alone would have said. "keep" is handled directly
+    // where it's recorded (store.snoozeRuleHealth); "not_sure" changes
+    // nothing here.
+    if (sources.verdicts) {
+      const verdict = store.latestRuleVerdict(rule.id);
+      const isFresh =
+        verdict != null && new Date(verdict.created_at).getTime() > new Date(start).getTime();
+      // (The legacy hurt bump for a fresh "review" verdict happens once,
+      // above, in the pre-checkpoint verdict block.)
+      if (isFresh && verdict!.verdict === "retire") {
+        status = isSnoozed ? "snoozed" : "retire_suggested";
+        reviewReason = "user_verdict";
+      } else if (isFresh && verdict!.verdict === "review" && status !== "retire_suggested") {
+        status = isSnoozed ? "snoozed" : "review";
+        reviewReason = "user_verdict";
+      }
+    }
+
     if (status === "retire_suggested") suggested += 1;
 
     store.upsertRuleHealth({
@@ -328,6 +424,11 @@ export function recomputeRuleHealth(now: Date = new Date()): { rules: number; su
       unused_since: unusedSince,
       status,
       snoozed_until: snoozedUntil,
+      observed_repeat: observedRepeat,
+      observed_clear: observedClear,
+      ai_not_followed: aiNotFollowed,
+      ai_followed: aiFollowed,
+      review_reason: reviewReason,
     });
   }
 

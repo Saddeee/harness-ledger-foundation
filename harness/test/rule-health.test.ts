@@ -210,18 +210,35 @@ const corrD = message(
 classify(corrD, "correction", ["backend"], "design-system-bypassed");
 episode("2026-09-05T00:00:00Z", [reqD, corrD]);
 
-test("recomputeRuleHealth: 3 applicable episodes, 2 hurt (prose summaries, fuzzy-matched) 1 helped (unrelated correction) -> retire_suggested", () => {
+// Episode E: applicable (styling), hurt -- a third repeat correction so this
+// fixture clears the WP3 retire_suggested threshold (observed_repeat >= 3),
+// not just the old hurt > helped one.
+const reqE = message("Restyle the footer.", "2026-09-06T00:00:00Z");
+classify(reqE, "new_task", ["styling"]);
+const corrE = message(
+  "Inline colors instead of design tokens, one more time.",
+  "2026-09-06T01:00:00Z",
+);
+classify(
+  corrE,
+  "correction",
+  ["styling"],
+  "Inline colors instead of design tokens, one more time.",
+);
+episode("2026-09-06T00:00:00Z", [reqE, corrE]);
+
+test("recomputeRuleHealth: 4 applicable episodes, 3 hurt (prose summaries, fuzzy-matched) 1 helped (unrelated correction) -> retire_suggested", () => {
   const result = recomputeRuleHealth(NOW);
   assert.equal(result.rules, 1, "only the one live, written rule should be scored so far");
   assert.equal(result.suggested, 1);
 
   const health = store.getRuleHealth(styledRuleId);
   assert.ok(health);
-  assert.equal(health!.applicable_tasks, 3, "episode D's tags don't overlap ['styling']");
+  assert.equal(health!.applicable_tasks, 4, "episode D's tags don't overlap ['styling']");
   assert.equal(
     health!.hurt,
-    2,
-    "A hurts via slug(summary)~=failure_signature, B hurts via summary~=prediction -- both prose, neither literally equal",
+    3,
+    "A, B and E hurt via slug/prediction fuzzy match -- all prose, none literally equal",
   );
   assert.equal(
     health!.helped,
@@ -231,10 +248,18 @@ test("recomputeRuleHealth: 3 applicable episodes, 2 hurt (prose summaries, fuzzy
   assert.equal(health!.status, "retire_suggested");
   assert.equal(
     health!.last_applicable_at,
-    "2026-09-04T00:00:00Z",
-    "latest APPLICABLE episode is C, not D",
+    "2026-09-06T00:00:00Z",
+    "latest APPLICABLE episode is E, not D",
   );
   assert.equal(health!.unused_since, null);
+  // Checkpoint 2026-09-18 WP3 (D8): the same three numbers, now also on
+  // their own separately-tracked fields -- the free scan found the repeat
+  // in all three of A/B/E and none of the AI Judge ever ran here.
+  assert.equal(health!.observed_repeat, 3);
+  assert.equal(health!.observed_clear, 1);
+  assert.equal(health!.ai_not_followed, 0);
+  assert.equal(health!.ai_followed, 0);
+  assert.equal(health!.review_reason, null, "retire_suggested for the repeat count, not a review");
 });
 
 // A fully isolated project/episode set (never touched by any rule fixture
@@ -349,20 +374,20 @@ test("recomputeRuleHealth: a rule scoped 'general' applies to every episode rega
   assert.ok(result.rules >= 2);
 
   const health = store.getRuleHealth(generalRuleId)!;
-  // Episodes A, B, C, D all started after RULE_WRITTEN_AT, so a 'general'
-  // rule must count all four as applicable -- including D, which the
-  // styling-scoped rule above excluded for having no overlapping tag.
-  assert.equal(health.applicable_tasks, 4);
+  // Episodes A, B, C, D and E all started after RULE_WRITTEN_AT, so a
+  // 'general' rule must count all five as applicable -- including D, which
+  // the styling-scoped rule above excluded for having no overlapping tag.
+  assert.equal(health.applicable_tasks, 5);
   assert.equal(
     health.hurt,
     0,
     "none of the fixture's correction summaries are close to this rule's own signature/prediction",
   );
-  assert.equal(health.helped, 4);
+  assert.equal(health.helped, 5);
   assert.equal(health.status, "healthy");
 });
 
-test("recomputeRuleHealth: unused after the configured number of days -> retire_suggested with unused_since", () => {
+test("recomputeRuleHealth: unused after the configured number of days -> review, review_reason inactive (never retire_suggested)", () => {
   const unusedAfterDays = Number(store.getSetting("rule_unused_after_days"));
   assert.ok(unusedAfterDays > 0);
 
@@ -377,7 +402,10 @@ test("recomputeRuleHealth: unused after the configured number of days -> retire_
   recomputeRuleHealth(NOW);
   const health = store.getRuleHealth(unusedRuleId)!;
   assert.equal(health.applicable_tasks, 0);
-  assert.equal(health.status, "retire_suggested");
+  // Checkpoint 2026-09-18 WP3 (D8): inactivity opens a review, never a
+  // retirement -- retire.ts must not turn this into a retire_proposals row.
+  assert.equal(health.status, "review");
+  assert.equal(health.review_reason, "inactive");
   assert.equal(health.unused_since, writtenAt);
 });
 

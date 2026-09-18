@@ -2321,7 +2321,13 @@ export function listSkillSnapshots(
 // date, and task episodes after a given date with their classification
 // tags/corrections.
 
-export type RuleHealthStatus = "healthy" | "watch" | "retire_suggested" | "snoozed";
+// Checkpoint 2026-09-18 WP3 (D8, migration v21): "review" sits between
+// "watch" and "retire_suggested" -- something worth a person's look
+// (inactivity, or a repeated issue below the retire threshold) without
+// suggesting retirement outright. review_reason says why.
+export type RuleHealthStatus = "healthy" | "watch" | "review" | "retire_suggested" | "snoozed";
+export type RuleHealthReviewReason =
+  "inactive" | "repeated_issue" | "user_verdict" | "unclear_contradiction";
 
 export type RuleHealthRow = {
   rule_id: number;
@@ -2340,6 +2346,20 @@ export type RuleHealthRow = {
   // as the episode window start, so hurt/contradiction history from before
   // a re-add never counts against the readded rule again.
   baseline_at: string | null;
+  // ---- Checkpoint 2026-09-18 WP3 (migration v21) ----
+  // Two signals tracked separately so copy never mixes sources (D8): what
+  // the free tag/correction scan actually observed (a matching repeat
+  // correction, or none), and what the AI Judge (rule_adherence) said,
+  // independent of each other. helped/hurt above are kept for backward
+  // compatibility (existing retirement math, existing readers) but the UI
+  // must read these four instead for anything it shows a person.
+  observed_repeat: number;
+  observed_clear: number;
+  ai_not_followed: number;
+  ai_followed: number;
+  // Why `status` is "review" -- null for every other status.
+  review_reason: RuleHealthReviewReason | null;
+  // ---- end Checkpoint 2026-09-18 WP3 ----
 };
 
 export function getRuleHealth(ruleId: number): RuleHealthRow | null {
@@ -2366,17 +2386,34 @@ export function upsertRuleHealth(row: {
   // row's current baseline_at carried forward unchanged (null for a
   // brand-new row) -- only rebaselineRuleHealth below ever sets it.
   baseline_at?: string | null;
+  // Checkpoint 2026-09-18 WP3: optional, same reason as baseline_at -- a
+  // caller that only touches the legacy helped/hurt totals (snoozeRuleHealth,
+  // the "keep" verdict effect) carries the row's own current values forward
+  // unchanged rather than zeroing them.
+  observed_repeat?: number;
+  observed_clear?: number;
+  ai_not_followed?: number;
+  ai_followed?: number;
+  review_reason?: RuleHealthReviewReason | null;
 }): RuleHealthRow {
   const existing = getRuleHealth(row.rule_id);
   const baselineAt =
     row.baseline_at !== undefined ? row.baseline_at : (existing?.baseline_at ?? null);
+  const observedRepeat = row.observed_repeat ?? existing?.observed_repeat ?? 0;
+  const observedClear = row.observed_clear ?? existing?.observed_clear ?? 0;
+  const aiNotFollowed = row.ai_not_followed ?? existing?.ai_not_followed ?? 0;
+  const aiFollowed = row.ai_followed ?? existing?.ai_followed ?? 0;
+  const reviewReason =
+    row.review_reason !== undefined ? row.review_reason : (existing?.review_reason ?? null);
   const result = db
     .prepare(
       `INSERT INTO rule_health
          (rule_id, applicable_tasks, helped, hurt, last_applicable_at, contradicted_by_rule_id,
-          unused_since, status, snoozed_until, baseline_at, computed_at)
+          unused_since, status, snoozed_until, baseline_at, observed_repeat, observed_clear,
+          ai_not_followed, ai_followed, review_reason, computed_at)
        VALUES (@rule_id, @applicable_tasks, @helped, @hurt, @last_applicable_at, @contradicted_by_rule_id,
-               @unused_since, @status, @snoozed_until, @baseline_at, datetime('now'))
+               @unused_since, @status, @snoozed_until, @baseline_at, @observed_repeat, @observed_clear,
+               @ai_not_followed, @ai_followed, @review_reason, datetime('now'))
        ON CONFLICT(rule_id) DO UPDATE SET
          applicable_tasks = excluded.applicable_tasks,
          helped = excluded.helped,
@@ -2387,10 +2424,23 @@ export function upsertRuleHealth(row: {
          status = excluded.status,
          snoozed_until = excluded.snoozed_until,
          baseline_at = excluded.baseline_at,
+         observed_repeat = excluded.observed_repeat,
+         observed_clear = excluded.observed_clear,
+         ai_not_followed = excluded.ai_not_followed,
+         ai_followed = excluded.ai_followed,
+         review_reason = excluded.review_reason,
          computed_at = excluded.computed_at
        RETURNING *`,
     )
-    .get({ ...row, baseline_at: baselineAt }) as RuleHealthRow;
+    .get({
+      ...row,
+      baseline_at: baselineAt,
+      observed_repeat: observedRepeat,
+      observed_clear: observedClear,
+      ai_not_followed: aiNotFollowed,
+      ai_followed: aiFollowed,
+      review_reason: reviewReason,
+    }) as RuleHealthRow;
   insertEvent("rule_health.upserted", null, { rule_id: row.rule_id, status: row.status });
   return result;
 }
@@ -3020,6 +3070,19 @@ export function setRuleScopeTags(ruleId: number, tags: string[]): void {
 // live rule; evidence is that message's history_item id.
 export type RetireReason = "hurt" | "contradiction" | "unused" | "changed_mind";
 export type RetireProposalStatus = "open" | "retired" | "kept";
+// Checkpoint 2026-09-18 WP3 (D8, migration v21): an opposite request is
+// classified before it questions a rule -- only "permanent_preference_change"
+// and "genuine_contradiction" ever reach a "changed_mind" proposal; the other
+// four are recorded as a note on the rule instead (see
+// recordOppositeRequestNote/listOppositeRequestNotes below) and never open
+// this table. Null for every reason other than "changed_mind".
+export type ContradictionKind =
+  | "one_task_exception"
+  | "temporary_override"
+  | "project_specific_override"
+  | "permanent_preference_change"
+  | "genuine_contradiction"
+  | "unclear";
 
 export type RetireProposalRow = {
   id: number;
@@ -3032,6 +3095,7 @@ export type RetireProposalRow = {
   status: RetireProposalStatus;
   created_at: string;
   decided_at: string | null;
+  contradiction_kind: ContradictionKind | null;
 };
 
 type RetireProposalDbRow = {
@@ -3042,6 +3106,7 @@ type RetireProposalDbRow = {
   status: string;
   created_at: string;
   decided_at: string | null;
+  contradiction_kind: string | null;
 };
 
 function parseRetireProposal(row: RetireProposalDbRow): RetireProposalRow {
@@ -3060,6 +3125,7 @@ function parseRetireProposal(row: RetireProposalDbRow): RetireProposalRow {
     status: row.status as RetireProposalStatus,
     created_at: row.created_at,
     decided_at: row.decided_at,
+    contradiction_kind: (row.contradiction_kind as ContradictionKind | null) ?? null,
   };
 }
 
@@ -3067,17 +3133,21 @@ export function createRetireProposal(input: {
   rule_id: number;
   reason: RetireReason;
   evidence: number[];
+  // Checkpoint 2026-09-18 WP3: set only for reason "changed_mind" -- which of
+  // the six contradiction kinds the classifier assigned the opposite request.
+  contradiction_kind?: ContradictionKind | null;
 }): RetireProposalRow {
   const row = db
     .prepare(
-      `INSERT INTO retire_proposals (rule_id, reason, evidence_json)
-       VALUES (@rule_id, @reason, @evidence_json)
+      `INSERT INTO retire_proposals (rule_id, reason, evidence_json, contradiction_kind)
+       VALUES (@rule_id, @reason, @evidence_json, @contradiction_kind)
        RETURNING *`,
     )
     .get({
       rule_id: input.rule_id,
       reason: input.reason,
       evidence_json: JSON.stringify(input.evidence),
+      contradiction_kind: input.contradiction_kind ?? null,
     }) as RetireProposalDbRow;
   insertEvent("retire_proposal.created", null, {
     id: row.id,
@@ -4995,3 +5065,75 @@ export function setCandidateContentDestination(input: {
   });
 }
 // ---- end Checkpoint 2026-09-18 WP4 ----
+
+// ---- Checkpoint 2026-09-18 WP3 ----
+// D8 / spec §9: an opposite request classified as one_task_exception,
+// temporary_override or project_specific_override never questions the rule
+// (no retire_proposals row) -- it is only noted, so the Instructions page can
+// still show "Once, you asked for the opposite for a single task (12 Sep)"
+// without treating it as a reason to reconsider the rule. Stored as a plain
+// event (same convention as rule.readded/listReaddEventsForRule above)
+// rather than a new table -- there is nothing else to query it by.
+export type OppositeRequestKind = Exclude<
+  ContradictionKind,
+  "permanent_preference_change" | "genuine_contradiction"
+>;
+
+/** Forces a rule's health straight to `status` (default 'review') with the
+ * given review_reason, carrying every other field forward unchanged --
+ * same "upsert a minimal row if one doesn't exist yet" tolerance as
+ * snoozeRuleHealth. Used for an "unclear" opposite-request classification
+ * (D8, spec §9): worth a look, but not a reason to question the rule the
+ * way genuine_contradiction/permanent_preference_change are. */
+export function flagRuleForReview(
+  ruleId: number,
+  reviewReason: RuleHealthReviewReason,
+): RuleHealthRow {
+  const existing = getRuleHealth(ruleId);
+  return upsertRuleHealth({
+    rule_id: ruleId,
+    applicable_tasks: existing?.applicable_tasks ?? 0,
+    helped: existing?.helped ?? 0,
+    hurt: existing?.hurt ?? 0,
+    last_applicable_at: existing?.last_applicable_at ?? null,
+    contradicted_by_rule_id: existing?.contradicted_by_rule_id ?? null,
+    unused_since: existing?.unused_since ?? null,
+    status: "review",
+    snoozed_until: existing?.snoozed_until ?? null,
+    review_reason: reviewReason,
+  });
+}
+
+export function recordOppositeRequestNote(input: {
+  rule_id: number;
+  kind: OppositeRequestKind;
+  history_item_id: number;
+}): void {
+  insertEvent("rule.opposite_request_noted", null, {
+    id: input.rule_id,
+    kind: input.kind,
+    history_item_id: input.history_item_id,
+  });
+}
+
+export function listOppositeRequestNotes(
+  ruleId: number,
+): { kind: OppositeRequestKind; history_item_id: number; created_at: string }[] {
+  return db
+    .prepare(
+      `SELECT id, created_at, payload FROM events
+       WHERE kind = 'rule.opposite_request_noted' AND json_extract(payload, '$.id') = ?
+       ORDER BY id DESC`,
+    )
+    .all(ruleId)
+    .map((r) => {
+      const row = r as { created_at: string; payload: string | null };
+      const parsed = row.payload ? (JSON.parse(row.payload) as Record<string, unknown>) : {};
+      return {
+        kind: parsed.kind as OppositeRequestKind,
+        history_item_id: parsed.history_item_id as number,
+        created_at: row.created_at,
+      };
+    });
+}
+// ---- end Checkpoint 2026-09-18 WP3 ----

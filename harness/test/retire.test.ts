@@ -162,6 +162,15 @@ const reqC = message("Add a settings tab.", "2026-08-04T00:00:00Z");
 classify(reqC, "new_task", ["styling"]);
 episode("2026-08-04T00:00:00Z", [reqC]);
 
+// Checkpoint 2026-09-18 WP3 (D8): a third repeat correction, so this fixture
+// clears the observed_repeat >= 3 retire threshold (2 was enough under the
+// old applicable_tasks >= 3 && hurt > helped rule; it no longer is).
+const reqD = message("Update the modal header.", "2026-08-05T00:00:00Z");
+classify(reqD, "new_task", ["styling"]);
+const corrD = message("Hardcoded colors again on the modal.", "2026-08-05T01:00:00Z");
+classify(corrD, "correction", ["styling"], "design-system-bypassed");
+episode("2026-08-05T00:00:00Z", [reqD, corrD]);
+
 test("proposeRetirements: a retire_suggested rule gets one proposal (reason 'hurt', evidence = the hurt corrections); a second call creates none", () => {
   const health = recomputeRuleHealth(NOW);
   assert.ok(health.suggested >= 1);
@@ -175,9 +184,10 @@ test("proposeRetirements: a retire_suggested rule gets one proposal (reason 'hur
   const proposal = open[0]!;
   assert.equal(proposal.rule_id, hurtRuleId);
   assert.equal(proposal.reason, "hurt");
-  assert.deepEqual([...proposal.evidence].sort(), [corrA, corrB].sort());
+  assert.deepEqual([...proposal.evidence].sort(), [corrA, corrB, corrD].sort());
+});
 
-  // Idempotent: rule_health hasn't changed, so no second proposal.
+test("proposeRetirements: idempotent -- rule_health unchanged, so a second call creates none", () => {
   const second = proposeRetirements();
   assert.equal(second.created, 0);
   assert.equal(store.listOpenRetireProposals().length, 1);
@@ -195,7 +205,7 @@ test("listImprovements: the open proposal appears as a kind 'retire' item with a
   assert.equal(retireItem!.retire?.reason, "hurt");
   assert.equal(retireItem!.retire?.rule_id, hurtRuleId);
   // Evidence = the hurt corrections, as messages.
-  assert.deepEqual([...retireItem!.evidence.map((e) => e.id)].sort(), [corrA, corrB].sort());
+  assert.deepEqual([...retireItem!.evidence.map((e) => e.id)].sort(), [corrA, corrB, corrD].sort());
 });
 
 test("retire: the rule is retired, a pending version is staged whose new_content lacks the rule's text, the proposal is decided, and the original improvement now groups 'Retired'", () => {
@@ -392,7 +402,11 @@ const { ruleId: unusedRuleId } = makeLiveRule({
   writtenAt: WRITTEN_AT,
 });
 
-test("proposeRetirements: reason 'unused' when neither hurt nor contradicted", () => {
+// Checkpoint 2026-09-18 WP3 (D8): 'unused' no longer exists as a proposal
+// reason -- health.ts never sets retire_suggested for inactivity any more,
+// so proposeRetirements' fallback (when contradicted_by_rule_id is unset)
+// is simply 'hurt', whatever the underlying numbers were.
+test("proposeRetirements: reason is 'hurt' when contradicted_by_rule_id is unset, whatever the status was forced from", () => {
   store.upsertRuleHealth({
     rule_id: unusedRuleId,
     applicable_tasks: 0,
@@ -406,8 +420,33 @@ test("proposeRetirements: reason 'unused' when neither hurt nor contradicted", (
   });
   proposeRetirements();
   const proposal = store.openRetireProposalForRule(unusedRuleId)!;
-  assert.equal(proposal.reason, "unused");
+  assert.equal(proposal.reason, "hurt");
   assert.deepEqual(proposal.evidence, []);
+});
+
+const { ruleId: inactiveRuleId } = makeLiveRule({
+  instruction: "Never touched again.",
+  predictedFailure: "n/a",
+  failureSignature: "inactive-signature",
+  writtenAt: "2026-01-01T00:00:00.000Z",
+});
+db.prepare(`UPDATE rules SET scope_tags_json = ? WHERE id = ?`).run(
+  JSON.stringify(["inactive-only-tag"]),
+  inactiveRuleId,
+);
+
+test("recomputeRuleHealth + proposeRetirements: inactivity opens a review, never a retire_proposals row", () => {
+  recomputeRuleHealth(NOW);
+  const health = store.getRuleHealth(inactiveRuleId)!;
+  assert.equal(health.status, "review");
+  assert.equal(health.review_reason, "inactive");
+
+  proposeRetirements();
+  assert.equal(
+    store.openRetireProposalForRule(inactiveRuleId),
+    null,
+    "an inactive rule must never get a retire_proposals row",
+  );
 });
 
 // ---- Fix wave item 4: readd resets the rule_health baseline window ----
@@ -439,16 +478,22 @@ test("readd resets the rule_health baseline: hurt episodes from before the re-ad
   classify(corrY, "correction", ["uploads"], "unsanitized-file-upload");
   episode("2026-08-06T00:00:00Z", [reqY, corrY]);
 
-  // A third applicable-but-not-hurting episode, so applicable_tasks reaches
-  // MIN_APPLICABLE_FOR_RETIRE (3) and hurt(2) > helped(1) actually triggers
-  // retire_suggested (same shape as the file's top hurtRuleId fixture).
+  // Checkpoint 2026-09-18 WP3 (D8): a third repeat, so observed_repeat
+  // clears the retire threshold (>= 3, was 2 under the old rule).
+  const reqV = message("Add a third upload field.", "2026-08-06T12:00:00Z");
+  classify(reqV, "new_task", ["uploads"]);
+  const corrV = message("Yet another unsanitized upload.", "2026-08-06T13:00:00Z");
+  classify(corrV, "correction", ["uploads"], "unsanitized-file-upload");
+  episode("2026-08-06T12:00:00Z", [reqV, corrV]);
+
+  // A fourth applicable-but-not-hurting episode.
   const reqW = message("Add a settings toggle for uploads.", "2026-08-07T00:00:00Z");
   classify(reqW, "new_task", ["uploads"]);
   episode("2026-08-07T00:00:00Z", [reqW]);
 
   recomputeRuleHealth(new Date("2026-08-10T00:00:00Z"));
   const before = store.getRuleHealth(rebaselineRuleId)!;
-  assert.equal(before.hurt, 2);
+  assert.equal(before.hurt, 3);
   assert.equal(before.status, "retire_suggested");
   assert.equal(before.baseline_at, null);
 

@@ -113,6 +113,14 @@ test("buildImprovement: a live rule with a rule_health row carries health, `sinc
     hurt: 2,
     last_applicable_at: "2026-08-10T00:00:00Z",
     since: "2026-08-01T00:00:00.000Z",
+    // Checkpoint 2026-09-18 WP3: the separately tracked signals (none
+    // recorded by this bare upsert) and the review reason.
+    observed_repeat: 0,
+    observed_clear: 0,
+    ai_not_followed: 0,
+    ai_followed: 0,
+    review_reason: null,
+    status: "watch",
     // Round 5 Task 7 / spec §5: no verdict/adherence recorded for this rule
     // yet, and none of the three sources has any data for it.
     verdict: null,

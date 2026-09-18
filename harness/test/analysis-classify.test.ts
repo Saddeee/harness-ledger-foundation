@@ -19,7 +19,14 @@ import { LlmBudgetExceeded } from "../src/llm/types.js";
 
 // ------------------------------------------------------------------ fakes
 
-type Canned = { classification: string; tags: string[]; summary: string };
+type Canned = {
+  classification: string;
+  tags: string[];
+  summary: string;
+  // Checkpoint 2026-09-18 WP3 (D8): each entry is an object -- which rule,
+  // which of the six contradiction kinds, and the quote that shows it.
+  contradicts_rule_ids?: { rule_id: number; kind: string; quote: string }[];
+};
 
 /**
  * A fake CallLlm that never makes a network call: it pulls the exact
@@ -533,7 +540,14 @@ test("classifier: a message asking for the opposite of a live rule opens a Retir
       classification: "new_task",
       tags: ["copy"],
       summary: "Switch to euros.",
-      contradicts_rule_ids: [rule.id, 999999],
+      contradicts_rule_ids: [
+        {
+          rule_id: rule.id,
+          kind: "permanent_preference_change",
+          quote: "use euros everywhere now",
+        },
+        { rule_id: 999999, kind: "genuine_contradiction", quote: "n/a" },
+      ],
     },
   });
   const callLlm: CallLlm = async (req) => {
@@ -552,6 +566,11 @@ test("classifier: a message asking for the opposite of a live rule opens a Retir
   const open = store.listOpenRetireProposals().filter((p) => p.rule_id === rule.id);
   assert.equal(open.length, 1);
   assert.equal(open[0]!.reason, "changed_mind");
+  assert.equal(
+    open[0]!.contradiction_kind,
+    "permanent_preference_change",
+    "the classified kind is stored on the proposal",
+  );
   assert.deepEqual(open[0]!.evidence, [euros.id]);
   assert.equal(
     store.listOpenRetireProposals().filter((p) => p.rule_id === 999999).length,
@@ -567,10 +586,145 @@ test("classifier: a message asking for the opposite of a live rule opens a Retir
         classification: "new_task",
         tags: [],
         summary: "euros",
-        contradicts_rule_ids: [rule.id],
+        contradicts_rule_ids: [
+          { rule_id: rule.id, kind: "genuine_contradiction", quote: "euros, really" },
+        ],
       },
     }),
     { limit: 100 },
   );
   assert.equal(store.listOpenRetireProposals().filter((p) => p.rule_id === rule.id).length, 1);
+});
+
+// A minimal live rule (approved, active, with a written Knowledge version)
+// for the contradiction-kind tests below -- rulesInLovable only shows rules
+// that are actually live, so each test needs one of its own.
+function makeLiveRuleForClassify(projectId: string, instruction: string): { id: number } {
+  const episodeId = (
+    store.createTaskEpisode({
+      project_id: projectId,
+      title: "seed",
+      provenance: "manual",
+      evidence_history_item_ids: [],
+    }) as { id: number }
+  ).id;
+  const ccId = (
+    store.createCorrectionCandidate({
+      task_episode_id: episodeId,
+      classification: "constraint_restatement",
+      is_correction: true,
+      summary: "seed",
+      evidence_history_item_ids: [],
+    }) as { id: number }
+  ).id;
+  const learningId = (
+    store.createLearning({
+      correction_candidate_id: ccId,
+      observed_problem: "p",
+      desired_behavior: instruction,
+      reuse_rationale: "r",
+      proposed_scope: "project",
+      provenance: "manual",
+      created_by: "test",
+    }) as { id: number }
+  ).id;
+  const rule = store.createRule({
+    learning_id: learningId,
+    correction_candidate_id: ccId,
+    instruction,
+    scope: "project",
+    applies_when: "always",
+    predicted_failure: "n/a",
+    ownership: "harness",
+    created_by: "test",
+  }) as { id: number };
+  store.updateRule({ id: rule.id, state: "active", actor: "test" });
+  const v = store.createPendingKnowledgeVersion({
+    rule_id: rule.id,
+    target: "project",
+    project_id: projectId,
+    previous_content: "",
+    new_content: `- ${instruction}`,
+    rule_ids: [rule.id],
+    actor: "test",
+  }) as { id: number; new_content: string };
+  store.recordKnowledgeReadback(v.id, v.new_content);
+  store.updateRule({ id: rule.id, state: "active", actor: "test" });
+  return rule;
+}
+
+// Checkpoint 2026-09-18 WP3 (D8, spec §9): one_task_exception,
+// temporary_override and project_specific_override are recorded as a note
+// on the rule and never open a retire_proposals row.
+for (const kind of [
+  "one_task_exception",
+  "temporary_override",
+  "project_specific_override",
+] as const) {
+  test(`classifier: a "${kind}" opposite request is noted on the rule, never opens a retire proposal`, async () => {
+    const P = `classify-note-${kind}`;
+    store.allowProject(P, `Note ${kind}`);
+    const rule = makeLiveRuleForClassify(P, "Always use sentence case.");
+
+    const msg = insertMessage(P, "user", "Opposite request for this one case.", ts(1));
+    await classify.classifyPending(
+      fakeCallLlmFor({
+        "Opposite request": {
+          classification: "correction",
+          tags: [],
+          summary: "opposite, once",
+          contradicts_rule_ids: [{ rule_id: rule.id, kind, quote: "for this one case" }],
+        },
+      }),
+      { limit: 100 },
+    );
+
+    assert.equal(
+      store.openRetireProposalForRule(rule.id),
+      null,
+      `"${kind}" must never open a retire proposal`,
+    );
+    const notes = store.listOppositeRequestNotes(rule.id);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0]!.kind, kind);
+    assert.equal(notes[0]!.history_item_id, msg.id);
+  });
+}
+
+test('classifier: an "unclear" opposite request opens a review, not a retirement', async () => {
+  const P = "classify-note-unclear";
+  store.allowProject(P, "Note unclear");
+  const rule = makeLiveRuleForClassify(P, "Always confirm before deleting.");
+
+  insertMessage(P, "user", "Maybe don't ask me every time?", ts(1));
+  await classify.classifyPending(
+    fakeCallLlmFor({
+      "Maybe don't ask": {
+        classification: "correction",
+        tags: [],
+        summary: "ambiguous opposite",
+        contradicts_rule_ids: [{ rule_id: rule.id, kind: "unclear", quote: "don't ask me" }],
+      },
+    }),
+    { limit: 100 },
+  );
+
+  assert.equal(store.openRetireProposalForRule(rule.id), null);
+  const health = store.getRuleHealth(rule.id)!;
+  assert.equal(health.status, "review");
+  assert.equal(health.review_reason, "unclear_contradiction");
+});
+
+test("validateClassifierOutput: an unrecognized contradiction kind falls back to 'unclear'; a non-integer rule_id is dropped", () => {
+  const validated = classify.validateClassifierOutput({
+    classification: "correction",
+    tags: [],
+    summary: "s",
+    contradicts_rule_ids: [
+      { rule_id: 5, kind: "not_a_real_kind", quote: "q" },
+      { rule_id: "not-a-number", kind: "unclear", quote: "q" },
+      { rule_id: 5, kind: "unclear", quote: "duplicate rule_id dropped" },
+    ],
+  });
+  assert.deepEqual(validated.contradicts_rule_ids, [{ rule_id: 5, kind: "unclear", quote: "q" }]);
 });

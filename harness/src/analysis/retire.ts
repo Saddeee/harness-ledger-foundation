@@ -12,11 +12,20 @@ const HURT_EVIDENCE_LIMIT = 5;
 /**
  * One proposal per rule currently in status 'retire_suggested' that doesn't
  * already have an open proposal -- idempotent: a second call with no change
- * in rule_health creates none. Reason is 'hurt' when the rule hurt more
- * than it helped, else 'contradiction' when a live rule contradicts it,
- * else 'unused'. Evidence is the hurt episodes' correction history_item ids
- * (up to 5) for 'hurt', the contradicting rule's id for 'contradiction', or
- * empty for 'unused'.
+ * in rule_health creates none. Reason is 'contradiction' when a live rule
+ * contradicts it, else 'hurt' (a repeat correction, per health.ts's
+ * observed_repeat/observed_clear -- never derived from the legacy
+ * helped/hurt totals). Evidence is the hurt episodes' correction
+ * history_item ids (up to 5) for 'hurt', the contradicting rule's id for
+ * 'contradiction'.
+ *
+ * Checkpoint 2026-09-18 WP3 (D8, spec §9): inactivity no longer reaches
+ * retire_suggested at all (health.ts now reports it as 'review',
+ * review_reason 'inactive') -- this function never proposes 'unused' any
+ * more. A rule whose only path to retire_suggested is an open
+ * "changed_mind" proposal (classify.ts, genuine/permanent-preference-change
+ * contradictions only) is skipped by the openRetireProposalForRule guard
+ * below, since that proposal already exists.
  */
 export function proposeRetirements(): { created: number } {
   let created = 0;
@@ -26,16 +35,12 @@ export function proposeRetirements(): { created: number } {
     if (store.openRetireProposalForRule(health.rule_id)) continue;
 
     const reason: store.RetireReason =
-      health.hurt > health.helped
-        ? "hurt"
-        : health.contradicted_by_rule_id != null
-          ? "contradiction"
-          : "unused";
+      health.contradicted_by_rule_id != null ? "contradiction" : "hurt";
 
     const evidence =
       reason === "hurt"
         ? hurtCorrectionHistoryItemIds(health.rule_id, HURT_EVIDENCE_LIMIT)
-        : reason === "contradiction" && health.contradicted_by_rule_id != null
+        : health.contradicted_by_rule_id != null
           ? [health.contradicted_by_rule_id]
           : [];
 
