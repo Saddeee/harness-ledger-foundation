@@ -100,10 +100,9 @@ test("local-settings.tsx: LLM_ROLES labels contain 'Rule writer' and 'Judge', no
   assert.ok(!hasMiner, "LLM_ROLES must not contain 'Miner' label");
 });
 
-test("landing page: renders LANDING_CREDITS_LINE", () => {
+test("landing page: renders the exact copy-credits sentence (checkpoint 2026-09-18: EVIDENCE_COST_LINE from landing-copy.ts)", () => {
   const code = codeOnly(readApp(LANDING));
-  assert.match(code, /LANDING_CREDITS_LINE/, "landing must import LANDING_CREDITS_LINE");
-  assert.match(code, /\{LANDING_CREDITS_LINE\}/, "landing must render LANDING_CREDITS_LINE");
+  assert.match(code, /\{EVIDENCE_COST_LINE\}/, "landing must render EVIDENCE_COST_LINE");
 });
 
 test("no user-facing 'improvement' word survives in the guarded pages", () => {

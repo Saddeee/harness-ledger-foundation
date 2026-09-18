@@ -64,7 +64,10 @@ test("landing: three evidence levels, none called proof, uncontrolled context na
     ],
   );
   assert.match(copy.EVIDENCE_CAVEAT, /None of these is proof/);
-  assert.match(copy.EVIDENCE_CAVEAT, /project memory, workspace Knowledge, Skills and the builder version/);
+  assert.match(
+    copy.EVIDENCE_CAVEAT,
+    /project memory, workspace Knowledge, Skills and the builder version/,
+  );
 });
 
 test("landing: the MCP sentence and the hosted status wording, verbatim", () => {
@@ -120,7 +123,15 @@ test("landing page source: sections in order, hosted status and limitations coll
   assert.match(code, /signedIn \? "\/inbox" : "\/login"/);
   // Collapsed by default: no <details open>.
   assert.ok(!/<details[^>]*\bopen\b/.test(code), "details must be collapsed by default");
-  const banned = [/\bproves\b/i, /\bproven\b/i, /\bpaired test\b/i, /testimonial/i, /customers?\b/i, /\d+%/, /\bhelped\b/];
+  const banned = [
+    /\bproves\b/i,
+    /\bproven\b/i,
+    /\bpaired test\b/i,
+    /testimonial/i,
+    /customers?\b/i,
+    /\d+%/,
+    /\bhelped\b/,
+  ];
   const allCopy = Object.values(copy)
     .flatMap((v) => (Array.isArray(v) ? v.map((x) => JSON.stringify(x)) : [String(v)]))
     .join("\n");

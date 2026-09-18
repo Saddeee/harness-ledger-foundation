@@ -8,6 +8,7 @@ import {
   ARCHITECTURE_MCP_TEXT,
   ARCHITECTURE_TITLE,
   EVIDENCE_CAVEAT,
+  EVIDENCE_COST_LINE,
   EVIDENCE_LEVELS,
   EVIDENCE_TITLE,
   HERO_ACTIONS,
@@ -172,6 +173,9 @@ function Landing() {
             ))}
           </dl>
           <p className="mt-4 max-w-prose text-sm leading-relaxed">{EVIDENCE_CAVEAT}</p>
+          <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground">
+            {EVIDENCE_COST_LINE}
+          </p>
         </section>
 
         <section aria-labelledby="safety-title">

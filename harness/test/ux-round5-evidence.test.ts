@@ -260,7 +260,7 @@ test("local-settings.tsx: the Evidence section's intro and four checkbox labels 
     "Repeat corrections observed in your real builds",
     "AI adherence check (with quotes)",
     "Your verdicts",
-    "Paired tests",
+    "Historical replay",
   ]) {
     assert.ok(raw.includes(label), `local-settings.tsx missing Evidence label "${label}"`);
   }

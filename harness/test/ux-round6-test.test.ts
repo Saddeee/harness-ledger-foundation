@@ -9,6 +9,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+const ux = await import("../../src/lib/harness-ux.ts");
+
 function readApp(rel: string): string {
   return readFileSync(new URL(`../../src/${rel}`, import.meta.url), "utf8");
 }
@@ -28,6 +30,7 @@ function count(haystack: string, needle: string): number {
 }
 
 const JUDGE = "routes/_authenticated/judge.tsx";
+const TESTS_PAGE = "routes/_authenticated/tests.tsx";
 const IMPROVEMENT = "components/harness/improvement.tsx";
 const SETTINGS = "components/harness/local-settings.tsx";
 const CLIENT = "lib/improvements-client.ts";
@@ -101,11 +104,17 @@ test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts 
   );
   assert.match(
     uxCode,
-    /export const TEST_THIS_RULE_BODY =\s*"Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request\. You get both builds side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done\.";/,
+    /export const TEST_THIS_RULE_BODY =\s*"Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request\. You get the historical result and the new build side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done\.";/,
+  );
+  // Checkpoint 2026-09-18 (DECISIONS.md D1/D2): the exact, mandated cost
+  // sentence, shared verbatim via COPY_CREDITS_LINE.
+  assert.match(
+    uxCode,
+    /export const COPY_CREDITS_LINE =\s*"Creating project copies currently uses no Lovable builder credits\. Running a Lovable build inside a copy consumes normal Lovable builder credits\.";/,
   );
   assert.match(
     uxCode,
-    /export const TEST_THIS_RULE_CREDITS_LINE =\s*"Uses Lovable credits like any build; the exact cost is recorded after\.";/,
+    /export const TEST_THIS_RULE_CREDITS_LINE = `\$\{COPY_CREDITS_LINE\} The exact cost is recorded after\.`;/,
   );
   assert.match(uxCode, /export const TEST_ONE_AT_A_TIME_LINE = "One test runs at a time\.";/);
   assert.match(uxCode, /export const START_TEST_LABEL = "Start test";/);
@@ -223,4 +232,325 @@ test("testCopyConfounderLine: an unknown edit count is never shown as 0", async 
   assert.match(ux.testCopyConfounderLine(0), /0 edits have landed since\.$/);
   assert.match(ux.testCopyConfounderLine(1), /1 edit has landed since\.$/);
   assert.match(ux.testCopyConfounderLine(3), /3 edits have landed since\.$/);
+});
+
+// ---- Checkpoint 2026-09-18 (WP1b, docs/audit/replay.md + ux.md): judge.tsx
+// section order, the Replay environment summary, and the banned-word ban. ----
+
+test("judge.tsx: sections appear in the required order -- original correction, Historical result / Replay with rule, Key difference, the verdict question, Replay environment, Full technical details", () => {
+  const full = codeOnly(readApp(JUDGE));
+  // Skip the (alphabetized) import block -- order is judged by the JSX
+  // returned from Page(), not the order these names happen to be imported.
+  const code = full.slice(full.indexOf("function Page()"), full.indexOf("function BuildColumn"));
+  const order = [
+    "ORIGINAL_CORRECTION_LABEL",
+    "HISTORICAL_RESULT_TITLE",
+    "REPLAY_WITH_RULE_TITLE",
+    "KEY_DIFFERENCE_TITLE",
+    "REPLAY_VERDICT_QUESTION",
+    "REPLAY_ENVIRONMENT_TITLE",
+    "FULL_TECHNICAL_DETAILS_TITLE",
+  ];
+  let last = -1;
+  for (const marker of order) {
+    const at = code.indexOf(marker);
+    assert.ok(at >= 0, `missing marker: ${marker}`);
+    assert.ok(at > last, `expected "${marker}" after the previous marker (at ${at}, prev ${last})`);
+    last = at;
+  }
+});
+
+test("judge.tsx: shows the request and the correction text(s) as read-only context, separate from the verdict rows", () => {
+  const code = codeOnly(readApp(JUDGE));
+  assert.match(code, /You asked Lovable/);
+  assert.match(code, /CORRECTIONS_LIST_LABEL/);
+  assert.match(code, /view\.corrections\.map/);
+});
+
+test("judge.tsx: Key difference shows Lovable's own summary of each side plus a diff toggle each, no invented automatic verdict", () => {
+  const full = codeOnly(readApp(JUDGE));
+  const body = full.slice(full.indexOf("function Page()"), full.indexOf("function BuildColumn"));
+  const section = body.slice(
+    body.indexOf("KEY_DIFFERENCE_TITLE"),
+    body.indexOf("REPLAY_VERDICT_QUESTION"),
+  );
+  assert.match(section, /view\.original_summary/);
+  assert.match(section, /view\.copy_summary/);
+  assert.equal(count(section, "<DiffDetails"), 2, "one diff toggle per side");
+});
+
+test("judge.tsx: BuildColumn shows only a short excerpt of the summary (240 chars); the full summary/reply/diff moved into Full technical details", () => {
+  const raw = readApp(JUDGE);
+  const code = codeOnly(raw);
+  const buildColumnFn = code.slice(code.indexOf("function BuildColumn"));
+  assert.match(buildColumnFn, /excerpt\(summary, 240\)/);
+  assert.ok(!/reply:/.test(buildColumnFn) || !/reply,\s*\n\s*diff,/.test(buildColumnFn));
+  // Full technical details is the one collapsed <details>, closed by default.
+  assert.match(code, /<AdvancedDetails title=\{FULL_TECHNICAL_DETAILS_TITLE\}>/);
+  const detailsAt = raw.indexOf("<AdvancedDetails title={FULL_TECHNICAL_DETAILS_TITLE}>");
+  assert.ok(detailsAt >= 0);
+  assert.match(raw.slice(detailsAt), /view\.original_reply/);
+  assert.match(raw.slice(detailsAt), /view\.copy_reply/);
+  assert.match(raw.slice(detailsAt), /project_id/);
+  assert.match(raw.slice(detailsAt), /request_message_id/);
+});
+
+test("judge.tsx: Replay environment renders replayEnvironmentRows and evidenceStrengthLine, or the no-record line when environment is null", () => {
+  const code = codeOnly(readApp(JUDGE));
+  assert.match(code, /replayEnvironmentRows\(view\.environment\)/);
+  assert.match(code, /evidenceStrengthLine\(view\.environment\.quality\)/);
+  assert.match(code, /NO_ENVIRONMENT_RECORD_LINE/);
+});
+
+test("harness-ux.ts: replayEnvironmentRows returns the exact eight rows, in order, with the spec's own example wording", () => {
+  const env = {
+    code_state: {
+      source: "historical_commit_before_request" as const,
+      request_message_id: "msg_1",
+    },
+    project_knowledge: {
+      source: "nearest_earlier_version" as const,
+      snapshot_id: 28,
+      snapshot_fetched_at: "2026-09-13T19:06:00.000Z",
+      episode_started_at: "2026-09-13T19:13:00.000Z",
+      char_count: 40,
+    },
+    workspace_knowledge: { source: "current_uncontrolled" as const },
+    skills: { source: "current_uncontrolled" as const },
+    chat_history: { included: false },
+    candidate_rule: { rule_id: 24, instruction: "Use sentence case.", already_present: false },
+    other_active_rules: ["Always show prices in kronor."],
+    uncontrolled: [],
+    quality: "historical_approximation" as const,
+  };
+  const rows = ux.replayEnvironmentRows(env);
+  assert.deepEqual(
+    rows.map((r) => r.label),
+    [
+      "Code state",
+      "Project Knowledge",
+      "Workspace Knowledge",
+      "Skills",
+      "Chat history",
+      "Candidate rule",
+      "Other active rules",
+      "Uncontrolled context",
+    ],
+  );
+  const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.text]));
+  assert.match(byLabel["Project Knowledge"]!, /Nearest earlier version, read 13 Sep 19:06/);
+  assert.match(byLabel["Project Knowledge"]!, /before the request/);
+  assert.equal(
+    byLabel["Workspace Knowledge"],
+    "As it is today; Harness Ledger cannot reconstruct the version at the time",
+  );
+  assert.equal(byLabel["Skills"], "As they are today (workspace Skills apply to the copy)");
+  assert.equal(byLabel["Chat history"], "Not copied");
+  assert.equal(byLabel["Other active rules"], "Always show prices in kronor.");
+  assert.match(
+    byLabel["Uncontrolled context"]!,
+    /Lovable's own project memory, workspace Knowledge, Skills and the builder version come from today/,
+  );
+  assert.deepEqual(ux.replayEnvironmentRows(null), []);
+});
+
+test("harness-ux.ts: replayEnvironmentRows names historical rules dropped by an old run, exact_historical/current_fallback/unavailable Project Knowledge wording, and Code state/Chat history variants", () => {
+  const base = {
+    code_state: { source: "historical_commit_before_request" as const, request_message_id: "m" },
+    workspace_knowledge: { source: "current_uncontrolled" as const },
+    skills: { source: "current_uncontrolled" as const },
+    chat_history: { included: true },
+    candidate_rule: { rule_id: 1, instruction: "x", already_present: false },
+    other_active_rules: ["rule A"],
+    uncontrolled: [],
+    quality: "historical_approximation" as const,
+  };
+  const dropped = ux.replayEnvironmentRows({
+    ...base,
+    project_knowledge: {
+      source: "current_fallback" as const,
+      snapshot_id: 1,
+      snapshot_fetched_at: "2026-09-13T23:00:00.000Z",
+      episode_started_at: null,
+      char_count: 0,
+    },
+    historical_rules_dropped_by_run: true,
+  });
+  const droppedByLabel = Object.fromEntries(dropped.map((r) => [r.label, r.text]));
+  assert.equal(
+    droppedByLabel["Project Knowledge"],
+    "Today's Knowledge (no version from before the request was on file)",
+  );
+  assert.match(droppedByLabel["Other active rules"]!, /rule A/);
+  assert.match(
+    droppedByLabel["Other active rules"]!,
+    /were not in this replay's Knowledge \(an older test\); newer tests keep them/,
+  );
+  assert.equal(droppedByLabel["Chat history"], "Copied");
+
+  const exact = ux.replayEnvironmentRows({
+    ...base,
+    project_knowledge: {
+      source: "exact_historical" as const,
+      snapshot_id: 2,
+      snapshot_fetched_at: "2026-09-13T19:13:00.000Z",
+      episode_started_at: "2026-09-13T19:13:00.000Z",
+      char_count: 0,
+    },
+  });
+  assert.equal(
+    Object.fromEntries(exact.map((r) => [r.label, r.text]))["Project Knowledge"],
+    "Exact version at the time of the request",
+  );
+
+  const none = ux.replayEnvironmentRows({
+    ...base,
+    project_knowledge: {
+      source: "unavailable" as const,
+      snapshot_id: null,
+      snapshot_fetched_at: null,
+      episode_started_at: null,
+      char_count: 0,
+    },
+    other_active_rules: [],
+    code_state: { source: "unavailable" as const, request_message_id: null },
+  });
+  const noneByLabel = Object.fromEntries(none.map((r) => [r.label, r.text]));
+  assert.equal(
+    noneByLabel["Project Knowledge"],
+    "None on file; the copy started with empty Knowledge",
+  );
+  assert.equal(noneByLabel["Other active rules"], "None");
+  assert.match(noneByLabel["Code state"]!, /Could not be established/);
+});
+
+test("harness-ux.ts: evidenceStrengthLine, one sentence per quality, null when there is no quality", () => {
+  assert.match(ux.evidenceStrengthLine("historical_approximation")!, /Historical approximation:/);
+  assert.match(
+    ux.evidenceStrengthLine("historical_approximation")!,
+    /not that the rule alone caused/,
+  );
+  assert.equal(
+    ux.evidenceStrengthLine("not_comparable"),
+    "Not comparable: the historical code state could not be established.",
+  );
+  assert.equal(ux.evidenceStrengthLine("partially_controlled"), "Partially controlled");
+  assert.equal(ux.evidenceStrengthLine("controlled"), "Controlled");
+  assert.equal(ux.evidenceStrengthLine(null), null);
+});
+
+test("harness-ux.ts: environmentQualityLabel and EXPERIMENT_KIND_LABEL cover every enum value, used by tests.tsx's Kind/Evidence columns", () => {
+  assert.equal(ux.environmentQualityLabel("historical_approximation"), "Historical approximation");
+  assert.equal(ux.environmentQualityLabel(null), "—");
+  assert.equal(ux.EXPERIMENT_KIND_LABEL.historical_replay, "Historical replay");
+
+  const testsCode = codeOnly(readApp(TESTS_PAGE));
+  assert.match(testsCode, />Kind</);
+  assert.match(testsCode, />Evidence</);
+  assert.match(testsCode, /EXPERIMENT_KIND_LABEL\[run\.kind\]/);
+  assert.match(testsCode, /environmentQualityLabel\(run\.environment_quality\)/);
+});
+
+test("lib/improvements-client.ts: ExperimentRunView carries kind/environment, ExperimentRunSummary carries kind/environment_quality", () => {
+  const code = codeOnly(readApp(CLIENT));
+  const view = code.slice(
+    code.indexOf("export type ExperimentRunView"),
+    code.indexOf("export type TestBuildCopy"),
+  );
+  assert.match(view, /kind: ExperimentKind;/);
+  assert.match(view, /environment: ReplayEnvironment \| null;/);
+  const summary = code.slice(
+    code.indexOf("export type ExperimentRunSummary"),
+    code.indexOf("export type TestRunsResponse"),
+  );
+  assert.match(summary, /kind: ExperimentKind;/);
+  assert.match(summary, /environment_quality: EnvironmentQuality \| null;/);
+});
+
+// Checkpoint 2026-09-18 (PLAN.md "Global constraints"): never "paired",
+// "proof", "both builds", or unqualified "free" -- in judge.tsx, tests.tsx,
+// or the test-related section of harness-ux.ts (checked separately below,
+// against the rendered copy rather than the source text -- see that test's
+// own comment for why).
+//
+// judge.tsx and tests.tsx have no "paired"/"proof"/"free" identifiers of
+// their own (only imported constant names), so a raw-source scan is safe.
+test("no banned words ('paired', 'proof', 'both builds', unqualified 'free') in judge.tsx and tests.tsx", () => {
+  const banned: [string, RegExp][] = [
+    ["paired", /\bpaired\b/i],
+    ["proof", /\bproof\b/i],
+    ["both builds", /both builds/i],
+    ["unqualified free", /(?<!-)\bfree\b(?!-)/i],
+  ];
+  for (const rel of [JUDGE, TESTS_PAGE]) {
+    const code = codeOnly(readApp(rel));
+    for (const [name, re] of banned) {
+      assert.ok(!re.test(code), `${rel} still contains the banned word "${name}"`);
+    }
+  }
+});
+
+// harness-ux.ts's test section keeps a `paired` field/identifier (the
+// EvidenceSourcesLike source flag -- an internal name, not renamed by this
+// WP) and TEST_ONE_BUILD_LINE's own approved, honest "not proof that..."
+// disclaimer -- a raw source-text scan would false-positive on both, so
+// this checks the actual rendered copy (every exported string constant and
+// function output this WP owns) instead of the source text.
+test("no banned words in harness-ux.ts's own rendered test-section copy (constants and function outputs, not internal field names)", () => {
+  const rendered = [
+    ux.TEST_THIS_RULE_TITLE,
+    ux.TEST_THIS_RULE_BODY,
+    ux.SHOW_ORIGINAL_LABEL,
+    ux.SHOW_ORIGINAL_HELP,
+    ux.TEST_FIRST_LABEL,
+    ux.TEST_FIRST_HELP,
+    ux.COPY_CREDITS_LINE,
+    ux.TEST_THIS_RULE_CREDITS_LINE,
+    ux.TEST_ONE_AT_A_TIME_LINE,
+    ux.START_TEST_LABEL,
+    ux.TEST_STARTED_TOAST,
+    ux.TEST_VERDICT_NEEDED_LABEL,
+    ux.TEST_MEMORY_CONFOUNDER_LINE,
+    ux.CORRECTIONS_FROM_FOLLOW_UPS_LINE,
+    ux.SEE_ON_TESTS_LABEL,
+    ux.ORIGINAL_CORRECTION_LABEL,
+    ux.CORRECTIONS_LIST_LABEL,
+    ux.HISTORICAL_RESULT_TITLE,
+    ux.HISTORICAL_RESULT_SUBTITLE,
+    ux.REPLAY_WITH_RULE_TITLE,
+    ux.REPLAY_WITH_RULE_SUBTITLE,
+    ux.KEY_DIFFERENCE_TITLE,
+    ux.KEY_DIFFERENCE_INTRO,
+    ux.REPLAY_VERDICT_QUESTION,
+    ux.REPLAY_ENVIRONMENT_TITLE,
+    ux.NO_ENVIRONMENT_RECORD_LINE,
+    ux.FULL_TECHNICAL_DETAILS_TITLE,
+    ...Object.values(ux.EXPERIMENT_KIND_LABEL),
+    ...Object.values(ux.ENVIRONMENT_QUALITY_LABEL),
+    ...ux.evidenceSourceLines({ observed: true, adherence: true, verdicts: true, paired: true }),
+    ux.testCostLine(3),
+    ux.testedResultLine({ score: 0.5, corrections: 2 }),
+    ux.testFailedLine("x"),
+    ux.testCopyConfounderLine(2),
+    ux.proveCostLine(),
+    ux.evidenceStrengthLine("historical_approximation"),
+    ux.evidenceStrengthLine("not_comparable"),
+    ux.evidenceStrengthLine("partially_controlled"),
+    ux.evidenceStrengthLine("controlled"),
+  ].join("\n");
+
+  for (const [name, re] of [
+    ["paired", /\bpaired\b/i],
+    ["both builds", /both builds/i],
+    ["unqualified free", /(?<!-)\bfree\b(?!-)/i],
+  ] as [string, RegExp][]) {
+    assert.ok(!re.test(rendered), `harness-ux.ts test-section copy still contains "${name}"`);
+  }
+  // "proof" is banned everywhere except TEST_ONE_BUILD_LINE's own approved
+  // "not proof that..." disclaimer (checked separately, verbatim, below).
+  assert.ok(!/\bproof\b/i.test(rendered), 'harness-ux.ts test-section copy still contains "proof"');
+  assert.equal(
+    ux.TEST_ONE_BUILD_LINE,
+    "One replay build; evidence about this correction, not proof that the rule caused the difference.",
+  );
 });

@@ -13,11 +13,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { WhatChangedLines } from "@/components/harness/timeline";
-import { ConfirmAction } from "@/components/harness/decision-layout";
+import { ConfirmAction, AdvancedDetails } from "@/components/harness/decision-layout";
 import { AddConfirm, RemoveFromKnowledgeConfirm, useRun } from "@/components/harness/improvement";
 import {
   CORRECTIONS_FROM_FOLLOW_UPS_LINE,
+  CORRECTIONS_LIST_LABEL,
+  evidenceStrengthLine,
+  excerpt,
   formatDay,
+  FULL_TECHNICAL_DETAILS_TITLE,
+  HISTORICAL_RESULT_SUBTITLE,
+  HISTORICAL_RESULT_TITLE,
+  KEY_DIFFERENCE_INTRO,
+  KEY_DIFFERENCE_TITLE,
+  NO_ENVIRONMENT_RECORD_LINE,
+  ORIGINAL_CORRECTION_LABEL,
+  replayEnvironmentRows,
+  REPLAY_ENVIRONMENT_TITLE,
+  REPLAY_VERDICT_QUESTION,
+  REPLAY_WITH_RULE_SUBTITLE,
+  REPLAY_WITH_RULE_TITLE,
   testCopyConfounderLine,
   testCostLine,
   testedResultLine,
@@ -48,7 +63,7 @@ export const Route = createFileRoute("/_authenticated/judge")({
       { title: "Judge a test — Harness Ledger" },
       {
         name: "description",
-        content: "Your original build next to the same request with the rule.",
+        content: "Your historical result next to a new Lovable build with the rule.",
       },
       { property: "og:type", content: "website" },
     ],
@@ -317,52 +332,72 @@ function Page() {
         />
       ) : (
         <>
-          <section className="space-y-1 rounded-md border p-4">
+          {/* (1) The original correction(s) the rule came from -- the
+              request and the correction text(s), read-only context for
+              everything below. */}
+          <section className="space-y-3 rounded-md border p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              You asked Lovable
+              {ORIGINAL_CORRECTION_LABEL}
             </p>
-            <p className="whitespace-pre-wrap text-sm">{view.request_text}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">You asked Lovable</p>
+              <p className="whitespace-pre-wrap text-sm">{view.request_text}</p>
+            </div>
+            {view.corrections.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {CORRECTIONS_LIST_LABEL}
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-sm">
+                  {view.corrections.map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ul>
+                {view.corrections_source === "follow_ups" ? (
+                  <p className="text-xs text-muted-foreground">
+                    {CORRECTIONS_FROM_FOLLOW_UPS_LINE}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
+          {/* (2)/(3) Historical result / Replay with rule, side by side. */}
           <div className="grid gap-4 md:grid-cols-2">
             <BuildColumn
-              id="original-build"
-              title="Without the rule"
-              subtitle="Your original build"
+              id="historical-result"
+              title={HISTORICAL_RESULT_TITLE}
+              subtitle={HISTORICAL_RESULT_SUBTITLE}
               copy={view.original_copy}
               noCopyLine={
                 view.original_copy_error
                   ? `Harness Ledger could not copy your original build: ${view.original_copy_error}`
                   : view.show_original
                     ? null
-                    : "No copy of the original build was made for this test."
+                    : "No copy of the historical result was made for this test."
               }
               summary={view.original_summary}
-              reply={view.original_reply}
-              diff={view.original_diff}
               busy={actionBusy}
               onDelete={() =>
                 void runAction(
                   { action: "delete_copy", run_id: view.id, which: "original" },
-                  "Deleted the copy of your original build.",
+                  "Deleted the copy of your historical result.",
                 )
               }
             />
             <BuildColumn
-              id="with-the-rule"
-              title="With the rule"
-              subtitle="The same request, built again with this rule"
+              id="replay-with-rule"
+              title={REPLAY_WITH_RULE_TITLE}
+              subtitle={REPLAY_WITH_RULE_SUBTITLE}
               copy={view.copy}
               noCopyLine={null}
               summary={view.copy_summary}
-              reply={view.copy_reply ?? ""}
-              diff={view.copy_diff}
               footer={testCostLine(view.cost_credits)}
               busy={actionBusy}
               onDelete={() =>
                 void runAction(
                   { action: "delete_copy", run_id: view.id, which: "with_rule" },
-                  "Deleted the build with the rule.",
+                  "Deleted the replay build.",
                 )
               }
             />
@@ -374,6 +409,33 @@ function Page() {
             <p>{TEST_ONE_BUILD_LINE}</p>
           </div>
 
+          {/* (4) Key difference: Lovable's own summary of each side, one
+              under the other, plus the diff toggles -- no invented
+              automatic verdict on the difference. */}
+          <section className="space-y-3 rounded-md border p-4">
+            <h2 className="text-lg font-medium">{KEY_DIFFERENCE_TITLE}</h2>
+            <p className="text-xs text-muted-foreground">{KEY_DIFFERENCE_INTRO}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {HISTORICAL_RESULT_TITLE}
+              </p>
+              <p className="whitespace-pre-wrap text-sm">
+                {view.original_summary || "No summary recorded."}
+              </p>
+              <DiffDetails diff={view.original_diff} />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {REPLAY_WITH_RULE_TITLE}
+              </p>
+              <p className="whitespace-pre-wrap text-sm">
+                {view.copy_summary || "No summary recorded."}
+              </p>
+              <DiffDetails diff={view.copy_diff} />
+            </div>
+          </section>
+
+          {/* (5) User verdict. */}
           {view.status === "judged" ? (
             <div className="space-y-3 rounded-md border p-4">
               <p className="text-sm font-medium">
@@ -401,14 +463,7 @@ function Page() {
             </div>
           ) : (
             <div className="space-y-3 rounded-md border p-4">
-              <h2 className="text-lg font-medium">Still needed?</h2>
-              <p className="text-sm text-muted-foreground">
-                For each correction you made after the original build: would you still have had to
-                make it with the rule in place?
-              </p>
-              {view.corrections_source === "follow_ups" ? (
-                <p className="text-xs text-muted-foreground">{CORRECTIONS_FROM_FOLLOW_UPS_LINE}</p>
-              ) : null}
+              <h2 className="text-lg font-medium">{REPLAY_VERDICT_QUESTION}</h2>
               {view.corrections.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   Nothing on record for this episode to judge.
@@ -435,6 +490,62 @@ function Page() {
               </Button>
             </div>
           )}
+
+          {/* (6) Replay environment: exactly eight rows, derived from the
+              run's own environment record -- never a silent fallback. */}
+          <section className="space-y-2 rounded-md border p-4">
+            <h2 className="text-lg font-medium">{REPLAY_ENVIRONMENT_TITLE}</h2>
+            {view.environment ? (
+              <>
+                <dl className="space-y-2 text-sm">
+                  {replayEnvironmentRows(view.environment).map((row) => (
+                    <div key={row.label}>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {row.label}
+                      </dt>
+                      <dd>{row.text}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="text-sm font-medium">
+                  {evidenceStrengthLine(view.environment.quality)}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{NO_ENVIRONMENT_RECORD_LINE}</p>
+            )}
+          </section>
+
+          {/* (7) Full technical details, collapsed by default. */}
+          <AdvancedDetails title={FULL_TECHNICAL_DETAILS_TITLE}>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {HISTORICAL_RESULT_TITLE}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {view.original_copy
+                    ? `Project id: ${view.original_copy.project_id}`
+                    : "No copy on record."}
+                </p>
+                <p className="whitespace-pre-wrap">{view.original_reply || "No reply recorded."}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {REPLAY_WITH_RULE_TITLE}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {view.copy ? `Project id: ${view.copy.project_id}` : "No copy on record."}
+                </p>
+                <p className="whitespace-pre-wrap">{view.copy_reply || "No reply recorded."}</p>
+              </div>
+              {view.environment?.code_state.request_message_id ? (
+                <p className="text-xs text-muted-foreground">
+                  {`Request message id: ${view.environment.code_state.request_message_id}`}
+                </p>
+              ) : null}
+            </div>
+          </AdvancedDetails>
         </>
       )}
 
@@ -493,10 +604,12 @@ function Page() {
   );
 }
 
-// Round 7: one build, laid out the same way on both sides -- a look at it
-// (screenshot, open in Lovable, open the preview), Lovable's own summary, what
-// Lovable said, and the code diff. Both are real Lovable projects the owner
-// can keep building on, or delete from here.
+// Round 7 / Checkpoint 2026-09-18: one build, laid out the same way on both
+// sides -- a look at it (screenshot, open in Lovable, open the preview) and
+// a short excerpt of Lovable's own summary. The full summary, the full
+// reply and the diff moved into the shared "Full technical details" and
+// "Key difference" sections below; both sides are real Lovable projects the
+// owner can keep building on, or delete from here.
 function BuildColumn({
   id,
   title,
@@ -504,8 +617,6 @@ function BuildColumn({
   copy,
   noCopyLine,
   summary,
-  reply,
-  diff,
   footer,
   busy,
   onDelete,
@@ -516,8 +627,6 @@ function BuildColumn({
   copy: TestBuildCopy | null;
   noCopyLine: string | null;
   summary: string | null;
-  reply: string;
-  diff: ExperimentRunView["copy_diff"];
   footer?: string;
   busy: boolean;
   onDelete: () => void;
@@ -596,16 +705,9 @@ function BuildColumn({
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Lovable's summary of the change
           </p>
-          <p className="whitespace-pre-wrap text-sm">{summary}</p>
+          <p className="whitespace-pre-wrap text-sm">{excerpt(summary, 240)}</p>
         </div>
       ) : null}
-      <div className="space-y-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Lovable replied
-        </p>
-        <p className="whitespace-pre-wrap text-sm">{reply}</p>
-      </div>
-      <DiffDetails diff={diff} />
       {footer ? <p className="text-xs text-muted-foreground">{footer}</p> : null}
     </section>
   );

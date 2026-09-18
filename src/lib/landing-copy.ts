@@ -90,6 +90,8 @@ export const EVIDENCE_LEVELS = [
     text: "More than one paired comparison supporting the same instruction.",
   },
 ] as const;
+export const EVIDENCE_COST_LINE =
+  "Creating project copies currently uses no Lovable builder credits. Running a Lovable build inside a copy consumes normal Lovable builder credits.";
 export const EVIDENCE_CAVEAT =
   "None of these is proof. Every test shows what it could not control: Lovable's own project memory, workspace Knowledge, Skills and the builder version come from today, not from the time of the request. The replay page lists them every time.";
 

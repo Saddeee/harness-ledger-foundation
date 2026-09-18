@@ -38,6 +38,7 @@ import {
   type LlmRole,
 } from "@/lib/improvements-client";
 import { isNotifyEnabled, setNotifyEnabled } from "@/lib/browser-prefs";
+import { AUTOMATIC_ANALYSIS_SETTING_LABEL, COPY_CREDITS_LINE } from "@/lib/harness-ux";
 
 const DEFAULT_SCHEDULE: ExecutorSchedule = {
   enabled: true,
@@ -73,8 +74,9 @@ function feedbackLine(feedback: { accepted: number; skipped: number; verdicts: n
 // evidence sources feed a rule's health and can trigger a retirement
 // suggestion -- every source is always shown regardless of this choice
 // (turning one off here hides nothing, it only stops it from counting).
-// Paired tests aren't built yet (Phase B), so that row stays disabled and
-// unchecked no matter what this page does. ----
+// The historical-replay row is disabled until at least one test has been
+// judged (Round 6 Task 6b: the replay is wired now, this is not a "not
+// built yet" gate). ----
 const EVIDENCE_INTRO =
   "Signals that count towards a rule's health and retirement. Every signal is always shown; this only changes what can trigger a retirement suggestion.";
 const DEFAULT_EVIDENCE_SOURCES: EvidenceSources = {
@@ -88,8 +90,7 @@ const DEFAULT_EVIDENCE_SOURCES: EvidenceSources = {
 // (harness/src/store.ts SETTING_DEFAULTS.lovable_monthly_credit_budget),
 // used only until GET executor answers with the budget actually in force. ----
 const DEFAULT_CREDIT_BUDGET = 12;
-const LOVABLE_CREDITS_INTRO =
-  "Testing a rule in a temporary copy is a normal Lovable build and uses credits like one. Harness Ledger refuses to start a test that would put this month over the budget below.";
+const LOVABLE_CREDITS_INTRO = `${COPY_CREDITS_LINE} Harness Ledger refuses to start a test that would put this month over the budget below.`;
 
 // ---- AI analysis (Round 3 §4, Round 4 Task A4 / spec §2). Analysis only
 // ever runs when the user presses "Analyse now" (see analyse-notice.tsx); it
@@ -213,6 +214,9 @@ export function LocalSettings() {
   // Round 6 Task 6b / spec §6: Lovable credits (budget, keep-test-copies).
   const [creditBudget, setCreditBudget] = useState(DEFAULT_CREDIT_BUDGET);
   const [keepTestCopies, setKeepTestCopies] = useState(false);
+  // Checkpoint 2026-09-18 (D7): automatic analysis after a scheduled sync,
+  // off by default; a separate setting from the schedule itself.
+  const [autoAnalysis, setAutoAnalysis] = useState(false);
 
   const [llmProvider, setLlmProvider] = useState<LlmProvider>(DEFAULT_LLM_PROVIDER);
   const [llmModels, setLlmModels] = useState<LlmModels>(DEFAULT_LLM_MODELS);
@@ -264,6 +268,11 @@ export function LocalSettings() {
     const saved = executor.data?.settings?.keep_test_copies;
     if (saved != null) setKeepTestCopies(saved);
   }, [executor.data?.settings?.keep_test_copies]);
+
+  useEffect(() => {
+    const saved = executor.data?.settings?.automatic_analysis_after_sync;
+    if (saved != null) setAutoAnalysis(saved);
+  }, [executor.data?.settings?.automatic_analysis_after_sync]);
 
   useEffect(() => {
     const llm = executor.data?.llm;
@@ -352,6 +361,7 @@ export function LocalSettings() {
         interval_minutes: schedule.interval_minutes,
         window_start_hour: schedule.window_start_hour,
         window_end_hour: schedule.window_end_hour,
+        automatic_analysis_after_sync: autoAnalysis,
       }),
     onSuccess: () => {
       toast.success("Sync schedule saved");
@@ -601,7 +611,7 @@ export function LocalSettings() {
               htmlFor="evidence-paired"
               className={pairedTestsAvailable ? "font-normal" : "font-normal text-muted-foreground"}
             >
-              Paired tests{pairedTestsAvailable ? "" : " (judge at least one test first)"}
+              Historical replay{pairedTestsAvailable ? "" : " (judge at least one test first)"}
             </Label>
           </div>
         </div>
@@ -660,6 +670,21 @@ export function LocalSettings() {
             id="sync-enabled"
             checked={schedule.enabled}
             onCheckedChange={(v) => setSchedule((s) => ({ ...s, enabled: v }))}
+          />
+        </div>
+
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="automatic-analysis">{AUTOMATIC_ANALYSIS_SETTING_LABEL}</Label>
+            <p className="text-xs text-muted-foreground">
+              Off by default: a scheduled sync only reads Lovable. When on, each successful sync
+              queues one analysis of what is new, within your token budget.
+            </p>
+          </div>
+          <Switch
+            id="automatic-analysis"
+            checked={autoAnalysis}
+            onCheckedChange={setAutoAnalysis}
           />
         </div>
 

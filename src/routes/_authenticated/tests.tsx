@@ -1,7 +1,7 @@
 // The Tests page (Round 6c part B, owner's own ask, 2026-09-13: "It is
 // better if we have a page dedicated for this so you can see status, and
 // actual results, and somewhere we can collect feedback from the user
-// about this"). One row per paired-test run ever started, any status,
+// about this"). One row per historical-replay run ever started, any status,
 // newest first -- status in plain words, the measured cost, and a small
 // feedback box per row. Reached from NAV (between History and Skills) and
 // from every card's "See on Tests" link (improvement.tsx) and the judging
@@ -24,7 +24,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatDay, testsPageCreditsLine } from "@/lib/harness-ux";
+import {
+  COPY_CREDITS_LINE,
+  environmentQualityLabel,
+  EXPERIMENT_KIND_LABEL,
+  formatDate,
+  formatDay,
+  testsPageCreditsLine,
+} from "@/lib/harness-ux";
 import {
   executorQueryOptions,
   fetchTestRuns,
@@ -38,12 +45,12 @@ export const Route = createFileRoute("/_authenticated/tests")({
       { title: "Tests — Harness Ledger" },
       {
         name: "description",
-        content: "Every paired test you've run: status, results, and your own notes.",
+        content: "Every replay you've run: status, results, and your own notes.",
       },
       { property: "og:title", content: "Tests — Harness Ledger" },
       {
         property: "og:description",
-        content: "Every paired test you've run: status, results, and your own notes.",
+        content: "Every replay you've run: status, results, and your own notes.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -53,7 +60,7 @@ export const Route = createFileRoute("/_authenticated/tests")({
 });
 
 const INTRO_LINE =
-  "Each test copies your project at the moment before a real request, adds one rule, sends the same request, and lets you judge both builds.";
+  "Each test shows your project's historical result at the moment before a real request, next to one new Lovable build made from that same point with a candidate rule added, and lets you say whether the original correction would still be needed.";
 const EMPTY_LINE = 'No tests yet. Open a suggestion and press "Test this rule".';
 const UNAVAILABLE_LINE = "Tests are available when Harness Ledger runs on your machine.";
 const IN_PROGRESS_STATUSES = new Set(["copying", "building"]);
@@ -87,11 +94,9 @@ function statusText(run: ExperimentRunSummary): string {
 function buildLinks(run: ExperimentRunSummary) {
   const links = [
     run.original_copy && !run.original_copy.deleted
-      ? { label: "Original build", href: run.original_copy.editor_url }
+      ? { label: "Historical result", href: run.original_copy.editor_url }
       : null,
-    run.copy && !run.copy.deleted
-      ? { label: "Build with the rule", href: run.copy.editor_url }
-      : null,
+    run.copy && !run.copy.deleted ? { label: "Replay with rule", href: run.copy.editor_url } : null,
   ].filter((l): l is { label: string; href: string } => l !== null);
   if (links.length === 0) return null;
   return (
@@ -240,6 +245,7 @@ function Page() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Tests</h1>
         <p className="text-sm text-muted-foreground">{INTRO_LINE}</p>
+        <p className="text-sm text-muted-foreground">{COPY_CREDITS_LINE}</p>
         {credits ? (
           <p className="text-sm text-muted-foreground">{testsPageCreditsLine(credits)}</p>
         ) : null}
@@ -255,9 +261,11 @@ function Page() {
             <TableRow>
               <TableHead>Project</TableHead>
               <TableHead>Rule</TableHead>
+              <TableHead>Kind</TableHead>
               <TableHead>Started</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Cost</TableHead>
+              <TableHead>Evidence</TableHead>
               <TableHead>Feedback</TableHead>
             </TableRow>
           </TableHeader>
@@ -285,9 +293,15 @@ function Page() {
                   </Link>
                   {buildLinks(run)}
                 </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {EXPERIMENT_KIND_LABEL[run.kind]}
+                </TableCell>
                 <TableCell className="whitespace-nowrap">{formatDate(run.started_at)}</TableCell>
                 <TableCell>{statusText(run)}</TableCell>
                 <TableCell className="whitespace-nowrap">{costCell(run)}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {environmentQualityLabel(run.environment_quality)}
+                </TableCell>
                 <TableCell>
                   <FeedbackCell
                     run={run}

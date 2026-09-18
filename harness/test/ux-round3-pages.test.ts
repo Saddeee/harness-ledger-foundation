@@ -278,9 +278,14 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
 // keep-test-copies), so "credit" is no longer confined to the one schedule
 // sentence. The token-budget label (a different, LLM budget entirely) must
 // still never mention it, which is the part of this test worth keeping.
+// Checkpoint 2026-09-18 (WP1b, docs/audit/ux.md §1b): LOVABLE_CREDITS_INTRO
+// now builds on the shared, mandated COPY_CREDITS_LINE (imported from
+// harness-ux.ts) instead of re-typing its own "uses credits like one"
+// sentence -- one fewer literal "credit" in this file's own source text
+// (26, not 27), with the single source of truth living in harness-ux.ts.
 test("local-settings.tsx: 'credit' appears in the schedule sentence and the Lovable-credits section; the LLM token-budget label never mentions it", () => {
   const raw = readApp(LOCAL_SETTINGS);
-  assert.equal(count(raw, "credit"), 27);
+  assert.equal(count(raw, "credit"), 26);
   assert.ok(!/Monthly token budget[^<]*credit/i.test(raw));
 });
 

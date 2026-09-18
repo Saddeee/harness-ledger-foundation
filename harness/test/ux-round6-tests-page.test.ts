@@ -37,9 +37,11 @@ test("tests.tsx: exists, titled 'Tests', with the exact intro line and empty sta
   const code = codeOnly(raw);
   assert.match(code, /createFileRoute\("\/_authenticated\/tests"\)/);
   assert.match(code, />Tests</, "the page's own <h1> reads exactly 'Tests'");
+  // Checkpoint 2026-09-18 (WP1b): "judge both builds" is gone -- the second
+  // column is a historical result, not a second build.
   assert.match(
     code,
-    /Each test copies your project at the moment before a real request, adds one rule, sends the same request, and lets you judge both builds\./,
+    /Each test shows your project's historical result at the moment before a real request, next to one new Lovable build made from that same point with a candidate rule added, and lets you say whether the original correction would still be needed\./,
   );
   assert.match(
     code,

@@ -83,12 +83,14 @@ test("AddConfirm help text: exact copy for each choice", () => {
     detail,
     /Harness Ledger writes this exact text now, when you press Add\. Uses no credits\./,
   );
-  // Round 6 Task 6b / spec §6: the real paired-test flow's own help text --
-  // "not switched on yet" is gone (it is switched on now).
+  // Round 6 Task 6b / spec §6: the real historical-replay flow's own help
+  // text -- "not switched on yet" is gone (it is switched on now).
+  // Checkpoint 2026-09-18 (WP1b): "compare both builds" is gone -- the
+  // second column is a historical result, not a second build.
   const ux = codeOnly(readApp("lib/harness-ux.ts"));
   assert.match(
     ux,
-    /export const TEST_FIRST_HELP =\s*"Nothing is added yet\. Harness Ledger runs your original request again in a copy with this rule, you compare both builds, and you add it afterwards if it worked\.";/,
+    /export const TEST_FIRST_HELP =\s*"Nothing is added yet\. Harness Ledger replays your original request in a new copy with this rule, next to the historical result, and you add it afterwards if it worked\.";/,
   );
   assert.match(detail, /TEST_FIRST_HELP/);
   assert.match(detail, /proveCostLine\(\)/);
@@ -193,10 +195,12 @@ test("harness-ux.ts: LANDING_INTRO and the four HOW_IT_WORKS_STEPS from spec 6.5
   );
 });
 
-test("Landing page renders LANDING_INTRO; login has no 'Internal tool' and its subtitle is 'Sign in to continue.'", () => {
+test("Landing page renders the landing copy (HERO_TITLE from landing-copy.ts); login has no 'Internal tool' and its subtitle is 'Sign in to continue.'", () => {
+  // Checkpoint 2026-09-18: the landing page's copy moved to
+  // src/lib/landing-copy.ts (pinned by ux-landing.test.ts).
   const index = codeOnly(readApp(INDEX));
-  assert.match(index, /LANDING_INTRO/);
-  assert.match(index, /import \{[^}]*LANDING_INTRO[^}]*\} from "@\/lib\/harness-ux"/);
+  assert.match(index, /\{HERO_TITLE\}/);
+  assert.match(index, /import \{[^}]*HERO_TITLE[^}]*\} from "@\/lib\/landing-copy"/);
 
   const login = readApp(LOGIN);
   assert.ok(!/Internal tool/.test(login));
