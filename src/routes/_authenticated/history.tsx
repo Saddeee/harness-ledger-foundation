@@ -4,14 +4,20 @@
 // didn't make, every accept/skip/retire/keep/re-add decision, every Skill
 // change, and every rule verdict. The Instructions page's old per-version
 // "What changed" list lives here now; Instructions shows only what is
-// current. Only talks to the local Harness routes (fetchKnowledge for the
-// target list, fetchTimeline for the selected target's nodes, postKnowledge
-// for "Undo this change" / "Go back to before this change").
+// current. Checkpoint 2 2-C: the selected target's own current Knowledge
+// text now has its own "Current Knowledge" box at the top of this page,
+// visually separate from the timeline below it (Instructions already shows
+// the same text per target; this is the same fact, read here for "what is
+// true right now, before I read how it got here"). Only talks to the local
+// Harness routes (fetchKnowledge for the target list and its current text,
+// fetchTimeline for the selected target's nodes, postKnowledge for "Undo
+// this change" / "Go back to before this change").
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Timeline } from "@/components/harness/timeline";
+import { ManagedBlockText, Timeline } from "@/components/harness/timeline";
+import { formatDate } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
   fetchKnowledge,
@@ -166,6 +172,28 @@ function Page() {
               );
             })}
           </div>
+
+          {/* Checkpoint 2 2-C: "Current Knowledge" -- the newest written
+              version or latest snapshot for the selected target, in its own
+              box, visually separate from the event timeline below it. */}
+          <section className="space-y-2 rounded-md border p-4" aria-labelledby="current-knowledge">
+            <h2 id="current-knowledge" className="text-lg font-semibold">
+              Current Knowledge
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {selected?.current
+                ? `Read from Lovable at ${formatDate(selected.current.fetched_at)}`
+                : "Not read yet — press Sync now on the Instructions page."}
+            </p>
+            {selected?.current?.content ? (
+              <ManagedBlockText
+                content={selected.current.content}
+                managedBlockPresent={selected.managed_block_present}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Nothing here yet.</p>
+            )}
+          </section>
 
           {timeline.isLoading ? (
             <div className="rounded-md border p-6 text-sm text-muted-foreground">Loading…</div>

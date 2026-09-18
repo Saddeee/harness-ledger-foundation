@@ -107,29 +107,42 @@ test("lay 'why' templates never invent specifics and always fall back", () => {
     assert.ok(!/cron|pg_cron|queue|credit/i.test(t), t);
 });
 
-test("default technical sections are collapsed and the detail page wraps them in Details + Developer view", () => {
+// Checkpoint 2 2-B: "Details" is renamed "Technical details" (PLAN.md's own
+// Level 3 vocabulary), still one collapsed AdvancedDetails wrapping a
+// collapsed "Developer view" -- rewritten with intent, same structural
+// guarantees (nothing open by default, Developer view nested last).
+test("default technical sections are collapsed and the detail page wraps them in Technical details + Developer view", () => {
   const layout = codeOnly(readApp(LAYOUT));
   for (const tag of layout.match(/<details[^>]*>/g) ?? [])
     assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
   const detail = readApp(DETAIL);
   for (const tag of codeOnly(detail).match(/<details[^>]*>/g) ?? [])
     assert.ok(!/\sopen\b/.test(tag), `collapsed by default, got: ${tag}`);
-  assert.match(detail, /<AdvancedDetails title="Details">/);
+  assert.match(detail, /<AdvancedDetails title="Technical details">/);
   assert.ok(!/title="More detail"/.test(detail));
+  assert.ok(!/title="Details"/.test(detail));
   assert.match(detail, /Developer view/);
-  assert.ok(detail.indexOf("developer-view:start") > detail.indexOf('title="Details"'));
+  assert.ok(detail.indexOf("developer-view:start") > detail.indexOf('title="Technical details"'));
   assert.ok(detail.indexOf("developer-view:end") < detail.lastIndexOf("</AdvancedDetails>"));
 });
 
-test("detail page order: back, decision card, wording, why, What happened, Details, developer view last", () => {
+// Checkpoint 2 2-B: rewritten with intent for the new six-section order
+// (spec: What happened -> What Harness Ledger learned -> What Harness
+// Ledger recommends -> Why Knowledge or Skill -> What the action will do ->
+// the primary decision), with the raw message list and classification
+// reasoning demoted into the Technical details, collapsed, last.
+test("detail page order: back, the six sections in order, the primary decision, Technical details, developer view last", () => {
   const detail = codeOnly(readApp(DETAIL));
   const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
   const order = [
     "{backLabel}",
-    "<DecisionCard",
-    "{whyFor(item.classification)}",
     "What happened",
-    'title="Details"',
+    "What Harness Ledger learned",
+    "What Harness Ledger recommends",
+    "Why Knowledge or Skill",
+    "What the action will do",
+    "<DecisionCard",
+    'title="Technical details"',
     "How Harness Ledger read this",
     "Wording history",
   ];
@@ -147,7 +160,7 @@ test("detail page order: back, decision card, wording, why, What happened, Detai
     /<DecisionCard\s+item=\{item\}[^>]*busy=\{busy\}[^>]*run=\{run\}[^>]*titleAs="h1"/,
   );
   const raw = readApp(DETAIL);
-  assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="Details"'));
+  assert.ok(raw.indexOf("developer-view:start") > raw.indexOf('title="Technical details"'));
   // proof is hidden until it can run
   assert.ok(
     !/Run proof|Prove it first|How Harness Ledger would prove this|PROVE_INTRO|proveCostLine/.test(
@@ -580,26 +593,16 @@ test("wording history: reasons only for changes made in this UI; anything else i
   assert.match(codeOnly(readApp(DETAIL)), /\{wordingChangeLine\(w\)\}/);
 });
 
-test("Overview is gone: the route only redirects to Inbox and nothing links to /overview", () => {
+test("Overview is a real page again (Checkpoint 2 WP2-A): a component, not a redirect, and it is reachable from the nav and onboarding", () => {
   const overview = codeOnly(readApp("routes/_authenticated/overview.tsx"));
-  assert.match(overview, /throw redirect\(\{ to: "\/inbox", replace: true \}\)/);
-  assert.ok(!/component:/.test(overview), "no component; it is a pure redirect");
-  for (const page of [
-    INBOX,
-    LEDGER,
-    SHELL,
-    CLIENT,
-    DETAIL,
-    LAYOUT,
-    "routes/login.tsx",
-    "routes/index.tsx",
-    "routes/_authenticated/settings.tsx",
-  ]) {
-    assert.ok(
-      !/["'`]\/overview["'`]/.test(codeOnly(readApp(page))),
-      `${page} still links to /overview`,
-    );
-  }
+  assert.ok(!/throw redirect\(/.test(overview), "Overview no longer just redirects");
+  assert.match(overview, /component:\s*OverviewPage/);
+  assert.match(codeOnly(readApp(SHELL)), /["'`]\/overview["'`]/, "the nav links to /overview");
+  assert.match(
+    codeOnly(readApp("routes/_authenticated/onboarding.tsx")),
+    /["'`]\/overview["'`]/,
+    "onboarding's Skip link goes to /overview",
+  );
 });
 
 test("Settings: hosted usage cards live under Advanced, gated to the hosted runtime, with a link to Jobs", () => {
@@ -613,8 +616,12 @@ test("Settings: hosted usage cards live under Advanced, gated to the hosted runt
   assert.ok(!/queryKey: \["overview"\]/.test(settings));
 });
 
-test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in every runtime; How Harness Ledger works links to the landing page", () => {
+test("nav: Overview, Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in every runtime; How Harness Ledger works links to the landing page", () => {
+  // Checkpoint 2 WP2-A: Overview is real again (a next-action page, not the
+  // redirect it used to be) and sits first in the sidebar -- updated here
+  // with intent rather than left pinning the old "Overview is gone" state.
   const shell = codeOnly(readApp(SHELL));
+  assert.match(shell, /\{ to: "\/overview", label: "Overview" \}/);
   assert.match(shell, /\{ to: "\/inbox", label: "Inbox" \}/);
   assert.match(shell, /\{ to: "\/ledger", label: "Suggestions" \}/);
   assert.match(shell, /\{ to: "\/instructions", label: "Instructions" \}/);
@@ -623,8 +630,9 @@ test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, S
   assert.match(shell, /\{ to: "\/skills", label: "Skills" \}/);
   assert.match(shell, /\{ to: "\/projects", label: "Projects" \}/);
   assert.match(shell, /\{ to: "\/settings", label: "Settings" \}/);
-  assert.equal(count(shell, 'label: "'), 8, "exactly eight nav items");
+  assert.equal(count(shell, 'label: "'), 9, "exactly nine nav items");
   const navOrder = [
+    'label: "Overview"',
     'label: "Inbox"',
     'label: "Suggestions"',
     'label: "Instructions"',
@@ -644,7 +652,7 @@ test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, S
     !/LOCAL_NAV|runtimeQueryOptions|mode === "local"/.test(shell),
     "nav never depends on the runtime",
   );
-  assert.ok(!/label: "Ledger"|label: "Overview"|label: "Knowledge"/.test(shell));
+  assert.ok(!/label: "Ledger"|label: "Knowledge"/.test(shell));
   assert.match(shell, /<Link to="\/"[^>]*>\s*How Harness Ledger works\s*<\/Link>/);
   const client = codeOnly(readApp(CLIENT));
   assert.ok(
@@ -714,7 +722,11 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   // sentence ("...automatically, using no Lovable credits."), replacing the
   // old unqualified "for free".
   const uxSource = codeOnly(readApp("lib/harness-ux.ts"));
-  assert.equal(count(uxSource, "Lovable credits"), 2);
+  // Checkpoint 2 2-B's actionConsequence adds three literal "Lovable
+  // credits" mentions of its own (the "add" consequence spells it out for
+  // both project and workspace, "test_first" for the temporary-copy build)
+  // -- the jump from 2 to 5, recomputed with intent rather than loosened.
+  assert.equal(count(uxSource, "Lovable credits"), 5);
   // Count case-insensitive: use regex to match credit/credits/Credit/Credits/CREDITS.
   // Round 6 Task 6b's own paired-test copy block (confirm lines, the card's
   // status line, the judging screen's cost/confounder lines, the
@@ -724,11 +736,13 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   // from 16 to 21. Checkpoint 2026-09-18 (WP1b) adds the shared
   // COPY_CREDITS_LINE constant (its own name and two literal "credits") and
   // the observed-evidence sentence's "using no Lovable credits" -- the jump
-  // from 21 to 26, recomputed directly against the file rather than
+  // from 21 to 26. Checkpoint 2 2-B's actionConsequence (three "credits"
+  // mentions, one per "Lovable credits"/"credits" occurrence above) is the
+  // jump from 26 to 29, recomputed directly against the file rather than
   // hand-counted, inventoried here so a FUTURE bump still gets looked at,
   // rather than this assertion silently loosening forever.
   const creditMatches = (uxSource.match(/credit/gi) || []).length;
-  assert.equal(creditMatches, 26);
+  assert.equal(creditMatches, 29);
 });
 
 test("no internal vocabulary in user-facing JSX outside the Developer view", () => {

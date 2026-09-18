@@ -461,6 +461,19 @@ async function handlePost({ request }: { request: Request }) {
       return Response.json({ available: true, keys: adapter.llmKeyStatus() });
     }
 
+    // Checkpoint 2 2-E: "Test provider" (Settings > AI analysis). One tiny
+    // structured-output call through the same code path a real analysis
+    // call uses (harness/src/llm/index.ts's testProvider), so an OpenAI
+    // parameter-compatibility problem is caught here rather than the first
+    // time a real analysis runs. Never throws for a call that failed at the
+    // provider -- `ok: false` with the specific reason is a normal result of
+    // this action, not a route error; the route's own catch below is only
+    // for something unexpected (e.g. no model configured at all).
+    if (action === "test_provider") {
+      const result = await adapter.testProvider();
+      return Response.json({ available: true, result });
+    }
+
     if (action === "defaults") {
       const patch: Partial<Record<string, string>> = {};
       if (body["max_active_rules"] !== undefined)

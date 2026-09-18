@@ -20,6 +20,7 @@ import {
 } from "@/components/harness/decision-layout";
 import {
   ALREADY_RECORDED_TOAST,
+  actionConsequence,
   adherenceLine,
   CLASSIFICATION_LABELS,
   CONTENT_DESTINATION_LABELS,
@@ -30,7 +31,9 @@ import {
   DESTINATION_LABELS,
   DESTINATION_RECOMMENDED,
   DESTINATION_WHY,
+  destinationLabelPlain,
   evidenceSourceLines,
+  excerpt,
   healthLine,
   attentionBlock,
   KNOWLEDGE_CHAR_LIMIT,
@@ -38,8 +41,11 @@ import {
   formatDate,
   formatDay,
   label,
+  lessonLine,
   lovableReplyText,
+  PRIMARY_ACTION_LABELS,
   proveCostLine,
+  recommendedPrimaryAction,
   REMOVE_FROM_KNOWLEDGE_BODY,
   REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL,
   REMOVE_FROM_KNOWLEDGE_TITLE,
@@ -583,18 +589,26 @@ function TestButton({
   busy,
   run,
   size,
+  trigger,
+  variant,
 }: {
   item: Improvement;
   busy: boolean;
   run: Run;
   size?: "default" | "sm" | undefined;
+  // Checkpoint 2 2-B: the Inbox card's own primary-action label ("Test
+  // first", PRIMARY_ACTION_LABELS.test_first) reuses this exact button
+  // rather than a second copy -- every other call site omits this and keeps
+  // the original "Test this rule" trigger.
+  trigger?: string;
+  variant?: "default" | "outline";
 }) {
   const [showOriginal, setShowOriginal] = useState(true);
   if (!item.test?.available) return null;
   return (
     <ConfirmAction
-      trigger="Test this rule"
-      variant="outline"
+      trigger={trigger ?? "Test this rule"}
+      variant={variant ?? "outline"}
       size={size}
       title={TEST_THIS_RULE_TITLE}
       body={TEST_THIS_RULE_BODY}
@@ -1067,15 +1081,19 @@ type EditableState = {
   onCancel: () => void;
 };
 
-// Round 5 Task 5 / spec §2: the Inbox's own lean rendering -- project name,
-// the title as a button to Suggestions (the Inbox has no detail view of its
-// own any more), the instruction blockquote, one muted line for why Harness
-// read it this way, the "wasn't sure" line when decision_mode='automatic'
-// flagged one, and the three decision buttons. No group Badge (the "New"
-// badge is the one exception), no DecidedStatus, no editable state -- kept
-// as its own function, never entangled with DecisionCard's own (unchanged)
-// full rendering below, since it always receives a pending item (the Inbox
-// turns a decided one into a ConfirmationRow instead of a card).
+// Round 5 Task 5 / spec §2, rewritten with intent by Checkpoint 2 2-B: the
+// Inbox card now shows exactly the Level 1 fields -- project name, the
+// plain-language lesson, the instruction (or the Skill name for a
+// skill-only destination), the destination in plain words, the one-sentence
+// reason, ONE recommended primary action with its consequence line, and
+// Skip. Everything else (raw classification, the alternative destination,
+// changing scope, the full evidence) is a secondary control, moved into a
+// collapsed "More" area rather than sharing the primary action's visual
+// weight. No group Badge (the "New" badge is the one exception), no
+// DecidedStatus, no editable state -- kept as its own function, never
+// entangled with DecisionCard's own (unchanged) full rendering below, since
+// it always receives a pending item (the Inbox turns a decided one into a
+// ConfirmationRow instead of a card).
 function CompactDecisionCard({
   item,
   onOpen,
@@ -1093,6 +1111,17 @@ function CompactDecisionCard({
   // Round 6 Task 4 / spec §4: the Inbox is always a list -- every button in
   // its bar is "sm", same as everywhere else lists render this card.
   const size = "sm";
+  const skillOnly = item.content_destination?.value === "skill";
+  const scope: "project" | "workspace" = item.destination === "workspace" ? "workspace" : "project";
+  const destLabel = destinationLabelPlain(
+    item.content_destination?.value ?? null,
+    item.destination,
+  );
+  const reason = item.content_destination
+    ? contentDestinationReason(item.content_destination.value, item.content_destination.reason)
+    : whyFor(item.classification);
+  const recommended = recommendedPrimaryAction(item);
+  const canTest = item.test?.available === true;
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       {/* header row: project name left, status badges right */}
@@ -1110,14 +1139,26 @@ function CompactDecisionCard({
         </button>
       </h2>
       {/* body: full width, a sibling of the header row above */}
-      {item.proposed_instruction ? (
+      {/* Checkpoint 2 2-B: the plain-language lesson first, then the
+          proposed instruction (or, for a skill-only destination, the Skill
+          name in its place). */}
+      <p className="text-sm">{lessonLine(item)}</p>
+      {skillOnly ? (
+        <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+          {item.skill_proposal?.name ?? NO_INSTRUCTION}
+        </blockquote>
+      ) : item.proposed_instruction ? (
         <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
           {item.proposed_instruction}
         </blockquote>
       ) : (
         <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
       )}
-      <p className="text-xs text-muted-foreground">{whyFor(item.classification)}</p>
+      <p className="text-xs text-muted-foreground">
+        <span className="font-medium">{destLabel}</span>
+        {" — "}
+        {reason}
+      </p>
       {item.unsure ? (
         <p role="status" className="text-xs text-muted-foreground">
           {item.unsure}
@@ -1125,18 +1166,77 @@ function CompactDecisionCard({
       ) : null}
       <TestStatusLine item={item} />
       <div className={ACTION_BAR_CLASS}>
-        <AddConfirm item={item} destination="project" busy={busy} run={run} size={size} />
-        <AddConfirm
-          item={item}
-          destination="workspace"
-          busy={busy}
-          run={run}
-          variant="outline"
-          size={size}
-        />
+        {recommended === "review_skill" ? (
+          <div className="space-y-1">
+            <Button type="button" size={size} onClick={() => onOpen?.(item.id)}>
+              {PRIMARY_ACTION_LABELS.review_skill}
+            </Button>
+            <p className="text-xs text-muted-foreground">{actionConsequence("review_skill")}</p>
+          </div>
+        ) : recommended === "test_first" ? (
+          <div className="space-y-1">
+            <TestButton
+              item={item}
+              busy={busy}
+              run={run}
+              size={size}
+              trigger={PRIMARY_ACTION_LABELS.test_first}
+              variant="default"
+            />
+            <p className="text-xs text-muted-foreground">{actionConsequence("test_first")}</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <AddInstructionConfirm item={item} busy={busy} run={run} size={size} />
+            <p className="text-xs text-muted-foreground">{actionConsequence("add", scope)}</p>
+          </div>
+        )}
+        {/* Test first stays offered even when it isn't the recommendation,
+            whenever it's actually available -- never the other way round. */}
+        {recommended !== "test_first" && canTest ? (
+          <TestButton
+            item={item}
+            busy={busy}
+            run={run}
+            size={size}
+            trigger={PRIMARY_ACTION_LABELS.test_first}
+          />
+        ) : null}
         <SkipConfirm item={item} busy={busy} run={run} size={size} />
-        <TestButton item={item} busy={busy} run={run} size={size} />
       </div>
+      <details className="rounded-md border">
+        <summary className="cursor-pointer px-2 py-1 text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          More
+        </summary>
+        <div className="space-y-2 border-t p-2 text-xs text-muted-foreground">
+          <p>{whyFor(item.classification)}</p>
+          {item.content_destination ? (
+            <p>
+              {DESTINATION_ALTERNATIVE}:{" "}
+              {contentDestinationAlternative(
+                item.content_destination.alternative_label,
+                item.content_destination.alternative,
+              )}
+            </p>
+          ) : null}
+          {!skillOnly && recommended !== "add" ? (
+            <AddInstructionConfirm
+              item={item}
+              busy={busy}
+              run={run}
+              size={size}
+              variant="outline"
+            />
+          ) : null}
+          <Link
+            to="/ledger"
+            search={{ improvement: item.id }}
+            className="text-primary underline underline-offset-2"
+          >
+            Open the full suggestion (change destination or scope, edit wording, see evidence) →
+          </Link>
+        </div>
+      </details>
     </article>
   );
 }
@@ -1406,6 +1506,7 @@ export function ImprovementDetail({
   const lovable = lovableOf(item);
   const accepted = item.decision.status === "accepted";
   const skipped = item.decision.status === "skipped";
+  const pendingDetail = item.decision.status === "pending";
 
   // Arrows move between improvements unless focus is in a text field or a
   // confirmation dialog is open.
@@ -1470,10 +1571,141 @@ export function ImprovementDetail({
         ) : null}
       </div>
 
-      {/* Checkpoint 2026-09-18 WP3 (spec §12): current status, recommendation
-          and primary action come before the instruction itself. */}
-      <AttentionBlock item={item} busy={busy} run={run} onReview={() => setEditing(true)} />
+      {/* ---- Checkpoint 2 2-B: the six-section suggestion detail order ---- */}
 
+      {/* 1. What happened -- a short, four-line story: what you asked for,
+          what Lovable built, your correction, and whatever Lovable changed
+          afterward (else "Not recorded" -- never fabricated). */}
+      <section aria-labelledby={`story-${item.id}`} className="space-y-2">
+        <h2 id={`story-${item.id}`} className="text-lg font-semibold">
+          What happened
+        </h2>
+        {item.story ? (
+          <dl className="space-y-2 text-sm">
+            <div>
+              <dt className="font-medium">Requested</dt>
+              <dd className="text-muted-foreground">
+                {excerpt(item.story.requested, 400) || "Not recorded"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium">Built</dt>
+              <dd className="text-muted-foreground">
+                {excerpt(item.story.built, 400) || "Not recorded"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium">Your correction</dt>
+              <dd className="text-muted-foreground">{excerpt(item.story.correction, 400)}</dd>
+            </div>
+            <div>
+              <dt className="font-medium">Changed afterward</dt>
+              <dd className="text-muted-foreground">
+                {item.story.changed_afterward
+                  ? excerpt(item.story.changed_afterward, 400)
+                  : "Not recorded"}
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Not enough of this conversation was recorded to show a play-by-play.
+          </p>
+        )}
+      </section>
+
+      {/* 2. What Harness Ledger learned -- the plain-language lesson. */}
+      <section aria-labelledby={`lesson-${item.id}`} className="space-y-2">
+        <h2 id={`lesson-${item.id}`} className="text-lg font-semibold">
+          What Harness Ledger learned
+        </h2>
+        <p className="text-sm">{lessonLine(item)}</p>
+      </section>
+
+      {/* 3. What Harness Ledger recommends -- destination, the instruction or
+          Skill draft, and the attention block when a live rule needs one. */}
+      <section aria-labelledby={`recommends-${item.id}`} className="space-y-3">
+        <h2 id={`recommends-${item.id}`} className="text-lg font-semibold">
+          What Harness Ledger recommends
+        </h2>
+        <p className="text-sm">
+          <span className="font-medium">
+            {destinationLabelPlain(item.content_destination?.value ?? null, item.destination)}
+          </span>
+        </p>
+        {item.content_destination?.value === "skill" && item.skill_proposal ? (
+          <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+            {item.skill_proposal.name}
+          </blockquote>
+        ) : item.proposed_instruction ? (
+          <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+            {item.proposed_instruction}
+          </blockquote>
+        ) : (
+          <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
+        )}
+        <AttentionBlock item={item} busy={busy} run={run} onReview={() => setEditing(true)} />
+      </section>
+
+      {/* 4. Why Knowledge or Skill -- reason, alternative, and the change-
+          destination control (the existing DestinationChoice, unchanged). */}
+      <section aria-labelledby={`why-destination-${item.id}`} className="space-y-2">
+        <h2 id={`why-destination-${item.id}`} className="text-lg font-semibold">
+          Why Knowledge or Skill
+        </h2>
+        <DestinationChoice item={item} busy={busy} run={run} />
+      </section>
+
+      {/* 5. What the action will do -- the consequence line for every action
+          actually on offer right now, plus the Knowledge scope. */}
+      <section aria-labelledby={`action-effect-${item.id}`} className="space-y-2">
+        <h2 id={`action-effect-${item.id}`} className="text-lg font-semibold">
+          What the action will do
+        </h2>
+        {pendingDetail ? (
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {item.content_destination?.value !== "skill" ? (
+              <li>
+                {PRIMARY_ACTION_LABELS.add} ({label(DESTINATION_LABELS, "project")}):{" "}
+                {actionConsequence("add", "project")}
+              </li>
+            ) : null}
+            {item.content_destination?.value !== "skill" ? (
+              <li>
+                {PRIMARY_ACTION_LABELS.add} ({label(DESTINATION_LABELS, "workspace")}):{" "}
+                {actionConsequence("add", "workspace")}
+              </li>
+            ) : null}
+            {item.content_destination?.value === "skill" ||
+            item.content_destination?.value === "both" ? (
+              <li>
+                {PRIMARY_ACTION_LABELS.review_skill}: {actionConsequence("review_skill")}
+              </li>
+            ) : null}
+            {item.test?.available ? (
+              <li>
+                {PRIMARY_ACTION_LABELS.test_first}: {actionConsequence("test_first")}
+              </li>
+            ) : null}
+            <li>
+              {PRIMARY_ACTION_LABELS.skip}: {actionConsequence("skip")}
+            </li>
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {skipped
+              ? actionConsequence("skip")
+              : accepted
+                ? actionConsequence(
+                    "add",
+                    item.destination === "workspace" ? "workspace" : "project",
+                  )
+                : "This suggestion has already been decided."}
+          </p>
+        )}
+      </section>
+
+      {/* 6. The primary decision -- the existing DecisionCard action bar. */}
       <DecisionCard
         item={item}
         onChanged={onChanged}
@@ -1489,31 +1721,24 @@ export function ImprovementDetail({
         </p>
       ) : null}
 
-      <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">{whyFor(item.classification)}</p>
-      </div>
+      {/* ---- end Checkpoint 2 2-B section order ---- */}
 
-      <section aria-labelledby={`story-${item.id}`} className="space-y-3">
-        <h2 id={`story-${item.id}`} className="text-lg font-semibold">
-          What happened
-        </h2>
-        {item.evidence.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No Lovable messages are attached to this suggestion.
-          </p>
-        ) : (
-          <ol className="space-y-2">
-            {item.evidence.map((m) => (
-              <MessageBlock key={m.id} m={m} projectId={item.project.id} />
-            ))}
-          </ol>
-        )}
-      </section>
+      <AdvancedDetails title="Technical details">
+        <DetailSection title="Full message history">
+          {item.evidence.length === 0 ? (
+            <p>No Lovable messages are attached to this suggestion.</p>
+          ) : (
+            <ol className="space-y-2">
+              {item.evidence.map((m) => (
+                <MessageBlock key={m.id} m={m} projectId={item.project.id} />
+              ))}
+            </ol>
+          )}
+        </DetailSection>
 
-      <DestinationChoice item={item} busy={busy} run={run} />
-
-      <AdvancedDetails title="Details">
         <DetailSection title="How Harness Ledger read this">
+          {/* Analysis reasoning: the classification and why it led here. */}
+          <p>{whyFor(item.classification)}</p>
           <p>Harness Ledger read this as: {label(CLASSIFICATION_LABELS, item.classification)}.</p>
           {item.decision.decided_at ? (
             <p>
@@ -1909,3 +2134,96 @@ function AttentionBlock({
     </section>
   );
 }
+
+// ---- Checkpoint 2 2-B: the Inbox card's single "Add instruction" action ----
+// Stands in for the two separate "Add to this project"/"Add to all my
+// projects" buttons the compact card used to show side by side, which gave
+// the card two equally-weighted primary buttons -- the project/workspace
+// choice now lives inside this one confirm instead (spec: "ONE recommended
+// primary action"). Reuses the plain-language AddConfirm's own
+// preview/over-cap machinery; deliberately has no "test it first" branch of
+// its own -- Test first is now its own top-level primary action (see
+// recommendedPrimaryAction, harness-ux.ts) rather than a sub-choice of Add.
+// Placed at the very end of the file (function declarations hoist, so
+// CompactDecisionCard above can still call it) rather than between any of
+// the existing functions above, deliberately -- every gap between them is
+// already a structural test's own slice boundary, and this component's own
+// "size=\"sm\"" literals and second role="radio" radiogroup would otherwise
+// land inside someone else's pinned count.
+function AddInstructionConfirm({
+  item,
+  busy,
+  run,
+  size,
+  variant,
+}: {
+  item: Improvement;
+  busy: boolean;
+  run: Run;
+  size?: "default" | "sm" | undefined;
+  variant?: "default" | "outline";
+}) {
+  const [destination, setDestination] = useState<Destination>(
+    item.destination === "workspace" ? "workspace" : "project",
+  );
+  const preview = lovableOf(item).previews[destination];
+  const targetLabel = preview?.target_label ?? label(DESTINATION_LABELS, destination);
+  const overCap = preview?.over_cap === true;
+  const overRules = preview?.over_rules === true;
+  return (
+    <ConfirmAction
+      trigger={PRIMARY_ACTION_LABELS.add}
+      {...(variant ? { variant } : {})}
+      title={`Add to ${targetLabel}?`}
+      body={preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
+      consequences={[
+        actionConsequence("add", destination),
+        ...(preview ? PREVIEW_CONSEQUENCES : []),
+      ]}
+      confirmLabel={preview ? "Add" : "Save choice"}
+      confirmDisabled={overCap || overRules}
+      disabled={busy}
+      size={size}
+      onConfirm={() => void run({ action: "accept", id: item.id, destination }, SAVED_LINE)}
+    >
+      <div role="radiogroup" aria-label="Where to add it" className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          role="radio"
+          aria-checked={destination === "project"}
+          variant={destination === "project" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setDestination("project")}
+        >
+          This project
+        </Button>
+        <Button
+          type="button"
+          role="radio"
+          aria-checked={destination === "workspace"}
+          variant={destination === "workspace" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setDestination("workspace")}
+        >
+          All my projects
+        </Button>
+      </div>
+      {preview ? (
+        <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-2 text-xs">
+          {preview.managed_block}
+        </pre>
+      ) : null}
+      {overCap ? (
+        <p role="alert" className="text-xs text-destructive">
+          {OVER_CAP_LINE}
+        </p>
+      ) : null}
+      {overRules ? (
+        <p role="alert" className="text-xs text-destructive">
+          {overRulesLine(preview!.active_rules_count)}
+        </p>
+      ) : null}
+    </ConfirmAction>
+  );
+}
+// ---- end Checkpoint 2 2-B ----

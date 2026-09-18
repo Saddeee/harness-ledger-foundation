@@ -88,7 +88,11 @@ test("judge.tsx: exists, is not in NAV, and carries the exact confounder lines, 
 
 test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts the `test` action", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
-  assert.match(code, /trigger="Test this rule"/);
+  // Checkpoint 2 2-B: TestButton's trigger is now overridable (the Inbox
+  // card's own "Test first" primary action reuses this exact button with a
+  // different label) -- every OTHER call site still gets the original
+  // "Test this rule" text via this same default, rewritten with intent.
+  assert.match(code, /trigger=\{trigger \?\? "Test this rule"\}/);
   assert.match(code, /TEST_THIS_RULE_TITLE/);
   assert.match(code, /TEST_THIS_RULE_BODY/);
   assert.match(code, /TEST_THIS_RULE_CREDITS_LINE/);
@@ -235,9 +239,13 @@ test("testCopyConfounderLine: an unknown edit count is never shown as 0", async 
 });
 
 // ---- Checkpoint 2026-09-18 (WP1b, docs/audit/replay.md + ux.md): judge.tsx
-// section order, the Replay environment summary, and the banned-word ban. ----
+// section order, the Replay environment summary, and the banned-word ban.
+// Checkpoint 2 2-D renamed "Key difference" -> "Relevant visible difference"
+// and "Replay environment" -> "Evidence strength" (section 6, always shown)
+// with "Why this is an approximation" collapsed underneath it (section 7) --
+// these two pins are updated with that intent, not weakened. ----
 
-test("judge.tsx: sections appear in the required order -- original correction, Historical result / Replay with rule, Key difference, the verdict question, Replay environment, Full technical details", () => {
+test("judge.tsx: sections appear in the required order -- original correction, Historical result / Replay with rule, Relevant visible difference, the verdict question, Evidence strength, Why this is an approximation, Full technical details", () => {
   const full = codeOnly(readApp(JUDGE));
   // Skip the (alphabetized) import block -- order is judged by the JSX
   // returned from Page(), not the order these names happen to be imported.
@@ -246,9 +254,10 @@ test("judge.tsx: sections appear in the required order -- original correction, H
     "ORIGINAL_CORRECTION_LABEL",
     "HISTORICAL_RESULT_TITLE",
     "REPLAY_WITH_RULE_TITLE",
-    "KEY_DIFFERENCE_TITLE",
+    "RELEVANT_DIFFERENCE_TITLE",
     "REPLAY_VERDICT_QUESTION",
-    "REPLAY_ENVIRONMENT_TITLE",
+    "evidenceStrengthTitle(",
+    "WHY_APPROXIMATION_TITLE",
     "FULL_TECHNICAL_DETAILS_TITLE",
   ];
   let last = -1;
@@ -267,16 +276,40 @@ test("judge.tsx: shows the request and the correction text(s) as read-only conte
   assert.match(code, /view\.corrections\.map/);
 });
 
-test("judge.tsx: Key difference shows Lovable's own summary of each side plus a diff toggle each, no invented automatic verdict", () => {
+test("judge.tsx: Relevant visible difference shows Lovable's own summary of each side plus a diff toggle each, no invented automatic verdict", () => {
   const full = codeOnly(readApp(JUDGE));
   const body = full.slice(full.indexOf("function Page()"), full.indexOf("function BuildColumn"));
   const section = body.slice(
-    body.indexOf("KEY_DIFFERENCE_TITLE"),
+    body.indexOf("RELEVANT_DIFFERENCE_TITLE"),
     body.indexOf("REPLAY_VERDICT_QUESTION"),
   );
   assert.match(section, /view\.original_summary/);
   assert.match(section, /view\.copy_summary/);
   assert.equal(count(section, "<DiffDetails"), 2, "one diff toggle per side");
+});
+
+// Checkpoint 2 2-D: the verdict section's own optional regression checkbox.
+test("judge.tsx: the verdict section offers the regression checkbox and saves it with the verdicts", () => {
+  const full = codeOnly(readApp(JUDGE));
+  const body = full.slice(full.indexOf("function Page()"), full.indexOf("function BuildColumn"));
+  const section = body.slice(
+    body.indexOf("REPLAY_VERDICT_QUESTION"),
+    body.indexOf("evidenceStrengthTitle("),
+  );
+  assert.match(section, /REGRESSION_CHECKBOX_LABEL/);
+  assert.match(section, /<Checkbox\b/);
+  assert.match(section, /regression/);
+  assert.match(full, /action: "judge", run_id: runId!, verdicts: v, regression/);
+});
+
+// Checkpoint 2 2-D: section 6 always shows the evidence-strength title and
+// sentence; the conclusion line appears only once judged.
+test("judge.tsx: Evidence strength shows evidenceStrengthTitle/evidenceStrengthLine and the conclusion line once judged, with 'Why this is an approximation' collapsed underneath", () => {
+  const code = codeOnly(readApp(JUDGE));
+  assert.match(code, /evidenceStrengthTitle\(view\.environment\.quality\)/);
+  assert.match(code, /evidenceStrengthLine\(view\.environment\.quality\)/);
+  assert.match(code, /conclusionLine\(view\.conclusion\)/);
+  assert.match(code, /<AdvancedDetails title=\{WHY_APPROXIMATION_TITLE\}>/);
 });
 
 test("judge.tsx: BuildColumn shows only a short excerpt of the summary (240 chars); the full summary/reply/diff moved into Full technical details", () => {
@@ -295,14 +328,22 @@ test("judge.tsx: BuildColumn shows only a short excerpt of the summary (240 char
   assert.match(raw.slice(detailsAt), /request_message_id/);
 });
 
-test("judge.tsx: Replay environment renders replayEnvironmentRows and evidenceStrengthLine, or the no-record line when environment is null", () => {
+test("judge.tsx: Evidence strength renders replayEnvironmentRows and evidenceStrengthLine, or the no-record line when environment is null", () => {
   const code = codeOnly(readApp(JUDGE));
   assert.match(code, /replayEnvironmentRows\(view\.environment\)/);
   assert.match(code, /evidenceStrengthLine\(view\.environment\.quality\)/);
   assert.match(code, /NO_ENVIRONMENT_RECORD_LINE/);
 });
 
-test("harness-ux.ts: replayEnvironmentRows returns the exact eight rows, in order, with the spec's own example wording", () => {
+// Checkpoint 2 2-D: replayEnvironmentRows now backs the collapsed "Why this
+// is an approximation" section and returns nine rows, not eight -- "Other
+// active rules" (a setup fact, not itself a reason this is an
+// approximation) moved to otherActiveRulesLine/Full technical details, and
+// "Project memory"/"Builder version" were added so every uncontrolled
+// surface has its own row instead of only the closing summary. Updated with
+// that intent, not weakened -- every row this WP touched is still asserted
+// somewhere below, just via the new function for "Other active rules".
+test("harness-ux.ts: replayEnvironmentRows returns the exact nine rows, in order, with the spec's own example wording", () => {
   const env = {
     code_state: {
       source: "historical_commit_before_request" as const,
@@ -332,8 +373,9 @@ test("harness-ux.ts: replayEnvironmentRows returns the exact eight rows, in orde
       "Workspace Knowledge",
       "Skills",
       "Chat history",
+      "Project memory",
       "Candidate rule",
-      "Other active rules",
+      "Builder version",
       "Uncontrolled context",
     ],
   );
@@ -346,7 +388,8 @@ test("harness-ux.ts: replayEnvironmentRows returns the exact eight rows, in orde
   );
   assert.equal(byLabel["Skills"], "As they are today (workspace Skills apply to the copy)");
   assert.equal(byLabel["Chat history"], "Not copied");
-  assert.equal(byLabel["Other active rules"], "Always show prices in kronor.");
+  assert.equal(byLabel["Project memory"], "Lovable's own project memory is copied as it is today");
+  assert.equal(byLabel["Builder version"], "Not exposed by Lovable; not recorded");
   assert.match(
     byLabel["Uncontrolled context"]!,
     /Lovable's own project memory, workspace Knowledge, Skills and the builder version come from today/,
@@ -354,7 +397,7 @@ test("harness-ux.ts: replayEnvironmentRows returns the exact eight rows, in orde
   assert.deepEqual(ux.replayEnvironmentRows(null), []);
 });
 
-test("harness-ux.ts: replayEnvironmentRows names historical rules dropped by an old run, exact_historical/current_fallback/unavailable Project Knowledge wording, and Code state/Chat history variants", () => {
+test("harness-ux.ts: replayEnvironmentRows names exact_historical/current_fallback/unavailable Project Knowledge wording and Code state/Chat history variants", () => {
   const base = {
     code_state: { source: "historical_commit_before_request" as const, request_message_id: "m" },
     workspace_knowledge: { source: "current_uncontrolled" as const },
@@ -380,11 +423,6 @@ test("harness-ux.ts: replayEnvironmentRows names historical rules dropped by an 
   assert.equal(
     droppedByLabel["Project Knowledge"],
     "Today's Knowledge (no version from before the request was on file)",
-  );
-  assert.match(droppedByLabel["Other active rules"]!, /rule A/);
-  assert.match(
-    droppedByLabel["Other active rules"]!,
-    /were not in this replay's Knowledge \(an older test\); newer tests keep them/,
   );
   assert.equal(droppedByLabel["Chat history"], "Copied");
 
@@ -420,8 +458,30 @@ test("harness-ux.ts: replayEnvironmentRows names historical rules dropped by an 
     noneByLabel["Project Knowledge"],
     "None on file; the copy started with empty Knowledge",
   );
-  assert.equal(noneByLabel["Other active rules"], "None");
   assert.match(noneByLabel["Code state"]!, /Could not be established/);
+});
+
+// Checkpoint 2 2-D: "Other active rules" moved out of replayEnvironmentRows
+// into its own line (Full technical details) -- otherActiveRulesLine keeps
+// exactly the same wording/disclosure the old row carried.
+test("harness-ux.ts: otherActiveRulesLine names the kept rules, the older-test disclosure, 'none', and null for no environment", () => {
+  assert.equal(
+    ux.otherActiveRulesLine({
+      other_active_rules: ["rule A"],
+      historical_rules_dropped_by_run: true,
+    }),
+    "Other active rules kept in this replay: rule A -- these rules were live at the time but were not in this replay's Knowledge (an older test); newer tests keep them",
+  );
+  assert.equal(
+    ux.otherActiveRulesLine({ other_active_rules: ["rule A"] }),
+    "Other active rules kept in this replay: rule A",
+  );
+  assert.equal(
+    ux.otherActiveRulesLine({ other_active_rules: [] }),
+    "Other active rules kept in this replay: none.",
+  );
+  assert.equal(ux.otherActiveRulesLine(null), null);
+  assert.equal(ux.otherActiveRulesLine(undefined), null);
 });
 
 test("harness-ux.ts: evidenceStrengthLine, one sentence per quality, null when there is no quality", () => {
@@ -439,19 +499,31 @@ test("harness-ux.ts: evidenceStrengthLine, one sentence per quality, null when t
   assert.equal(ux.evidenceStrengthLine(null), null);
 });
 
-test("harness-ux.ts: environmentQualityLabel and EXPERIMENT_KIND_LABEL cover every enum value, used by tests.tsx's Kind/Evidence columns", () => {
+// Checkpoint 2 2-D: the Tests page's own Evidence column now reads
+// evidenceColumnLabel (the conclusion once judged, else the bare quality
+// label) rather than environmentQualityLabel directly -- environmentQualityLabel
+// itself is unchanged and still the fallback inside evidenceColumnLabel.
+test("harness-ux.ts: environmentQualityLabel/EXPERIMENT_KIND_LABEL/evidenceColumnLabel cover every enum value, used by tests.tsx's Kind/Evidence columns", () => {
   assert.equal(ux.environmentQualityLabel("historical_approximation"), "Historical approximation");
   assert.equal(ux.environmentQualityLabel(null), "—");
   assert.equal(ux.EXPERIMENT_KIND_LABEL.historical_replay, "Historical replay");
+  assert.equal(
+    ux.evidenceColumnLabel("historical_approximation", "historical_support"),
+    "Historical support",
+  );
+  assert.equal(
+    ux.evidenceColumnLabel("historical_approximation", null),
+    "Historical approximation",
+  );
 
   const testsCode = codeOnly(readApp(TESTS_PAGE));
   assert.match(testsCode, />Kind</);
   assert.match(testsCode, />Evidence</);
   assert.match(testsCode, /EXPERIMENT_KIND_LABEL\[run\.kind\]/);
-  assert.match(testsCode, /environmentQualityLabel\(run\.environment_quality\)/);
+  assert.match(testsCode, /evidenceColumnLabel\(run\.environment_quality, run\.conclusion\)/);
 });
 
-test("lib/improvements-client.ts: ExperimentRunView carries kind/environment, ExperimentRunSummary carries kind/environment_quality", () => {
+test("lib/improvements-client.ts: ExperimentRunView carries kind/environment/conclusion, ExperimentRunSummary carries kind/environment_quality/conclusion", () => {
   const code = codeOnly(readApp(CLIENT));
   const view = code.slice(
     code.indexOf("export type ExperimentRunView"),
@@ -459,12 +531,14 @@ test("lib/improvements-client.ts: ExperimentRunView carries kind/environment, Ex
   );
   assert.match(view, /kind: ExperimentKind;/);
   assert.match(view, /environment: ReplayEnvironment \| null;/);
+  assert.match(view, /conclusion: ReplayConclusion \| null;/);
   const summary = code.slice(
     code.indexOf("export type ExperimentRunSummary"),
     code.indexOf("export type TestRunsResponse"),
   );
   assert.match(summary, /kind: ExperimentKind;/);
   assert.match(summary, /environment_quality: EnvironmentQuality \| null;/);
+  assert.match(summary, /conclusion: ReplayConclusion \| null;/);
 });
 
 // Checkpoint 2026-09-18 (PLAN.md "Global constraints"): never "paired",
@@ -519,14 +593,17 @@ test("no banned words in harness-ux.ts's own rendered test-section copy (constan
     ux.HISTORICAL_RESULT_SUBTITLE,
     ux.REPLAY_WITH_RULE_TITLE,
     ux.REPLAY_WITH_RULE_SUBTITLE,
-    ux.KEY_DIFFERENCE_TITLE,
-    ux.KEY_DIFFERENCE_INTRO,
+    ux.RELEVANT_DIFFERENCE_TITLE,
+    ux.RELEVANT_DIFFERENCE_INTRO,
     ux.REPLAY_VERDICT_QUESTION,
-    ux.REPLAY_ENVIRONMENT_TITLE,
+    ux.REGRESSION_CHECKBOX_LABEL,
     ux.NO_ENVIRONMENT_RECORD_LINE,
+    ux.WHY_APPROXIMATION_TITLE,
     ux.FULL_TECHNICAL_DETAILS_TITLE,
+    ux.TEST_A_RULE_PAGE_TITLE,
     ...Object.values(ux.EXPERIMENT_KIND_LABEL),
     ...Object.values(ux.ENVIRONMENT_QUALITY_LABEL),
+    ...Object.values(ux.CONCLUSION_LABELS),
     ...ux.evidenceSourceLines({ observed: true, adherence: true, verdicts: true, paired: true }),
     ux.testCostLine(3),
     ux.testedResultLine({ score: 0.5, corrections: 2 }),
@@ -536,6 +613,16 @@ test("no banned words in harness-ux.ts's own rendered test-section copy (constan
     ux.evidenceStrengthLine("historical_approximation"),
     ux.evidenceStrengthLine("not_comparable"),
     ux.evidenceStrengthLine("partially_controlled"),
+    ux.evidenceStrengthTitle("historical_approximation"),
+    ux.conclusionLine("historical_support"),
+    ux.conclusionLine(null),
+    ux.evidenceColumnLabel("historical_approximation", "not_supported"),
+    ...ux.conclusionDerivationLines({
+      verdicts: ["yes", "no", "unclear"],
+      quality: "historical_approximation",
+      regression_flag: true,
+    }),
+    ux.otherActiveRulesLine({ other_active_rules: ["rule A"] }),
     ux.evidenceStrengthLine("controlled"),
   ].join("\n");
 

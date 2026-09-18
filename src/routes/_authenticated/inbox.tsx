@@ -525,15 +525,6 @@ function Page() {
         </Button>
       </div>
       <ReanalyseDialog open={reanalyseOpen} onOpenChange={setReanalyseOpen} />
-      {disagreements.length > 0 ? (
-        <ul className="space-y-3">
-          {disagreements.map((d) => (
-            <li key={d.id}>
-              <DisagreementCard item={d} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
       {list.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
@@ -574,6 +565,19 @@ function Page() {
           </ul>
         </>
       )}
+      {/* Checkpoint 2 2-B: disagreement review items are a secondary,
+          occasional concern (a newer analysis disagreeing with a decision
+          you already made) -- moved below the suggestion list so it never
+          competes with what's actually waiting for a decision. */}
+      {disagreements.length > 0 ? (
+        <ul className="space-y-3">
+          {disagreements.map((d) => (
+            <li key={d.id}>
+              <DisagreementCard item={d} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

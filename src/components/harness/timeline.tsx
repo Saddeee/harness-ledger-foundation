@@ -208,40 +208,53 @@ export function Timeline({
                     <dd>{formatDate(node.at)}</dd>
                   </dl>
                 ) : null}
-                {node.diff ? (
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={showDiff ? "outline" : "default"}
-                      onClick={() => setShowDiff(false)}
-                    >
-                      Full text
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={showDiff ? "default" : "outline"}
-                      onClick={() => setShowDiff(true)}
-                    >
-                      Show as diff
-                    </Button>
-                  </div>
-                ) : null}
+                {/* Checkpoint 2 2-C: the full text/diff is Level 3 -- kept
+                    behind this node's own selection (unchanged) but now
+                    also collapsed by default inside its own <details>,
+                    closed until opened. */}
+                {node.content != null ? (
+                  <details>
+                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      Show full text
+                    </summary>
+                    <div className="mt-2 space-y-2">
+                      {node.diff ? (
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={showDiff ? "outline" : "default"}
+                            onClick={() => setShowDiff(false)}
+                          >
+                            Full text
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={showDiff ? "default" : "outline"}
+                            onClick={() => setShowDiff(true)}
+                          >
+                            Show as diff
+                          </Button>
+                        </div>
+                      ) : null}
 
-                {showDiff && node.diff ? (
-                  <WhatChangedLines changes={node.diff} />
-                ) : node.content == null ? (
-                  <p className="text-sm text-muted-foreground">Nothing here yet.</p>
-                ) : isKnowledgeDoc ? (
-                  <ManagedBlockText
-                    content={node.content}
-                    managedBlockPresent={hasManagedBlock(node.content)}
-                  />
+                      {showDiff && node.diff ? (
+                        <WhatChangedLines changes={node.diff} />
+                      ) : isKnowledgeDoc ? (
+                        <ManagedBlockText
+                          content={node.content}
+                          managedBlockPresent={hasManagedBlock(node.content)}
+                        />
+                      ) : (
+                        <pre className="whitespace-pre-wrap break-words rounded-md border bg-background p-3 font-mono text-xs">
+                          {node.content}
+                        </pre>
+                      )}
+                    </div>
+                  </details>
                 ) : (
-                  <pre className="whitespace-pre-wrap break-words rounded-md border bg-background p-3 font-mono text-xs">
-                    {node.content}
-                  </pre>
+                  <p className="text-sm text-muted-foreground">Nothing here yet.</p>
                 )}
 
                 {node.restored_from != null ? (

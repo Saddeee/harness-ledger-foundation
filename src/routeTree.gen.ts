@@ -22,6 +22,7 @@ import { Route as AuthenticatedJobsRouteImport } from './routes/_authenticated/j
 import { Route as AuthenticatedJudgeRouteImport } from './routes/_authenticated/judge'
 import { Route as AuthenticatedKnowledgeRouteImport } from './routes/_authenticated/knowledge'
 import { Route as AuthenticatedLedgerRouteImport } from './routes/_authenticated/ledger'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedOverviewRouteImport } from './routes/_authenticated/overview'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedScoreboardRouteImport } from './routes/_authenticated/scoreboard'
@@ -110,6 +111,11 @@ const AuthenticatedKnowledgeRoute = AuthenticatedKnowledgeRouteImport.update({
 const AuthenticatedLedgerRoute = AuthenticatedLedgerRouteImport.update({
   id: '/ledger',
   path: '/ledger',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedOverviewRoute = AuthenticatedOverviewRouteImport.update({
@@ -253,6 +259,7 @@ export interface FileRoutesByFullPath {
   '/judge': typeof AuthenticatedJudgeRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/ledger': typeof AuthenticatedLedgerRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/overview': typeof AuthenticatedOverviewRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/scoreboard': typeof AuthenticatedScoreboardRoute
@@ -290,6 +297,7 @@ export interface FileRoutesByTo {
   '/judge': typeof AuthenticatedJudgeRoute
   '/knowledge': typeof AuthenticatedKnowledgeRoute
   '/ledger': typeof AuthenticatedLedgerRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/overview': typeof AuthenticatedOverviewRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/scoreboard': typeof AuthenticatedScoreboardRoute
@@ -329,6 +337,7 @@ export interface FileRoutesById {
   '/_authenticated/judge': typeof AuthenticatedJudgeRoute
   '/_authenticated/knowledge': typeof AuthenticatedKnowledgeRoute
   '/_authenticated/ledger': typeof AuthenticatedLedgerRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/overview': typeof AuthenticatedOverviewRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/_authenticated/scoreboard': typeof AuthenticatedScoreboardRoute
@@ -368,6 +377,7 @@ export interface FileRouteTypes {
     | '/judge'
     | '/knowledge'
     | '/ledger'
+    | '/onboarding'
     | '/overview'
     | '/projects'
     | '/scoreboard'
@@ -405,6 +415,7 @@ export interface FileRouteTypes {
     | '/judge'
     | '/knowledge'
     | '/ledger'
+    | '/onboarding'
     | '/overview'
     | '/projects'
     | '/scoreboard'
@@ -443,6 +454,7 @@ export interface FileRouteTypes {
     | '/_authenticated/judge'
     | '/_authenticated/knowledge'
     | '/_authenticated/ledger'
+    | '/_authenticated/onboarding'
     | '/_authenticated/overview'
     | '/_authenticated/projects'
     | '/_authenticated/scoreboard'
@@ -581,6 +593,13 @@ declare module '@tanstack/react-router' {
       path: '/ledger'
       fullPath: '/ledger'
       preLoaderRoute: typeof AuthenticatedLedgerRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/overview': {
@@ -757,6 +776,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedJudgeRoute: typeof AuthenticatedJudgeRoute
   AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
   AuthenticatedLedgerRoute: typeof AuthenticatedLedgerRoute
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedOverviewRoute: typeof AuthenticatedOverviewRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
   AuthenticatedScoreboardRoute: typeof AuthenticatedScoreboardRoute
@@ -777,6 +797,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedJudgeRoute: AuthenticatedJudgeRoute,
   AuthenticatedKnowledgeRoute: AuthenticatedKnowledgeRoute,
   AuthenticatedLedgerRoute: AuthenticatedLedgerRoute,
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedOverviewRoute: AuthenticatedOverviewRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
   AuthenticatedScoreboardRoute: AuthenticatedScoreboardRoute,

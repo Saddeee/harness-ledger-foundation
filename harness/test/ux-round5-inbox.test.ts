@@ -120,18 +120,35 @@ test("improvement.tsx: DecisionCard delegates to CompactDecisionCard when compac
   assert.match(card, /<CompactDecisionCard/);
 });
 
-test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title button, the instruction blockquote, whyFor, the three decision buttons -- no group Badge, no DecidedStatus, no editable state", () => {
+// Checkpoint 2 2-B: rewritten with intent -- the compact card's own "three
+// decision buttons" (Add to project / Add to workspace / Skip) collapsed
+// into ONE recommended primary action (Add instruction, Review Skill, or
+// Test first, chosen by recommendedPrimaryAction) plus Skip; the two
+// separate AddConfirm calls are gone from this card (AddInstructionConfirm,
+// defined at the end of the file, replaces them). Everything else this test
+// already checked (project name, the onOpen title button, no group Badge,
+// no DecidedStatus, no editable state, the New badge) still holds.
+test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title button, the lesson, the instruction, the plain destination label and reason, ONE recommended action with its consequence line, and Skip -- no group Badge, no DecidedStatus, no editable state", () => {
   const compact = compactCardSource(codeOnly(readApp(DETAIL)));
   assert.match(compact, /projectName\(item\)/);
   assert.match(compact, /onOpen/);
-  assert.match(compact, /whyFor\(item\.classification\)/);
+  assert.match(compact, /lessonLine\(item\)/);
   assert.match(compact, /item\.proposed_instruction/);
-  assert.match(compact, /<AddConfirm item=\{item\} destination="project"/);
-  // Round 6 Task 4 / spec §4: this call now also carries `size={size}`
-  // (always "sm" -- the Inbox is always a list), which pushes it onto
-  // multiple lines -- \s+ tolerates however Prettier wraps it.
-  assert.match(compact, /<AddConfirm\s+item=\{item\}\s+destination="workspace"/);
+  assert.match(compact, /destinationLabelPlain\(/);
+  assert.match(compact, /recommendedPrimaryAction\(item\)/);
+  assert.match(
+    compact,
+    /<AddInstructionConfirm item=\{item\} busy=\{busy\} run=\{run\} size=\{size\} \/>/,
+  );
+  assert.match(compact, /actionConsequence\("add", scope\)/);
+  assert.match(compact, /PRIMARY_ACTION_LABELS\.review_skill/);
+  assert.match(compact, /PRIMARY_ACTION_LABELS\.test_first/);
   assert.match(compact, /<SkipConfirm item=\{item\}/);
+  // No two separate Add buttons any more -- one merged confirm instead.
+  assert.ok(
+    !/<AddConfirm\b/.test(compact),
+    "compact mode must not render the two-button AddConfirm any more",
+  );
   assert.ok(!/DecidedStatus/.test(compact), "compact mode must never render DecidedStatus");
   assert.ok(!/editable/.test(compact), "compact mode must never carry editable state");
   assert.ok(
@@ -139,6 +156,11 @@ test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title
     "compact mode must never render the group Badge",
   );
   assert.match(compact, /isNew \? <Badge variant="default">New<\/Badge> : null/);
+  // Secondary controls (raw classification, the alternative destination,
+  // the other Add scope) collapsed into "More", never at equal weight.
+  assert.match(compact, /<details className="rounded-md border">/);
+  assert.match(compact, />\s*More\s*</);
+  assert.match(compact, /whyFor\(item\.classification\)/);
 });
 
 test('improvement.tsx: CompactDecisionCard renders item.unsure as a muted role="status" line when present', () => {

@@ -133,6 +133,31 @@ async function buildKnowledgeResponse(adapter: Adapter) {
     ),
   );
 
+  // ---- Checkpoint 2 2-C: the Instructions page's per-rule status line and
+  // "Replay evidence" line need the rule's latest JUDGED historical-replay
+  // run (its own conclusion, already derived by listTestRunSummaries --
+  // Checkpoint 2 2-D's replayConclusion -- so this route never recomputes
+  // one of its own). listTestRunSummaries returns every run, newest first;
+  // keep only the first (i.e. latest) judged one seen per rule.
+  const latestJudgedRunByRuleId = new Map<
+    number,
+    { judged_at: string | null; conclusion: string | null }
+  >();
+  for (const run of adapter.listTestRunSummaries() as {
+    rule_id: number;
+    status: string;
+    judged_at: string | null;
+    conclusion: string | null;
+  }[]) {
+    if (run.status !== "judged") continue;
+    if (!latestJudgedRunByRuleId.has(run.rule_id)) {
+      latestJudgedRunByRuleId.set(run.rule_id, {
+        judged_at: run.judged_at,
+        conclusion: run.conclusion,
+      });
+    }
+  }
+
   const targetsOut = targets.map((t) => {
     // Round 6 Task 5 fix 1a: this is what the Instructions page shows as
     // "Read from Lovable at ..." -- it must reflect what Lovable really
@@ -165,6 +190,18 @@ async function buildKnowledgeResponse(adapter: Adapter) {
           helped: number;
           hurt: number;
           last_applicable_at: string | null;
+          // Checkpoint 2 2-C: read fields only (already computed by
+          // harness/src/analysis/health.ts -- see rule_health's own
+          // columns) -- the Instructions page's "Needs your attention"
+          // filter and per-rule status line need these, and this route
+          // never wrote them out before now.
+          status?: "healthy" | "watch" | "review" | "retire_suggested" | "snoozed";
+          review_reason?:
+            "inactive" | "repeated_issue" | "user_verdict" | "unclear_contradiction" | null;
+          observed_repeat?: number;
+          observed_clear?: number;
+          ai_not_followed?: number;
+          ai_followed?: number;
         } | null;
         const improvementId = adapter.getCorrectionIdForRule(r.id);
         const improvement = improvementId != null ? adapter.getImprovement(improvementId) : null;
@@ -185,6 +222,13 @@ async function buildKnowledgeResponse(adapter: Adapter) {
                 hurt: health.hurt,
                 last_applicable_at: health.last_applicable_at,
                 since: firstWrittenAtByRuleId.get(r.id) ?? null,
+                // ---- Checkpoint 2 2-C: read fields only, appended ----
+                status: health.status ?? null,
+                review_reason: health.review_reason ?? null,
+                observed_repeat: health.observed_repeat,
+                observed_clear: health.observed_clear,
+                ai_not_followed: health.ai_not_followed,
+                ai_followed: health.ai_followed,
               }
             : null,
           // Round 5 Task 3 / spec §3a: the rules table's Status/Since/
@@ -195,6 +239,9 @@ async function buildKnowledgeResponse(adapter: Adapter) {
             ? { verdict: latestVerdict.verdict, created_at: latestVerdict.created_at }
             : null,
           adherence: adherenceRows.length > 0 ? adapter.adherenceCounts(r.id) : null,
+          // Checkpoint 2 2-C: the Instructions page's "Replay evidence" line
+          // -- null until this rule has a judged historical-replay run.
+          judged_run: latestJudgedRunByRuleId.get(r.id) ?? null,
         };
       }),
       retired_rules: retiredRules.map((r) => ({

@@ -6,7 +6,7 @@ import * as store from "../store.js";
 import { getKey } from "../llm-keys.js";
 import type { LlmRole as StoreLlmRole } from "../store.js";
 import type { CallLlm, LlmProvider, LlmRequest, LlmResult, LlmRole } from "./types.js";
-import { LlmKeyMissing } from "./types.js";
+import { LlmKeyMissing, LlmProviderError, type ProviderTestResult } from "./types.js";
 import { assertWithinBudget, estimateTokens } from "./budget.js";
 import { costUsd } from "./prices.js";
 import { callOpenAi } from "./openai.js";
@@ -70,6 +70,46 @@ function parseJsonResult<T>(raw: unknown): T {
   return raw as T;
 }
 
+// ---- Checkpoint 2026-09-18 2-E: OpenAI parameter strategy/error logging ----
+// llm_calls has no column for a parameter strategy or an error category
+// (see harness/src/migrations.ts's llm_calls table -- role/provider/model/
+// tokens/cost/estimate/run_id only), and adding one is out of this WP's
+// file list. The `events` table already exists for exactly this kind of
+// "something worth recording happened" fact with a JSON payload
+// (store.insertEvent), so the strategy actually used (and any internal
+// retry) and a failed call's error category are recorded there instead --
+// never with the API key, request body, or response headers; the message on
+// a failure is `LlmProviderError.message`, which openai.ts has already
+// redacted before it ever reaches here.
+function recordOpenAiStrategyEvent(
+  role: LlmRole,
+  model: string,
+  meta: NonNullable<Awaited<ReturnType<typeof callOpenAi>>["openai"]>,
+): void {
+  store.insertEvent("llm.call.strategy", null, {
+    provider: "openai",
+    role,
+    model,
+    token_param: meta.tokenParam,
+    temperature_sent: meta.temperatureSent,
+    retried: meta.retried,
+    retry: meta.retry ?? null,
+  });
+}
+
+function recordOpenAiErrorEvent(role: LlmRole, model: string, err: LlmProviderError): void {
+  store.insertEvent("llm.call.strategy", null, {
+    provider: "openai",
+    role,
+    model,
+    error_category: err.category,
+    status: err.status ?? null,
+    retry: err.retry ?? null,
+    message: err.message,
+  });
+}
+// ---- end Checkpoint 2026-09-18 2-E ----
+
 export function createCallLlm(deps?: {
   fetchFn?: typeof fetch;
   exec?: Exec;
@@ -114,7 +154,7 @@ export function createCallLlm(deps?: {
         let tokensOut: number;
 
         if (provider === "openai") {
-          ({ raw, tokensIn, tokensOut } = await callOpenAi({
+          const openAiResult = await callOpenAi({
             apiKey,
             model,
             system: req.system,
@@ -122,7 +162,13 @@ export function createCallLlm(deps?: {
             maxOutputTokens,
             jsonSchema,
             fetchFn,
-          }));
+          });
+          ({ raw, tokensIn, tokensOut } = openAiResult);
+          // Checkpoint 2026-09-18 2-E: record the parameter strategy actually
+          // used (and any internal retry openai.ts already resolved) so a
+          // strategy change is visible without a column on llm_calls -- see
+          // recordOpenAiStrategyEvent's own header for why events.
+          if (openAiResult.openai) recordOpenAiStrategyEvent(req.role, model, openAiResult.openai);
         } else if (provider === "anthropic") {
           ({ raw, tokensIn, tokensOut } = await callAnthropic({
             apiKey,
@@ -176,6 +222,16 @@ export function createCallLlm(deps?: {
           estimated_tokens: estimate,
           run_id: req.runId ?? null,
         });
+        // Checkpoint 2026-09-18 2-E: an OpenAI compatibility failure (bad
+        // parameter, unknown model, rejected key, ...) is worth recording
+        // even though the call failed -- llm_calls' own row above already
+        // shows *that* it failed (tokens 0), this event records *why* in a
+        // stable category a Settings page or support conversation can act
+        // on, without ever repeating the (already-redacted) provider text
+        // more than necessary.
+        if (provider === "openai" && err instanceof LlmProviderError) {
+          recordOpenAiErrorEvent(req.role, model, err);
+        }
         throw err;
       }
     }
@@ -232,3 +288,179 @@ export function createCallLlm(deps?: {
     }
   };
 }
+
+// ---- Checkpoint 2026-09-18 2-E: "Test provider" ----
+// A tiny, real structured-output call through the configured provider for
+// the classifier role -- deliberately NOT routed through createCallLlm/
+// callLlm above (that logs llm_calls under the calling role, "classifier",
+// which would make a manual connectivity check look like real analysis
+// usage). Instead this calls the same provider adapter functions
+// attemptOnce above dispatches to -- so an OpenAI call still exercises
+// openai.ts's parameter-compatibility retry exactly as a real analysis call
+// would -- and logs its own llm_calls/events rows under role
+// "provider_test" so Settings' "spent this month" total still includes it
+// (a real call really was made) without attributing it to any analysis
+// role. Touches nothing else: no correction, rule, or improvement row.
+const PROVIDER_TEST_MAX_OUTPUT_TOKENS = 30;
+const PROVIDER_TEST_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["ok"],
+  properties: { ok: { type: "boolean" } },
+} as const;
+const PROVIDER_TEST_SYSTEM = "Reply with only the required JSON.";
+const PROVIDER_TEST_USER = 'Reply with {"ok": true} to confirm the connection is working.';
+
+// Checkpoint 2026-09-18 2-E: mirrors src/lib/harness-ux.ts's own
+// openAiParamRejectedLine/openAiModelNotFoundLine/OPENAI_KEY_REJECTED_LINE
+// word for word -- kept as a local literal rather than imported (like
+// AUTOMATIC_ANALYSIS_SETTING_KEY in analysis/context.ts) because harness/src
+// and src/ are separate packages; a structural test
+// (ux-provider-test.test.ts) keeps the two in lockstep.
+function openAiCompatibilityMessage(model: string, err: LlmProviderError): string {
+  if (err.category === "invalid_model") return `The model name ${model} was not found at OpenAI.`;
+  if (err.category === "auth") return "OpenAI rejected the API key.";
+  if (err.category === "invalid_parameter" && err.retry) {
+    const retriedWith =
+      err.retry.resolution === "removed" ? "no temperature parameter" : err.retry.resolution;
+    return `OpenAI rejected a request parameter for model ${model} (${err.retry.rejectedParam}). Harness Ledger retried with ${retriedWith}.`;
+  }
+  return err.message;
+}
+
+export async function testProvider(deps?: {
+  fetchFn?: typeof fetch;
+  exec?: Exec;
+}): Promise<ProviderTestResult> {
+  const fetchFn = deps?.fetchFn ?? fetch;
+  const exec = deps?.exec ?? defaultExec;
+
+  // "for the classifier role" (2-E brief): the same provider/model the
+  // classifier is actually configured to use, so the test reflects what
+  // analysis will really call.
+  const { provider, model } = resolveRoleModel("classifier");
+
+  let apiKey = "";
+  if (provider !== "claude_code") {
+    const key = getKey(provider);
+    if (!key) throw new LlmKeyMissing(provider);
+    apiKey = key;
+  }
+
+  const jsonSchema = { name: "provider_test", schema: PROVIDER_TEST_SCHEMA };
+  const estimate = estimateTokens(
+    PROVIDER_TEST_SYSTEM,
+    PROVIDER_TEST_USER,
+    PROVIDER_TEST_MAX_OUTPUT_TOKENS,
+  );
+  // Same guard a real call goes through -- a provider test never bypasses
+  // the monthly token cap.
+  assertWithinBudget(estimate);
+
+  function logResult(tokensIn: number, tokensOut: number, cost: number | null): void {
+    store.insertLlmCall({
+      // llm_calls.role has no CHECK constraint (a plain TEXT column;
+      // migrations.ts's llm_calls table); "provider_test" is deliberately
+      // not one of LlmRole's five analysis roles (types.ts), cast through
+      // StoreLlmRole the same way every other insertLlmCall caller in this
+      // file already narrows `req.role`.
+      role: "provider_test" as unknown as StoreLlmRole,
+      provider,
+      model,
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      cost_usd: cost ?? 0,
+      estimated_tokens: estimate,
+      run_id: null,
+    });
+  }
+
+  try {
+    let raw: unknown;
+    let tokensIn = 0;
+    let tokensOut = 0;
+    let strategy:
+      { tokenParam: "max_tokens" | "max_completion_tokens"; temperatureSent: boolean } | undefined;
+
+    if (provider === "openai") {
+      const result = await callOpenAi({
+        apiKey,
+        model,
+        system: PROVIDER_TEST_SYSTEM,
+        user: PROVIDER_TEST_USER,
+        maxOutputTokens: PROVIDER_TEST_MAX_OUTPUT_TOKENS,
+        jsonSchema,
+        fetchFn,
+      });
+      ({ raw, tokensIn, tokensOut } = result);
+      if (result.openai) {
+        strategy = {
+          tokenParam: result.openai.tokenParam,
+          temperatureSent: result.openai.temperatureSent,
+        };
+        recordOpenAiStrategyEvent("classifier", model, result.openai);
+      }
+    } else if (provider === "anthropic") {
+      ({ raw, tokensIn, tokensOut } = await callAnthropic({
+        apiKey,
+        model,
+        system: PROVIDER_TEST_SYSTEM,
+        user: PROVIDER_TEST_USER,
+        maxOutputTokens: PROVIDER_TEST_MAX_OUTPUT_TOKENS,
+        jsonSchema,
+        fetchFn,
+      }));
+    } else if (provider === "google") {
+      ({ raw, tokensIn, tokensOut } = await callGoogle({
+        apiKey,
+        model,
+        system: PROVIDER_TEST_SYSTEM,
+        user: PROVIDER_TEST_USER,
+        maxOutputTokens: PROVIDER_TEST_MAX_OUTPUT_TOKENS,
+        jsonSchema,
+        fetchFn,
+      }));
+    } else {
+      ({ raw, tokensIn, tokensOut } = await callClaudeCode({
+        model,
+        system: PROVIDER_TEST_SYSTEM,
+        user: PROVIDER_TEST_USER,
+        exec,
+      }));
+    }
+
+    parseJsonResult<{ ok?: boolean }>(raw);
+    const cost = costUsd(provider, model, tokensIn, tokensOut);
+    logResult(tokensIn, tokensOut, cost);
+    const totalTokens = tokensIn + tokensOut || estimate;
+
+    return {
+      ok: true,
+      provider,
+      model,
+      strategy,
+      estimated_tokens: totalTokens,
+      message: `Provider test passed: ${model}, about ${totalTokens} tokens`,
+    };
+  } catch (err) {
+    logResult(0, 0, 0);
+    if (provider === "openai" && err instanceof LlmProviderError) {
+      recordOpenAiErrorEvent("classifier", model, err);
+      return {
+        ok: false,
+        provider,
+        model,
+        estimated_tokens: estimate,
+        message: openAiCompatibilityMessage(model, err),
+      };
+    }
+    return {
+      ok: false,
+      provider,
+      model,
+      estimated_tokens: estimate,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+// ---- end Checkpoint 2026-09-18 2-E ----

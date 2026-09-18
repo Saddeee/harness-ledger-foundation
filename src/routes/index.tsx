@@ -76,9 +76,17 @@ function Landing() {
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-relaxed opacity-90">{HERO_TEXT}</p>
           <nav aria-label="Primary" className="mt-10 flex flex-wrap items-center gap-3">
-            <Button asChild size="lg" variant="secondary">
-              <a href="#how-it-works">{HERO_ACTIONS.how}</a>
-            </Button>
+            {signedIn !== null ? (
+              <Button asChild size="lg" variant="secondary">
+                <Link to={signedIn ? "/inbox" : "/login"}>{HERO_ACTIONS.open}</Link>
+              </Button>
+            ) : null}
+            <a
+              href="#how-it-works"
+              className="text-sm font-medium underline underline-offset-4 opacity-90 hover:opacity-100"
+            >
+              {HERO_ACTIONS.how}
+            </a>
             <a
               href="#run-locally"
               className="text-sm font-medium underline underline-offset-4 opacity-90 hover:opacity-100"
@@ -99,14 +107,6 @@ function Landing() {
             >
               {HERO_ACTIONS.mcp}
             </a>
-            {signedIn !== null ? (
-              <Link
-                to={signedIn ? "/inbox" : "/login"}
-                className="text-sm font-medium underline underline-offset-4 opacity-90 hover:opacity-100"
-              >
-                {signedIn ? "Open Inbox" : HERO_ACTIONS.preview}
-              </Link>
-            ) : null}
           </nav>
         </div>
       </header>

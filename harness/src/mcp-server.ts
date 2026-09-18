@@ -14,8 +14,12 @@
 // create_rule, review_correction_candidate, record_knowledge_readback) and
 // ten experiment-plan/verification-plan/resource tools that wrote tables
 // nothing in the live product reads (docs/audit/mcp-security.md). The 13
-// tools here are the full replacement surface; there is no other way to
-// mutate Harness Ledger state through this server.
+// tools here were the full replacement surface; Checkpoint 2 2-F added the
+// 5 Skill-proposal tools below (18 total) -- still every one a thin
+// wrapper over adapter.ts, still no other way to mutate Harness Ledger
+// state through this server. No tool here (old or new) takes a raw Lovable
+// project id for deletion, and none has "resource" or "safe" in its name --
+// see harness/test/safe-to-delete.test.ts.
 import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -487,6 +491,130 @@ export function createHarnessMcpServer(): McpServer {
       nodes: adapter.buildTimeline(input.target, input.target_id),
     }),
   );
+
+  // ---- Checkpoint 2 2-F ----
+  // Skill-proposal tools (D4/DECISIONS.md): a Skill proposal is a draft kept
+  // and versioned locally in Harness Ledger -- ownership ('harness' vs
+  // 'user'), every revision, and the audit trail all live here, never in
+  // Lovable. `lovable_state` is always 'not_created': creating or updating a
+  // Skill in Lovable itself is not wired in this checkpoint, and every
+  // description below says so. Every mutating tool goes through
+  // adapter.improvementActionAndWrite with the exact WP4 action body the
+  // Skills page's own buttons send, so a user-owned proposal refuses with
+  // the exact sentence the app shows (SkillProposalOwnershipError, thrown
+  // from store.ts) -- see harness/test/mcp-server.test.ts.
+
+  registerTool(
+    server,
+    "list_skill_proposals",
+    "Harness Ledger's own local Skill proposals -- drafts this app proposed from a suggestion and " +
+      "keeps versioned itself, never published to Lovable (creating or updating a Skill in Lovable " +
+      "is not wired in this checkpoint). The same adapter.listSkillProposalsForSkillsView read the " +
+      "Skills page's own 'Proposed by Harness Ledger' section uses: id, name, status, ownership " +
+      "('harness' or 'user'), lovable_state (always 'not_created'), version_count, and the " +
+      "suggestion each proposal belongs to. Ownership, versioning and audit are all the app's own." +
+      READ_ONLY_NOTE,
+    {},
+    () =>
+      adapter.listSkillProposalsForSkillsView().map((p) => ({
+        id: p.id,
+        name: p.name,
+        status: p.status,
+        ownership: p.ownership,
+        lovable_state: p.lovable_state,
+        version_count: p.version_count,
+        suggestion_id: p.correction_candidate_id,
+        updated_at: p.updated_at,
+      })),
+  );
+
+  registerTool(
+    server,
+    "get_skill_proposal",
+    "One suggestion's Skill proposal, addressed by suggestion_id (the same id list_suggestions/ " +
+      "decide_suggestion use) -- its full content, status, ownership, and every revision, i.e. " +
+      "adapter.getImprovement(...).skill_proposal, the same field the Inbox/Improvements card " +
+      "reads. lovable_state is always 'not_created': this Skill exists only in Harness Ledger -- " +
+      "it has never been created or updated in Lovable, and ownership/versioning/audit for it are " +
+      "entirely the app's own, not Lovable's." +
+      READ_ONLY_NOTE,
+    { suggestion_id: z.number().int() },
+    (input: { suggestion_id: number }) => {
+      const item = adapter.getImprovement(input.suggestion_id, { connected: isConnected() });
+      if (!item) throw new Error(`suggestion ${input.suggestion_id} not found`);
+      if (!item.skill_proposal) {
+        return {
+          available: false,
+          reason: `suggestion ${input.suggestion_id} has no Skill proposal`,
+        };
+      }
+      return { available: true, proposal: item.skill_proposal };
+    },
+  );
+
+  registerTool(
+    server,
+    "edit_skill_proposal",
+    "Edit a Skill proposal's name/content as a new versioned revision -- " +
+      "adapter.improvementActionAndWrite('edit_skill_proposal'), the exact call the Skills page's " +
+      "own editor makes. The edit, its revision history and its audit trail all stay in Harness " +
+      "Ledger; nothing is published to Lovable. Refuses, with the exact sentence the app shows, on " +
+      "a proposal the user owns -- Harness Ledger never edits a Skill it did not itself propose." +
+      PARITY_NOTE,
+    {
+      proposal_id: z.number().int(),
+      name: z.string().min(1).max(200),
+      content: z.string().min(1).max(20000),
+    },
+    (input: { proposal_id: number; name: string; content: string }) =>
+      adapter.improvementActionAndWrite(
+        {
+          action: "edit_skill_proposal",
+          proposal_id: input.proposal_id,
+          name: input.name,
+          content: input.content,
+        },
+        MCP_ACTOR,
+      ),
+  );
+
+  registerTool(
+    server,
+    "approve_skill_proposal",
+    "Approve a Skill proposal -- adapter.improvementActionAndWrite('approve_skill_proposal'), the " +
+      "same action the Skills page's own Approve button takes. Approving only changes Harness " +
+      "Ledger's own record (a new versioned revision); it never publishes the Skill to Lovable in " +
+      "this checkpoint. Refuses, worded exactly the way the app does, on a proposal the user owns." +
+      PARITY_NOTE,
+    { proposal_id: z.number().int() },
+    (input: { proposal_id: number }) =>
+      adapter.improvementActionAndWrite(
+        { action: "approve_skill_proposal", proposal_id: input.proposal_id },
+        MCP_ACTOR,
+      ),
+  );
+
+  registerTool(
+    server,
+    "restore_skill_proposal_revision",
+    "Restore a Skill proposal's name/content from one of its own earlier revisions (its status is " +
+      "left exactly as it is now) -- adapter.improvementActionAndWrite('restore_skill_proposal_" +
+      "revision'), the same action the Skills page's version history offers. Ownership, versioning " +
+      "and the audit trail for this are entirely Harness Ledger's own; nothing here touches " +
+      "Lovable. Refuses, worded exactly the way the app does, on a proposal the user owns." +
+      PARITY_NOTE,
+    { proposal_id: z.number().int(), revision_id: z.number().int() },
+    (input: { proposal_id: number; revision_id: number }) =>
+      adapter.improvementActionAndWrite(
+        {
+          action: "restore_skill_proposal_revision",
+          proposal_id: input.proposal_id,
+          revision_id: input.revision_id,
+        },
+        MCP_ACTOR,
+      ),
+  );
+  // ---- end Checkpoint 2 2-F ----
 
   return server;
 }

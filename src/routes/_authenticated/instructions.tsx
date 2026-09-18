@@ -2,20 +2,25 @@
 // each Lovable project's/workspace's Knowledge, and the rules it has added
 // there (Round 3 §2). The write history and its per-version change diff
 // moved to the History page (Round 5 §3b) -- this page shows only current.
-// Skills live on their own route/page. Section headings below the title
-// keep Lovable's own term, "Knowledge" (e.g. the per-target heading, "Rules
-// Harness added"), since that's what the user sees in Lovable itself; only
-// the page's own title, and its name in the nav and URL, say "Instructions".
-// Only talks to the local Harness routes (fetchKnowledge/postExecutor/
-// postImprovementAction) -- writing to Lovable itself happens in the
-// executor process, never from this page.
+// Checkpoint 2 2-C: the page now leads with "Needs your attention" (only
+// rules whose health status is review/retire_suggested), then two top-level
+// sections -- "Knowledge" (the existing per-target rules table, unchanged)
+// and "Skills" (a one-line-per-proposal summary that only ever links out to
+// /skills or /ledger; no Skill control of any kind lives here). Section
+// headings inside "Knowledge" below keep Lovable's own term (e.g. the
+// per-target heading, "Rules Harness Ledger added"), since that's what the
+// user sees in Lovable itself; only the page's own title, and its name in
+// the nav and URL, say "Instructions".
+// Only talks to the local Harness routes (fetchKnowledge/fetchSkills/
+// postExecutor/postImprovementAction) -- writing to Lovable itself happens
+// in the executor process, never from this page.
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
-import { DetailSection } from "@/components/harness/decision-layout";
+import { DetailSection, RecommendationCallout } from "@/components/harness/decision-layout";
 import { ManagedBlockText } from "@/components/harness/timeline";
 import { VerdictControl } from "@/components/harness/improvement";
 import {
@@ -44,24 +49,31 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  adherenceLine,
+  aiReviewLine,
+  attentionBlock,
   CANCEL_WRITE_TOAST,
   formatDate,
   formatDay,
-  healthLine,
+  NOTHING_NEEDS_ATTENTION_LINE,
+  observedLine,
   REMOVE_FROM_KNOWLEDGE_BODY,
   REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL,
   REMOVE_FROM_KNOWLEDGE_TITLE,
+  replayEvidenceLine,
+  ruleActiveLine,
+  skillProposalStatusLabel,
 } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
   fetchKnowledge,
   postExecutor,
   postImprovementAction,
+  skillsQueryOptions,
   syncResultText,
   toastWriteOutcome,
-  type KnowledgeActiveRule,
+  type KnowledgeActiveRuleWithJudgedRun,
   type KnowledgeTargetView,
+  type SkillProposalListItem,
 } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/instructions")({
@@ -88,7 +100,7 @@ const COLLAPSE_LINES = 12;
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
 
 // Round 5 Task 3/4 / spec §3a: the rules table's Status column.
-const RULE_STATUS_LABEL: Record<NonNullable<KnowledgeActiveRule["status"]>, string> = {
+const RULE_STATUS_LABEL: Record<NonNullable<KnowledgeActiveRuleWithJudgedRun["status"]>, string> = {
   written: "In Lovable",
   pending: "Staged",
   stale: "Write needs attention",
@@ -155,7 +167,7 @@ function RuleRow({
   retireBusy,
   onRetire,
 }: {
-  rule: KnowledgeActiveRule;
+  rule: KnowledgeActiveRuleWithJudgedRun;
   retireBusy: boolean;
   onRetire: (ruleId: number) => void;
 }) {
@@ -169,7 +181,18 @@ function RuleRow({
     rule.text || (improvementId != null ? `Suggestion #${improvementId}` : `Rule #${rule.id}`);
   const status = rule.status ? RULE_STATUS_LABEL[rule.status] : "—";
   const since = rule.since ? formatDay(rule.since) : "—";
-  const observed = healthLine(rule.health ?? null);
+
+  // Checkpoint 2 2-C (spec §9): the health status decides which line this
+  // row leads with -- the attention block for 'review'/'retire_suggested',
+  // else the plain "is it live and replay-tested" fact. observedLine/
+  // aiReviewLine/the VerdictControl's own verdictLine/replayEvidenceLine
+  // each stay their own line below it, never merged into one sentence.
+  const healthStatus = rule.health?.status ?? null;
+  const needsAttention = healthStatus === "review" || healthStatus === "retire_suggested";
+  const attention = needsAttention ? attentionBlock(rule.health ?? null) : null;
+  const observed = observedLine(rule.health ?? null);
+  const aiReview = aiReviewLine(rule.health ?? null);
+  const replayLine = replayEvidenceLine(rule.judged_run ?? null);
 
   return (
     <TableRow
@@ -187,15 +210,33 @@ function RuleRow({
       <TableCell>{status}</TableCell>
       <TableCell>{since}</TableCell>
       <TableCell>
-        <p className="text-xs text-muted-foreground">{observed ?? "no builds yet"}</p>
+        {attention ? (
+          <div className="space-y-0.5">
+            <p className="text-xs font-medium">{attention.title}</p>
+            <p className="text-xs text-muted-foreground">{attention.line}</p>
+            <p className="text-xs text-muted-foreground">{attention.recommendation}</p>
+            {improvementId != null ? (
+              <Link
+                to="/ledger"
+                search={{ improvement: improvementId }}
+                className="text-xs text-primary underline underline-offset-2"
+              >
+                {attention.action}
+              </Link>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">{ruleActiveLine(rule.judged_run != null)}</p>
+        )}
+        {observed ? <p className="text-xs text-muted-foreground">{observed}</p> : null}
+        {aiReview ? <p className="text-xs text-muted-foreground">{aiReview}</p> : null}
         {/* Round 6 Task 4 / spec §4: the same compact, inline verdict
             control as the Suggestions card -- one visible control here,
             instead of a separate row of "Helped/Didn't help/Not sure"
-            buttons plus its own "You said..." line. */}
+            buttons plus its own "You said..." line (verdictLine is rendered
+            inside VerdictControl itself once a verdict exists). */}
         <VerdictControl ruleId={rule.id} verdict={rule.verdict ?? null} />
-        {adherenceLine(rule.adherence ?? null) ? (
-          <p className="text-xs text-muted-foreground">{adherenceLine(rule.adherence ?? null)}</p>
-        ) : null}
+        {replayLine ? <p className="text-xs text-muted-foreground">{replayLine}</p> : null}
         {/* adherence-line */}
       </TableCell>
       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -244,7 +285,7 @@ function RulesTable({
   retireBusy,
   onRetire,
 }: {
-  rules: KnowledgeActiveRule[];
+  rules: KnowledgeActiveRuleWithJudgedRun[];
   retireBusy: boolean;
   onRetire: (ruleId: number) => void;
 }) {
@@ -278,7 +319,7 @@ function RetiredRulesList({
   readdBusy,
   onReadd,
 }: {
-  rules: KnowledgeActiveRule[];
+  rules: KnowledgeActiveRuleWithJudgedRun[];
   readdBusy: boolean;
   onReadd: (improvementId: number) => void;
 }) {
@@ -358,8 +399,16 @@ function TargetSection({
 
       <div className="space-y-2">
         <h3 className="text-sm font-medium">Rules Harness Ledger added</h3>
-        <RulesTable rules={target.active_rules} retireBusy={retireBusy} onRetire={onRetire} />
-        <RetiredRulesList rules={target.retired_rules} readdBusy={readdBusy} onReadd={onReadd} />
+        <RulesTable
+          rules={target.active_rules as KnowledgeActiveRuleWithJudgedRun[]}
+          retireBusy={retireBusy}
+          onRetire={onRetire}
+        />
+        <RetiredRulesList
+          rules={target.retired_rules as KnowledgeActiveRuleWithJudgedRun[]}
+          readdBusy={readdBusy}
+          onReadd={onReadd}
+        />
       </div>
 
       <DetailSection
@@ -396,10 +445,122 @@ function TargetSection({
   );
 }
 
+// ---- Checkpoint 2 2-C: "Needs your attention" -- across every target, only
+// the rules whose health status is 'review' or 'retire_suggested' (never
+// 'snoozed': a snoozed rule was already reviewed and asked not to resurface
+// for a while). Each item repeats the same attentionBlock() a rule's own
+// row shows inline (spec §9) so the two never disagree, plus which
+// project/workspace it's in and a "Review rule" link to its Suggestions
+// detail. ----
+type AttentionItem = {
+  key: string;
+  targetName: string;
+  ruleText: string;
+  improvementId: number | null;
+  block: NonNullable<ReturnType<typeof attentionBlock>>;
+};
+
+function collectAttentionItems(targets: KnowledgeTargetView[]): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  for (const t of targets) {
+    for (const r of t.active_rules as KnowledgeActiveRuleWithJudgedRun[]) {
+      const status = r.health?.status ?? null;
+      if (status !== "review" && status !== "retire_suggested") continue;
+      const block = attentionBlock(r.health ?? null);
+      if (!block) continue;
+      items.push({
+        key: `${t.target}-${t.id}-${r.id}`,
+        targetName: t.name,
+        ruleText: r.text || `Rule #${r.id}`,
+        improvementId: r.improvement_id,
+        block,
+      });
+    }
+  }
+  return items;
+}
+
+function NeedsAttentionSection({ items }: { items: AttentionItem[] }) {
+  return (
+    <section aria-labelledby="needs-attention" className="space-y-3">
+      <h2 id="needs-attention" className="text-lg font-semibold">
+        Needs your attention
+      </h2>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{NOTHING_NEEDS_ATTENTION_LINE}</p>
+      ) : (
+        <ul className="space-y-3">
+          {items.map((it) => (
+            <li key={it.key} className="space-y-2 rounded-md border p-4">
+              <p className="text-xs text-muted-foreground">{it.targetName}</p>
+              <RecommendationCallout
+                title={it.block.title}
+                recommendation={it.block.recommendation}
+                why={it.block.line}
+              />
+              <p className="text-sm font-medium">{it.ruleText}</p>
+              {it.improvementId != null ? (
+                <Link
+                  to="/ledger"
+                  search={{ improvement: it.improvementId }}
+                  className="text-sm text-primary underline underline-offset-2"
+                >
+                  {it.block.action}
+                </Link>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ---- Checkpoint 2 2-C: the "Skills" section -- links out to /skills and
+// lists Harness Ledger's own Skill proposals in one line each; nothing
+// here implies a remote create/update/enable/disable of anything. ----
+function SkillsSection({ proposals }: { proposals: SkillProposalListItem[] }) {
+  return (
+    <section aria-labelledby="instructions-skills" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="instructions-skills" className="text-lg font-semibold">
+          Skills
+        </h2>
+        <Link to="/skills" className="text-sm text-primary underline underline-offset-2">
+          Open Skills
+        </Link>
+      </div>
+      {proposals.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Harness Ledger hasn't proposed a Skill from any suggestion yet.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {proposals.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-2 text-sm">
+              <Link
+                to="/ledger"
+                search={{ improvement: p.correction_candidate_id }}
+                className="text-primary underline underline-offset-2"
+              >
+                {p.name}
+              </Link>
+              <span className="text-xs text-muted-foreground">
+                {skillProposalStatusLabel(p.status)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function Page() {
   const qc = useQueryClient();
   const query = useQuery({ queryKey: ["harness-knowledge"], queryFn: fetchKnowledge });
   const executor = useQuery(executorQueryOptions);
+  const skills = useQuery(skillsQueryOptions);
 
   const syncNow = useMutation({
     mutationFn: () => postExecutor({ action: "sync_now" }),
@@ -502,6 +663,8 @@ function Page() {
       workspaceTarget.retired_rules.length > 0 ||
       (workspaceTarget.current?.content ?? "").trim().length > 0 ||
       workspaceTarget.pending_write != null);
+  const attentionItems = collectAttentionItems(targets);
+  const skillProposals = skills.data?.proposals ?? [];
 
   return (
     <div className="space-y-8">
@@ -537,28 +700,37 @@ function Page() {
         </div>
       ) : (
         <>
-          {targets.map((t) =>
-            t.target === "workspace" && !workspaceHasContent ? null : (
-              <TargetSection
-                key={`${t.target}-${t.id}`}
-                target={t}
-                syncing={syncNow.isPending}
-                onSyncNow={() => syncNow.mutate()}
-                retireBusy={retireRule.isPending}
-                onRetire={(ruleId) => retireRule.mutate(ruleId)}
-                readdBusy={readdRule.isPending}
-                onReadd={(improvementId) => readdRule.mutate(improvementId)}
-                cancelWriteBusy={cancelWrite.isPending}
-                onCancelWrite={(versionId) => cancelWrite.mutate(versionId)}
-              />
-            ),
-          )}
-          {!workspaceHasContent ? (
-            <p className="text-sm text-muted-foreground">
-              No workspace-wide rules yet. Choose "Add to all my projects" on a suggestion to create
-              one.
-            </p>
-          ) : null}
+          <NeedsAttentionSection items={attentionItems} />
+
+          <section aria-labelledby="instructions-knowledge" className="space-y-6">
+            <h2 id="instructions-knowledge" className="text-lg font-semibold">
+              Knowledge
+            </h2>
+            {targets.map((t) =>
+              t.target === "workspace" && !workspaceHasContent ? null : (
+                <TargetSection
+                  key={`${t.target}-${t.id}`}
+                  target={t}
+                  syncing={syncNow.isPending}
+                  onSyncNow={() => syncNow.mutate()}
+                  retireBusy={retireRule.isPending}
+                  onRetire={(ruleId) => retireRule.mutate(ruleId)}
+                  readdBusy={readdRule.isPending}
+                  onReadd={(improvementId) => readdRule.mutate(improvementId)}
+                  cancelWriteBusy={cancelWrite.isPending}
+                  onCancelWrite={(versionId) => cancelWrite.mutate(versionId)}
+                />
+              ),
+            )}
+            {!workspaceHasContent ? (
+              <p className="text-sm text-muted-foreground">
+                No workspace-wide rules yet. Choose "Add to all my projects" on a suggestion to
+                create one.
+              </p>
+            ) : null}
+          </section>
+
+          <SkillsSection proposals={skillProposals} />
         </>
       )}
     </div>

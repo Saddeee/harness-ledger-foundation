@@ -94,7 +94,14 @@ test("openai: request shape (URL, auth header, json_schema strict flag), respons
   const { fetchFn, calls } = makeFakeFetch((_url, init) => {
     const body = JSON.parse(init.body as string);
     assert.equal(body.model, "gpt-5.4-mini");
-    assert.equal(body.temperature, 0);
+    // Checkpoint 2026-09-18 2-E: "gpt-5.4-mini" is a gpt-5-family model, so
+    // capabilities.ts's openAiParamsFor puts it on the newer contract --
+    // `max_completion_tokens`, no `temperature` (it previously always sent
+    // `temperature: 0` and `max_tokens`, which is exactly the reviewer-found
+    // bug this checkpoint fixes: a real gpt-5-family call would 400 on both).
+    assert.equal(body.temperature, undefined);
+    assert.equal(body.max_tokens, undefined);
+    assert.equal(body.max_completion_tokens, 1500);
     assert.equal(body.response_format.type, "json_schema");
     assert.equal(body.response_format.json_schema.strict, true);
     assert.equal(body.response_format.json_schema.name, "ClassifyResult");

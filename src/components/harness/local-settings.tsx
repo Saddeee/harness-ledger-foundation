@@ -38,7 +38,12 @@ import {
   type LlmRole,
 } from "@/lib/improvements-client";
 import { isNotifyEnabled, setNotifyEnabled } from "@/lib/browser-prefs";
-import { AUTOMATIC_ANALYSIS_SETTING_LABEL, COPY_CREDITS_LINE } from "@/lib/harness-ux";
+import {
+  AUTOMATIC_ANALYSIS_SETTING_LABEL,
+  COPY_CREDITS_LINE,
+  TEST_PROVIDER_BUTTON_LABEL,
+  TEST_PROVIDER_CONSEQUENCE_LINE,
+} from "@/lib/harness-ux";
 
 const DEFAULT_SCHEDULE: ExecutorSchedule = {
   enabled: true,
@@ -199,6 +204,18 @@ function rolesDiffer(models: LlmModels): boolean {
 // The store's own default (harness/src/store.ts SETTING_DEFAULTS), used only
 // until GET executor answers with the default actually in force.
 const DEFAULT_MAX_ACTIVE_RULES = 12;
+
+// Checkpoint 2 2-E: mirrors harness/src/llm/types.ts's ProviderTestResult --
+// kept as a local shape (not imported; harness/src is a separate package)
+// only for narrowing the executor route's test_provider response.
+type ProviderTestResultShape = {
+  ok: boolean;
+  provider: LlmProvider;
+  model: string;
+  strategy?: { tokenParam: "max_tokens" | "max_completion_tokens"; temperatureSent: boolean };
+  estimated_tokens: number;
+  message: string;
+};
 
 export function LocalSettings() {
   const qc = useQueryClient();
@@ -471,6 +488,33 @@ export function LocalSettings() {
       void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not remove the key"),
+  });
+
+  // Checkpoint 2 2-E: "Test provider" -- one tiny call through the same
+  // provider/model the classifier role is configured with, run on demand
+  // rather than shown from the GET executor snapshot (a test result is only
+  // ever as fresh as the last press). postExecutor's own return type has no
+  // `result` field (that would need editing the shared improvements-client.ts
+  // for one action, out of this WP's file list), so the response is narrowed
+  // here instead -- the executor route's own test_provider handler is what
+  // actually shapes this object (harness/src/llm/index.ts's ProviderTestResult).
+  const [testProviderResult, setTestProviderResult] = useState<ProviderTestResultShape | null>(
+    null,
+  );
+  const testProvider = useMutation({
+    mutationFn: async () => {
+      const response = await postExecutor({ action: "test_provider" });
+      return (response as unknown as { result: ProviderTestResultShape }).result;
+    },
+    onSuccess: (result) => {
+      setTestProviderResult(result);
+      if (result.ok) toast.success(result.message);
+      else toast.error(result.message);
+    },
+    onError: (e) => {
+      setTestProviderResult(null);
+      toast.error(e instanceof Error ? e.message : "Could not test the provider");
+    },
   });
 
   const saveDefaults = useMutation({
@@ -989,6 +1033,23 @@ export function LocalSettings() {
         <Button onClick={() => saveAiAnalysis.mutate()} disabled={saveAiAnalysis.isPending}>
           {saveAiAnalysis.isPending ? "Saving…" : "Save AI analysis"}
         </Button>
+
+        <div className="space-y-2 border-t pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => testProvider.mutate()}
+            disabled={testProvider.isPending}
+          >
+            {testProvider.isPending ? "Testing…" : TEST_PROVIDER_BUTTON_LABEL}
+          </Button>
+          <p className="text-xs text-muted-foreground">{TEST_PROVIDER_CONSEQUENCE_LINE}</p>
+          {testProviderResult ? (
+            <p className={testProviderResult.ok ? "text-sm" : "text-sm text-destructive"}>
+              {testProviderResult.message}
+            </p>
+          ) : null}
+        </div>
       </section>
 
       <section className="space-y-4 rounded-md border p-4">

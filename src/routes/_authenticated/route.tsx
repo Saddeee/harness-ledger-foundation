@@ -1,4 +1,11 @@
-import { createFileRoute, Link, Outlet, redirect, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  redirect,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { executorQueryOptions, fetchImprovements } from "@/lib/improvements-client";
 import { formatTime } from "@/lib/harness-ux";
 import { isNotifyEnabled } from "@/lib/browser-prefs";
+import { ONBOARDING_DISMISSED_KEY } from "@/lib/onboarding-copy";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -22,6 +30,7 @@ export const Route = createFileRoute("/_authenticated")({
 // stay routable (Jobs is linked from Settings › Advanced) but are not in the
 // sidebar until they have content. History links to a page created in Task 4.
 const NAV = [
+  { to: "/overview", label: "Overview" },
   { to: "/inbox", label: "Inbox" },
   { to: "/ledger", label: "Suggestions" },
   { to: "/instructions", label: "Instructions" },
@@ -113,6 +122,33 @@ function AuthedLayout() {
   // the sidebar footer, from the same executor status the pages already
   // poll (no separate fetch of its own).
   const executorQuery = useQuery(executorQueryOptions);
+
+  // Checkpoint 2 WP2-A: first-use redirect to /onboarding -- a returning
+  // user stops being redirected once either signal says they don't need
+  // it: Lovable is connected (the executor's own status, not a guess), or
+  // they explicitly skipped onboarding once (the localStorage flag). Never
+  // fires while already on /onboarding itself, or before the executor
+  // status has answered at least once.
+  const location = useLocation();
+  useEffect(() => {
+    if (executorQuery.isLoading) return;
+    if (location.pathname === "/onboarding") return;
+    if (executorQuery.data?.connection?.connected) return;
+    let dismissed = false;
+    try {
+      dismissed = window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === "1";
+    } catch {
+      dismissed = false;
+    }
+    if (dismissed) return;
+    navigate({ to: "/onboarding", replace: true });
+  }, [
+    executorQuery.isLoading,
+    executorQuery.data?.connection?.connected,
+    location.pathname,
+    navigate,
+  ]);
+
   const connection = executorQuery.data?.connection;
   const lastRun = executorQuery.data?.last_run;
   const connectionLine = connection?.connected

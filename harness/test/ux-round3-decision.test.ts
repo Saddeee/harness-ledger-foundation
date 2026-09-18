@@ -174,9 +174,13 @@ test("Improvements: passes the on-page section order (Open, Waiting to be writte
   );
 });
 
-test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 Task 5 "Why?" radiogroup, one radiogroup mapped over three options in DestinationChoice (checkpoint 2026-09-18 WP4), seven in source', () => {
+// Checkpoint 2 2-B adds a second radiogroup with two options ("This
+// project"/"All my projects") inside AddInstructionConfirm, the Inbox
+// card's single "Add instruction" dialog -- rewritten with intent, seven to
+// nine in source.
+test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 Task 5 "Why?" radiogroup, one radiogroup mapped over three options in DestinationChoice (checkpoint 2026-09-18 WP4), two from AddInstructionConfirm\'s project/workspace choice (checkpoint 2 2-B), nine in source', () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.equal(count(detail, 'role="radio"'), 7);
+  assert.equal(count(detail, 'role="radio"'), 9);
 });
 
 test("cost wording stays honest: 'Lovable credits' <= 2 and 'Harness Ledger analysis' == 1 on improvement.tsx", () => {

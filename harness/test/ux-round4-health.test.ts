@@ -128,10 +128,19 @@ test("improvement.tsx: DecidedStatus renders the health line for a live item's h
   assert.match(code, /item\.health/);
 });
 
-test("instructions.tsx: each active rule renders its own health line, via healthLine", () => {
+// Checkpoint 2 2-C: rewritten with intent -- the Instructions page's rules
+// table no longer merges this into one healthLine call. Each active rule
+// now renders observedLine and aiReviewLine as separate lines (spec §9:
+// "never merged"), plus the plain ruleActiveLine ("Active in Lovable" /
+// "Active, not replay-tested") in place of a healthy rule's old fallback,
+// or the shared attentionBlock() when the rule needs review.
+test("instructions.tsx: each active rule renders observedLine, aiReviewLine and ruleActiveLine as separate lines", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
-  assert.match(code, /healthLine/);
+  assert.match(code, /observedLine\(rule\.health/);
+  assert.match(code, /aiReviewLine\(rule\.health/);
+  assert.match(code, /ruleActiveLine\(/);
+  assert.match(code, /attentionBlock\(rule\.health/);
 });
 
 test("route.tsx: the sidebar Inbox badge uses the server's counts (pending + retire), not pendingCount", () => {

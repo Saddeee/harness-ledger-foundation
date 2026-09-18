@@ -9,11 +9,11 @@ export const HERO_TEXT =
   "Harness Ledger turns your corrections into versioned Knowledge and Skills, tests them against real project history, and shows whether they still deserve to remain.";
 
 export const HERO_ACTIONS = {
+  open: "Open Harness Ledger",
   how: "See how it works",
   run: "Run locally",
   source: "View source",
   mcp: "Use through MCP",
-  preview: "Open hosted preview",
 } as const;
 
 export const SOURCE_URL = "https://github.com/Saddeee/harness-ledger-foundation";

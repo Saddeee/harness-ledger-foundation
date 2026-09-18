@@ -96,10 +96,20 @@ test("improvement.tsx: CompactDecisionCard's bar has exactly one action-bar cont
   assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 1);
   assert.match(fn, /const size = "sm";/);
   const bar = slice(fn, "className={ACTION_BAR_CLASS}", "</article>");
-  // Round 6 Task 6b / spec §6: both AddConfirms, SkipConfirm, and TestButton
-  // (rendered unconditionally in source -- it returns null itself when
-  // item.test isn't available, so this is still one bar, never a second).
-  assert.equal(count(bar, "size={size}"), 4, "both AddConfirms, SkipConfirm, and TestButton sized");
+  // Checkpoint 2 2-B rewrites this with intent: the two-button AddConfirm
+  // pair is gone, replaced by ONE recommended primary action (Review Skill,
+  // Test first, or AddInstructionConfirm -- three mutually exclusive
+  // branches in source, one per recommendedPrimaryAction outcome), plus the
+  // optional secondary Test first and Skip -- five `size={size}` in the
+  // action bar itself. This slice runs to the article's own closing tag
+  // (unchanged convention from Round 6 Task 6b), which also picks up the
+  // collapsed "More" area's own secondary AddInstructionConfirm -- six in
+  // total, still every one of them sized, never a hardcoded literal.
+  assert.equal(
+    count(bar, "size={size}"),
+    6,
+    "the three primary-action branches, the secondary Test first, Skip, and More's own secondary Add, all sized",
+  );
   assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
 });
 

@@ -3899,3 +3899,159 @@ test("buildTimeline: a stale or failed attempt is not the baseline for the next 
   const node = imp.buildTimeline("project", P).find((n) => n.version_id === v3.id)!;
   assert.equal(node.summary, "+1 −0 lines");
 });
+
+// ---- Checkpoint 2 2-D: derived conclusion, exposed on judge + the two reads ----
+// judgeRun's own regression_flag write (merged into environment_json), and
+// buildExperimentRunView/listTestRunSummaries both exposing `conclusion`
+// (computed on read via executor/replay-environment.ts's replayConclusion --
+// the arithmetic itself is table-tested in replay-conclusion.test.ts; this
+// only checks the wiring: does judging actually store the flag, and do both
+// reads actually surface the derived value).
+
+function mkEnvironmentJson(overrides: Partial<{ quality: string; regression_flag: boolean }> = {}) {
+  return JSON.stringify({
+    version: 1,
+    kind: "historical_replay",
+    quality: overrides.quality ?? "historical_approximation",
+    ...(overrides.regression_flag !== undefined
+      ? { regression_flag: overrides.regression_flag }
+      : {}),
+  });
+}
+
+test("judge: conclusion is null before judging, and buildExperimentRunView/listTestRunSummaries agree", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("conclusion-not-judged", ["Corrected once."]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "conclusion-not-judged-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging", environment_json: mkEnvironmentJson() });
+
+  assert.equal(imp.buildExperimentRunView(runId)!.conclusion, null);
+  const summary = imp.listTestRunSummaries().find((r) => r.id === runId)!;
+  assert.equal(summary.conclusion, null);
+});
+
+test("judge: a unanimous 'no' verdict derives historical_support on both reads once judged", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("conclusion-support", ["Corrected once."]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "conclusion-support-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging", environment_json: mkEnvironmentJson() });
+
+  imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["no"] });
+
+  assert.equal(imp.buildExperimentRunView(runId)!.conclusion, "historical_support");
+  const summary = imp.listTestRunSummaries().find((r) => r.id === runId)!;
+  assert.equal(summary.conclusion, "historical_support");
+});
+
+test("judge: a unanimous 'yes' verdict derives not_supported", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("conclusion-not-supported", ["Corrected once."]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "conclusion-not-supported-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging", environment_json: mkEnvironmentJson() });
+
+  imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["yes"] });
+
+  assert.equal(imp.buildExperimentRunView(runId)!.conclusion, "not_supported");
+});
+
+test("judge: the `regression` flag is folded into environment_json as regression_flag, and forces the conclusion to possibly_harmful regardless of the verdicts", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("conclusion-regression", ["Corrected once."]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "conclusion-regression-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging", environment_json: mkEnvironmentJson() });
+
+  imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["no"], regression: true });
+
+  const run = store.getExperimentRun(runId)!;
+  const env = JSON.parse(run.environment_json!) as { regression_flag?: boolean };
+  assert.equal(env.regression_flag, true);
+  assert.equal(imp.buildExperimentRunView(runId)!.conclusion, "possibly_harmful");
+  const summary = imp.listTestRunSummaries().find((r) => r.id === runId)!;
+  assert.equal(summary.conclusion, "possibly_harmful");
+});
+
+test("judge: regression left unset (older/programmatic caller) leaves environment_json untouched", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("conclusion-no-regression-arg", [
+    "Corrected once.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "conclusion-no-regression-arg-req",
+  });
+  const before = mkEnvironmentJson();
+  store.updateExperimentRun(runId, { status: "judging", environment_json: before });
+
+  imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["no"] });
+
+  assert.equal(store.getExperimentRun(runId)!.environment_json, before);
+});
+
+test("judge: regression true on a run with no environment record at all does not throw, and stays unrecorded", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("conclusion-no-environment", ["Corrected once."]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "conclusion-no-environment-req",
+  });
+  store.updateExperimentRun(runId, { status: "judging" });
+
+  const result = imp.improvementAction({
+    action: "judge",
+    run_id: runId,
+    verdicts: ["no"],
+    regression: true,
+  });
+  assert.equal(result.id, cc.id);
+  assert.equal(store.getExperimentRun(runId)!.environment_json, null);
+  // No environment -> no quality -> replayConclusion's own honesty rule:
+  // null rather than a guess (see replay-conclusion.test.ts).
+  assert.equal(imp.buildExperimentRunView(runId)!.conclusion, null);
+});
+
+test("judge: not_comparable quality derives inconclusive, not a made-up support/not-supported", () => {
+  const { cc, rule, ep } = mkRuleWithCorrections("conclusion-not-comparable", [
+    "Corrected once.",
+    "Corrected twice.",
+  ]);
+  const { id: runId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: cc.id,
+    task_episode_id: ep.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "conclusion-not-comparable-req",
+  });
+  store.updateExperimentRun(runId, {
+    status: "judging",
+    environment_json: mkEnvironmentJson({ quality: "not_comparable" }),
+  });
+
+  imp.improvementAction({ action: "judge", run_id: runId, verdicts: ["no", "yes"] });
+
+  assert.equal(imp.buildExperimentRunView(runId)!.conclusion, "inconclusive");
+});
+// ---- end Checkpoint 2 2-D ----

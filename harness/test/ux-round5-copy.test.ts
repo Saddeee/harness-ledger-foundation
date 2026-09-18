@@ -62,10 +62,11 @@ test("harness-ux.ts: LANDING_CREDITS_LINE exists with correct content", () => {
   );
 });
 
-test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in that order", () => {
-  // Round 6c part B: Tests joins the sidebar between History and Skills --
-  // this is the NAV-order pin the Tests-page task named explicitly, updated
-  // here with intent rather than left to bit-rot against a stale list.
+test("nav: Overview, Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in that order", () => {
+  // Round 6c part B: Tests joins the sidebar between History and Skills.
+  // Checkpoint 2 WP2-A: Overview returns as a real next-action page and
+  // leads the sidebar -- both updated here with intent rather than left to
+  // bit-rot against a stale list.
   const code = codeOnly(readApp(ROUTE));
   const navMatch = code.match(
     /const NAV = \[[^\]]*\{ to: "\/([^"]+)", label: "([^"]+)" \}[^\]]*\]/s,
@@ -79,6 +80,7 @@ test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, S
     return m ? { route: m[1], label: m[2] } : null;
   });
   assert.deepEqual(items, [
+    { route: "overview", label: "Overview" },
     { route: "inbox", label: "Inbox" },
     { route: "ledger", label: "Suggestions" },
     { route: "instructions", label: "Instructions" },

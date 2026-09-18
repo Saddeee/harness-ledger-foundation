@@ -26,10 +26,11 @@ import {
 } from "@/components/ui/table";
 import {
   COPY_CREDITS_LINE,
-  environmentQualityLabel,
+  evidenceColumnLabel,
   EXPERIMENT_KIND_LABEL,
   formatDate,
   formatDay,
+  TEST_A_RULE_PAGE_TITLE,
   testsPageCreditsLine,
 } from "@/lib/harness-ux";
 import {
@@ -59,8 +60,7 @@ export const Route = createFileRoute("/_authenticated/tests")({
   component: Page,
 });
 
-const INTRO_LINE =
-  "Each test shows your project's historical result at the moment before a real request, next to one new Lovable build made from that same point with a candidate rule added, and lets you say whether the original correction would still be needed.";
+const INTRO_LINE = `${TEST_A_RULE_PAGE_TITLE}: each test shows your project's historical result at the moment before a real request, next to one new Lovable build made from that same point with a candidate rule added, and lets you say whether the original correction would still be needed.`;
 const EMPTY_LINE = 'No tests yet. Open a suggestion and press "Test this rule".';
 const UNAVAILABLE_LINE = "Tests are available when Harness Ledger runs on your machine.";
 const IN_PROGRESS_STATUSES = new Set(["copying", "building"]);
@@ -300,7 +300,7 @@ function Page() {
                 <TableCell>{statusText(run)}</TableCell>
                 <TableCell className="whitespace-nowrap">{costCell(run)}</TableCell>
                 <TableCell className="whitespace-nowrap">
-                  {environmentQualityLabel(run.environment_quality)}
+                  {evidenceColumnLabel(run.environment_quality, run.conclusion)}
                 </TableCell>
                 <TableCell>
                   <FeedbackCell

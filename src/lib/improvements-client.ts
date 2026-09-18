@@ -218,6 +218,13 @@ export type ExperimentKind = "historical_replay" | "paired_comparison";
 export type EnvironmentQuality =
   "controlled" | "partially_controlled" | "historical_approximation" | "not_comparable";
 
+// Checkpoint 2 2-D: mirrors harness/src/executor/replay-environment.ts's own
+// ReplayConclusion exactly -- the derived one-word conclusion shown on the
+// judging screen (section 6, "Evidence strength") and the Tests page's
+// Evidence column once a run is judged.
+export type ReplayConclusion =
+  "historical_support" | "not_supported" | "possibly_harmful" | "inconclusive";
+
 export type ReplayEnvironment = {
   version: 1;
   kind: ExperimentKind;
@@ -242,6 +249,9 @@ export type ReplayEnvironment = {
   knowledge_for_copy: string;
   backfilled?: boolean;
   historical_rules_dropped_by_run?: boolean;
+  // Checkpoint 2 2-D: set once the judge screen's optional regression
+  // checkbox has been saved for this run (judgeRun, harness/src/improvements.ts).
+  regression_flag?: boolean;
 };
 
 // The judging screen's own read (GET .../improvements?run=<id>), served
@@ -254,6 +264,10 @@ export type ExperimentRunView = {
   // its Knowledge was chosen.
   kind: ExperimentKind;
   environment: ReplayEnvironment | null;
+  // Checkpoint 2 2-D: the derived conclusion, computed on read from
+  // verdicts + environment.quality + environment.regression_flag -- null
+  // until the run is judged.
+  conclusion: ReplayConclusion | null;
   status: ExperimentStatus;
   stage_note: string | null;
   started_at: string;
@@ -291,6 +305,14 @@ export type ExperimentRunView = {
   original_copy_error: string | null;
 };
 
+// Checkpoint 2 2-F: mirrors harness/src/store.ts's own CopyDeletionStatus --
+// "none" until a delete is requested, "requested" once it is but Lovable's
+// own read-back has not (yet, or ever) confirmed it gone, "confirmed" once
+// a read-back 404'd, "failed" if the delete itself failed and the copy was
+// set private instead. src/lib/harness-ux.ts's copyDeletionLine turns this
+// into the line shown next to a copy.
+export type CopyDeletionStatus = "none" | "requested" | "confirmed" | "failed";
+
 /** One test build as a Lovable project (harness/src/improvements.ts). */
 export type TestBuildCopy = {
   project_id: string;
@@ -298,6 +320,8 @@ export type TestBuildCopy = {
   preview_url: string;
   screenshot_url: string | null;
   deleted: boolean;
+  // Checkpoint 2 2-F: mirrors harness/src/improvements.ts's own buildCopy.
+  deletion_status: CopyDeletionStatus;
 };
 
 // Checkpoint 2026-09-18 WP4 (D4): mirrors harness/src/improvements.ts's own
@@ -351,6 +375,28 @@ export type Improvement = {
   content_destination: ContentDestination | null;
   skill_proposal: SkillProposal;
   classification: string;
+  // ---- Checkpoint 2 2-B ----
+  // The classifier's own one-sentence summary of the correction (the "lesson"
+  // the Inbox card and the Suggestions detail show) -- null only for a
+  // "retire" item, which has no correction candidate of its own.
+  // lessonLine (harness-ux.ts) falls back to the first evidence excerpt when
+  // this is null or blank.
+  correction_summary: string | null;
+  // The four-line "What happened" story on the Suggestions detail page --
+  // null for a "retire" item and for an "improvement" item whose episode has
+  // no reconstructable request/reply (never fabricated).
+  story: {
+    requested: string;
+    built: string;
+    correction: string;
+    changed_afterward: string | null;
+  } | null;
+  // The classifier's own confidence (0-1) in this suggestion, when recorded
+  // -- shown next to the classification label in the detail page's
+  // "Technical details". Null for a "retire" item and for an older row
+  // recorded before confidence was tracked.
+  confidence: number | null;
+  // ---- end Checkpoint 2 2-B ----
   decision: {
     status: "pending" | "accepted" | "skipped";
     decided_at: string | null;
@@ -482,6 +528,8 @@ export type ExperimentRunSummary = {
   // Checkpoint 2026-09-18: the Tests page's own Kind/Evidence columns.
   kind: ExperimentKind;
   environment_quality: EnvironmentQuality | null;
+  // Checkpoint 2 2-D: the Tests page's own Evidence column, once judged.
+  conclusion: ReplayConclusion | null;
   rule_id: number;
   improvement_id: number;
   rule_text: string;
@@ -1035,3 +1083,54 @@ export function groupOf(item: Improvement): ImprovementGroup | null {
     retired: item.decision.retired,
   });
 }
+
+// ---- Checkpoint 2 2-C ----
+// Read-only additions for the Instructions/Skills/History redesign: none of
+// these are new routes -- they widen the existing KnowledgeActiveRule (a
+// rule's latest judged historical-replay run, for the "Replay evidence"
+// line) and SkillProposalListItem (the fields a proposal card now shows)
+// payloads, both served from knowledge.ts and skills.ts respectively.
+// Declared as intersections here, appended, rather than edited into the
+// original type aliases above (the shared-file rule for this file).
+
+/** A rule's latest JUDGED historical-replay run -- null until one exists.
+ * `conclusion` is the same derived value Checkpoint 2 2-D's
+ * ExperimentRunView/ExperimentRunSummary already carry (historical_support /
+ * not_supported / possibly_harmful / inconclusive), or null for a judged run
+ * from before that derivation existed. */
+export type RuleJudgedRun = {
+  judged_at: string | null;
+  conclusion: string | null;
+};
+
+export type KnowledgeActiveRuleWithJudgedRun = KnowledgeActiveRule & {
+  judged_run?: RuleJudgedRun | null;
+};
+
+/** The extra fields knowledge.ts's active_rules now carry alongside the
+ * ones KnowledgeActiveRule already declared -- `getRuleHealth`'s full row,
+ * not just the four legacy counts. */
+export type KnowledgeActiveRuleHealthFields = {
+  status?: "healthy" | "watch" | "review" | "retire_suggested" | "snoozed" | null;
+  review_reason?: "inactive" | "repeated_issue" | "user_verdict" | "unclear_contradiction" | null;
+  observed_repeat?: number;
+  observed_clear?: number;
+  ai_not_followed?: number;
+  ai_followed?: number;
+};
+
+/** The Skills page's proposal-card fields: the proposal's own markdown
+ * (`content`, already stored locally -- never fetched from Lovable), the
+ * rule's own `applies_when`, the destination's own reason (the "when it
+ * applies" line falls back to this when the rule has none), and the source
+ * correction's summary (the "source correction" line's own text, next to
+ * the link back to /ledger). */
+export type SkillProposalCardFields = {
+  content: string;
+  applies_when: string | null;
+  destination_reason: string | null;
+  correction_summary: string;
+};
+
+export type SkillProposalCard = SkillProposalListItem & SkillProposalCardFields;
+// ---- end Checkpoint 2 2-C ----

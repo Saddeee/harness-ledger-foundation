@@ -1,5 +1,36 @@
 # Demo fixture plan — Nordic Booking Desk
 
+## Recommended visible demo (checkpoint 2)
+
+Nine steps, one project, no surprises. The fixture below (§1–§13) is how the project is prepared beforehand;
+the demo itself shows only this:
+
+1. Open Nordic Booking Desk in Lovable.
+2. Show the real currency correction you gave Lovable ("Use Swedish kronor…").
+3. In Harness Ledger: Sync now, then Analyse now (progress bar; AI tokens, nothing changes in Lovable).
+4. Review the proposed Knowledge rule in the Inbox: lesson, destination, reason, one action.
+5. Add it. Open Lovable's Knowledge and show the managed block.
+6. Open History: the version, its reason, and the restore path ("Restored Knowledge from version N").
+7. Open one historical replay (prepared beforehand): Historical result, Replay with rule, the verdict,
+   "Evidence strength: Historical approximation" and "Why this is an approximation".
+8. Open the booking-form Skill proposal on the Skills page: "Not published to Lovable yet."
+9. Say what is next: remote Skill publishing and paired comparison.
+
+## Operator checklist (tick every line before the demo)
+
+- [ ] Database backed up (`harness/data/harness.db.bak-<timestamp>`, opens, integrity ok)
+- [ ] Migrations applied (schema version matches `harness/src/migrations.ts`; Settings page loads)
+- [ ] Provider test passed (Settings › AI analysis › Test provider)
+- [ ] Lovable connected (Projects page shows Connected)
+- [ ] Workspace Knowledge captured (Instructions › All your projects; unrelated to the fixture)
+- [ ] Skills captured (Skills › In Lovable; names noted)
+- [ ] Budget configured (Settings › Lovable credits; session cap agreed)
+- [ ] Ask me first enabled (Settings › Decisions)
+- [ ] No demo seed data (`npm run harness:demo -- --status` says none)
+- [ ] Local server restarted after the last build (`npm run harness:start`)
+- [ ] Full demo rehearsed once end to end, including the replay page
+
+
 A written plan for a new real Lovable project used to demonstrate Harness Ledger end to end. **Nothing in
 this plan has been executed.** Every step below that touches Lovable costs credits or mutates a Lovable
 resource and needs the owner's explicit go-ahead at that step. Record every prompt, every cost and every rerun

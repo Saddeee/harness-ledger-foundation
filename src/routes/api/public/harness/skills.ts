@@ -53,18 +53,52 @@ async function resolveWorkspaceId(adapter: Adapter): Promise<string | null> {
 // one was never really offered), regardless of which workspace they belong
 // to (a proposal has no workspace_id of its own; correction_candidate_id is
 // how the page links back to the suggestion that carries the project).
+// ---- Checkpoint 2 2-C: read fields only, for the Skills page's redesigned
+// proposal cards (purpose, when it applies, a short procedure preview, and
+// the source correction's own summary) -- getRuleDetail/getCorrection are
+// existing adapter reads (already used by /suggestions), just not read from
+// here before now. Nothing here writes to the proposal or to Lovable.
 function buildProposals(adapter: Adapter) {
-  return adapter.listSkillProposalsForSkillsView().map((p) => ({
-    id: p.id,
-    name: p.name,
-    status: p.status,
-    ownership: p.ownership,
-    lovable_state: p.lovable_state,
-    version_count: p.version_count,
-    correction_candidate_id: p.correction_candidate_id,
-    updated_at: p.updated_at,
-  }));
+  return adapter.listSkillProposalsForSkillsView().map((p) => {
+    const ruleWrap =
+      p.rule_id != null
+        ? (adapter.getRuleDetail(p.rule_id) as {
+            rule: { applies_when?: string | null } | null;
+            correction_candidate: {
+              summary?: string | null;
+              destination_reason?: string | null;
+            } | null;
+          } | null)
+        : null;
+    const correctionWrap =
+      ruleWrap?.correction_candidate ??
+      (
+        adapter.getCorrection(p.correction_candidate_id) as {
+          correction_candidate: {
+            summary?: string | null;
+            destination_reason?: string | null;
+          } | null;
+        } | null
+      )?.correction_candidate ??
+      null;
+
+    return {
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      ownership: p.ownership,
+      lovable_state: p.lovable_state,
+      version_count: p.version_count,
+      correction_candidate_id: p.correction_candidate_id,
+      updated_at: p.updated_at,
+      content: p.content,
+      applies_when: ruleWrap?.rule?.applies_when ?? null,
+      destination_reason: correctionWrap?.destination_reason ?? null,
+      correction_summary: correctionWrap?.summary ?? "",
+    };
+  });
 }
+// ---- end Checkpoint 2 2-C ----
 
 async function buildSkillsResponse(adapter: Adapter) {
   const workspaceId = await resolveWorkspaceId(adapter);

@@ -421,3 +421,27 @@ export type {
   SkillProposalLovableState,
 } from "./store.js";
 // ---- end Checkpoint 2026-09-18 WP4 ----
+
+// ---- Checkpoint 2 2-F ----
+// Deletion confirmation (experiments.ts's confirmDeletion) and the five
+// Skill-proposal MCP tools (mcp-server.ts) both needed nothing new from
+// this file: the deletion-status columns ride along on the already-
+// re-exported ExperimentRunView/ExperimentRunSummary (buildExperimentRunView/
+// listTestRunSummaries above), and every Skill-proposal MCP tool reaches
+// its data through getImprovement/improvementActionAndWrite/
+// listSkillProposalsForSkillsView, all already exported above (Checkpoint
+// C.2, Round 6 Task 2, Checkpoint 2026-09-18 WP4). CopyDeletionStatus
+// itself has no adapter re-export either -- nothing outside store.ts/
+// improvements.ts names that type; the web app's own mirror lives in
+// src/lib/improvements-client.ts, hand-written the same way TestBuildCopy's
+// mirror already was.
+// ---- end Checkpoint 2 2-F ----
+
+// ---- Checkpoint 2 2-E ----
+// OpenAI parameter compatibility + "Test provider": the executor route's
+// `test_provider` action (src/routes/api/public/harness/executor.ts) needs
+// exactly this one function -- everything else (the button, the result
+// line) is client-side copy/state.
+export { testProvider } from "./llm/index.js";
+export type { ProviderTestResult } from "./llm/index.js";
+// ---- end Checkpoint 2 2-E ----

@@ -653,13 +653,52 @@ export async function runExperiment(
 
 // -------------------------------------------------------------- cleanupCopy
 
+// ---- Checkpoint 2 2-F ----
+// A "2xx from DELETE" is Lovable accepting the request, not proof the
+// project is gone -- deleteTestCopy's own comment ("this always runs,
+// success or failure") predates a live case where a deleted copy still
+// showed up in a later listing. `confirmDeletion` does exactly ONE read-back
+// (`rest.getProject`, a free, uncredited read) after a successful delete
+// call: a 404 is the only signal this client treats as gone ("confirmed");
+// a 200 means Lovable still lists it ("requested", noted); any other error
+// from the read-back itself also stays "requested" -- uncertainty is
+// recorded, never hidden, and this never loops or retries the read.
+async function confirmDeletion(
+  rest: LovableRest,
+  id: string,
+): Promise<{ status: store.CopyDeletionStatus; note: string | null }> {
+  try {
+    await rest.getProject(id);
+    return {
+      status: "requested",
+      note: "Lovable still lists the copy; deletion requested",
+    };
+  } catch (err) {
+    if (err instanceof LovableRestError && err.status === 404) {
+      return { status: "confirmed", note: null };
+    }
+    return {
+      status: "requested",
+      note: `Lovable still lists the copy; deletion requested (could not confirm: ${errorMessage(err)})`,
+    };
+  }
+}
+// ---- end Checkpoint 2 2-F ----
+
 /** Deletes the run's copy project unless the owner asked to keep test
  * copies -- a real, credit-bearing Lovable project, so this always runs,
  * success or failure, whenever a copy exists (runExperiment's own catch
  * calls this too). On a delete failure, falls back to making the copy
  * private (best effort of its own -- swallowed on failure, same as any
  * other cleanup step) and leaves a note store.listUndeletedCopies() (the
- * Projects page's own reminder, a later task) picks up. Never throws. */
+ * Projects page's own reminder, a later task) picks up. Never throws.
+ *
+ * Checkpoint 2 2-F: a successful DELETE moves the run's own
+ * copy_deletion_status to "requested", then confirmDeletion above does one
+ * read-back to settle it to "confirmed" or leave it "requested" with a
+ * note -- see that function's own comment. copy_deleted stays 1 either way
+ * (kept for older readers of that column; copy_deletion_status is the
+ * fuller answer). */
 export async function cleanupCopy(
   run: ExperimentRunRow,
   rest: LovableRest,
@@ -673,7 +712,12 @@ export async function cleanupCopy(
   if (run.copy_project_id && !run.copy_deleted) {
     try {
       await rest.deleteProject(run.copy_project_id);
-      store.updateExperimentRun(run.id, { copy_deleted: 1 });
+      store.updateExperimentRun(run.id, { copy_deleted: 1, copy_deletion_status: "requested" });
+      const confirmed = await confirmDeletion(rest, run.copy_project_id);
+      store.updateExperimentRun(run.id, {
+        copy_deletion_status: confirmed.status,
+        ...(confirmed.note ? { copy_cleanup_note: confirmed.note } : {}),
+      });
     } catch {
       try {
         await rest.setProjectVisibility(run.copy_project_id, "private");
@@ -682,6 +726,7 @@ export async function cleanupCopy(
         // tells the owner to delete it by hand either way.
       }
       store.updateExperimentRun(run.id, {
+        copy_deletion_status: "failed",
         copy_cleanup_note:
           "Could not delete the test copy; it was set private. Delete it by hand in Lovable.",
       });
@@ -690,9 +735,18 @@ export async function cleanupCopy(
   if (run.original_copy_project_id && !run.original_copy_deleted) {
     try {
       await rest.deleteProject(run.original_copy_project_id);
-      store.updateExperimentRun(run.id, { original_copy_deleted: 1 });
+      store.updateExperimentRun(run.id, {
+        original_copy_deleted: 1,
+        original_copy_deletion_status: "requested",
+      });
+      const confirmed = await confirmDeletion(rest, run.original_copy_project_id);
+      store.updateExperimentRun(run.id, {
+        original_copy_deletion_status: confirmed.status,
+        ...(confirmed.note ? { copy_cleanup_note: confirmed.note } : {}),
+      });
     } catch {
       store.updateExperimentRun(run.id, {
+        original_copy_deletion_status: "failed",
         copy_cleanup_note: "Could not delete a test copy; delete it by hand in Lovable.",
       });
     }
@@ -722,7 +776,15 @@ async function screenshotOf(
 
 /** "Delete copy" on the judging screen: deletes one of this run's own test
  * copies in Lovable. Refuses anything that is not a copy this run recorded,
- * and always refuses the source project. */
+ * and always refuses the source project.
+ *
+ * Checkpoint 2 2-F: same confirm-by-read-back sequence as cleanupCopy above
+ * -- a 2xx delete moves this copy's own deletion status to "requested",
+ * then one confirmDeletion read-back settles it to "confirmed" or leaves it
+ * "requested" with a note. A failed delete falls back to the same
+ * make-it-private-and-note pattern (never throws past this point, so the
+ * refreshed run -- now carrying "failed" -- is what the caller sees,
+ * instead of a bare exception). */
 export async function deleteTestCopy(
   runId: number,
   which: "with_rule" | "original",
@@ -735,10 +797,32 @@ export async function deleteTestCopy(
   if (projectId === run.source_project_id) {
     throw new Error("Refusing to delete the source project.");
   }
-  await rest.deleteProject(projectId);
-  store.updateExperimentRun(
-    runId,
-    which === "with_rule" ? { copy_deleted: 1 } : { original_copy_deleted: 1 },
-  );
+  const deletedField: "copy_deleted" | "original_copy_deleted" =
+    which === "with_rule" ? "copy_deleted" : "original_copy_deleted";
+  const statusField: "copy_deletion_status" | "original_copy_deletion_status" =
+    which === "with_rule" ? "copy_deletion_status" : "original_copy_deletion_status";
+
+  try {
+    await rest.deleteProject(projectId);
+  } catch {
+    try {
+      await rest.setProjectVisibility(projectId, "private");
+    } catch {
+      // Best effort, same as cleanupCopy's own fallback.
+    }
+    store.updateExperimentRun(runId, {
+      [statusField]: "failed",
+      copy_cleanup_note:
+        "Could not delete the test copy; it was set private. Delete it by hand in Lovable.",
+    });
+    return store.getExperimentRun(runId)!;
+  }
+
+  store.updateExperimentRun(runId, { [deletedField]: 1, [statusField]: "requested" });
+  const confirmed = await confirmDeletion(rest, projectId);
+  store.updateExperimentRun(runId, {
+    [statusField]: confirmed.status,
+    ...(confirmed.note ? { copy_cleanup_note: confirmed.note } : {}),
+  });
   return store.getExperimentRun(runId)!;
 }

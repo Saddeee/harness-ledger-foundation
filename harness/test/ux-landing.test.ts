@@ -22,11 +22,11 @@ test("landing: hero title and supporting text, verbatim", () => {
     "Harness Ledger turns your corrections into versioned Knowledge and Skills, tests them against real project history, and shows whether they still deserve to remain.",
   );
   assert.deepEqual(Object.values(copy.HERO_ACTIONS), [
+    "Open Harness Ledger",
     "See how it works",
     "Run locally",
     "View source",
     "Use through MCP",
-    "Open hosted preview",
   ]);
 });
 

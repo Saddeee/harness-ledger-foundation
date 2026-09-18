@@ -80,18 +80,33 @@ test("improvement.tsx: DestinationChoice exists and is rendered on the suggestio
   assert.match(code, /action: "retire_skill_proposal"/);
 });
 
-// ---- 3. SKILL_NOT_IN_LOVABLE_LINE is actually rendered, not just imported ----
+// ---- 3. SKILL_NOT_IN_LOVABLE_LINE is actually rendered, not just imported
+// ----
+// Checkpoint 2 2-C: rewritten with intent -- the Skills page's proposal
+// cards now show the shorter SKILL_NOT_PUBLISHED_LINE ("Not published to
+// Lovable yet.") instead; SKILL_NOT_IN_LOVABLE_LINE stays exactly where it
+// was on the suggestion detail's DestinationChoice (improvement.tsx, 2-B's
+// file, untouched by this checkpoint).
 
-test("SKILL_NOT_IN_LOVABLE_LINE is imported and rendered on both skills.tsx and improvement.tsx", () => {
-  for (const page of [SKILLS_PAGE, DETAIL]) {
-    const raw = readApp(page);
-    assert.match(raw, /SKILL_NOT_IN_LOVABLE_LINE/, `${page} imports SKILL_NOT_IN_LOVABLE_LINE`);
-    assert.match(
-      raw,
-      /\{SKILL_NOT_IN_LOVABLE_LINE\}/,
-      `${page} renders {SKILL_NOT_IN_LOVABLE_LINE} in JSX`,
-    );
-  }
+test("SKILL_NOT_IN_LOVABLE_LINE is imported and rendered on improvement.tsx", () => {
+  const raw = readApp(DETAIL);
+  assert.match(raw, /SKILL_NOT_IN_LOVABLE_LINE/, `${DETAIL} imports SKILL_NOT_IN_LOVABLE_LINE`);
+  assert.match(
+    raw,
+    /\{SKILL_NOT_IN_LOVABLE_LINE\}/,
+    `${DETAIL} renders {SKILL_NOT_IN_LOVABLE_LINE} in JSX`,
+  );
+});
+
+test("skills.tsx: every proposal card renders the exact 'Not published to Lovable yet.' line", () => {
+  const raw = readApp(SKILLS_PAGE);
+  assert.match(raw, /SKILL_NOT_PUBLISHED_LINE/, `${SKILLS_PAGE} imports SKILL_NOT_PUBLISHED_LINE`);
+  assert.match(
+    raw,
+    /\{SKILL_NOT_PUBLISHED_LINE\}/,
+    `${SKILLS_PAGE} renders {SKILL_NOT_PUBLISHED_LINE} in JSX`,
+  );
+  assert.equal(ux.SKILL_NOT_PUBLISHED_LINE, "Not published to Lovable yet.");
 });
 
 // ---- 4. Honesty: nowhere claims a Skill was created or updated in Lovable ----
@@ -107,20 +122,36 @@ test("no page claims a Skill was created, updated, or enabled in Lovable", () =>
   }
 });
 
-// ---- 5. skills.tsx: proposals section above the unchanged workspace list ----
+// ---- 5. skills.tsx: "In Lovable" (unchanged data) before "Proposed by
+// Harness Ledger" (local proposals) ----
+// Checkpoint 2 2-C: rewritten with intent -- the order flips from WP4's
+// "proposals first" to "what's real in Lovable first, drafts second", and
+// the old "In your workspace" heading is renamed "In Lovable".
 
-test("skills.tsx: 'Proposed by Harness Ledger' section, above the existing 'In your workspace' list", () => {
+test("skills.tsx: 'In Lovable' section, above 'Proposed by Harness Ledger'", () => {
   const raw = readApp(SKILLS_PAGE);
   const code = codeOnly(raw);
+  assert.ok(raw.includes("In Lovable"));
   assert.ok(raw.includes("Proposed by Harness Ledger"));
-  assert.ok(raw.includes("In your workspace"));
+  assert.ok(!code.includes("In your workspace"), "renamed to 'In Lovable'");
+  const workspaceAt = raw.indexOf("In Lovable");
   const proposedAt = raw.indexOf("Proposed by Harness Ledger");
-  const workspaceAt = raw.indexOf("In your workspace");
-  assert.ok(proposedAt >= 0 && workspaceAt >= 0 && proposedAt < workspaceAt);
+  assert.ok(workspaceAt >= 0 && proposedAt >= 0 && workspaceAt < proposedAt);
   // The existing read-only line is untouched.
   assert.ok(
     raw.includes("Harness Ledger reads your workspace Skills; it does not write them yet."),
   );
   assert.match(code, /proposal\.correction_candidate_id/);
   assert.match(code, /to="\/ledger"/);
+});
+
+// ---- 6. skills.tsx: each proposal card's own fields ----
+
+test("skills.tsx: each proposal card shows purpose, when it applies, a procedure preview, the source correction, and 'Review Skill'", () => {
+  const code = codeOnly(readApp(SKILLS_PAGE));
+  assert.match(code, /skillProposalPurpose\(/);
+  assert.match(code, /skillProposalAppliesWhen\(/);
+  assert.match(code, /skillProposalProcedurePreview\(/);
+  assert.match(code, /proposal\.correction_summary/);
+  assert.match(code, />\s*\{REVIEW_SKILL_LABEL\}\s*</, "Review Skill is rendered as JSX text");
 });

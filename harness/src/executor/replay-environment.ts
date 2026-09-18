@@ -85,6 +85,13 @@ export type ReplayEnvironment = {
    * other_active_rules were NOT in the copy's Knowledge. */
   backfilled?: boolean;
   historical_rules_dropped_by_run?: boolean;
+  /** Checkpoint 2 2-D: set by judgeRun (harness/src/improvements.ts) when
+   * the judge screen's optional "The replay introduced a new problem I
+   * would have to correct" checkbox is checked. Absent/false otherwise.
+   * Stored inside environment_json (parsed, set, re-stringified) rather
+   * than a new column -- the run's environment record is already the one
+   * place per-run replay facts live. */
+  regression_flag?: boolean;
 };
 
 // ---------------------------------------------------------------- helpers
@@ -354,3 +361,69 @@ export function backfillReplayEnvironments(): { backfilled: number[] } {
   }
   return { backfilled };
 }
+
+// ---- Checkpoint 2 2-D: derived conclusion ----
+//
+// The judge screen asks "Would the original correction still be needed in
+// the replay?" per correction, Yes / No / Unclear, plus one optional
+// checkbox ("The replay introduced a new problem I would have to
+// correct"). This turns those raw answers into the one honest word a
+// suggestion card or the Tests page can show without re-deriving the logic
+// -- "smallest honest" on purpose: it never claims more than the verdicts
+// and the environment quality support, and it never invents a fifth label
+// (there is no "controlled_support" for a historical replay -- D2 already
+// caps a historical replay's quality at historical_approximation, so the
+// vocabulary below never needs one).
+//
+// Pure and computed on read (buildExperimentRunView / listTestRunSummaries
+// in improvements.ts), from verdicts_json + environment.quality +
+// environment.regression_flag -- no new column, no stored conclusion.
+
+export type ReplayConclusion =
+  "historical_support" | "not_supported" | "possibly_harmful" | "inconclusive";
+
+export type Verdict = "yes" | "no" | "unclear";
+
+/** Derives the one-word conclusion for a run, or null when there is
+ * nothing to derive one from (not judged yet, or no verdicts recorded).
+ *
+ * Order, deliberately: (1) no verdicts -> null; (2) a flagged regression
+ * wins over everything else, whatever the verdicts or quality say -- a new
+ * problem the replay introduced is worth surfacing even when the
+ * correction-by-correction answers would otherwise look supportive; (3) a
+ * kind this function has no rule for (paired_comparison is designed but
+ * not implemented, D3) -> null rather than a guess; (4) a historical
+ * replay whose code state could not be established -> inconclusive; (5)
+ * among the decided verdicts (yes/no; "unclear" answers are set aside),
+ * a majority "no" (the correction is no longer needed) supports the rule,
+ * strongly so when the majority is close to unanimous even with some
+ * "yes" answers mixed in; a unanimous "yes" (the correction is still
+ * needed everywhere) is the rule's clearest failure; anything else is
+ * exactly what it looks like -- not enough of a pattern either way. */
+export function replayConclusion(input: {
+  kind: ExperimentKind;
+  quality: EnvironmentQuality | null;
+  verdicts: Verdict[] | null;
+  regression_flag?: boolean | null;
+}): ReplayConclusion | null {
+  if (!input.verdicts || input.verdicts.length === 0) return null;
+  if (input.regression_flag) return "possibly_harmful";
+  if (input.kind !== "historical_replay") return null;
+  if (input.quality == null) return null;
+  if (input.quality === "not_comparable") return "inconclusive";
+
+  const decided = input.verdicts.filter((v): v is "yes" | "no" => v === "yes" || v === "no");
+  if (decided.length === 0) return "inconclusive";
+
+  const noCount = decided.filter((v) => v === "no").length;
+  const yesCount = decided.length - noCount;
+  const noShare = noCount / decided.length;
+
+  if (noShare >= 0.5) {
+    if (yesCount === 0) return "historical_support";
+    return noShare >= 0.75 ? "historical_support" : "inconclusive";
+  }
+  if (yesCount === decided.length) return "not_supported";
+  return "inconclusive";
+}
+// ---- end Checkpoint 2 2-D ----

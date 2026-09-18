@@ -8,7 +8,7 @@
 // same throwaway SQLite file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,10 +21,29 @@ const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.j
 const { createHarnessMcpServer } = await import("../src/mcp-server.js");
 const store = await import("../src/store.js");
 const adapter = await import("../src/adapter.js");
+// Checkpoint 2 2-F: only for the budget-parity test's direct-db write below
+// (store.setSettings validates lovable_monthly_credit_budget as a whole
+// number 0-1000, so a fractional test value can't go through it).
+const { db } = await import("../src/db.js");
 
 const PROJECT = "mcp-server-test-project";
 store.upsertProject({ lovable_project_id: PROJECT, name: "MCP Test Project" });
 store.allowProject(PROJECT, "MCP Test Project");
+
+// Checkpoint 2 2-F: same helper as harness/test/experiments-actions.test.ts
+// -- lovable-auth.ts#status().connected only ever reads this file's own
+// shape (an access_token present), never a real server, so this makes
+// start_replay's budget refusal (rather than "not connected") reachable
+// without any network call.
+function markConnected(): void {
+  writeFileSync(
+    process.env.HARNESS_AUTH_PATH!,
+    JSON.stringify({
+      tokens: { access_token: "fake-local-token", token_type: "Bearer", expires_in: 999_999_999 },
+      tokens_saved_at: Date.now(),
+    }),
+  );
+}
 
 function mk(content: string, externalId: string, occurredAt: string) {
   return store.upsertHistoryItem({
@@ -112,9 +131,16 @@ const EXPECTED_TOOL_NAMES = [
   "restore_knowledge_version",
   "rule_observations",
   "timeline",
+  // Checkpoint 2 2-F: the Skill-proposal tools (D4) -- see this file's own
+  // tests below and mcp-server.ts's own "---- Checkpoint 2 2-F ----" block.
+  "list_skill_proposals",
+  "get_skill_proposal",
+  "edit_skill_proposal",
+  "approve_skill_proposal",
+  "restore_skill_proposal_revision",
 ];
 
-test("tools/list returns exactly the 13 permitted tool names, no more, no fewer", async () => {
+test("tools/list returns exactly the 18 permitted tool names, no more, no fewer", async () => {
   const { client, server } = await connectedClient();
   try {
     const { tools } = await client.listTools();
@@ -378,3 +404,256 @@ test("an unknown/removed tool name (e.g. the old raw update_rule) is refused, no
     await server.close();
   }
 });
+
+// ---- Checkpoint 2 2-F ----
+
+test("MCP budget parity: start_replay's refusal is byte-for-byte adapter.improvementActionAndWrite's own, in both decision modes", async () => {
+  markConnected();
+  const rule = store.getRuleForCorrection(correctionCandidate.id) as { id: number };
+  // credit_ledger rows carry a real experiment_runs FK -- a throwaway run,
+  // immediately put in a terminal state so activeExperimentRun(20) (the
+  // "already running" refusal, checked before the budget) never sees it.
+  const { id: creditRunId } = store.createExperimentRun({
+    rule_id: rule.id,
+    correction_candidate_id: correctionCandidate.id,
+    task_episode_id: episode.id,
+    source_project_id: PROJECT,
+    request_message_external_id: "aimsg_budget_fixture",
+  });
+  store.updateExperimentRun(creditRunId, { status: "cancelled" });
+  store.recordCredits(creditRunId, 1.0);
+  // store.setSettings only accepts a whole-number budget (0-1000) --
+  // writing "0.5" straight to the settings table is the same direct-db
+  // convention this file's own fixtures already use elsewhere (backdating
+  // fetched_at) for a value the public API deliberately can't produce but
+  // this test still needs to exercise the exact fractional-usage wording.
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('lovable_monthly_credit_budget', '0.5', datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run();
+  try {
+    for (const mode of ["ask", "automatic"] as const) {
+      store.setSettings({ decision_mode: mode });
+
+      let expected: string | null = null;
+      try {
+        await adapter.improvementActionAndWrite(
+          { action: "test", id: correctionCandidate.id },
+          "operator (local UI)",
+        );
+        assert.fail("expected a budget refusal");
+      } catch (err) {
+        assert.ok(err instanceof Error);
+        expected = err.message;
+      }
+      assert.equal(
+        expected,
+        "This would exceed your monthly Lovable credit budget (1 of 0.5 used).",
+      );
+
+      const { client, server } = await connectedClient();
+      try {
+        const result = await client.callTool({
+          name: "start_replay",
+          arguments: { id: correctionCandidate.id },
+        });
+        const { isError, text } = parse(result as never);
+        assert.equal(isError, true);
+        assert.equal(text, expected, `decision_mode ${mode} must not change the refusal text`);
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    }
+  } finally {
+    store.setSettings({ decision_mode: "ask", lovable_monthly_credit_budget: "12" });
+  }
+});
+
+test("list_skill_proposals lists a proposal created via set_content_destination, with lovable_state 'not_created'", async () => {
+  await adapter.improvementActionAndWrite(
+    { action: "set_content_destination", id: correctionCandidate.id, destination: "both" },
+    "operator (local UI)",
+  );
+  const { client, server } = await connectedClient();
+  try {
+    const result = await client.callTool({ name: "list_skill_proposals", arguments: {} });
+    const { json } = parse(result as never) as {
+      json: { suggestion_id: number; lovable_state: string; ownership: string }[];
+    };
+    const found = json.find((p) => p.suggestion_id === correctionCandidate.id);
+    assert.ok(found, "the newly-created proposal should be listed");
+    assert.equal(found!.lovable_state, "not_created");
+    assert.equal(found!.ownership, "harness");
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("get_skill_proposal(suggestion_id) returns the proposal, its revisions, and lovable_state 'not_created'", async () => {
+  const direct = adapter.getImprovement(correctionCandidate.id, { connected: false });
+  assert.ok(direct?.skill_proposal, "fixture suggestion should carry a skill proposal by now");
+
+  const { client, server } = await connectedClient();
+  try {
+    const result = await client.callTool({
+      name: "get_skill_proposal",
+      arguments: { suggestion_id: correctionCandidate.id },
+    });
+    const { json } = parse(result as never);
+    assert.equal(json.available, true);
+    assert.equal(json.proposal.id, direct!.skill_proposal!.id);
+    assert.equal(json.proposal.lovable_state, "not_created");
+    assert.ok(Array.isArray(json.proposal.revisions));
+    assert.ok(json.proposal.revisions.length >= 1);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("get_skill_proposal: an unknown suggestion id is refused, not silently returned as available", async () => {
+  const { client, server } = await connectedClient();
+  try {
+    const result = await client.callTool({
+      name: "get_skill_proposal",
+      arguments: { suggestion_id: 999_999 },
+    });
+    const { isError, text } = parse(result as never);
+    assert.equal(isError, true);
+    assert.match(text, /not found/i);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("approve_skill_proposal via MCP matches adapter.improvementActionAndWrite's own result, and creates a new revision", async () => {
+  const before = adapter.getImprovement(correctionCandidate.id, { connected: false });
+  const proposalId = before!.skill_proposal!.id;
+  const revisionsBefore = before!.skill_proposal!.revisions.length;
+
+  const { client, server } = await connectedClient();
+  try {
+    const result = await client.callTool({
+      name: "approve_skill_proposal",
+      arguments: { proposal_id: proposalId },
+    });
+    const { isError, json } = parse(result as never);
+    assert.equal(isError, false);
+    assert.equal(json.skill_proposal.id, proposalId);
+    assert.equal(json.skill_proposal.status, "approved");
+    assert.equal(
+      json.skill_proposal.revisions.length,
+      revisionsBefore + 1,
+      "approving records a new revision",
+    );
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("restore_skill_proposal_revision via MCP restores content from an earlier revision", async () => {
+  const proposal = adapter.getImprovement(correctionCandidate.id, {
+    connected: false,
+  })!.skill_proposal!;
+  const firstRevision = proposal.revisions[0]!;
+  const originalName = firstRevision.new_name;
+
+  // Change it first, so there is something to restore away from.
+  await adapter.improvementActionAndWrite(
+    {
+      action: "edit_skill_proposal",
+      proposal_id: proposal.id,
+      name: "a different name entirely",
+      content: proposal.content,
+    },
+    "operator (local UI)",
+  );
+
+  const { client, server } = await connectedClient();
+  try {
+    const result = await client.callTool({
+      name: "restore_skill_proposal_revision",
+      arguments: { proposal_id: proposal.id, revision_id: firstRevision.id },
+    });
+    const { isError, json } = parse(result as never);
+    assert.equal(isError, false);
+    assert.equal(json.skill_proposal.name, originalName);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("edit_skill_proposal via MCP refuses a user-owned proposal with the exact sentence the UI gets", async () => {
+  // A user-owned proposal on its own, unrelated suggestion -- Harness Ledger
+  // never edits a Skill it did not itself propose (SkillProposalOwnershipError,
+  // store.ts), through the UI or through MCP.
+  const asked2 = mk(
+    "Always show a loading spinner during checkout.",
+    "m-2-2f",
+    "2026-09-02T10:00:00Z",
+  );
+  const episode2 = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: "loading spinner episode",
+    provenance: "llm_derived",
+    evidence_history_item_ids: [asked2.id],
+  }) as { id: number };
+  const candidate2 = store.createCorrectionCandidate({
+    task_episode_id: episode2.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "No loading spinner during checkout.",
+    evidence_history_item_ids: [asked2.id],
+  }) as { id: number };
+  const userProposal = store.createSkillProposal({
+    correction_candidate_id: candidate2.id,
+    name: "user's own skill",
+    content: "# User's own skill\n",
+    ownership: "user",
+    created_by: "user",
+  });
+
+  let expected: string | null = null;
+  try {
+    await adapter.improvementActionAndWrite(
+      {
+        action: "edit_skill_proposal",
+        proposal_id: userProposal.id,
+        name: "harness tries to rename it",
+        content: userProposal.content,
+      },
+      "operator (local UI)",
+    );
+    assert.fail("expected a SkillProposalOwnershipError");
+  } catch (err) {
+    assert.ok(err instanceof Error);
+    expected = err.message;
+  }
+  assert.equal(expected, "This Skill is yours; Harness Ledger does not change user-owned Skills.");
+
+  const { client, server } = await connectedClient();
+  try {
+    const result = await client.callTool({
+      name: "edit_skill_proposal",
+      arguments: {
+        proposal_id: userProposal.id,
+        name: "harness tries to rename it",
+        content: userProposal.content,
+      },
+    });
+    const { isError, text } = parse(result as never);
+    assert.equal(isError, true);
+    assert.equal(text, expected);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+// ---- end Checkpoint 2 2-F ----

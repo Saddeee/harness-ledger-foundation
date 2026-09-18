@@ -38,15 +38,24 @@ test("tests.tsx: exists, titled 'Tests', with the exact intro line and empty sta
   assert.match(code, /createFileRoute\("\/_authenticated\/tests"\)/);
   assert.match(code, />Tests</, "the page's own <h1> reads exactly 'Tests'");
   // Checkpoint 2026-09-18 (WP1b): "judge both builds" is gone -- the second
-  // column is a historical result, not a second build.
+  // column is a historical result, not a second build. Checkpoint 2 2-D:
+  // the intro now opens with DECISIONS.md D1's own product name
+  // (TEST_A_RULE_PAGE_TITLE, harness-ux.ts) -- updated with that intent.
+  assert.match(code, /TEST_A_RULE_PAGE_TITLE/);
   assert.match(
     code,
-    /Each test shows your project's historical result at the moment before a real request, next to one new Lovable build made from that same point with a candidate rule added, and lets you say whether the original correction would still be needed\./,
+    /each test shows your project's historical result at the moment before a real request, next to one new Lovable build made from that same point with a candidate rule added, and lets you say whether the original correction would still be needed\./,
   );
   assert.match(
     code,
     /No tests yet\. Open a suggestion and press "Test this rule"\./,
     "the empty state's exact copy",
+  );
+
+  const uxCode = codeOnly(readApp(HARNESS_UX));
+  assert.match(
+    uxCode,
+    /export const TEST_A_RULE_PAGE_TITLE = "Test a rule against a previous correction";/,
   );
 });
 
@@ -184,4 +193,28 @@ test("tests.tsx and judge.tsx never hardcode a digit next to 'credit'/'credits'"
     const source = readApp(rel);
     assert.doesNotMatch(source, /\d+\s*credits?\b/, `${rel} has a hardcoded credits number`);
   }
+});
+
+// ---- 8. Checkpoint 2 2-D: Evidence column shows the derived conclusion once judged ----
+
+test("tests.tsx: the Evidence column reads evidenceColumnLabel(quality, conclusion), not the bare quality label", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  assert.match(code, /evidenceColumnLabel\(run\.environment_quality, run\.conclusion\)/);
+
+  const uxCode = codeOnly(readApp(HARNESS_UX));
+  assert.match(uxCode, /export function evidenceColumnLabel\(/);
+});
+
+// ---- 9. Checkpoint 2 2-D: judge.tsx's page title is the product name ----
+
+test("judge.tsx: the page title (browser tab and every static <h1>) is DECISIONS.md D1's own product name", () => {
+  const code = codeOnly(readApp(JUDGE));
+  assert.match(code, /title: `\$\{TEST_A_RULE_PAGE_TITLE\} — Harness Ledger`/);
+  const h1s =
+    code.match(/<h1 className="text-2xl font-semibold">\{TEST_A_RULE_PAGE_TITLE\}<\/h1>/g) ?? [];
+  assert.equal(
+    h1s.length,
+    3,
+    "no test specified / loading / error states all use the product name",
+  );
 });

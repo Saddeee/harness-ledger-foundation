@@ -203,13 +203,13 @@ test("local-settings.tsx: sections with the exact sentences, schedule and cap po
 
   // save buttons per section: decisions (Round 5 Task 6), evidence (Round 5
   // Task 7), Lovable credits (Round 6 Task 6b), schedule, cap, one combined
-  // AI analysis save (settings + key when typed), key remove, and project
-  // defaults (Round 3 §4)
+  // AI analysis save (settings + key when typed), key remove, project
+  // defaults (Round 3 §4), and Test provider (Checkpoint 2 2-E)
   assert.match(code, /useMutation\(/);
   assert.equal(
     count(code, "useMutation("),
-    8,
-    "decisions, evidence, credits, schedule, cap, ai analysis save, llm key remove, defaults",
+    9,
+    "decisions, evidence, credits, schedule, cap, ai analysis save, llm key remove, defaults, test provider",
   );
 
   // only the local Harness client helpers

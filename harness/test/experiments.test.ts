@@ -19,7 +19,7 @@ process.env.HARNESS_AUTH_PATH = join(tmp, "lovable-auth.json");
 const store = await import("../src/store.js");
 const { db } = await import("../src/db.js");
 const { composeManagedKnowledge } = await import("../src/knowledge.js");
-const { startExperiment, runExperiment, cleanupCopy, resolveRequestMessageId } =
+const { startExperiment, runExperiment, cleanupCopy, resolveRequestMessageId, deleteTestCopy } =
   await import("../src/executor/experiments.js");
 const { createLovableRest } = await import("../src/executor/lovable-rest.js");
 // Round 6 Task 6b: the background queue behind "Test this rule" -- see its
@@ -215,11 +215,23 @@ function diffBody(text: string) {
  * own Endpoint union is -- individual tests override just the endpoint(s)
  * whose behaviour they're exercising. */
 function happyPathScript(copyId: string): FakeScript {
+  // Checkpoint 2 2-F: cleanupCopy's own confirmDeletion now reads a project
+  // back once right after deleting it -- tracked here (closure-local, fresh
+  // per happyPathScript() call) so that read-back sees a real 404 for
+  // whichever id was actually deleted, the same way the real API would,
+  // rather than every test that shares this fixture picking up a spurious
+  // "Lovable still lists the copy" note.
+  const deletedIds = new Set<string>();
   return {
-    getProject: (req) => ({
-      status: 200,
-      body: { id: req.params.project_id, name: "source", workspace_id: WORKSPACE },
-    }),
+    getProject: (req) => {
+      if (deletedIds.has(req.params.project_id!)) {
+        return { status: 404, body: { status: 404, type: "not_found", detail: "gone" } };
+      }
+      return {
+        status: 200,
+        body: { id: req.params.project_id, name: "source", workspace_id: WORKSPACE },
+      };
+    },
     // Round 6 fix wave item A: resolveRequestMessageId's own listMessages
     // scan -- one page, one user message whose content matches
     // DEFAULT_REQUEST_TEXT (what seedCandidate() sends unless a test
@@ -297,7 +309,10 @@ function happyPathScript(copyId: string): FakeScript {
         ],
       },
     }),
-    deleteProject: () => ({ status: 204 }),
+    deleteProject: (req) => {
+      deletedIds.add(req.params.project_id!);
+      return { status: 204 };
+    },
     patchProject: (req) => ({
       status: 200,
       body: { id: req.params.project_id, visibility: "private", workspace_id: WORKSPACE },
@@ -1582,7 +1597,6 @@ test("visible builds: with keep_test_copies off, both copies are deleted after t
 });
 
 test("deleteTestCopy: deletes only a copy this run recorded, never the source project", async () => {
-  const { deleteTestCopy } = await import("../src/executor/experiments.js");
   const seed = seedCandidate();
   const { id: runId } = store.createExperimentRun({
     rule_id: seed.ruleId,
@@ -1596,7 +1610,17 @@ test("deleteTestCopy: deletes only a copy this run recorded, never the source pr
     copy_project_id: "prj_kept_copy",
     original_copy_project_id: "prj_kept_original",
   });
-  const fake = await startFakeLovable({ deleteProject: () => ({ status: 204 }) });
+  const fake = await startFakeLovable({
+    deleteProject: () => ({ status: 204 }),
+    // Checkpoint 2 2-F: deleteTestCopy now does one read-back per delete
+    // (confirmDeletion) -- scripted as "still listed" so this test's own
+    // concern (WHICH ids ever reach a DELETE call) stays independent of the
+    // confirm-by-read-back sequence, which the dedicated tests below cover.
+    getProject: (req) => ({
+      status: 200,
+      body: { id: req.params.project_id!, workspace_id: "ws_1" },
+    }),
+  });
   try {
     const rest = restFor(fake);
     await deleteTestCopy(runId, "with_rule", rest);
@@ -1604,13 +1628,215 @@ test("deleteTestCopy: deletes only a copy this run recorded, never the source pr
     const row = store.getExperimentRun(runId)!;
     assert.equal(row.copy_deleted, 1);
     assert.equal(row.original_copy_deleted, 1);
-    assert.deepEqual(fake.calls.map((c) => c.path).sort(), [
-      "/v1/projects/prj_kept_copy",
-      "/v1/projects/prj_kept_original",
-    ]);
+    assert.deepEqual(
+      fake.calls
+        .filter((c) => c.method === "DELETE")
+        .map((c) => c.path)
+        .sort(),
+      ["/v1/projects/prj_kept_copy", "/v1/projects/prj_kept_original"],
+    );
 
     store.updateExperimentRun(runId, { copy_project_id: SOURCE, copy_deleted: 0 });
     await assert.rejects(() => deleteTestCopy(runId, "with_rule", rest), /source project/);
+  } finally {
+    await fake.close();
+  }
+});
+
+// ------------------------------------------- Checkpoint 2 2-F: deletion confirmation
+//
+// A 2xx from DELETE is Lovable accepting the request, not proof the project
+// is gone -- cleanupCopy/deleteTestCopy now each follow up with exactly ONE
+// getProject read-back (a free, uncredited read): a 404 confirms it, a 200
+// leaves it merely "requested" (with a note), and any other error from the
+// read-back itself also leaves it "requested" (uncertainty recorded, never
+// hidden). copy_deleted stays 1 in every one of these cases -- only
+// copy_deletion_status distinguishes them.
+
+test("cleanupCopy: a 2xx delete followed by a 404 read-back confirms deletion", async () => {
+  const seed = seedCandidate();
+  const { id: runId } = store.createExperimentRun({
+    rule_id: seed.ruleId,
+    correction_candidate_id: seed.candidateId,
+    task_episode_id: seed.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: seed.requestExternalId,
+  });
+  store.updateExperimentRun(runId, { copy_project_id: "prj_confirm_404" });
+  const fake = await startFakeLovable({
+    deleteProject: () => ({ status: 204 }),
+    getProject: () => ({
+      status: 404,
+      body: { status: 404, type: "not_found", detail: "gone" },
+    }),
+  });
+  try {
+    await cleanupCopy(store.getExperimentRun(runId)!, restFor(fake));
+    const row = store.getExperimentRun(runId)!;
+    assert.equal(row.copy_deleted, 1);
+    assert.equal(row.copy_deletion_status, "confirmed");
+    const getCalls = fake.calls.filter((c) => c.method === "GET");
+    assert.equal(getCalls.length, 1, "exactly one read-back call, never a retry loop");
+  } finally {
+    await fake.close();
+    store.updateExperimentRun(runId, { status: "cancelled" });
+  }
+});
+
+test("cleanupCopy: a 2xx delete followed by a 200 read-back (Lovable still lists it) stays 'requested', with a note", async () => {
+  const seed = seedCandidate();
+  const { id: runId } = store.createExperimentRun({
+    rule_id: seed.ruleId,
+    correction_candidate_id: seed.candidateId,
+    task_episode_id: seed.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: seed.requestExternalId,
+  });
+  store.updateExperimentRun(runId, { copy_project_id: "prj_still_listed" });
+  const fake = await startFakeLovable({
+    deleteProject: () => ({ status: 204 }),
+    getProject: (req) => ({
+      status: 200,
+      body: { id: req.params.project_id!, workspace_id: "ws_1" },
+    }),
+  });
+  try {
+    await cleanupCopy(store.getExperimentRun(runId)!, restFor(fake));
+    const row = store.getExperimentRun(runId)!;
+    assert.equal(row.copy_deleted, 1);
+    assert.equal(row.copy_deletion_status, "requested");
+    assert.equal(row.copy_cleanup_note, "Lovable still lists the copy; deletion requested");
+    const getCalls = fake.calls.filter((c) => c.method === "GET");
+    assert.equal(getCalls.length, 1, "exactly one read-back call, never a retry loop");
+  } finally {
+    await fake.close();
+    store.updateExperimentRun(runId, { status: "cancelled" });
+  }
+});
+
+test("cleanupCopy: a 2xx delete followed by a read-back error other than 404 also stays 'requested', with the error noted (never hidden)", async () => {
+  const seed = seedCandidate();
+  const { id: runId } = store.createExperimentRun({
+    rule_id: seed.ruleId,
+    correction_candidate_id: seed.candidateId,
+    task_episode_id: seed.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: seed.requestExternalId,
+  });
+  store.updateExperimentRun(runId, { copy_project_id: "prj_readback_500" });
+  const fake = await startFakeLovable({
+    deleteProject: () => ({ status: 204 }),
+    getProject: () => ({
+      status: 500,
+      body: { status: 500, type: "internal_error", detail: "boom" },
+    }),
+  });
+  try {
+    await cleanupCopy(store.getExperimentRun(runId)!, restFor(fake));
+    const row = store.getExperimentRun(runId)!;
+    assert.equal(row.copy_deleted, 1);
+    assert.equal(row.copy_deletion_status, "requested");
+    assert.match(row.copy_cleanup_note ?? "", /Lovable still lists the copy; deletion requested/);
+    assert.match(row.copy_cleanup_note ?? "", /could not confirm/);
+    const getCalls = fake.calls.filter((c) => c.method === "GET");
+    assert.equal(getCalls.length, 1, "exactly one read-back call, never a retry loop");
+  } finally {
+    await fake.close();
+    store.updateExperimentRun(runId, { status: "cancelled" });
+  }
+});
+
+test("cleanupCopy: a delete that fails outright sets 'failed', makes the copy private, and never attempts a read-back", async () => {
+  const seed = seedCandidate();
+  const { id: runId } = store.createExperimentRun({
+    rule_id: seed.ruleId,
+    correction_candidate_id: seed.candidateId,
+    task_episode_id: seed.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: seed.requestExternalId,
+  });
+  store.updateExperimentRun(runId, { copy_project_id: "prj_delete_fails" });
+  const fake = await startFakeLovable({
+    deleteProject: () => ({
+      status: 500,
+      body: { status: 500, type: "internal_error", detail: "boom" },
+    }),
+    patchProject: () => ({ status: 204 }),
+    getProject: () => ({ status: 200, body: { id: "prj_delete_fails", workspace_id: "ws_1" } }),
+  });
+  try {
+    await cleanupCopy(store.getExperimentRun(runId)!, restFor(fake));
+    const row = store.getExperimentRun(runId)!;
+    assert.equal(row.copy_deletion_status, "failed");
+    assert.equal(
+      row.copy_cleanup_note,
+      "Could not delete the test copy; it was set private. Delete it by hand in Lovable.",
+    );
+    assert.equal(
+      fake.calls.filter((c) => c.method === "GET").length,
+      0,
+      "a failed delete never reaches the read-back step",
+    );
+  } finally {
+    await fake.close();
+    store.updateExperimentRun(runId, { status: "cancelled" });
+  }
+});
+
+test("deleteTestCopy: the same confirm-by-read-back sequence as cleanupCopy -- 2xx delete + 404 read-back confirms", async () => {
+  const seed = seedCandidate();
+  const { id: runId } = store.createExperimentRun({
+    rule_id: seed.ruleId,
+    correction_candidate_id: seed.candidateId,
+    task_episode_id: seed.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: seed.requestExternalId,
+  });
+  store.updateExperimentRun(runId, {
+    status: "judged",
+    copy_project_id: "prj_delete_copy_confirm",
+  });
+  const fake = await startFakeLovable({
+    deleteProject: () => ({ status: 204 }),
+    getProject: () => ({
+      status: 404,
+      body: { status: 404, type: "not_found", detail: "gone" },
+    }),
+  });
+  try {
+    const row = await deleteTestCopy(runId, "with_rule", restFor(fake));
+    assert.equal(row.copy_deleted, 1);
+    assert.equal(row.copy_deletion_status, "confirmed");
+    assert.equal(fake.calls.filter((c) => c.method === "GET").length, 1);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("deleteTestCopy: a delete failure never throws -- it sets 'failed' and returns the run, same fallback as cleanupCopy", async () => {
+  const seed = seedCandidate();
+  const { id: runId } = store.createExperimentRun({
+    rule_id: seed.ruleId,
+    correction_candidate_id: seed.candidateId,
+    task_episode_id: seed.episodeId,
+    source_project_id: SOURCE,
+    request_message_external_id: seed.requestExternalId,
+  });
+  store.updateExperimentRun(runId, { status: "judged", copy_project_id: "prj_delete_copy_fails" });
+  const fake = await startFakeLovable({
+    deleteProject: () => ({
+      status: 500,
+      body: { status: 500, type: "internal_error", detail: "boom" },
+    }),
+    patchProject: () => ({ status: 204 }),
+  });
+  try {
+    const row = await deleteTestCopy(runId, "with_rule", restFor(fake));
+    assert.equal(row.copy_deletion_status, "failed");
+    assert.equal(
+      row.copy_cleanup_note,
+      "Could not delete the test copy; it was set private. Delete it by hand in Lovable.",
+    );
   } finally {
     await fake.close();
   }

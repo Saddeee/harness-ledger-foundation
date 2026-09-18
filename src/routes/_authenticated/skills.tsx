@@ -1,22 +1,29 @@
 // The Skills page: the workspace Skills Harness has read from Lovable, from
 // the latest snapshots -- name, description, when it last changed, its
 // content, and a per-skill history when more than one snapshot exists. Read
-// only: Harness does not write Skills yet. Only talks to the local Harness
-// skills route (fetchSkills via skillsQueryOptions).
+// only: Harness does not write Skills yet. Checkpoint 2 2-C: two sections,
+// in this order -- "In Lovable" (this same read-only workspace list,
+// unchanged data, just renamed from "In your workspace") and "Proposed by
+// Harness Ledger" (local proposals, redesigned as cards: purpose, when it
+// applies, a short procedure preview, the source correction, current state,
+// and the exact "Not published to Lovable yet." line -- no control here
+// implies a remote create/update/enable/disable of anything). Only talks to
+// the local Harness skills route (fetchSkills via skillsQueryOptions).
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 import { DetailSection } from "@/components/harness/decision-layout";
 import {
   formatDate,
-  SKILL_NOT_IN_LOVABLE_LINE,
+  REVIEW_SKILL_LABEL,
+  skillProposalAppliesWhen,
+  skillProposalProcedurePreview,
+  skillProposalPurpose,
+  SKILL_NOT_PUBLISHED_LINE,
   skillProposalStatusLabel,
   skillProposalVersionCountLine,
 } from "@/lib/harness-ux";
-import {
-  skillsQueryOptions,
-  type Skill,
-  type SkillProposalListItem,
-} from "@/lib/improvements-client";
+import { skillsQueryOptions, type Skill, type SkillProposalCard } from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/skills")({
   head: () => ({
@@ -42,16 +49,28 @@ const READ_ONLY_LINE = "Harness Ledger reads your workspace Skills; it does not 
 const EMPTY_LINE =
   "Your workspace has no Skills yet. Harness Ledger will show them here as soon as it reads one.";
 
-// Checkpoint 2026-09-18 WP4 (D4): "Proposed by Harness Ledger" -- local
-// Skill proposals, above the existing read-only workspace list, which stays
-// unchanged.
+// Checkpoint 2 2-C: "In Lovable" comes first (this is what Lovable itself
+// already has), "Proposed by Harness Ledger" second (drafts nothing has
+// published yet) -- the reverse of the WP4 ordering, an intentional change:
+// what's real in Lovable now leads, what Harness Ledger is only proposing
+// follows.
+const WORKSPACE_HEADING = "In Lovable";
 const PROPOSED_HEADING = "Proposed by Harness Ledger";
 const PROPOSED_EMPTY_LINE = "Harness Ledger hasn't proposed a Skill from any suggestion yet.";
-const WORKSPACE_HEADING = "In your workspace";
 
-function ProposalRow({ proposal }: { proposal: SkillProposalListItem }) {
+// Checkpoint 2 2-C: each proposal card shows name, purpose, when it
+// applies, a short procedure preview, the source correction (linking back
+// to /ledger with its own summary text), current state, the exact
+// "Not published to Lovable yet." line, and a single primary action --
+// "Review Skill" -- that only ever navigates to the suggestion detail. No
+// control here implies a remote create/update/enable/disable of anything.
+function ProposalCard({ proposal }: { proposal: SkillProposalCard }) {
+  const purpose = skillProposalPurpose(proposal.content, proposal.correction_summary);
+  const appliesWhen = skillProposalAppliesWhen(proposal.applies_when, proposal.destination_reason);
+  const steps = skillProposalProcedurePreview(proposal.content);
+
   return (
-    <li className="space-y-1 rounded-md border p-4">
+    <li className="space-y-2 rounded-md border p-4">
       <div className="flex flex-wrap items-center gap-2">
         <p className="font-medium">{proposal.name}</p>
         <span className="text-xs text-muted-foreground">
@@ -61,14 +80,39 @@ function ProposalRow({ proposal }: { proposal: SkillProposalListItem }) {
           {skillProposalVersionCountLine(proposal.version_count)}
         </span>
       </div>
-      <p className="text-xs text-muted-foreground">{SKILL_NOT_IN_LOVABLE_LINE}</p>
-      <Link
-        to="/ledger"
-        search={{ improvement: proposal.correction_candidate_id }}
-        className="text-sm text-primary underline underline-offset-2"
-      >
-        See the suggestion
-      </Link>
+
+      {purpose ? <p className="text-sm">{purpose}</p> : null}
+      {appliesWhen ? (
+        <p className="text-xs text-muted-foreground">When it applies: {appliesWhen}</p>
+      ) : null}
+      {steps.length > 0 ? (
+        <ol className="list-decimal space-y-0.5 pl-5 text-xs text-muted-foreground">
+          {steps.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
+        </ol>
+      ) : null}
+
+      {proposal.correction_summary ? (
+        <p className="text-xs text-muted-foreground">
+          From:{" "}
+          <Link
+            to="/ledger"
+            search={{ improvement: proposal.correction_candidate_id }}
+            className="text-primary underline underline-offset-2"
+          >
+            {proposal.correction_summary}
+          </Link>
+        </p>
+      ) : null}
+
+      <p className="text-xs text-muted-foreground">{SKILL_NOT_PUBLISHED_LINE}</p>
+
+      <Button asChild size="sm" variant="outline">
+        <Link to="/ledger" search={{ improvement: proposal.correction_candidate_id }}>
+          {REVIEW_SKILL_LABEL}
+        </Link>
+      </Button>
     </li>
   );
 }
@@ -139,27 +183,12 @@ function Page() {
   }
 
   const skills = query.data?.skills ?? [];
-  const proposals = query.data?.proposals ?? [];
+  const proposals = (query.data?.proposals ?? []) as SkillProposalCard[];
   const workspaceId = query.data?.workspace_id ?? null;
 
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Skills</h1>
-
-      <section aria-labelledby="proposed-skills" className="space-y-3">
-        <h2 id="proposed-skills" className="text-lg font-semibold">
-          {PROPOSED_HEADING}
-        </h2>
-        {proposals.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{PROPOSED_EMPTY_LINE}</p>
-        ) : (
-          <ul className="space-y-3">
-            {proposals.map((p) => (
-              <ProposalRow key={p.id} proposal={p} />
-            ))}
-          </ul>
-        )}
-      </section>
 
       <section aria-labelledby="workspace-skills" className="space-y-3">
         <h2 id="workspace-skills" className="text-lg font-semibold">
@@ -173,6 +202,21 @@ function Page() {
           </div>
         ) : (
           skills.map((s) => <SkillSection key={s.name} skill={s} workspaceId={workspaceId} />)
+        )}
+      </section>
+
+      <section aria-labelledby="proposed-skills" className="space-y-3">
+        <h2 id="proposed-skills" className="text-lg font-semibold">
+          {PROPOSED_HEADING}
+        </h2>
+        {proposals.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{PROPOSED_EMPTY_LINE}</p>
+        ) : (
+          <ul className="space-y-3">
+            {proposals.map((p) => (
+              <ProposalCard key={p.id} proposal={p} />
+            ))}
+          </ul>
         )}
       </section>
     </div>

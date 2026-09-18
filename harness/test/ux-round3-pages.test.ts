@@ -50,10 +50,13 @@ const TOUCHED_PAGES = [
 
 // ---- 1. Nav: six items, in order ----
 
-test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings -- eight items, in order", () => {
+test("nav: Overview, Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings -- nine items, in order", () => {
   // Round 6c part B: Tests joins the sidebar between History and Skills.
+  // Checkpoint 2 WP2-A: Overview returns as a real page and leads the
+  // sidebar -- updated here with intent.
   const shell = codeOnly(readApp(SHELL));
   const order = [
+    'label: "Overview"',
     'label: "Inbox"',
     'label: "Suggestions"',
     'label: "Instructions"',
@@ -63,7 +66,7 @@ test("nav: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, S
     'label: "Projects"',
     'label: "Settings"',
   ];
-  assert.equal(count(shell, 'label: "'), 8, "exactly eight nav items");
+  assert.equal(count(shell, 'label: "'), 9, "exactly nine nav items");
   let last = -1;
   for (const marker of order) {
     const at = shell.indexOf(marker);
@@ -111,7 +114,23 @@ test("instructions.tsx: rules table, collapsed Knowledge text, demo notice; the 
   assert.ok(!code.includes("versions.map"), "the old per-version list moved to History");
   assert.ok(!/changes\.(added|removed|lines|truncated)/.test(code));
 
-  assert.ok(!code.includes("Skills"), "Skills UI must not live on the Instructions page");
+  // Checkpoint 2 2-C: superseded with intent -- the Instructions page now
+  // has its own "Skills" section (a one-line-per-proposal summary linking
+  // out to /skills and /ledger). What must still never live here is any
+  // control that manages a Skill (edit/approve/retire/create/update) --
+  // those actions stay on the suggestion detail and the Skills page.
+  assert.match(code, /<h2[^>]*>\s*Skills\s*<\/h2>/, "Instructions has its own Skills section");
+  assert.match(code, /to="\/skills"/, "the Skills section links out to \\/skills");
+  for (const skillAction of [
+    "edit_skill_proposal",
+    "approve_skill_proposal",
+    "retire_skill_proposal",
+  ]) {
+    assert.ok(
+      !code.includes(`action: "${skillAction}"`),
+      `Instructions must not stage a Skill management action (${skillAction})`,
+    );
+  }
 
   // no <details open>
   for (const tag of code.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag));

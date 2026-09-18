@@ -851,11 +851,14 @@ export function testCostLine(costCredits: number | null): string {
 
 // ---- Checkpoint 2026-09-18 (WP1b, docs/audit/replay.md + ux.md, DECISIONS.md
 // D1/D2): the judging screen's required section order -- the original
-// correction, then Historical result / Replay with rule, a "Key difference"
-// section (Lovable's own summaries, never an invented automatic verdict),
-// the per-correction verdict question, a plain-sentence Replay environment
-// summary (one row per instruction surface, never a silent fallback), and
-// one collapsed "Full technical details" section. ----
+// correction, then Historical result / Replay with rule, a "Relevant visible
+// difference" section (Lovable's own summaries, never an invented automatic
+// verdict), the per-correction verdict question, an evidence-strength
+// summary, a collapsed "Why this is an approximation" section (one row per
+// instruction surface, never a silent fallback), and one collapsed "Full
+// technical details" section. Renamed from "Key difference"/"Replay
+// environment" and given a derived conclusion at Checkpoint 2 2-D -- see
+// that section below. ----
 
 export const ORIGINAL_CORRECTION_LABEL = "The original correction";
 export const CORRECTIONS_LIST_LABEL = "Then you corrected it";
@@ -867,15 +870,28 @@ export const REPLAY_WITH_RULE_TITLE = "Replay with rule";
 export const REPLAY_WITH_RULE_SUBTITLE =
   "One new Lovable build from the same starting point, with this rule added";
 
-export const KEY_DIFFERENCE_TITLE = "Key difference";
-export const KEY_DIFFERENCE_INTRO =
+// Checkpoint 2 2-D: renamed from "Key difference" -- the section shows only
+// Lovable's own account of each build (summaries + diff toggles); it never
+// computes or names a difference itself, so "Relevant visible difference"
+// says what it actually is without implying Harness Ledger judged anything.
+export const RELEVANT_DIFFERENCE_TITLE = "Relevant visible difference";
+export const RELEVANT_DIFFERENCE_INTRO =
   "Lovable's own account of each build, side by side. Harness Ledger does not compute an automatic verdict on the difference -- that is what the question below is for.";
 
 export const REPLAY_VERDICT_QUESTION =
   "Would the original correction still be needed in the replay?";
+// Checkpoint 2 2-D: the judge screen's optional checkbox, next to the
+// per-correction verdicts -- sets environment.regression_flag (stored by
+// judgeRun, harness/src/improvements.ts) and forces the derived conclusion
+// to possibly_harmful regardless of the verdicts, whatever they say.
+export const REGRESSION_CHECKBOX_LABEL =
+  "The replay introduced a new problem I would have to correct";
 
-export const REPLAY_ENVIRONMENT_TITLE = "Replay environment";
 export const NO_ENVIRONMENT_RECORD_LINE = "No environment record for this test.";
+// Checkpoint 2 2-D: renamed from "Replay environment" -- the nine-row
+// breakdown moved into this collapsed <details> (evidenceStrengthTitle/
+// evidenceStrengthLine above it stay uncollapsed, Level 2 explanation).
+export const WHY_APPROXIMATION_TITLE = "Why this is an approximation";
 export const FULL_TECHNICAL_DETAILS_TITLE = "Full technical details";
 
 // The columns' own short excerpt of Lovable's summary uses the existing
@@ -932,6 +948,79 @@ export function evidenceStrengthLine(
   }
 }
 
+// Checkpoint 2 2-D: the judging screen's section 6 title, "Evidence
+// strength: <quality label>" -- e.g. "Evidence strength: Historical
+// approximation". A function, not a constant, because the quality varies
+// per run; evidenceStrengthLine (above) supplies the sentence underneath.
+export function evidenceStrengthTitle(quality: EnvironmentQualityLike | null | undefined): string {
+  return `Evidence strength: ${environmentQualityLabel(quality)}`;
+}
+
+// ---- Checkpoint 2 2-D: derived conclusion ----
+// DECISIONS.md D1's own product name for this feature -- the judging
+// screen's page title and the Tests page's own intro line both use it, so
+// a reader sees the same name for "this whole thing" wherever they meet it.
+export const TEST_A_RULE_PAGE_TITLE = "Test a rule against a previous correction";
+
+// Mirrors harness/src/executor/replay-environment.ts's own ReplayConclusion
+// exactly, as a local structural type (this file stays dependency-free).
+// Never "controlled_support" -- a historical replay's quality never reaches
+// "controlled" (D2), so this vocabulary is deliberately kept to exactly the
+// four honest outcomes replayConclusion can actually produce.
+export type ReplayConclusionLike =
+  "historical_support" | "not_supported" | "possibly_harmful" | "inconclusive";
+
+export const CONCLUSION_LABELS: Record<ReplayConclusionLike, string> = {
+  historical_support: "Historical support",
+  not_supported: "Not supported by this replay",
+  possibly_harmful: "Possible regression",
+  inconclusive: "Inconclusive",
+};
+
+/** "Conclusion: Historical support" -- shown once a run is judged; null
+ * (nothing shown) before that, same convention as evidenceStrengthLine's
+ * own null-when-nothing-to-say case. */
+export function conclusionLine(conclusion: ReplayConclusionLike | null | undefined): string | null {
+  return conclusion ? `Conclusion: ${CONCLUSION_LABELS[conclusion]}` : null;
+}
+
+/** The Tests page's own Evidence column: the conclusion once judged (it is
+ * the more specific, more useful answer), the bare quality label before
+ * that -- never both, never neither when one is available. */
+export function evidenceColumnLabel(
+  quality: EnvironmentQualityLike | null | undefined,
+  conclusion: ReplayConclusionLike | null | undefined,
+): string {
+  return conclusion ? CONCLUSION_LABELS[conclusion] : environmentQualityLabel(quality);
+}
+
+/** Level 3's plain-words account of how the conclusion above was reached --
+ * the verdict counts, the evidence strength, and whether a regression was
+ * flagged -- so "Full technical details" never just asserts a conclusion,
+ * it shows the arithmetic. Not judged yet (`verdicts` null/empty) says so
+ * and stops there, same honesty rule as replayConclusion itself. */
+export function conclusionDerivationLines(input: {
+  verdicts: ("yes" | "no" | "unclear")[] | null | undefined;
+  quality: EnvironmentQualityLike | null | undefined;
+  regression_flag?: boolean | null;
+}): string[] {
+  if (!input.verdicts || input.verdicts.length === 0) {
+    return ["Not judged yet: no verdicts to derive a conclusion from."];
+  }
+  const yes = input.verdicts.filter((v) => v === "yes").length;
+  const no = input.verdicts.filter((v) => v === "no").length;
+  const unclear = input.verdicts.filter((v) => v === "unclear").length;
+  const total = input.verdicts.length;
+  return [
+    `Verdicts: ${yes} yes, ${no} no, ${unclear} unclear (${total} correction${total === 1 ? "" : "s"} total).`,
+    `Evidence strength: ${environmentQualityLabel(input.quality)}.`,
+    input.regression_flag
+      ? "You flagged that the replay introduced a new problem you would have to correct."
+      : "No regression was flagged for this replay.",
+  ];
+}
+// ---- end Checkpoint 2 2-D: derived conclusion ----
+
 // The shape this module needs from harness/src/executor/replay-environment.ts's
 // ReplayEnvironment -- a local, structural type (this file stays dependency-
 // free) rather than an import from the harness/src half of the app.
@@ -959,6 +1048,7 @@ export type ReplayEnvironmentLike = {
   uncontrolled: readonly string[];
   quality: EnvironmentQualityLike;
   historical_rules_dropped_by_run?: boolean;
+  regression_flag?: boolean;
 };
 
 export type ReplayEnvironmentRow = { label: string; text: string };
@@ -1006,9 +1096,30 @@ function projectKnowledgeText(pk: ReplayEnvironmentLike["project_knowledge"]): s
   }
 }
 
-// The Replay environment section's exact eight rows (docs/audit/replay.md
-// §2/§3, DECISIONS.md D2) -- every instruction surface a replay can and
-// cannot control, in one place, never a silent fallback.
+// Checkpoint 2 2-D: "Other active rules" -- which other instructions were
+// kept in this replay's Knowledge (a setup fact, not itself a reason this
+// is an approximation) -- moved out of replayEnvironmentRows into its own
+// line so it can live in "Full technical details" instead. Kept, not
+// deleted: the "an older test" disclosure it carries still matters.
+export function otherActiveRulesLine(
+  env:
+    | Pick<ReplayEnvironmentLike, "other_active_rules" | "historical_rules_dropped_by_run">
+    | null
+    | undefined,
+): string | null {
+  if (!env) return null;
+  if (env.other_active_rules.length === 0) return "Other active rules kept in this replay: none.";
+  const dropped = env.historical_rules_dropped_by_run
+    ? " -- these rules were live at the time but were not in this replay's Knowledge (an older test); newer tests keep them"
+    : "";
+  return `Other active rules kept in this replay: ${env.other_active_rules.join("; ")}${dropped}`;
+}
+
+// The "Why this is an approximation" section's exact nine rows (docs/audit/
+// replay.md §2/§3, DECISIONS.md D2, Checkpoint 2 2-D) -- every instruction
+// surface a replay can and cannot control, in one place, never a silent
+// fallback. "Other active rules" (a setup fact, not an approximation
+// surface) moved to Full technical details -- see otherActiveRulesLine.
 export function replayEnvironmentRows(
   env: ReplayEnvironmentLike | null | undefined,
 ): ReplayEnvironmentRow[] {
@@ -1017,13 +1128,6 @@ export function replayEnvironmentRows(
     env.code_state.source === "historical_commit_before_request"
       ? "Exact version at the time of the request"
       : "Could not be established; the copy could not be started from the historical commit";
-  const otherRules =
-    env.other_active_rules.length === 0
-      ? "None"
-      : env.other_active_rules.join("; ") +
-        (env.historical_rules_dropped_by_run
-          ? " -- these rules were live at the time but were not in this replay's Knowledge (an older test); newer tests keep them"
-          : "");
   return [
     { label: "Code state", text: codeStateText },
     { label: "Project Knowledge", text: projectKnowledgeText(env.project_knowledge) },
@@ -1034,12 +1138,16 @@ export function replayEnvironmentRows(
     { label: "Skills", text: "As they are today (workspace Skills apply to the copy)" },
     { label: "Chat history", text: env.chat_history.included ? "Copied" : "Not copied" },
     {
+      label: "Project memory",
+      text: "Lovable's own project memory is copied as it is today",
+    },
+    {
       label: "Candidate rule",
       text: env.candidate_rule.already_present
         ? `${env.candidate_rule.instruction} (already present in the historical Knowledge)`
         : env.candidate_rule.instruction,
     },
-    { label: "Other active rules", text: otherRules },
+    { label: "Builder version", text: "Not exposed by Lovable; not recorded" },
     {
       label: "Uncontrolled context",
       text: "Lovable's own project memory, workspace Knowledge, Skills and the builder version come from today, not from the time of the request",
@@ -1210,3 +1318,250 @@ export function disagreementBodyLine(
   return `You classified this as "${previousClassification}". The newest analysis says "${proposedClassification}".`;
 }
 // ---- end Checkpoint 2026-09-18 WP5: analysis ----
+
+// ---- Checkpoint 2 2-F ----
+// A delete request returning 2xx is Lovable accepting it, not proof the
+// project is gone (harness/src/executor/experiments.ts's own
+// confirmDeletion does one free read-back to tell the difference). This is
+// the wording next to a test copy for each status that read-back can leave
+// a run in; null means there is nothing to say (no delete was ever
+// requested for this copy).
+export function copyDeletionLine(
+  status: "none" | "requested" | "confirmed" | "failed",
+): string | null {
+  switch (status) {
+    case "none":
+      return null;
+    case "requested":
+      return "Deletion requested; Lovable has not confirmed it yet.";
+    case "confirmed":
+      return "Deleted in Lovable (confirmed).";
+    case "failed":
+      return "Could not delete; the copy was set private. Delete it by hand in Lovable.";
+  }
+}
+// ---- end Checkpoint 2 2-F ----
+
+// ---- Checkpoint 2 2-E ----
+// OpenAI provider compatibility + Settings > AI analysis "Test provider"
+// button. A newer OpenAI model can reject `max_tokens` (it wants
+// `max_completion_tokens`) and reject `temperature` outright --
+// harness/src/llm/openai.ts retries once when that happens; these are the
+// plain-language versions of what it found, for the button's result line.
+// harness/src/llm/index.ts's testProvider() keeps its own copy of the same
+// three sentences (harness/src and src/ are separate packages, the same
+// reason analysis/context.ts's AUTOMATIC_ANALYSIS_SETTING_KEY is duplicated
+// rather than imported) -- harness/test/ux-provider-test.test.ts keeps the
+// two in lockstep.
+export const TEST_PROVIDER_BUTTON_LABEL = "Test provider";
+export const TEST_PROVIDER_CONSEQUENCE_LINE =
+  "Sends one tiny request to your AI provider. Uses a few AI tokens. Changes nothing.";
+
+/** "Provider test passed: gpt-4o, about 40 tokens" -- the button's success line. */
+export function testProviderSuccessLine(model: string, estimatedTokens: number): string {
+  return `Provider test passed: ${model}, about ${estimatedTokens} tokens`;
+}
+
+/** `retriedWith` is a parameter name ("max_completion_tokens"/"max_tokens") or "no temperature parameter" for the temperature case, which has no substitute. */
+export function openAiParamRejectedLine(
+  model: string,
+  rejectedParam: "max_tokens" | "max_completion_tokens" | "temperature",
+  retriedWith: string | null,
+): string {
+  const base = `OpenAI rejected a request parameter for model ${model} (${rejectedParam}).`;
+  return retriedWith ? `${base} Harness Ledger retried with ${retriedWith}.` : base;
+}
+
+export function openAiModelNotFoundLine(model: string): string {
+  return `The model name ${model} was not found at OpenAI.`;
+}
+
+export const OPENAI_KEY_REJECTED_LINE = "OpenAI rejected the API key.";
+// ---- end Checkpoint 2 2-E ----
+
+// ---- Checkpoint 2 2-B ----
+// Inbox card (Level 1) and Suggestions detail simplification. One helper per
+// piece of copy so the Inbox card and the Suggestions detail's "What the
+// action will do" section can never say something different about the same
+// action. No internal enum name (missing_requirement, constraint_restatement,
+// preference_revision, one_time, retire_suggested, ...) is spelled out by any
+// of these -- everything here is either an existing plain-language helper
+// (whyFor, contentDestinationReason) or a brand new fixed phrase.
+
+export type PrimaryActionKind = "add" | "review_skill" | "test_first" | "skip";
+
+// The closed set of primary actions the Inbox card (and the Suggestions
+// detail's "What the action will do" section) may ever show -- exact button
+// text.
+export const PRIMARY_ACTION_LABELS: Record<PrimaryActionKind, string> = {
+  add: "Add instruction",
+  review_skill: "Review Skill",
+  test_first: "Test first",
+  skip: "Skip",
+};
+
+/** The plain-language lesson for a suggestion card: what Harness Ledger
+ * concluded happened, in one sentence -- never the proposed instruction
+ * itself (that's shown as its own line). Prefers the classifier's own
+ * summary of the correction; falls back to the first evidence message's own
+ * text; never invents anything, and never returns an internal enum name. */
+export function lessonLine(item: {
+  correction_summary?: string | null;
+  evidence: { text: string }[];
+}): string {
+  const raw =
+    (item.correction_summary && item.correction_summary.trim()) || item.evidence[0]?.text || "";
+  if (!raw.trim()) return "Harness Ledger found something in your Lovable chat worth a decision.";
+  return firstSentence(raw) || excerpt(raw, 160);
+}
+
+/** "Project Knowledge" / "Workspace Knowledge" / "Skill" / "Knowledge and
+ * Skill" -- the plain-word destination label for the card and the detail
+ * page, derived from content_destination (Knowledge / Skill / both) and,
+ * for a Knowledge-bearing destination, which Knowledge target it would use.
+ * Never an internal enum name. */
+export function destinationLabelPlain(
+  contentDestinationValue: ContentDestinationValue | null | undefined,
+  knowledgeTarget: "project" | "workspace" | "one_time" | null | undefined,
+): string {
+  if (contentDestinationValue === "skill") return "Skill";
+  if (contentDestinationValue === "both") return "Knowledge and Skill";
+  return knowledgeTarget === "workspace" ? "Workspace Knowledge" : "Project Knowledge";
+}
+
+/** The exact consequence line for one of the four primary actions -- always
+ * says whether Lovable changes, whether Lovable credits are used, and
+ * whether AI tokens are used, verbatim (checkpoint 2 brief). `destination`
+ * only matters for "add" (project vs workspace changes the wording); it is
+ * ignored for the other three actions. */
+export function actionConsequence(
+  action: PrimaryActionKind,
+  destination?: "project" | "workspace" | null,
+): string {
+  switch (action) {
+    case "add":
+      return destination === "workspace"
+        ? "Writes to Lovable Knowledge for all your projects. No Lovable credits. No AI tokens."
+        : "Writes to Lovable Knowledge in this project. No Lovable credits. No AI tokens.";
+    case "review_skill":
+      return "Opens the Skill proposal. Nothing changes in Lovable.";
+    case "test_first":
+      return "Runs one Lovable build in a temporary copy. Uses Lovable credits. Nothing changes in your project.";
+    case "skip":
+      return "Nothing changes in Lovable. Harness Ledger will not propose this again.";
+  }
+}
+
+/** Which ONE action the Inbox card recommends as primary, from the closed
+ * set {add, review_skill, test_first} -- Skip is always available but is
+ * never itself the recommendation (Harness Ledger doesn't suggest skipping;
+ * a person chooses that). Skill-only destinations have nothing to add to
+ * Knowledge, so they recommend reviewing the Skill instead; a Knowledge (or
+ * Knowledge + Skill) destination recommends testing first when Harness
+ * Ledger already staged a test for it, else recommends adding it. */
+export function recommendedPrimaryAction(item: {
+  content_destination: { value: ContentDestinationValue } | null;
+  decision: { test_first: boolean };
+}): "add" | "review_skill" | "test_first" {
+  if (item.content_destination?.value === "skill") return "review_skill";
+  if (item.decision.test_first) return "test_first";
+  return "add";
+}
+// ---- end Checkpoint 2 2-B ----
+
+// ---- Checkpoint 2 2-C ----
+// Instructions / Skills / History simplification: the Instructions page's
+// per-rule "is this rule live and untroubled" line (kept apart from the
+// Status column's write-status label, and from observedLine/aiReviewLine/
+// verdictLine -- every one of those stays its own line, never merged), the
+// "Replay evidence" line reusing Checkpoint 2 2-D's own conclusion labels,
+// and the Skills page's proposal-card copy (a Skill proposal's plain-words
+// purpose/applies-when/procedure preview, parsed from its own markdown).
+
+/** "Active in Lovable" once at least one historical-replay run for this
+ * rule has been judged, else "Active, not replay-tested" -- never rendered
+ * for a rule whose health status is 'review' or 'retire_suggested' (the
+ * attention block takes that line's place instead; see attentionBlock
+ * above). Deliberately not a claim that the rule helped -- only that it is
+ * live, and whether it has ever been replay-tested. */
+export function ruleActiveLine(hasJudgedReplay: boolean): string {
+  return hasJudgedReplay ? "Active in Lovable" : "Active, not replay-tested";
+}
+
+/** The Instructions page's "Replay evidence" line: the same conclusion
+ * label Checkpoint 2 2-D's Tests/judging pages show (CONCLUSION_LABELS
+ * above) when this rule's latest judged run carries one, else the plain
+ * fact that a run was judged. Null (nothing shown) until a run has actually
+ * been judged for this rule. */
+export function replayEvidenceLine(
+  judgedRun: { conclusion?: string | null } | null | undefined,
+): string | null {
+  if (!judgedRun) return null;
+  const conclusion = judgedRun.conclusion as ReplayConclusionLike | null | undefined;
+  const label = conclusion ? CONCLUSION_LABELS[conclusion] : undefined;
+  return label ?? "Replay judged";
+}
+
+/** The "Needs your attention" section's empty state, when no rule's health
+ * status is 'review' or 'retire_suggested'. */
+export const NOTHING_NEEDS_ATTENTION_LINE = "Nothing needs your attention.";
+
+/** The Skills page's exact honesty line for a locally proposed Skill card
+ * -- distinct from SKILL_NOT_IN_LOVABLE_LINE above (that longer sentence
+ * stays on the suggestion detail's DestinationChoice and is not touched
+ * here): the card itself just needs the one short fact. */
+export const SKILL_NOT_PUBLISHED_LINE = "Not published to Lovable yet.";
+
+export const REVIEW_SKILL_LABEL = "Review Skill";
+
+/** The first non-empty paragraph of a Skill proposal's own markdown, after
+ * its leading "# Title" line(s) -- the card's plain-words purpose. Falls
+ * back to the rule's own instruction when the proposal has no body text of
+ * its own yet (a freshly created draft, or one written by hand with only a
+ * title so far). */
+export function skillProposalPurpose(
+  content: string | null | undefined,
+  fallbackInstruction: string | null | undefined,
+): string {
+  const lines = (content ?? "").split("\n");
+  let i = 0;
+  while (i < lines.length && (lines[i]!.trim() === "" || lines[i]!.trim().startsWith("#"))) i++;
+  const paragraph: string[] = [];
+  while (i < lines.length && lines[i]!.trim() !== "") {
+    paragraph.push(lines[i]!.trim());
+    i++;
+  }
+  const text = paragraph.join(" ").trim();
+  return text || (fallbackInstruction ?? "").trim();
+}
+
+/** "When it applies": the rule's own applies_when when it has one, else the
+ * suggestion's destination reason (the Rule writer's own words for why this
+ * became a Skill in the first place, which is usually itself a statement of
+ * when the procedure applies). Null when neither exists. */
+export function skillProposalAppliesWhen(
+  appliesWhen: string | null | undefined,
+  destinationReason: string | null | undefined,
+): string | null {
+  const a = (appliesWhen ?? "").trim();
+  if (a) return a;
+  const r = (destinationReason ?? "").trim();
+  return r || null;
+}
+
+/** The first three numbered-list lines ("1. ...", "2) ...") found in a
+ * Skill proposal's markdown -- a short procedure preview; the full
+ * procedure lives behind "Review Skill", never repeated here. Empty when
+ * the draft has no numbered steps yet. */
+export function skillProposalProcedurePreview(content: string | null | undefined): string[] {
+  const steps: string[] = [];
+  for (const raw of (content ?? "").split("\n")) {
+    const m = /^\s*\d+[.)]\s+(.*)$/.exec(raw);
+    if (m) {
+      steps.push(m[1]!.trim());
+      if (steps.length === 3) break;
+    }
+  }
+  return steps;
+}
+// ---- end Checkpoint 2 2-C ----

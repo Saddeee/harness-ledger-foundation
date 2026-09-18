@@ -106,4 +106,72 @@ export type ProviderCallResult = {
   raw: unknown;
   tokensIn: number;
   tokensOut: number;
+  /**
+   * Checkpoint 2026-09-18 2-E: only openai.ts populates this -- the
+   * parameter strategy actually used for the request that succeeded, and
+   * whether a first attempt had to be retried with an adjusted strategy
+   * after a 400 naming an unsupported parameter (see openAiRetryInfoFor in
+   * openai.ts). index.ts reads this to log the strategy without either
+   * provider adapter needing to know about llm_calls/events itself.
+   */
+  openai?: {
+    tokenParam: "max_tokens" | "max_completion_tokens";
+    temperatureSent: boolean;
+    retried: boolean;
+    retry?: OpenAiRetryInfo;
+  };
 };
+
+// ---- Checkpoint 2026-09-18 2-E: OpenAI parameter-compatibility errors ----
+
+/** What a failed OpenAI call is bucketed into, so index.ts/testProvider can react (retry, or not) without re-parsing the message text a second time. */
+export type LlmErrorCategory =
+  "invalid_parameter" | "invalid_model" | "auth" | "rate_limit" | "server" | "network" | "other";
+
+/** Which request parameter a 400 named as unsupported, and what openai.ts retried with (or `"removed"` for temperature, which has no substitute). Attached to a retried success's `ProviderCallResult.openai.retry` and, when the retry also failed (or none was attempted), to the thrown `LlmProviderError.retry`. */
+export type OpenAiRetryInfo = {
+  rejectedParam: "max_tokens" | "max_completion_tokens" | "temperature";
+  resolution: "max_tokens" | "max_completion_tokens" | "removed";
+};
+
+/**
+ * What `testProvider()` (index.ts) returns for the Settings "Test provider"
+ * button (executor route action `test_provider`) -- `strategy` is only
+ * present for an OpenAI call (the other providers have no parameter
+ * compatibility question), and only on success (a failed call's `message`
+ * already says what went wrong).
+ */
+export type ProviderTestResult = {
+  ok: boolean;
+  provider: LlmProvider;
+  model: string;
+  strategy?: { tokenParam: "max_tokens" | "max_completion_tokens"; temperatureSent: boolean };
+  estimated_tokens: number;
+  message: string;
+};
+
+/**
+ * Thrown by openai.ts for any non-2xx response, in place of a plain Error,
+ * so index.ts and testProvider can branch on `category`/`status` without
+ * parsing `message` -- `message` itself is already redacted (never the
+ * Authorization header, request body, or response headers; any
+ * `sk-...`-shaped token is stripped) and safe to show a user or log.
+ */
+export class LlmProviderError extends Error {
+  public readonly status?: number;
+  public readonly category: LlmErrorCategory;
+  public readonly retry?: OpenAiRetryInfo;
+
+  constructor(
+    message: string,
+    category: LlmErrorCategory,
+    status?: number,
+    retry?: OpenAiRetryInfo,
+  ) {
+    super(message);
+    this.name = "LlmProviderError";
+    this.category = category;
+    this.status = status;
+    this.retry = retry;
+  }
+}

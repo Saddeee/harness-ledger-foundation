@@ -8,7 +8,21 @@ import * as store from "./store.js";
 import { composeManagedKnowledge, extractManagedBlock, sha256 } from "./knowledge.js";
 import { lineDiff, type DiffLine } from "./diff.js";
 import { recomputeRuleHealth } from "./analysis/health.js";
-import { parseReplayEnvironment, type ReplayEnvironment } from "./executor/replay-environment.js";
+import {
+  parseReplayEnvironment,
+  replayConclusion,
+  type ReplayEnvironment,
+  type ReplayConclusion,
+} from "./executor/replay-environment.js";
+// Checkpoint 2 2-B: the only two imports this view needs that store.ts
+// doesn't already wrap -- see replyAfterCorrection below, which mirrors
+// store.episodeTextForJudge's own read exactly, just shifted to start after
+// the correction instead of after the request (store.ts has no exported
+// function for that; adding one there is out of this work package's file
+// scope, so it's read directly here, the same tables episodeTextForJudge
+// itself reads).
+import { db } from "./db.js";
+import { humanVisibleText } from "./analysis/reply-text.js";
 
 export type StageKey = "found" | "review" | "proof" | "in_lovable";
 export type StageState = "complete" | "current" | "future" | "blocked";
@@ -243,6 +257,26 @@ export type Improvement = {
   // wired in this checkpoint (D4).
   skill_proposal: SkillProposalView;
   classification: string;
+  // ---- Checkpoint 2 2-B ----
+  // The classifier's own one-sentence summary of the correction -- the
+  // "lesson" line on the Inbox card and the Suggestions detail. Null only
+  // for a "retire" item (there is no correction_candidate to read it from).
+  correction_summary: string | null;
+  // The four-line "What happened" story on the Suggestions detail page.
+  // Null for a "retire" item and for an "improvement" item with no
+  // correction evidence to build one from.
+  story: {
+    requested: string;
+    built: string;
+    correction: string;
+    changed_afterward: string | null;
+  } | null;
+  // The classifier's own confidence (0-1) in this suggestion, when recorded
+  // -- shown next to the classification label in the detail page's
+  // "Technical details". Null for a "retire" item and for an older row
+  // recorded before confidence was tracked.
+  confidence: number | null;
+  // ---- end Checkpoint 2 2-B ----
   decision: {
     status: "pending" | "accepted" | "skipped";
     decided_at: string | null;
@@ -802,6 +836,65 @@ function buildPreview(
   };
 }
 
+// ---- Checkpoint 2 2-B: "What happened" story ----
+// The Suggestions detail's four-line story needs one thing nothing existing
+// computed: Lovable's reply AFTER the correction. episodeTextForJudge (the
+// replay judge's own read) deliberately stops at the first correction --
+// that's the "before" arm a historical replay judges -- so this mirrors its
+// exact query, just shifted to start after the correction's own occurred_at
+// instead of after the request, and bounded by the episode's own ended_at
+// the same way. null when the correction has no occurred_at (can't order
+// against it) or nothing assistant-authored follows it in this episode.
+function replyAfterCorrection(
+  episodeId: number,
+  correctionOccurredAt: string | null,
+): string | null {
+  if (!correctionOccurredAt) return null;
+  const episode = db
+    .prepare(`SELECT project_id, ended_at FROM task_episodes WHERE id = ?`)
+    .get(episodeId) as { project_id: string | null; ended_at: string | null } | undefined;
+  if (!episode) return null;
+  const row = db
+    .prepare(
+      `SELECT content FROM history_items
+       WHERE project_id IS ? AND kind = 'message' AND role = 'assistant'
+         AND occurred_at IS NOT NULL AND occurred_at > ?
+         AND (? IS NULL OR occurred_at <= ?)
+       ORDER BY occurred_at ASC, id ASC
+       LIMIT 1`,
+    )
+    .get(episode.project_id, correctionOccurredAt, episode.ended_at, episode.ended_at) as
+    { content: string } | undefined;
+  return row ? humanVisibleText(row.content) : null;
+}
+
+/** The four-line story ("What happened") for one correction: the episode's
+ * opening request, Lovable's reply to it (the build), the correction message
+ * itself (the earliest visible evidence -- the same message
+ * getEvidenceForCorrection surfaces as evidence[0]), and whatever Lovable
+ * replied after that correction, if anything was recorded. Never fabricates
+ * a missing piece; a caller that has no correction evidence at all gets
+ * null rather than a story with a blank "Your correction" line. */
+function buildImprovementStory(
+  c: CorrectionRow,
+  firstCorrection: EvidenceRow | null,
+): {
+  requested: string;
+  built: string;
+  correction: string;
+  changed_afterward: string | null;
+} | null {
+  if (!firstCorrection) return null;
+  const { request, reply } = store.episodeTextForJudge(c.task_episode_id);
+  return {
+    requested: request,
+    built: reply,
+    correction: firstCorrection.content,
+    changed_afterward: replyAfterCorrection(c.task_episode_id, firstCorrection.occurred_at),
+  };
+}
+// ---- end Checkpoint 2 2-B ----
+
 // `rates` (fix round 1 item 1): tagAcceptanceRates()'s result, computed once
 // by the caller (listImprovements/getImprovement) and threaded through here
 // only to feed computeRank -- see computeRank's own doc comment.
@@ -994,6 +1087,11 @@ function buildImprovement(
     content_destination: buildContentDestination(c),
     skill_proposal: buildSkillProposalView(c.id),
     classification: c.classification,
+    // ---- Checkpoint 2 2-B ----
+    correction_summary: c.summary,
+    story: buildImprovementStory(c, visible[0] ?? null),
+    confidence: c.confidence,
+    // ---- end Checkpoint 2 2-B ----
     decision: {
       status,
       decided_at: status === "pending" ? null : c.reviewed_at,
@@ -1115,6 +1213,9 @@ function buildRetireItem(
     content_destination: null,
     skill_proposal: null,
     classification: "retire",
+    correction_summary: null,
+    story: null,
+    confidence: null,
     decision: {
       status: "pending",
       decided_at: null,
@@ -1297,6 +1398,12 @@ const actionInput = z.discriminatedUnion("action", [
     action: z.literal("judge"),
     run_id: z.number().int(),
     verdicts: z.array(z.enum(["yes", "no", "unclear"])),
+    // Checkpoint 2 2-D: the judge screen's optional "The replay introduced
+    // a new problem I would have to correct" checkbox. Optional so an
+    // older/programmatic caller that never sends it behaves exactly as
+    // before -- judgeRun only touches the stored regression_flag when this
+    // is actually present in the request.
+    regression: z.boolean().optional(),
   }),
   // ---- end Round 6 Task 6b ----
   // ---- Round 6c ----
@@ -1623,7 +1730,7 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
   // directly, same reason as "cancel_write"'s version_id path above -- see
   // judgeRun in the delimited block at the end of this file.
   if (a.action === "judge") {
-    return judgeRun(a.run_id, a.verdicts);
+    return judgeRun(a.run_id, a.verdicts, a.regression);
   }
   // Round 6c: "feedback" addresses a run_id directly too, same reason as
   // "judge"'s run_id path above -- see recordFeedback in the delimited
@@ -2947,8 +3054,27 @@ function cancelPendingVersion(versionId: number): Improvement & { cancel_note?: 
  * judge, so a rule with no classified correction on record never divides by
  * zero), and marks it judged. Returns the ORIGINAL improvement (the run's
  * own correction_candidate_id), refreshed -- its `test.run` now reflects
- * this same judged run. */
-function judgeRun(runId: number, verdicts: ("yes" | "no" | "unclear")[]): Improvement {
+ * this same judged run.
+ *
+ * Checkpoint 2 2-D: `regression` (the judge screen's optional "The replay
+ * introduced a new problem I would have to correct" checkbox) is folded
+ * into the run's own environment_json as `regression_flag` -- environment_json
+ * is a plain text column already read/written by this run (D2), so this
+ * parses it, sets the one field, and writes it back rather than adding a
+ * column. Left untouched when `regression` is undefined (an older caller
+ * that never sends it) or when the run has no environment record to attach
+ * it to (a run that failed before its Knowledge was chosen never reaches
+ * "judging" in the first place, but this stays honest either way: no
+ * environment, no flag). The derived conclusion (historical_support /
+ * not_supported / possibly_harmful / inconclusive) is never stored --
+ * buildExperimentRunView/listTestRunSummaries compute it on read from
+ * verdicts_json + environment.quality + environment.regression_flag
+ * (executor/replay-environment.ts's replayConclusion). */
+function judgeRun(
+  runId: number,
+  verdicts: ("yes" | "no" | "unclear")[],
+  regression?: boolean,
+): Improvement {
   const run = store.getExperimentRun(runId);
   if (!run) throw new Error(`experiment run ${runId} not found`);
   if (run.status !== "judging") throw new Error("This test is not waiting for a verdict.");
@@ -2964,13 +3090,25 @@ function judgeRun(runId: number, verdicts: ("yes" | "no" | "unclear")[]): Improv
   const noCount = verdicts.filter((v) => v === "no").length;
   const score = correctionsCount > 0 ? noCount / correctionsCount : 0;
 
-  store.updateExperimentRun(runId, {
+  const patch: Partial<store.ExperimentRunRow> = {
     verdicts_json: JSON.stringify(verdicts),
     judged_corrections_json: JSON.stringify(judgedCorrections),
     score,
     status: "judged",
     judged_at: new Date().toISOString(),
-  });
+  };
+  if (regression !== undefined && run.environment_json) {
+    try {
+      const env = JSON.parse(run.environment_json) as Record<string, unknown>;
+      env.regression_flag = regression === true;
+      patch.environment_json = JSON.stringify(env);
+    } catch {
+      // Malformed environment_json (should not happen -- it is only ever
+      // written by this codebase): leave the flag unrecorded rather than
+      // guess at the record's shape.
+    }
+  }
+  store.updateExperimentRun(runId, patch);
 
   const refreshed = getImprovement(run.correction_candidate_id);
   if (!refreshed)
@@ -2999,6 +3137,12 @@ export type ExperimentRunView = {
   // that failed before its Knowledge was chosen.
   kind: store.ExperimentKind;
   environment: ReplayEnvironment | null;
+  // Checkpoint 2 2-D: the derived one-word conclusion (historical_support /
+  // not_supported / possibly_harmful / inconclusive), computed on read from
+  // `verdicts` + `environment.quality` + `environment.regression_flag`
+  // (executor/replay-environment.ts's replayConclusion) -- null until the
+  // run is judged, and null for any run kind that function has no rule for.
+  conclusion: ReplayConclusion | null;
   status: store.ExperimentStatus;
   stage_note: string | null;
   started_at: string;
@@ -3039,19 +3183,30 @@ export type ExperimentRunView = {
 };
 
 /** One test build as a Lovable project: where to open it, its screenshot,
- * and whether it still exists. */
+ * and whether it still exists.
+ *
+ * Checkpoint 2 2-F: `deleted` (copy_deleted) stays for compatibility with
+ * older readers of this column; `deletion_status` is the fuller answer --
+ * "none" until a delete has been requested, "requested" once it has but
+ * Lovable's own read-back has not (yet, or ever) confirmed it gone,
+ * "confirmed" once a read-back 404'd, "failed" if the delete itself failed
+ * and the copy was set private instead. See experiments.ts's own
+ * confirmDeletion and src/lib/harness-ux.ts's copyDeletionLine for the copy
+ * shown from this value. */
 export type TestBuildCopy = {
   project_id: string;
   editor_url: string;
   preview_url: string;
   screenshot_url: string | null;
   deleted: boolean;
+  deletion_status: store.CopyDeletionStatus;
 };
 
 function buildCopy(
   projectId: string | null,
   screenshotUrl: string | null,
   deleted: number,
+  deletionStatus: store.CopyDeletionStatus,
 ): TestBuildCopy | null {
   if (!projectId) return null;
   return {
@@ -3060,7 +3215,23 @@ function buildCopy(
     preview_url: `https://id-preview--${projectId}.lovable.app`,
     screenshot_url: screenshotUrl,
     deleted: deleted === 1,
+    deletion_status: deletionStatus,
   };
+}
+
+// Checkpoint 2 2-D: the one place a run's own verdicts_json is parsed --
+// buildExperimentRunView and listTestRunSummaries both feed this straight
+// into replayConclusion, so both must agree on exactly the same parse
+// (silently null on anything malformed, same convention as parseDiffJson
+// below).
+function parseVerdictsJson(json: string | null): ("yes" | "no" | "unclear")[] | null {
+  if (!json) return null;
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? (parsed as ("yes" | "no" | "unclear")[]) : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseDiffJson(json: string | null): { lines: string[]; truncated: boolean } | null {
@@ -3086,20 +3257,19 @@ export function buildExperimentRunView(runId: number): ExperimentRunView | null 
   const ruleDetail = store.getRule(run.rule_id) as { rule: { instruction: string } } | null;
   const corrections = correctionsForRun(run);
 
-  let verdicts: ("yes" | "no" | "unclear")[] | null = null;
-  if (run.verdicts_json) {
-    try {
-      const parsed: unknown = JSON.parse(run.verdicts_json);
-      if (Array.isArray(parsed)) verdicts = parsed as ("yes" | "no" | "unclear")[];
-    } catch {
-      verdicts = null;
-    }
-  }
+  const verdicts = parseVerdictsJson(run.verdicts_json);
+  const environment = parseReplayEnvironment(run.environment_json);
 
   return {
     id: run.id,
     kind: run.kind,
-    environment: parseReplayEnvironment(run.environment_json),
+    environment,
+    conclusion: replayConclusion({
+      kind: run.kind,
+      quality: environment?.quality ?? null,
+      verdicts,
+      regression_flag: environment?.regression_flag ?? null,
+    }),
     status: run.status,
     stage_note: run.stage_note,
     started_at: run.started_at,
@@ -3126,11 +3296,17 @@ export function buildExperimentRunView(runId: number): ExperimentRunView | null 
     project_name: store.getProjectMeta(run.source_project_id)?.name ?? null,
     original_summary: run.original_summary,
     show_original: run.show_original === 1,
-    copy: buildCopy(run.copy_project_id, run.copy_screenshot_url, run.copy_deleted),
+    copy: buildCopy(
+      run.copy_project_id,
+      run.copy_screenshot_url,
+      run.copy_deleted,
+      run.copy_deletion_status,
+    ),
     original_copy: buildCopy(
       run.original_copy_project_id,
       run.original_screenshot_url,
       run.original_copy_deleted,
+      run.original_copy_deletion_status,
     ),
     original_copy_error: run.original_copy_error,
   };
@@ -3174,6 +3350,9 @@ export type ExperimentRunSummary = {
   id: number;
   kind: store.ExperimentKind;
   environment_quality: ReplayEnvironment["quality"] | null;
+  // Checkpoint 2 2-D: same derived conclusion as ExperimentRunView.conclusion
+  // above, for the Tests page's own Evidence column -- null until judged.
+  conclusion: ReplayConclusion | null;
   rule_id: number;
   improvement_id: number;
   rule_text: string;
@@ -3202,33 +3381,48 @@ export type ExperimentRunSummary = {
  * computeTestInfo/judgeRun/buildExperimentRunView already agree on
  * (correctionsForEpisode, Round 6 fix wave item C's own shared fallback). */
 export function listTestRunSummaries(): ExperimentRunSummary[] {
-  return store.listExperimentRunsWithRules().map((run) => ({
-    id: run.id,
-    kind: run.kind,
-    environment_quality: parseReplayEnvironment(run.environment_json)?.quality ?? null,
-    rule_id: run.rule_id,
-    improvement_id: run.correction_candidate_id,
-    rule_text: run.rule_text,
-    project_id: run.project_id,
-    status: run.status,
-    stage_note: run.stage_note,
-    error: run.error,
-    started_at: run.started_at,
-    finished_at: run.finished_at,
-    judged_at: run.judged_at,
-    cost_credits: run.cost_credits,
-    score: run.score,
-    corrections: correctionsForRun(run).texts.length,
-    copy_deleted: run.copy_deleted,
-    feedback: run.feedback,
-    feedback_at: run.feedback_at,
-    project_name: run.project_id ? (store.getProjectMeta(run.project_id)?.name ?? null) : null,
-    copy: buildCopy(run.copy_project_id, run.copy_screenshot_url, run.copy_deleted),
-    original_copy: buildCopy(
-      run.original_copy_project_id,
-      run.original_screenshot_url,
-      run.original_copy_deleted,
-    ),
-  }));
+  return store.listExperimentRunsWithRules().map((run) => {
+    const environment = parseReplayEnvironment(run.environment_json);
+    return {
+      id: run.id,
+      kind: run.kind,
+      environment_quality: environment?.quality ?? null,
+      conclusion: replayConclusion({
+        kind: run.kind,
+        quality: environment?.quality ?? null,
+        verdicts: parseVerdictsJson(run.verdicts_json),
+        regression_flag: environment?.regression_flag ?? null,
+      }),
+      rule_id: run.rule_id,
+      improvement_id: run.correction_candidate_id,
+      rule_text: run.rule_text,
+      project_id: run.project_id,
+      status: run.status,
+      stage_note: run.stage_note,
+      error: run.error,
+      started_at: run.started_at,
+      finished_at: run.finished_at,
+      judged_at: run.judged_at,
+      cost_credits: run.cost_credits,
+      score: run.score,
+      corrections: correctionsForRun(run).texts.length,
+      copy_deleted: run.copy_deleted,
+      feedback: run.feedback,
+      feedback_at: run.feedback_at,
+      project_name: run.project_id ? (store.getProjectMeta(run.project_id)?.name ?? null) : null,
+      copy: buildCopy(
+        run.copy_project_id,
+        run.copy_screenshot_url,
+        run.copy_deleted,
+        run.copy_deletion_status,
+      ),
+      original_copy: buildCopy(
+        run.original_copy_project_id,
+        run.original_screenshot_url,
+        run.original_copy_deleted,
+        run.original_copy_deletion_status,
+      ),
+    };
+  });
 }
 // ---- end Round 6c ----

@@ -12,33 +12,42 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { WhatChangedLines } from "@/components/harness/timeline";
 import { ConfirmAction, AdvancedDetails } from "@/components/harness/decision-layout";
 import { AddConfirm, RemoveFromKnowledgeConfirm, useRun } from "@/components/harness/improvement";
 import {
+  conclusionDerivationLines,
+  conclusionLine,
+  copyDeletionLine,
   CORRECTIONS_FROM_FOLLOW_UPS_LINE,
   CORRECTIONS_LIST_LABEL,
   evidenceStrengthLine,
+  evidenceStrengthTitle,
   excerpt,
   formatDay,
   FULL_TECHNICAL_DETAILS_TITLE,
   HISTORICAL_RESULT_SUBTITLE,
   HISTORICAL_RESULT_TITLE,
-  KEY_DIFFERENCE_INTRO,
-  KEY_DIFFERENCE_TITLE,
   NO_ENVIRONMENT_RECORD_LINE,
   ORIGINAL_CORRECTION_LABEL,
+  otherActiveRulesLine,
+  REGRESSION_CHECKBOX_LABEL,
+  RELEVANT_DIFFERENCE_INTRO,
+  RELEVANT_DIFFERENCE_TITLE,
   replayEnvironmentRows,
-  REPLAY_ENVIRONMENT_TITLE,
   REPLAY_VERDICT_QUESTION,
   REPLAY_WITH_RULE_SUBTITLE,
   REPLAY_WITH_RULE_TITLE,
+  TEST_A_RULE_PAGE_TITLE,
   testCopyConfounderLine,
   testCostLine,
   testedResultLine,
   testFailedLine,
   TEST_ONE_BUILD_LINE,
   TEST_MEMORY_CONFOUNDER_LINE,
+  WHY_APPROXIMATION_TITLE,
 } from "@/lib/harness-ux";
 import {
   fetchExperimentRun,
@@ -60,7 +69,7 @@ export const Route = createFileRoute("/_authenticated/judge")({
   },
   head: () => ({
     meta: [
-      { title: "Judge a test — Harness Ledger" },
+      { title: `${TEST_A_RULE_PAGE_TITLE} — Harness Ledger` },
       {
         name: "description",
         content: "Your historical result next to a new Lovable build with the rule.",
@@ -215,10 +224,16 @@ function Page() {
   const [verdicts, setVerdicts] = useState<(Verdict | null)[]>([]);
   const [feedbackEditing, setFeedbackEditing] = useState(false);
   const [feedbackDraft, setFeedbackDraft] = useState("");
+  // Checkpoint 2 2-D: the judge screen's optional regression checkbox --
+  // reset alongside the per-correction verdicts whenever a new run loads.
+  const [regression, setRegression] = useState(false);
   const run = runQuery.data && runQuery.data.available ? runQuery.data.run : null;
 
   useEffect(() => {
-    if (run) setVerdicts(run.corrections.map(() => null));
+    if (run) {
+      setVerdicts(run.corrections.map(() => null));
+      setRegression(false);
+    }
   }, [run]);
 
   const invalidate = () => {
@@ -229,7 +244,8 @@ function Page() {
   const { busy: actionBusy, run: runAction } = useRun(invalidate);
 
   const saveJudge = useMutation({
-    mutationFn: (v: Verdict[]) => post({ action: "judge", run_id: runId!, verdicts: v }),
+    mutationFn: (v: Verdict[]) =>
+      post({ action: "judge", run_id: runId!, verdicts: v, regression }),
     onSuccess: () => {
       toast.success("Saved your verdicts.");
       invalidate();
@@ -254,7 +270,7 @@ function Page() {
   if (runId == null) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Judge a test</h1>
+        <h1 className="text-2xl font-semibold">{TEST_A_RULE_PAGE_TITLE}</h1>
         <p className="text-sm text-muted-foreground">No test was specified.</p>
       </div>
     );
@@ -263,7 +279,7 @@ function Page() {
   if (runQuery.isLoading) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Judge a test</h1>
+        <h1 className="text-2xl font-semibold">{TEST_A_RULE_PAGE_TITLE}</h1>
         <div className="rounded-md border p-6 text-sm text-muted-foreground">Loading…</div>
       </div>
     );
@@ -271,7 +287,7 @@ function Page() {
   if (runQuery.isError || !runQuery.data?.available) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Judge a test</h1>
+        <h1 className="text-2xl font-semibold">{TEST_A_RULE_PAGE_TITLE}</h1>
         <div
           role="alert"
           className="rounded-md border border-destructive/50 bg-destructive/5 p-6 text-sm text-destructive"
@@ -409,12 +425,12 @@ function Page() {
             <p>{TEST_ONE_BUILD_LINE}</p>
           </div>
 
-          {/* (4) Key difference: Lovable's own summary of each side, one
-              under the other, plus the diff toggles -- no invented
+          {/* (4) Relevant visible difference: Lovable's own summary of each
+              side, one under the other, plus the diff toggles -- no invented
               automatic verdict on the difference. */}
           <section className="space-y-3 rounded-md border p-4">
-            <h2 className="text-lg font-medium">{KEY_DIFFERENCE_TITLE}</h2>
-            <p className="text-xs text-muted-foreground">{KEY_DIFFERENCE_INTRO}</p>
+            <h2 className="text-lg font-medium">{RELEVANT_DIFFERENCE_TITLE}</h2>
+            <p className="text-xs text-muted-foreground">{RELEVANT_DIFFERENCE_INTRO}</p>
             <div className="space-y-1">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {HISTORICAL_RESULT_TITLE}
@@ -435,7 +451,8 @@ function Page() {
             </div>
           </section>
 
-          {/* (5) User verdict. */}
+          {/* (5) User verdict: per-correction "Still needed?", the optional
+              regression checkbox, and Save. */}
           {view.status === "judged" ? (
             <div className="space-y-3 rounded-md border p-4">
               <p className="text-sm font-medium">
@@ -482,6 +499,17 @@ function Page() {
                   ))}
                 </ul>
               )}
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="regression-flag"
+                  checked={regression}
+                  onCheckedChange={(v) => setRegression(v === true)}
+                  className="mt-0.5"
+                />
+                <Label htmlFor="regression-flag" className="font-normal">
+                  {REGRESSION_CHECKBOX_LABEL}
+                </Label>
+              </div>
               <Button
                 onClick={() => saveJudge.mutate(verdicts as Verdict[])}
                 disabled={!allChosen || saveJudge.isPending}
@@ -491,32 +519,38 @@ function Page() {
             </div>
           )}
 
-          {/* (6) Replay environment: exactly eight rows, derived from the
-              run's own environment record -- never a silent fallback. */}
+          {/* (6) Evidence strength, and (7) "Why this is an approximation"
+              collapsed underneath it -- derived from the run's own
+              environment record, never a silent fallback. */}
           <section className="space-y-2 rounded-md border p-4">
-            <h2 className="text-lg font-medium">{REPLAY_ENVIRONMENT_TITLE}</h2>
             {view.environment ? (
               <>
-                <dl className="space-y-2 text-sm">
-                  {replayEnvironmentRows(view.environment).map((row) => (
-                    <div key={row.label}>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        {row.label}
-                      </dt>
-                      <dd>{row.text}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <p className="text-sm font-medium">
-                  {evidenceStrengthLine(view.environment.quality)}
-                </p>
+                <h2 className="text-lg font-medium">
+                  {evidenceStrengthTitle(view.environment.quality)}
+                </h2>
+                <p className="text-sm">{evidenceStrengthLine(view.environment.quality)}</p>
+                {view.conclusion ? (
+                  <p className="text-sm font-medium">{conclusionLine(view.conclusion)}</p>
+                ) : null}
+                <AdvancedDetails title={WHY_APPROXIMATION_TITLE}>
+                  <dl className="space-y-2 text-sm">
+                    {replayEnvironmentRows(view.environment).map((row) => (
+                      <div key={row.label}>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          {row.label}
+                        </dt>
+                        <dd>{row.text}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </AdvancedDetails>
               </>
             ) : (
               <p className="text-sm text-muted-foreground">{NO_ENVIRONMENT_RECORD_LINE}</p>
             )}
           </section>
 
-          {/* (7) Full technical details, collapsed by default. */}
+          {/* (8) Full technical details, collapsed by default. */}
           <AdvancedDetails title={FULL_TECHNICAL_DETAILS_TITLE}>
             <div className="space-y-4">
               <div className="space-y-1">
@@ -528,6 +562,16 @@ function Page() {
                     ? `Project id: ${view.original_copy.project_id}`
                     : "No copy on record."}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  {`Screenshot: ${view.original_copy?.screenshot_url ?? "none recorded"}`}
+                </p>
+                {view.original_copy ? (
+                  <p className="text-xs text-muted-foreground">
+                    {`Cleanup status: ${
+                      copyDeletionLine(view.original_copy.deletion_status) ?? "Not deleted."
+                    }`}
+                  </p>
+                ) : null}
                 <p className="whitespace-pre-wrap">{view.original_reply || "No reply recorded."}</p>
               </div>
               <div className="space-y-1">
@@ -537,6 +581,16 @@ function Page() {
                 <p className="text-xs text-muted-foreground">
                   {view.copy ? `Project id: ${view.copy.project_id}` : "No copy on record."}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  {`Screenshot: ${view.copy?.screenshot_url ?? "none recorded"}`}
+                </p>
+                {view.copy ? (
+                  <p className="text-xs text-muted-foreground">
+                    {`Cleanup status: ${
+                      copyDeletionLine(view.copy.deletion_status) ?? "Not deleted."
+                    }`}
+                  </p>
+                ) : null}
                 <p className="whitespace-pre-wrap">{view.copy_reply || "No reply recorded."}</p>
               </div>
               {view.environment?.code_state.request_message_id ? (
@@ -544,6 +598,25 @@ function Page() {
                   {`Request message id: ${view.environment.code_state.request_message_id}`}
                 </p>
               ) : null}
+              {otherActiveRulesLine(view.environment) ? (
+                <p className="text-xs text-muted-foreground">
+                  {otherActiveRulesLine(view.environment)}
+                </p>
+              ) : null}
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  How the conclusion was derived
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                  {conclusionDerivationLines({
+                    verdicts: view.verdicts,
+                    quality: view.environment?.quality ?? null,
+                    regression_flag: view.environment?.regression_flag ?? null,
+                  }).map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </AdvancedDetails>
         </>
