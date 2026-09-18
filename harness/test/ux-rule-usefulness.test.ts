@@ -36,7 +36,7 @@ test("observed and AI review are two separate lines with the spec's wording", ()
       observed_repeat: 3,
       observed_clear: 0,
     }),
-    "Harness found the same issue in all 3 relevant builds.",
+    "Harness Ledger found the same issue in all 3 relevant builds.",
   );
   assert.equal(
     ux.aiReviewLine({ ai_not_followed: 3, ai_followed: 0 }),

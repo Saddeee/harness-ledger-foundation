@@ -25,7 +25,7 @@ export const STORY_STEPS = [
     text: 'You chat with Lovable as usual. When you say "no, use kronor" or "keep the login page", that is a correction.',
   },
   {
-    title: "Harness finds a reusable lesson",
+    title: "Harness Ledger finds a reusable lesson",
     text: "Sync reads your chats, Knowledge and Skills on a schedule. Analysis, on your command, finds corrections worth keeping.",
   },
   {
@@ -114,9 +114,9 @@ export const ARCHITECTURE_CHAIN = [
   "your Lovable projects",
 ] as const;
 export const ARCHITECTURE_MCP_LINE =
-  "Lovable MCP lets Harness operate Lovable. Harness MCP lets your agent operate Harness.";
+  "Lovable MCP lets Harness Ledger operate Lovable. Harness Ledger MCP lets your agent operate Harness Ledger.";
 export const ARCHITECTURE_MCP_TEXT =
-  "Harness MCP is an optional interface: your own agent can list suggestions, decide on them, start a replay, read test evidence, and restore Knowledge versions with exactly the permissions the web app enforces.";
+  "Harness Ledger MCP is an optional interface: your own agent can list suggestions, decide on them, start a replay, read test evidence, and restore Knowledge versions with exactly the permissions the web app enforces.";
 
 export const HOSTED_TITLE = "About the hosted version";
 export const HOSTED_TEXT =

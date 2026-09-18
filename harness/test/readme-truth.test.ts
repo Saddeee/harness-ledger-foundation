@@ -78,7 +78,7 @@ test("README: hosted limitation is authorization, Skills are not described as wr
   assert.match(readme, /## .*Use Harness Ledger through MCP/);
   assert.match(
     readme,
-    /Lovable MCP lets Harness operate Lovable\. Harness MCP lets your agent operate Harness\./,
+    /Lovable MCP lets Harness Ledger operate Lovable\. Harness Ledger MCP lets your agent operate Harness Ledger\./,
   );
   assert.match(readme, /not wired/i, "Skill writes to Lovable must be stated as not wired");
   assert.match(

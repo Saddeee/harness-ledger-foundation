@@ -76,7 +76,7 @@ flowchart TD
 
 Every write reads your Knowledge fresh, compares it with what Harness Ledger last wrote, composes the block, writes, reads it back, and only counts as done when the read-back matches exactly. If you edited your own text in Lovable meanwhile, the rules are recomposed around it. If someone edited inside the block, the write stops with a conflict instead of overwriting. Removing the last rule removes the whole block. Blocks written under the earlier heading are still recognised as Harness Ledger's own.
 
-**Watching later builds.** For each live rule, Harness Ledger reports two things separately: what it observed ("Harness found the same issue in 2 of 3 relevant builds") and what the AI review found in Lovable's replies ("AI review marked the rule as not followed in 3 of 3 relevant builds", with a quote). It never claims a rule caused an outcome.
+**Watching later builds.** For each live rule, Harness Ledger reports two things separately: what it observed ("Harness Ledger found the same issue in 2 of 3 relevant builds") and what the AI review found in Lovable's replies ("AI review marked the rule as not followed in 3 of 3 relevant builds", with a quote). It never claims a rule caused an outcome.
 
 **Is this rule still useful?** That is the question on every rule, with **Keep**, **Review**, **Retire** and **Not sure**. Repeated issues open a "Needs attention" recommendation (rewrite the rule or turn it into a Skill). A rule with no relevant task for 60 days opens "Review for relevance", not a retirement. When you ask Lovable for the opposite of a live rule, the message is classified first: a one-task exception or a temporary override is noted; only a permanent change of preference or a genuine contradiction questions the rule.
 
@@ -266,9 +266,9 @@ npm run harness:executor -- --disconnect   # forget the Lovable login
 
 ## 9. Use Harness Ledger through MCP
 
-Lovable MCP lets Harness operate Lovable. Harness MCP lets your agent operate Harness.
+Lovable MCP lets Harness Ledger operate Lovable. Harness Ledger MCP lets your agent operate Harness Ledger.
 
-The web UI is not mandatory. Harness MCP is a local MCP server (`harness/src/mcp-server.ts`, registered in `.mcp.json`) that exposes the same actions as the app, through the same code paths, with the same project allowlist, decision mode, budgets, ownership rules, versioning and audit. It is not a privileged bypass: a tool that would spend credits refuses in exactly the cases the button would.
+The web UI is not mandatory. Harness Ledger MCP is a local MCP server (`harness/src/mcp-server.ts`, registered in `.mcp.json`) that exposes the same actions as the app, through the same code paths, with the same project allowlist, decision mode, budgets, ownership rules, versioning and audit. It is not a privileged bypass: a tool that would spend credits refuses in exactly the cases the button would.
 
 Implemented and covered by tests:
 
@@ -327,7 +327,7 @@ harness/                      local runtime (Node, SQLite via better-sqlite3)
                               schedule lock, CLI
   src/analysis/               classify, segment, propose (Rule writer), context packet,
                               reanalyse, adherence (Judge), health, retire, run
-  src/mcp-server.ts           Harness MCP: the same actions as the app, over the adapter
+  src/mcp-server.ts           Harness Ledger MCP: the same actions as the app, over the adapter
 scripts/                      npm run setup and npm run harness:start
   src/llm/                    OpenAI, Anthropic, Google and Claude Code clients, budget
 ```
@@ -385,7 +385,7 @@ Besides behaviour tests, structural tests read the page source and pin product c
 - Historical replay with the environment record and evidence-strength label; copies kept as projects; screenshots.
 - Rule usefulness: observed and AI-review lines, Keep / Review / Retire / Not sure, review for relevance, classified opposite requests.
 - Skill proposals: propose, edit, approve, version, restore, retire (local).
-- History, Tests, Skills, Projects, Settings pages; Harness MCP with the same permissions as the app.
+- History, Tests, Skills, Projects, Settings pages; Harness Ledger MCP with the same permissions as the app.
 
 ### Current limitations
 

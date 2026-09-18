@@ -177,7 +177,7 @@ Add a duplicate-booking action that opens the booking form with the customer and
 
 Expected: because the Skill is not in Lovable, Lovable may or may not reuse the form. Sync → Analyse. Either
 outcome is recorded honestly: if a new form pattern appears, correct it in the chat and let Harness observe
-the repeat correction ("Harness found the same issue in 1 relevant build."). This is the argument for wiring
+the repeat correction ("Harness Ledger found the same issue in 1 relevant build."). This is the argument for wiring
 Skill creation next.
 
 ## 7. Historical replay of the currency rule (credits: one build, expected 0.5–1.5)

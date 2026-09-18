@@ -46,7 +46,7 @@ test("healthLine: never says 'helped', for a scripted range of health inputs", (
   // The spec's own example line, verbatim.
   assert.equal(
     ux.healthLine({ applicable_tasks: 6, hurt: 1, last_applicable_at: "2026-09-03T00:00:00Z" }),
-    "Harness found the same issue in 1 of 6 relevant builds. Last relevant build 3 Sep.",
+    "Harness Ledger found the same issue in 1 of 6 relevant builds. Last relevant build 3 Sep.",
   );
   assert.equal(
     ux.healthLine({ applicable_tasks: 0, hurt: 0, last_applicable_at: null }),

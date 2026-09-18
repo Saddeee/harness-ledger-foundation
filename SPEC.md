@@ -33,7 +33,7 @@ Skill in Lovable is not wired yet and the UI, README and landing page say so (DE
 
 ## 2. Modes
 
-- **Ask me first** (default): Harness syncs, analyses, identifies corrections, proposes Knowledge and Skills,
+- **Ask me first** (default): Harness Ledger syncs, analyses, identifies corrections, proposes Knowledge and Skills,
   observes live rules and recommends. It asks before anything consequential: spending credits, writing
   Knowledge, creating or updating Skills, retiring, restoring, workspace-wide instructions.
 - **Automatic**: performs only actions explicitly allowed, within project allowlists, ownership, per-action
@@ -70,7 +70,7 @@ assumed from the model name."
 
 ## 5. Replay environment record
 
-For every replay (and every arm of a future comparison) Harness records and shows: Code state, Project
+For every replay (and every arm of a future comparison) Harness Ledger records and shows: Code state, Project
 Knowledge (source: exact_historical / nearest_earlier_version / current_fallback / unavailable, chosen from
 the snapshot history by effective time, never silently from today), Workspace Knowledge (today's,
 uncontrolled), Skills (today's, uncontrolled), Chat history (not copied), Candidate rule, Other active rules
@@ -105,7 +105,7 @@ inside a copy consumes normal Lovable builder credits." Costs are recorded from 
 Write sequence: read remote fresh → compare (whole-content hash, then the block by its bullet lines) → stop
 if the block changed externally → preserve everything outside the block byte-for-byte → compose → write →
 read back → confirm exact match → the version record moves from pending to written (or stale / failed).
-Blocks written under earlier headings are recognised as Harness's own. Removing the last rule removes the
+Blocks written under earlier headings are recognised as Harness Ledger's own. Removing the last rule removes the
 whole block.
 
 ## 8. Sync and analysis
@@ -124,7 +124,7 @@ review item instead of overwriting.
 Signals are tracked separately: applicability, instruction availability, explicit reference, behavioural
 compliance (Judge), predicted issue observed, repeated correction, human acceptance, usefulness decision,
 historical replay evidence, paired-comparison evidence. The user question is "Is this rule still useful?"
-with Keep / Review / Retire / Not sure. Copy says what was observed ("Harness found the same issue in all 3
+with Keep / Review / Retire / Not sure. Copy says what was observed ("Harness Ledger found the same issue in all 3
 relevant builds.") and what the AI judged ("AI review marked the rule as not followed in 3 of 3 relevant
 builds.") without causal claims. No applicable task for 60 days opens "Review for relevance" (Keep /
 Archive / Move to Skill / Retest / Retire), never automatic retirement. An opposite request is classified
@@ -134,8 +134,8 @@ genuine_contradiction, unclear); only the last two question a standing rule.
 ## 10. Interfaces
 
 - Web UI: Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings, judging page.
-- Harness MCP: the same actions with the same permissions as the UI (DECISIONS.md D5). "Lovable MCP lets
-  Harness operate Lovable. Harness MCP lets your agent operate Harness."
+- Harness Ledger MCP: the same actions with the same permissions as the UI (DECISIONS.md D5). "Lovable MCP lets
+  Harness operate Lovable. Harness Ledger MCP lets your agent operate Harness Ledger."
 - CLI: connect, status, once, analyse, disconnect.
 
 ## 11. Privacy

@@ -76,7 +76,7 @@ be verified in this checkpoint.
 would ship an unverified write path to a shared workspace resource with no ownership signal for user-authored
 Skills. Recorded as the first paid step after the demo (needs one approved Skill write to verify).
 
-## D5 — Harness MCP becomes a thin layer over the UI's own paths
+## D5 — Harness Ledger MCP becomes a thin layer over the UI's own paths
 
 **Decision:** `harness/src/mcp-server.ts` is rewritten to call only `adapter.ts` functions (the same
 `improvementActionAndWrite`, `startExperiment` via the queue, `buildTimeline`, views). Raw store tools

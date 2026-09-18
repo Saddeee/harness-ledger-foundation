@@ -35,7 +35,7 @@ test("landing: the eight story steps, in order", () => {
     copy.STORY_STEPS.map((s) => s.title),
     [
       "Correct Lovable",
-      "Harness finds a reusable lesson",
+      "Harness Ledger finds a reusable lesson",
       "Choose Knowledge or Skill",
       "Review or edit the instruction",
       "Test against a real previous request",
@@ -73,7 +73,7 @@ test("landing: three evidence levels, none called proof, uncontrolled context na
 test("landing: the MCP sentence and the hosted status wording, verbatim", () => {
   assert.equal(
     copy.ARCHITECTURE_MCP_LINE,
-    "Lovable MCP lets Harness operate Lovable. Harness MCP lets your agent operate Harness.",
+    "Lovable MCP lets Harness Ledger operate Lovable. Harness Ledger MCP lets your agent operate Harness Ledger.",
   );
   assert.equal(
     copy.HOSTED_TEXT,

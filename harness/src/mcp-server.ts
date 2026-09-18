@@ -28,13 +28,13 @@ import * as adapter from "./adapter.js";
 import type { Improvement } from "./adapter.js";
 
 const SERVER_INSTRUCTIONS =
-  "Harness MCP lets your agent operate Harness Ledger with the same permissions as the web app. " +
-  "Lovable MCP (a different server) lets Harness operate Lovable.";
+  "Harness Ledger MCP lets your agent operate Harness Ledger with the same permissions as the web app. " +
+  "Lovable MCP (a different server) lets Harness Ledger operate Lovable.";
 
 /** Every mutating tool's actor string, so the audit trail (rule_revisions,
  * events) can tell an MCP-driven decision apart from one made by clicking a
  * button in the browser -- the checks that run are identical either way. */
-const MCP_ACTOR = "agent via Harness MCP";
+const MCP_ACTOR = "agent via Harness Ledger MCP";
 
 const PARITY_NOTE =
   " Goes through the exact same adapter.ts call the web app's own button uses, " +
@@ -231,7 +231,7 @@ export function createHarnessMcpServer(): McpServer {
   registerTool(
     server,
     "list_suggestions",
-    "List Harness's suggestions (the same items the Inbox and Improvements pages show): " +
+    "List Harness Ledger's suggestions (the same items the Inbox and Improvements pages show): " +
       "id, rule text, the underlying correction, destination, and a plain status line. " +
       "filter: 'open' (awaiting a decision, the default), 'decided' (accepted or skipped), or 'all'." +
       READ_ONLY_NOTE,
@@ -252,7 +252,7 @@ export function createHarnessMcpServer(): McpServer {
     server,
     "explain_suggestion",
     "Full detail for one suggestion (the same view the Inbox/Improvements card expands into), " +
-      "plus a preview of the Knowledge block Harness would write for its destination." +
+      "plus a preview of the Knowledge block Harness Ledger would write for its destination." +
       READ_ONLY_NOTE,
     { id: z.number().int() },
     (input: { id: number }) => {
@@ -366,7 +366,7 @@ export function createHarnessMcpServer(): McpServer {
       "Tests/Improvements pages offer (adapter.improvementActionAndWrite's 'test' " +
       "interception: startExperiment then kickExperimentRunner, queued, not awaited here). " +
       "show_original also makes a free copy of the original build to compare against. " +
-      "Refuses -- with the exact same sentence the app shows -- when Harness is not " +
+      "Refuses -- with the exact same sentence the app shows -- when Harness Ledger is not " +
       "connected, a replay is already running, or this would exceed the monthly Lovable " +
       "credit budget." +
       PARITY_NOTE,
@@ -427,8 +427,8 @@ export function createHarnessMcpServer(): McpServer {
     "Restore a previously written Knowledge version -- the same action the History page's " +
       "'Restore' button takes: adapter.createRestoreVersion stages the old content as a new " +
       "pending write, then adapter.retryKnowledgeWrite runs it through the same write path " +
-      "every other write uses (fresh read, sha check against what Harness expects to be " +
-      "live, then a read-back) -- it refuses, worded the same way, if Harness is not " +
+      "every other write uses (fresh read, sha check against what Harness Ledger expects to be " +
+      "live, then a read-back) -- it refuses, worded the same way, if Harness Ledger is not " +
       "connected or the live content no longer matches." +
       PARITY_NOTE,
     { version_id: z.number().int() },
@@ -557,7 +557,7 @@ export function createHarnessMcpServer(): McpServer {
     "edit_skill_proposal",
     "Edit a Skill proposal's name/content as a new versioned revision -- " +
       "adapter.improvementActionAndWrite('edit_skill_proposal'), the exact call the Skills page's " +
-      "own editor makes. The edit, its revision history and its audit trail all stay in Harness " +
+      "own editor makes. The edit, its revision history and its audit trail all stay in Harness Ledger " +
       "Ledger; nothing is published to Lovable. Refuses, with the exact sentence the app shows, on " +
       "a proposal the user owns -- Harness Ledger never edits a Skill it did not itself propose." +
       PARITY_NOTE,
@@ -582,7 +582,7 @@ export function createHarnessMcpServer(): McpServer {
     server,
     "approve_skill_proposal",
     "Approve a Skill proposal -- adapter.improvementActionAndWrite('approve_skill_proposal'), the " +
-      "same action the Skills page's own Approve button takes. Approving only changes Harness " +
+      "same action the Skills page's own Approve button takes. Approving only changes Harness Ledger " +
       "Ledger's own record (a new versioned revision); it never publishes the Skill to Lovable in " +
       "this checkpoint. Refuses, worded exactly the way the app does, on a proposal the user owns." +
       PARITY_NOTE,

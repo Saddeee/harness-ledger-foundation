@@ -47,7 +47,7 @@ blocked, inferred. Command outputs are the tails as run; full logs are not kept 
 | environment-quality label computed correctly | `environmentQuality` tests |
 | uncontrollable context never hidden | `UNCONTROLLED_CONTEXT` test; judge page renders `uncontrolled` |
 | source project cannot be deleted | `experiments.test.ts` deleteTestCopy refuses source |
-| arbitrary resources cannot be marked safe to delete | Harness MCP no longer exposes `register_experiment_resource` / `update_experiment_resource_status` (WP6) |
+| arbitrary resources cannot be marked safe to delete | Harness Ledger MCP no longer exposes `register_experiment_resource` / `update_experiment_resource_status` (WP6) |
 | copy wording says zero builder credits rather than free | `ux-round6-*.test.ts` cost sentence |
 | replay retention status truthful | judge page copy states kept/deleted per copy; `cleanupCopy` tests |
 | ordinary Sync is incremental | `executor.test.ts` syncHistory stop-at-known, cursor park/resume |
@@ -87,5 +87,5 @@ blocked, inferred. Command outputs are the tails as run; full logs are not kept 
 - The classifier's contradiction `kind` has not been exercised live.
 - The replay environment record is verified on backfilled runs and fake-server tests; no new live replay was run.
 - Reanalyse history is verified with fake LLM calls only.
-- Harness MCP over stdio with a real client was not exercised (in-memory transport only).
+- Harness Ledger MCP over stdio with a real client was not exercised (in-memory transport only).
 - The Cloudflare build was not served with `wrangler dev`; hosted mode was exercised through the dev server's hosted code path.

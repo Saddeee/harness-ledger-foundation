@@ -54,7 +54,7 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
   );
   assert.equal(
     ux.healthLine({ applicable_tasks: 4, hurt: 2, last_applicable_at: null }),
-    "Harness found the same issue in 2 of 4 relevant builds.",
+    "Harness Ledger found the same issue in 2 of 4 relevant builds.",
     "omits the last-build sentence when null",
   );
   assert.equal(
@@ -63,11 +63,11 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
       hurt: 1,
       last_applicable_at: "2026-09-01T00:00:00Z",
     }),
-    "Harness found the same issue in 1 of 4 relevant builds. Last relevant build 1 Sep.",
+    "Harness Ledger found the same issue in 1 of 4 relevant builds. Last relevant build 1 Sep.",
   );
   assert.equal(
     ux.healthLine({ applicable_tasks: 1, hurt: 0, last_applicable_at: null }),
-    "Harness found no repeat of the issue in 1 relevant build.",
+    "Harness Ledger found no repeat of the issue in 1 relevant build.",
     "singular 'build' when there is one",
   );
   assert.equal(
@@ -78,7 +78,7 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
       observed_repeat: 3,
       observed_clear: 0,
     }),
-    "Harness found the same issue in all 3 relevant builds.",
+    "Harness Ledger found the same issue in all 3 relevant builds.",
     "the separately tracked observed counts win over the legacy pair",
   );
   assert.equal(

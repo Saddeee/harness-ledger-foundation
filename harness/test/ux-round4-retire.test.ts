@@ -75,7 +75,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   // Fix round 1 item 2: "helped" left the retire reason sentence too --
   // same honest vocabulary as healthLine.
-  assert.equal(hurt, "Harness found the same issue in 3 of 4 relevant builds.");
+  assert.equal(hurt, "Harness Ledger found the same issue in 3 of 4 relevant builds.");
 
   const contradiction = ux.retireReasonSentence({
     reason: "contradiction",
@@ -107,7 +107,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   // itself, so the wording (and honesty guarantee) can never drift apart.
   assert.equal(
     sinceLine,
-    "Harness found the same issue in 3 of 4 relevant builds. Last relevant build 1 Sep.",
+    "Harness Ledger found the same issue in 3 of 4 relevant builds. Last relevant build 1 Sep.",
   );
 });
 

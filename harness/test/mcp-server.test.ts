@@ -1,4 +1,4 @@
-// Round WP6 (DECISIONS.md D5): Harness MCP is now a thin layer over
+// Round WP6 (DECISIONS.md D5): Harness Ledger MCP is now a thin layer over
 // adapter.ts, the same module the web app's own routes import -- these
 // tests drive it through the real MCP protocol (InMemoryTransport +
 // Client), the way an agent actually would, rather than importing its
@@ -175,8 +175,8 @@ test("server carries the Harness-vs-Lovable-MCP instructions string", async () =
     const instructions = client.getInstructions();
     assert.equal(
       instructions,
-      "Harness MCP lets your agent operate Harness Ledger with the same permissions as the web app. " +
-        "Lovable MCP (a different server) lets Harness operate Lovable.",
+      "Harness Ledger MCP lets your agent operate Harness Ledger with the same permissions as the web app. " +
+        "Lovable MCP (a different server) lets Harness Ledger operate Lovable.",
     );
   } finally {
     await client.close();

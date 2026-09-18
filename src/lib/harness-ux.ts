@@ -508,7 +508,9 @@ export function retireReasonSentence(input: RetireLike): string {
   if (input.reason === "unused") {
     return "This rule has not applied to any task in 60 days. Review whether it is still relevant.";
   }
-  return observedLine(input.health) ?? "Harness found the same issue in the relevant builds.";
+  return (
+    observedLine(input.health) ?? "Harness Ledger found the same issue in the relevant builds."
+  );
 }
 
 // The one-line health summary under a retirement proposal's title -- the
@@ -569,10 +571,10 @@ export function observedLine(health: HealthLike | null | undefined): string | nu
       : health.applicable_tasks;
   if (total === 0) return "No relevant builds since this rule was added.";
   if (repeat === 0)
-    return `Harness found no repeat of the issue in ${total} relevant build${total === 1 ? "" : "s"}.`;
+    return `Harness Ledger found no repeat of the issue in ${total} relevant build${total === 1 ? "" : "s"}.`;
   if (repeat === total)
-    return `Harness found the same issue in all ${total} relevant build${total === 1 ? "" : "s"}.`;
-  return `Harness found the same issue in ${repeat} of ${total} relevant builds.`;
+    return `Harness Ledger found the same issue in all ${total} relevant build${total === 1 ? "" : "s"}.`;
+  return `Harness Ledger found the same issue in ${repeat} of ${total} relevant builds.`;
 }
 
 /** What the AI review (the Judge reading Lovable's replies) marked, shown

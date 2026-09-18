@@ -1,4 +1,4 @@
-# Harness MCP after WP6 (2026-09-18), updated Checkpoint 2 2-F (2026-09-18)
+# Harness Ledger MCP after WP6 (2026-09-18), updated Checkpoint 2 2-F (2026-09-18)
 
 `harness/src/mcp-server.ts` was rewritten per DECISIONS.md D5. Every tool below calls only
 functions exported from `harness/src/adapter.ts` -- the same module
@@ -21,7 +21,7 @@ call to `recordKnowledgeReadback`.
 | Tool | What it does | UI path it mirrors |
 |---|---|---|
 | `health` | Reports local Harness Ledger service health and the SQLite database path. | No page reads this directly; it is `store.health()`, the same signal `npm run harness:start` checks on boot. |
-| `list_suggestions` | Lists Harness's suggestions -- id, rule text, the underlying correction, destination, and a plain status line -- filtered to open, decided, or all. | The Inbox and Improvements pages' own list (`GET /api/public/harness/improvements` -> `adapter.listImprovements`). |
+| `list_suggestions` | Lists Harness Ledger's suggestions -- id, rule text, the underlying correction, destination, and a plain status line -- filtered to open, decided, or all. | The Inbox and Improvements pages' own list (`GET /api/public/harness/improvements` -> `adapter.listImprovements`). |
 | `explain_suggestion` | Returns one suggestion's full detail plus a preview of the Knowledge block Harness would write for its destination. | An Inbox/Improvements card expanded to "More detail" (`adapter.getImprovement`), plus its Knowledge preview. |
 | `decide_suggestion` | Decides one suggestion: accept to the project, accept to the workspace, skip (with an optional reason), queue a historical replay before deciding ("test it first"), or change its wording. Writes to Lovable Knowledge immediately when connected, exactly like pressing the button, and states a refusal in the app's own words when it can't. | The Inbox/Improvements POST route's decision buttons (`adapter.improvementActionAndWrite`, `src/routes/api/public/harness/improvements.ts`). |
 | `list_rules` | Lists active and retired rules for one project (or every allowed project plus the workspace). | The Instructions page's per-target rules table (`adapter.activeRulesForTarget`/`retiredRulesForTarget`, `src/routes/api/public/harness/knowledge.ts`). |
@@ -56,7 +56,7 @@ caller, and the five above already cover propose -> read -> edit -> approve -> r
 - `mcp-server.ts` now exports `createHarnessMcpServer(): McpServer` and only connects stdio when
   run as the main module (`import.meta.url` checked against `process.argv[1]`), so tests can drive
   it over `InMemoryTransport` without spawning a process.
-- The server declares an `instructions` string: "Harness MCP lets your agent operate Harness
+- The server declares an `instructions` string: "Harness Ledger MCP lets your agent operate Harness Ledger
   Ledger with the same permissions as the web app. Lovable MCP (a different server) lets Harness
   operate Lovable."
 - `.mcp.json`'s `harness` entry is unchanged (still `HARNESS_DB_PATH=harness/data/harness.db`, the
