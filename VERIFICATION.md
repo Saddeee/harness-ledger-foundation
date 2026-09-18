@@ -23,13 +23,13 @@ blocked, inferred. Command outputs are the tails as run; full logs are not kept 
 | root typecheck | `npm run typecheck` | pending |
 | harness typecheck | `cd harness && npm run typecheck` | pending |
 | lint | `npm run lint` | pending |
-| production build (hosted preview) | `npm run build` | pending |
-| hosted build imports no better-sqlite3 | `grep -r better-sqlite3 .output` | pending |
-| local runtime smoke | second dev server on a spare port against a DB copy; GET runtime/skills/improvements routes | pending |
-| hosted-preview smoke | `npm run preview` without HARNESS_RUNTIME; runtime route says local-only | pending |
-| MCP protocol smoke | `harness/test/mcp-server.test.ts` (in-memory transport) | pending |
-| README links and truth | `harness/test/readme-truth.test.ts` | pending |
-| setup scripts | `harness/test/setup-scripts.test.ts`; fresh clone `npm run setup` | pending |
+| production build (hosted preview) | `npm run build` | verified: exit 0, preset cloudflare-module, `.output/` generated (2026-09-18 05:05 UTC) |
+| hosted build imports no better-sqlite3 | `grep -rl better-sqlite3 .output \| wc -l` | verified: 0 files; `harness/dist/*` appears only as dynamic-import strings behind `HARNESS_RUNTIME` |
+| local runtime smoke | dev server on 127.0.0.1:18713 with `HARNESS_RUNTIME=local` against a copy of the live DB, cron-secret auth | verified: runtime `local`; skills route available; `improvements?run=7` → kind historical_replay, quality historical_approximation, Project Knowledge nearest_earlier_version, other active rule = kronor; `runs=1` lists 1–7 (1–2 not_comparable); executor route returns `automatic_analysis_after_sync: false` |
+| hosted-mode smoke | dev server on 127.0.0.1:18712 without `HARNESS_RUNTIME` | verified: runtime `{"mode":"hosted"}`; skills route → "This is the hosted preview…"; unauthenticated → 401; landing 200. The Cloudflare build itself needs `wrangler dev`, not run here |
+| MCP protocol smoke | `harness/test/mcp-server.test.ts` (in-memory transport) | verified: 14 pass; 13 tools; parity refusals identical to the UI path |
+| README links and truth | `harness/test/readme-truth.test.ts` | verified: 5 pass (anchors, relative links, banned wording, hosted wording, setup promise, block example) |
+| setup scripts | `harness/test/setup-scripts.test.ts`; fresh clone `npm run setup` | verified: 9 pass; WP7 ran `npm run setup` in a scratch clone (Node 22.23.2, installs, build, schema 21, 0700 data dir) |
 | fresh clone | `git clone` into scratch, `npm run setup` | pending |
 
 ## C. Required test list from the checkpoint brief → where it lives
