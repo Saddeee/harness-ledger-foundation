@@ -74,3 +74,29 @@ the structural tests in `harness/test/ux*.test.ts` (update them with intent, nev
 - 7: `setup-scripts.test.ts` (node floor, bind address, DB path defaults).
 - 8: README link test; landing page structural test.
 - 11: full matrix in `VERIFICATION.md`.
+
+---
+
+# Checkpoint 2 (2026-09-18, evening): demo readiness and product-surface simplification
+
+Accepted premise: backend capability is sufficient; the risk is that a new user cannot tell what to do,
+what Harness Ledger recommends, what happens next, and whether Lovable or credits are affected.
+Product promise: "Harness Ledger learns from the corrections you give Lovable, turns reusable lessons into
+Knowledge or Skills, and helps you decide whether those instructions should remain."
+Naming rule (owner feedback): the product is always "Harness Ledger" in anything a person reads; never
+"Harness" alone. The MCP server is "Harness Ledger MCP" in copy.
+
+| WP | Name | Depends | Owner / files |
+|---|---|---|---|
+| 2-0 | Backup + migration verification (done: `harness.db.bak-checkpoint2-202609181948`, schema 21, 7 runs, decisions intact); migration v22 deletion status | — | orchestrator |
+| 2-A | Onboarding path + Overview next-action page + nav; landing → app link | — | subagent: `src/routes/_authenticated/overview.tsx`, `onboarding.tsx` (new), `route.tsx` (nav + first-use redirect), `src/lib/onboarding-copy.ts` (new), `src/routes/index.tsx` (CTA only), tests `harness/test/ux-onboarding.test.ts` |
+| 2-B | Inbox card + Suggestions detail three-level hierarchy; action consequence lines | — | subagent: `src/components/harness/improvement.tsx`, `inbox.tsx`, `ledger.tsx`, `src/lib/harness-ux.ts` (section `2-B`), tests |
+| 2-C | Instructions (Knowledge / Skills split, attention first, status lines), Skills page cards, History (current state vs timeline, diffs collapsed) | — | subagent: `instructions.tsx`, `skills.tsx`, `history.tsx`, `timeline.tsx`, `harness-ux.ts` (section `2-C`), tests |
+| 2-D | Replay page order + "Why this is an approximation" + derived conclusion (historical_support / not_supported / possibly_harmful / inconclusive) | — | subagent: `harness/src/executor/replay-environment.ts` (conclusion fn), `harness/src/improvements.ts` (judge + view), `judge.tsx`, `tests.tsx`, `harness-ux.ts` (section `2-D`), tests |
+| 2-E | OpenAI compatibility strategy + Test provider action | — | subagent: `harness/src/llm/openai.ts`, `llm/index.ts`, `llm/capabilities.ts` (new), `src/routes/api/public/harness/executor.ts` (test_provider action), `local-settings.tsx` (Test provider button), tests |
+| 2-F | Safety gaps: deletion read-back, MCP Skill-proposal tools, MCP budget parity test, hosted-build test, safe-to-delete test | — | subagent: `harness/src/executor/experiments.ts`, `lovable-rest.ts`, `mcp-server.ts`, `adapter.ts` (append), `harness/test/*` |
+| 2-G | Capability manifest + consistency tests | — | subagent: `harness/src/capabilities.ts` (new), `harness/test/capabilities.test.ts`, README/landing validation hooks |
+| 2-H | Naming sweep, automatic-mode and sync copy, README two-depth rewrite, landing reorder, DEMO_PLAN simplification, operator checklist, git prep, PR summary, HANDOFF | 2-A…2-G | orchestrator |
+
+Shared-file rule: `harness-ux.ts` and `adapter.ts` receive appended delimited sections only; re-read before
+every edit; no git commands by subagents. Strict scope: no Lovable operation, no credits, no merge, no publish.
