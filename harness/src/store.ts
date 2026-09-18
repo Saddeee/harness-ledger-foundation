@@ -3977,9 +3977,15 @@ export type ExperimentRunRow = {
   copy_screenshot_url: string | null;
   original_screenshot_url: string | null;
   judged_corrections_json: string | null;
+  // Migration v18 (checkpoint 2026-09-18): what kind of test this was and
+  // the replay environment record (see executor/replay-environment.ts).
+  kind: ExperimentKind;
+  environment_json: string | null;
 };
 
-/** Opens a new attempt at rule_id's paired test, queued and unstarted --
+export type ExperimentKind = "historical_replay" | "paired_comparison";
+
+/** Opens a new attempt at rule_id's historical replay, queued and unstarted --
  * copying/building/judging are driven by later updateExperimentRun calls.
  * source_project_id/request_message_external_id are fixed at creation (the
  * "what are we remixing, and from where" never changes mid-run); everything
@@ -4037,6 +4043,8 @@ const EXPERIMENT_RUN_COLUMNS = new Set<string>([
   "copy_screenshot_url",
   "original_screenshot_url",
   "judged_corrections_json",
+  "kind",
+  "environment_json",
   "score",
   "verdicts_json",
   "error",

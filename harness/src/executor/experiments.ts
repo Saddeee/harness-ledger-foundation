@@ -19,7 +19,7 @@
  */
 import * as store from "../store.js";
 import type { ExperimentRunRow } from "../store.js";
-import { composeManagedKnowledge } from "../knowledge.js";
+import { buildReplayEnvironment } from "./replay-environment.js";
 import { humanVisibleText } from "../analysis/reply-text.js";
 import { status as lovableConnectionStatus } from "./lovable-auth.js";
 import { ensureFreshLovableToken } from "./lovable-mcp.js";
@@ -129,7 +129,9 @@ function capDiff(diffText: string): { lines: string[]; truncated: boolean } {
   return { lines: allLines.slice(0, DIFF_LINE_CAP), truncated: allLines.length > DIFF_LINE_CAP };
 }
 
-/** The Knowledge snapshot this run's copy should start from: the newest
+/** Superseded by replay-environment.ts#selectProjectKnowledgeAt (which also
+ * records HOW the snapshot was chosen); kept only for its unit test and any
+ * external caller. The Knowledge snapshot this run's copy should start from: the newest
  * snapshot at or before the episode's own started_at (so the copy's
  * Knowledge, like its code, reflects "before your request" as closely as
  * Harness's own snapshot history allows), else the newest snapshot at all,
@@ -456,15 +458,28 @@ export async function runExperiment(
     rest.allowCopy(copyProjectId);
     store.updateExperimentRun(runId, { copy_project_id: copyProjectId });
 
-    // ---- 2. Knowledge = historical snapshot + the rule under test (spec §6 Run 2) ----
+    // ---- 2. Knowledge = historical Project Knowledge + the candidate ----
+    // Checkpoint 2026-09-18: the replay environment record (see
+    // replay-environment.ts) chooses the Project Knowledge in force at the
+    // request, keeps the rules that were live in it, adds only the
+    // candidate, and says what could not be reconstructed. Recorded on the
+    // run before the write so the judging screen can always show it.
     const candidateEpisode = findCandidateEpisode(initial.correction_candidate_id);
     const episodeStartedAt = candidateEpisode?.episode_started_at ?? null;
-    const snapshots = store.listKnowledgeSnapshots("project", source);
-    const baseContent = knowledgeBaseAtOrBefore(snapshots, episodeStartedAt);
-    const composed = composeManagedKnowledge(baseContent, [
-      { id: initial.rule_id, instruction: ruleInstruction },
-    ]);
-    await rest.setProjectKnowledge(copyProjectId, composed.final_content);
+    const environment = buildReplayEnvironment({
+      kind: "historical_replay",
+      source_project_id: source,
+      episode_started_at: episodeStartedAt,
+      run_started_at: initial.started_at,
+      candidate: { id: initial.rule_id, instruction: ruleInstruction },
+      request_rest_message_id: restRequestId,
+      chat_history_included: false,
+    });
+    store.updateExperimentRun(runId, {
+      kind: "historical_replay",
+      environment_json: JSON.stringify(environment),
+    });
+    await rest.setProjectKnowledge(copyProjectId, environment.knowledge_for_copy);
 
     // ---- 3. build in the copy (spec §6 Run 3) ----
     store.updateExperimentRun(runId, { status: "building", stage_note: "Building in the copy" });

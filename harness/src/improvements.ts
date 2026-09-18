@@ -8,6 +8,7 @@ import * as store from "./store.js";
 import { composeManagedKnowledge, sha256 } from "./knowledge.js";
 import { lineDiff, type DiffLine } from "./diff.js";
 import { recomputeRuleHealth } from "./analysis/health.js";
+import { parseReplayEnvironment, type ReplayEnvironment } from "./executor/replay-environment.js";
 
 export type StageKey = "found" | "review" | "proof" | "in_lovable";
 export type StageState = "complete" | "current" | "future" | "blocked";
@@ -2580,6 +2581,12 @@ function judgeRun(runId: number, verdicts: ("yes" | "no" | "unclear")[]): Improv
 // run id.
 export type ExperimentRunView = {
   id: number;
+  // Checkpoint 2026-09-18: what kind of test this was (every run so far is a
+  // historical replay) and its environment record -- see
+  // executor/replay-environment.ts. `environment` is null only for a run
+  // that failed before its Knowledge was chosen.
+  kind: store.ExperimentKind;
+  environment: ReplayEnvironment | null;
   status: store.ExperimentStatus;
   stage_note: string | null;
   started_at: string;
@@ -2679,6 +2686,8 @@ export function buildExperimentRunView(runId: number): ExperimentRunView | null 
 
   return {
     id: run.id,
+    kind: run.kind,
+    environment: parseReplayEnvironment(run.environment_json),
     status: run.status,
     stage_note: run.stage_note,
     started_at: run.started_at,
@@ -2751,6 +2760,8 @@ function recordFeedback(runId: number, text: string): Improvement {
 // feedback/feedback_at).
 export type ExperimentRunSummary = {
   id: number;
+  kind: store.ExperimentKind;
+  environment_quality: ReplayEnvironment["quality"] | null;
   rule_id: number;
   improvement_id: number;
   rule_text: string;
@@ -2781,6 +2792,8 @@ export type ExperimentRunSummary = {
 export function listTestRunSummaries(): ExperimentRunSummary[] {
   return store.listExperimentRunsWithRules().map((run) => ({
     id: run.id,
+    kind: run.kind,
+    environment_quality: parseReplayEnvironment(run.environment_json)?.quality ?? null,
     rule_id: run.rule_id,
     improvement_id: run.correction_candidate_id,
     rule_text: run.rule_text,

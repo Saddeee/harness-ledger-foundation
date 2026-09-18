@@ -343,6 +343,13 @@ export { episodeRequestText, activeExperimentRun } from "./store.js";
 // listUndeletedCopies(), all already re-exported above -- nothing new
 // needed for those.
 export { buildExperimentRunView } from "./improvements.js";
+
+// Checkpoint 2026-09-18: runs recorded before migration v18 get their
+// environment record computed from what was on file when they ran. Runs once
+// per process; idempotent.
+import { backfillReplayEnvironments } from "./executor/replay-environment.js";
+backfillReplayEnvironments();
+export { backfillReplayEnvironments };
 export type { ExperimentRunView } from "./improvements.js";
 // ---- end Round 6 Task 6b ----
 

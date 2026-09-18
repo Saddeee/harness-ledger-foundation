@@ -801,4 +801,22 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE analysis_runs ADD COLUMN progress_json TEXT;
     `,
   },
+  {
+    version: 18,
+    name: "checkpoint_replay_environment",
+    sql: `
+      -- Truth about what a test really was. Every run so far made ONE new
+      -- Lovable build (the "with the rule" copy) next to a free copy of the
+      -- historical build, so it is a historical replay, never a paired
+      -- comparison with a fresh control. The environment record says which
+      -- Project Knowledge the replay started from and how it was chosen
+      -- (exact_historical / nearest_earlier_version / current_fallback /
+      -- unavailable), which rules were live at the time, what could not be
+      -- reconstructed (Lovable's project memory, workspace Knowledge, Skills,
+      -- the builder version), and how comparable the result is.
+      ALTER TABLE experiment_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'historical_replay'
+        CHECK (kind IN ('historical_replay','paired_comparison'));
+      ALTER TABLE experiment_runs ADD COLUMN environment_json TEXT;
+    `,
+  },
 ];
