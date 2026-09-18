@@ -160,21 +160,34 @@ It takes about ten minutes. Everything runs on your computer, and the only outsi
 
 ### Step 1: Install and start
 
-The repo has two parts, installed separately: the web app at the root, and the local runtime in `harness/` (its own Node package, with a native SQLite module, compiled before the app can load it).
+The repo has two parts, installed separately: the web app at the root, and the local runtime in `harness/` (its own Node package, with a native SQLite module, compiled before the app can load it). `npm run setup` does both for you.
+
+Harness Ledger currently has a developer-oriented local setup. If Node.js and an AI provider are already configured, setup usually takes around ten minutes.
 
 ```sh
 git clone https://github.com/Saddeee/harness-ledger-foundation.git
 cd harness-ledger-foundation
 nvm install && nvm use          # or install Node 22.12+ another way
 
+npm run setup                   # installs both packages, builds the local runtime, checks your setup
+npm run harness:start           # starts the app
+```
+
+Open the address it prints, normally **http://127.0.0.1:8080** (Vite picks the next free port if 8080 is taken). Keep this terminal running.
+
+`npm run setup` prints a line for each step (Node version, installs, build, database, Lovable connection, AI provider) and tells you what to fix if one fails. `npm run harness:start` sets `HARNESS_RUNTIME=local` and a repo-local `HARNESS_DB_PATH` for you, and keeps the dev server bound to `127.0.0.1` unless you set `DEV_HOST_OPEN=1` yourself.
+
+#### Lower-level commands (troubleshooting)
+
+`npm run setup` and `npm run harness:start` are wrappers around these commands. Run them directly if you want to retry a single step:
+
+```sh
 npm install                     # the web app
 npm run harness:install         # the local runtime
 npm run harness:build           # compile the local runtime
 
 HARNESS_RUNTIME=local HARNESS_DB_PATH="$PWD/harness/data/harness.db" npm run dev
 ```
-
-Open the address it prints, normally **http://127.0.0.1:8080** (Vite picks the next free port if 8080 is taken). Keep this terminal running.
 
 - `HARNESS_RUNTIME=local` switches on the local runtime. Without it the pages only say "available when Harness Ledger runs on your machine".
 - `HARNESS_DB_PATH` is where your data lives: one SQLite file, created on first start and ignored by git.
@@ -228,7 +241,7 @@ npm run harness:executor -- --disconnect   # forget the Lovable login
 
 | You see                                                                                        | Fix                                                                                                     |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Pages say "available when Harness Ledger runs on your machine"                                 | Start with `HARNESS_RUNTIME=local`, and run `npm run harness:build` first                               |
+| Pages say "available when Harness Ledger runs on your machine"                                 | Run `npm run setup` then `npm run harness:start` (this sets `HARNESS_RUNTIME=local` for you)            |
 | `npm run dev` fails with a `styleText` error, or "native WebSocket not found" after signing in | Node is too old: switch to 22.12+ and run `npm run harness:install` again                               |
 | An error mentioning `better-sqlite3` or `NODE_MODULE_VERSION`                                  | You changed Node versions: run `npm run harness:install` again                                          |
 | Changes to `harness/` don't show up                                                            | Run `npm run harness:build`, then restart `npm run dev`                                                 |
