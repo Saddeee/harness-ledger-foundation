@@ -114,7 +114,7 @@ test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts 
   // sentence, shared verbatim via COPY_CREDITS_LINE.
   assert.match(
     uxCode,
-    /export const COPY_CREDITS_LINE =\s*"Creating project copies currently uses no Lovable builder credits\. Running a Lovable build inside a copy consumes normal Lovable builder credits\.";/,
+    /export const COPY_CREDITS_LINE =\s*"Creating project copies currently uses no Lovable builder credits\. Running a Lovable build in a copy consumes normal builder credits\.";/,
   );
   assert.match(
     uxCode,

@@ -783,7 +783,7 @@ export function workspaceWordingWarning(
 // Shared verbatim by the test dialog, the Tests page, and Settings ›
 // Lovable credits so the wording can never drift between them.
 export const COPY_CREDITS_LINE =
-  "Creating project copies currently uses no Lovable builder credits. Running a Lovable build inside a copy consumes normal Lovable builder credits.";
+  "Creating project copies currently uses no Lovable builder credits. Running a Lovable build in a copy consumes normal builder credits.";
 export const TEST_THIS_RULE_CREDITS_LINE = `${COPY_CREDITS_LINE} The exact cost is recorded after.`;
 export function testThisRuleBudgetLine(credits: {
   used_this_month: number;

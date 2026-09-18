@@ -90,7 +90,7 @@ their copies; a failed delete sets the copy private and leaves a note. Only copi
 be deleted; the source project is never chattable, deletable or written by the runner.
 
 Cost sentence: "Creating project copies currently uses no Lovable builder credits. Running a Lovable build
-inside a copy consumes normal Lovable builder credits." Costs are recorded from Lovable's own figure.
+in a copy consumes normal builder credits." Costs are recorded from Lovable's own figure.
 
 ## 7. Managed Knowledge block
 

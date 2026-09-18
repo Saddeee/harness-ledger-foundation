@@ -59,7 +59,7 @@ test("README: the test feature is a historical replay, never proof or a paired t
   assert.match(readme, /Replay with rule/);
   assert.match(
     readme,
-    /Creating project copies currently uses no Lovable builder credits\. Running a Lovable build inside a copy consumes normal Lovable builder credits\./,
+    /Creating project copies currently uses no Lovable builder credits\. Running a Lovable build in a copy consumes normal builder credits\./,
   );
   assert.ok(!/copies themselves are free/i.test(readme));
   assert.ok(
@@ -98,4 +98,27 @@ test("README: setup promise and the managed block example match the code", () =>
     readme,
     /## Instructions managed by Harness Ledger\n<!-- Manage this section in Harness Ledger\./,
   );
+});
+
+test("README: status section agrees with the capability manifest", async () => {
+  const { CAPABILITIES } = await import("../src/capabilities.js");
+  const working = readme.slice(
+    readme.indexOf("### Working in the local prototype"),
+    readme.indexOf("### Current limitations"),
+  );
+  assert.match(readme, /capability manifest/);
+  for (const c of CAPABILITIES) {
+    if (c.status === "planned" || c.status === "blocked") {
+      // A planned or blocked capability must not be listed as working.
+      const key = c.label.split(" (")[0]!;
+      assert.ok(
+        !working.includes(key),
+        `README lists "${key}" as working but the manifest says ${c.status}`,
+      );
+    }
+  }
+  assert.match(readme, /Remote Skill publishing[^\n]*not yet verified/);
+  assert.match(readme, /Paired comparison[^\n]*planned/i);
+  assert.match(readme, /Behavioural verification[^\n]*planned/i);
+  assert.match(readme, /Hosted authorization is blocked/);
 });
