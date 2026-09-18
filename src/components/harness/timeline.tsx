@@ -182,6 +182,32 @@ export function Timeline({
 
             {isSelected ? (
               <div className="mt-2 space-y-2 rounded-md border bg-muted/30 p-3">
+                {node.kind === "version" ? (
+                  <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[9rem_1fr]">
+                    <dt className="text-muted-foreground">Version</dt>
+                    <dd>{node.version_id}</dd>
+                    {node.restored_from_version_id != null ? (
+                      <>
+                        <dt className="text-muted-foreground">Restored from</dt>
+                        <dd>version {node.restored_from_version_id}</dd>
+                      </>
+                    ) : null}
+                    {node.reason ? (
+                      <>
+                        <dt className="text-muted-foreground">Reason</dt>
+                        <dd>{node.reason}</dd>
+                      </>
+                    ) : null}
+                    <dt className="text-muted-foreground">Rules added</dt>
+                    <dd>{node.rules_added?.length ? node.rules_added.join("; ") : "none"}</dd>
+                    <dt className="text-muted-foreground">Rules removed</dt>
+                    <dd>{node.rules_removed?.length ? node.rules_removed.join("; ") : "none"}</dd>
+                    <dt className="text-muted-foreground">By</dt>
+                    <dd>{ACTOR_LABEL[node.actor]}</dd>
+                    <dt className="text-muted-foreground">When</dt>
+                    <dd>{formatDate(node.at)}</dd>
+                  </dl>
+                ) : null}
                 {node.diff ? (
                   <div className="flex gap-2">
                     <Button
@@ -224,7 +250,7 @@ export function Timeline({
                     onClick={() => jumpTo(`version:${node.restored_from}`)}
                     className="text-xs text-primary underline underline-offset-2"
                   >
-                    went back to before #{node.restored_from}
+                    restored from version {node.restored_from}
                   </button>
                 ) : null}
 

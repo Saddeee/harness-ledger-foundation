@@ -42,7 +42,7 @@ test("harness-ux.ts: IMPROVEMENT_GROUPS gains 'Retired' after 'Reverted'; improv
       "In Lovable",
       "Reverted",
       "Retired",
-      "Needs attention",
+      "Write needs attention",
       "Skipped",
     ],
   );
@@ -75,10 +75,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   // Fix round 1 item 2: "helped" left the retire reason sentence too --
   // same honest vocabulary as healthLine.
-  assert.equal(
-    hurt,
-    "Harness Ledger suggests retiring this rule because more of its builds had a repeat correction than didn't.",
-  );
+  assert.equal(hurt, "Harness found the same issue in 3 of 4 relevant builds.");
 
   const contradiction = ux.retireReasonSentence({
     reason: "contradiction",
@@ -98,7 +95,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   assert.equal(
     unused,
-    "Harness Ledger suggests retiring this rule because it has not applied in 60 days.",
+    "This rule has not applied to any task in 60 days. Review whether it is still relevant.",
   );
 
   const sinceLine = ux.retireSinceLine({
@@ -110,7 +107,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   // itself, so the wording (and honesty guarantee) can never drift apart.
   assert.equal(
     sinceLine,
-    "Since added: 4 builds in this area · 3 repeat corrections · last used 1 Sep · observed from your real builds",
+    "Harness found the same issue in 3 of 4 relevant builds. Last relevant build 1 Sep.",
   );
 });
 
@@ -132,9 +129,9 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
     code.indexOf("function RetireCard"),
     code.indexOf("export function VerdictControl"),
   );
-  assert.match(retireCard, />\s*Harness Ledger suggests retiring this rule\s*<\/Title>/);
+  assert.match(retireCard, />\s*Is this rule still useful\?\s*<\/Title>/);
   assert.match(retireCard, /item\.title\.replace\(\/\^Retire:\\s\*\/, ""\)/);
-  const titleIdx = retireCard.indexOf("Harness Ledger suggests retiring this rule");
+  const titleIdx = retireCard.indexOf("Is this rule still useful?");
   const reasonIdx = retireCard.indexOf("retireReasonSentence");
   const sinceIdx = retireCard.indexOf("retireSinceLine");
   assert.ok(titleIdx >= 0 && titleIdx < sinceIdx && sinceIdx < reasonIdx, "title comes first");

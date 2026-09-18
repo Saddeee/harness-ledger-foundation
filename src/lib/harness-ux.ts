@@ -104,7 +104,7 @@ export const WHY_TEMPLATES: Record<string, string> = {
   scope_extension:
     "The request grew beyond its original scope. Harness Ledger thinks a standing instruction would set clearer expectations.",
   retire:
-    "Harness Ledger found a signal that this rule may be doing more harm than good. You can retire it, or keep it and be asked again later.",
+    "Harness Ledger found a signal worth your decision about whether this rule is still useful. You can retire it, or keep it and be asked again later.",
 };
 
 const WHY_GENERIC =
@@ -327,9 +327,9 @@ export function lovableStatusLine(
     case "reverted":
       return `Reverted to an earlier version, ${formatDay(input.written_at)}`;
     case "stale":
-      return `Needs attention: ${input.stale_reason ?? "Knowledge changed in Lovable — review the text again"}`;
+      return `Write needs attention: ${input.stale_reason ?? "Knowledge changed in Lovable — review the text again"}`;
     case "failed":
-      return "Needs attention: adding failed — see Details";
+      return "Write needs attention: adding failed — see Details";
     default:
       if (ctx?.testFirst) return "Saved for testing — nothing is written until the test runs";
       if (ctx?.connected === false)
@@ -381,7 +381,7 @@ export const IMPROVEMENT_GROUPS = [
   "In Lovable",
   "Reverted",
   "Retired",
-  "Needs attention",
+  "Write needs attention",
   "Skipped",
 ] as const;
 export type ImprovementGroup = (typeof IMPROVEMENT_GROUPS)[number];
@@ -398,7 +398,8 @@ export function improvementGroup(input: {
   if (input.status === "skipped") return "Skipped";
   if (input.status === "pending") return null;
   if (input.retired) return "Retired";
-  if (input.writeStatus === "stale" || input.writeStatus === "failed") return "Needs attention";
+  if (input.writeStatus === "stale" || input.writeStatus === "failed")
+    return "Write needs attention";
   if (input.writeStatus === "written") return "In Lovable";
   if (input.writeStatus === "reverted") return "Reverted";
   if (input.testFirst) return "Waiting to be tested";
@@ -481,6 +482,11 @@ export type RetireLike = {
     helped: number;
     hurt: number;
     last_applicable_at: string | null;
+    // Checkpoint 2026-09-18 WP3: the separately tracked signals, when known.
+    observed_repeat?: number;
+    observed_clear?: number;
+    ai_not_followed?: number;
+    ai_followed?: number;
   };
   since: string | null;
   contradicts_instruction?: string | null;
@@ -500,9 +506,9 @@ export function retireReasonSentence(input: RetireLike): string {
     return `Harness Ledger suggests retiring this rule because it contradicts ${other}.`;
   }
   if (input.reason === "unused") {
-    return "Harness Ledger suggests retiring this rule because it has not applied in 60 days.";
+    return "This rule has not applied to any task in 60 days. Review whether it is still relevant.";
   }
-  return "Harness Ledger suggests retiring this rule because more of its builds had a repeat correction than didn't.";
+  return observedLine(input.health) ?? "Harness found the same issue in the relevant builds.";
 }
 
 // The one-line health summary under a retirement proposal's title -- the
@@ -523,7 +529,7 @@ export function retireSinceLine(input: RetireLike): string {
     const since = input.since ? `, ${formatDay(input.since)}` : "";
     return `Since it was added${since}, this rule has not applied to any task in over 60 days.`;
   }
-  return healthLine(input.health) ?? "No builds in this area yet";
+  return aiReviewLine(input.health) ?? healthLine(input.health) ?? "No builds in this area yet";
 }
 
 // ---- Outcome tracking (Task C3 / spec §4 v1-lite + §4b display; Round 5
@@ -541,21 +547,102 @@ export type HealthLike = {
   applicable_tasks: number;
   hurt: number;
   last_applicable_at: string | null;
+  // Checkpoint 2026-09-18 WP3 (spec §9): the free scan's own counts, kept
+  // apart from the AI review's. When absent (an older row), the legacy
+  // applicable/hurt pair is used with the same wording.
+  observed_repeat?: number;
+  observed_clear?: number;
+  ai_not_followed?: number;
+  ai_followed?: number;
+  review_reason?: "inactive" | "repeated_issue" | "user_verdict" | "unclear_contradiction" | null;
 };
 
-export function healthLine(health: HealthLike | null | undefined): string | null {
+/** What Harness observed in later relevant builds, and nothing more:
+ * "Harness found the same issue in 2 of 3 relevant builds." -- no claim
+ * about cause. Null when the rule has no observed counts at all. */
+export function observedLine(health: HealthLike | null | undefined): string | null {
   if (!health) return null;
-  if (health.applicable_tasks === 0) return "No builds in this area yet";
+  const repeat = health.observed_repeat ?? health.hurt;
+  const total =
+    health.observed_repeat != null && health.observed_clear != null
+      ? health.observed_repeat + health.observed_clear
+      : health.applicable_tasks;
+  if (total === 0) return "No relevant builds since this rule was added.";
+  if (repeat === 0)
+    return `Harness found no repeat of the issue in ${total} relevant build${total === 1 ? "" : "s"}.`;
+  if (repeat === total)
+    return `Harness found the same issue in all ${total} relevant build${total === 1 ? "" : "s"}.`;
+  return `Harness found the same issue in ${repeat} of ${total} relevant builds.`;
+}
+
+/** What the AI review (the Judge reading Lovable's replies) marked, shown
+ * separately from what was observed: "AI review marked the rule as not
+ * followed in 3 of 3 relevant builds." Null until the Judge has judged. */
+export function aiReviewLine(
+  health:
+    | { ai_not_followed?: number; ai_followed?: number }
+    | { followed: number; broke: number }
+    | null
+    | undefined,
+): string | null {
+  if (!health) return null;
+  const h = health as {
+    ai_not_followed?: number;
+    ai_followed?: number;
+    broke?: number;
+    followed?: number;
+  };
+  const notFollowed = h.broke ?? h.ai_not_followed ?? 0;
+  const followed = h.followed ?? h.ai_followed ?? 0;
+  const total = notFollowed + followed;
+  if (total === 0) return null;
+  return `AI review marked the rule as not followed in ${notFollowed} of ${total} relevant build${total === 1 ? "" : "s"}.`;
+}
+
+/** The observed line followed by when the rule last applied. */
+export function healthLine(health: HealthLike | null | undefined): string | null {
+  const line = observedLine(health);
+  if (!line || !health) return null;
   const last = health.last_applicable_at
-    ? ` · last used ${formatDay(health.last_applicable_at)}`
+    ? ` Last relevant build ${formatDay(health.last_applicable_at)}.`
     : "";
-  const builds =
-    health.applicable_tasks === 1
-      ? "1 build in this area"
-      : `${health.applicable_tasks} builds in this area`;
-  const corrections =
-    health.hurt === 1 ? "1 repeat correction" : `${health.hurt} repeat corrections`;
-  return `Since added: ${builds} · ${corrections}${last} · observed from your real builds`;
+  return `${line}${last}`;
+}
+
+/** The "Needs attention" block for a rule under review because the same
+ * issue keeps appearing, or the "Review for relevance" block for a rule
+ * with no relevant task in 60 days. Null when neither applies. */
+export function attentionBlock(health: HealthLike | null | undefined): {
+  title: string;
+  line: string;
+  recommendation: string;
+  action: string;
+  options?: string[];
+} | null {
+  if (!health || !health.review_reason) return null;
+  if (health.review_reason === "inactive") {
+    return {
+      title: "Review for relevance",
+      line: "No relevant task in the last 60 days.",
+      recommendation: "Decide whether this rule still belongs in Knowledge.",
+      action: "Review rule",
+      options: ["Keep", "Archive", "Move to Skill", "Retest", "Retire"],
+    };
+  }
+  const n = health.observed_repeat ?? health.hurt;
+  const ai = health.ai_not_followed ?? 0;
+  const line =
+    n > 0
+      ? `The same issue appeared in ${n} relevant build${n === 1 ? "" : "s"}.`
+      : ai > 0
+        ? `AI review marked the rule as not followed in ${ai} relevant build${ai === 1 ? "" : "s"}.`
+        : "You asked for a review of this rule.";
+  return {
+    title: "Needs attention",
+    line,
+    recommendation: "Rewrite this rule or turn it into a Skill.",
+    action: "Review rule",
+  };
 }
 
 // ---- Round 5 Task 7 / spec §5.2-§5 item 3: your verdict + the AI
@@ -614,15 +701,13 @@ export const ALREADY_RECORDED_TOAST = "Already recorded";
 
 export type AdherenceLike = { followed: number; broke: number; not_applicable: number };
 
-// "Followed in 5 of 6 builds it applied to · judged by AI, with quotes" --
+// "AI review marked the rule as not followed in 1 of 6 relevant builds." --
 // null (renders nothing) until at least one episode has been judged
 // followed or broke (a rule judged not_applicable on every build so far has
 // nothing meaningful to report yet).
 export function adherenceLine(adherence: AdherenceLike | null | undefined): string | null {
-  if (!adherence) return null;
-  const total = adherence.followed + adherence.broke;
-  if (total === 0) return null;
-  return `Followed in ${adherence.followed} of ${total} builds it applied to · judged by AI, with quotes`;
+  const line = aiReviewLine(adherence);
+  return line ? `${line} Quotes from Lovable's replies are in Details.` : null;
 }
 
 // ---- Round 5 Task 7 / spec §5 "which count": the Suggestions detail's

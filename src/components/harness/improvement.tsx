@@ -13,7 +13,10 @@ import { toast } from "sonner";
 import {
   AdvancedDetails,
   ConfirmAction,
+  CurrentStatus,
   DetailSection,
+  PrimaryAction,
+  RecommendationCallout,
 } from "@/components/harness/decision-layout";
 import {
   ALREADY_RECORDED_TOAST,
@@ -29,6 +32,7 @@ import {
   DESTINATION_WHY,
   evidenceSourceLines,
   healthLine,
+  attentionBlock,
   KNOWLEDGE_CHAR_LIMIT,
   decisionSentence,
   formatDate,
@@ -747,7 +751,7 @@ function RetireCard({
         id={titleId}
         className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
       >
-        Harness Ledger suggests retiring this rule
+        Is this rule still useful?
       </Title>
       <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
         {item.title.replace(/^Retire:\s*/, "")}
@@ -1466,6 +1470,10 @@ export function ImprovementDetail({
         ) : null}
       </div>
 
+      {/* Checkpoint 2026-09-18 WP3 (spec §12): current status, recommendation
+          and primary action come before the instruction itself. */}
+      <AttentionBlock item={item} busy={busy} run={run} onReview={() => setEditing(true)} />
+
       <DecisionCard
         item={item}
         onChanged={onChanged}
@@ -1816,3 +1824,88 @@ function DestinationChoice({ item, busy, run }: { item: Improvement; busy: boole
   );
 }
 // ---- end Checkpoint 2026-09-18 WP4: destination ----
+
+// ---- Checkpoint 2026-09-18 WP3: "Needs attention" / "Review for relevance" ----
+// Shown above the instruction on the detail page for a live rule whose
+// health asks for a person's decision (health.review_reason). The copy comes
+// from harness-ux.ts#attentionBlock; the options post the same actions the
+// verdict control, the Test button and DestinationChoice post.
+function AttentionBlock({
+  item,
+  busy,
+  run,
+  onReview,
+}: {
+  item: Improvement;
+  busy: boolean;
+  run: ReturnType<typeof useRun>["run"];
+  onReview: () => void;
+}) {
+  const block = attentionBlock(item.health ?? null);
+  if (!block || item.rule_id == null) return null;
+  const ruleId = item.rule_id;
+  const inactive = item.health?.review_reason === "inactive";
+  return (
+    <section aria-label={block.title} className="space-y-3">
+      <CurrentStatus status={block.title} hint={block.line} />
+      <RecommendationCallout
+        title="Recommendation"
+        recommendation={block.recommendation}
+        why={
+          inactive
+            ? "A rule nothing has needed for two months may be stale, or simply rare."
+            : block.line
+        }
+      />
+      {inactive ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              void run({ action: "verdict", rule_id: ruleId, verdict: "keep" }, "Kept")
+            }
+          >
+            Keep
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                { action: "set_content_destination", id: item.id, destination: "skill" },
+                "Moved to a Skill proposal",
+              )
+            }
+          >
+            Move to Skill
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void run({ action: "test", id: item.id }, TEST_STARTED_TOAST)}
+          >
+            Retest
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                { action: "verdict", rule_id: ruleId, verdict: "retire" },
+                "Marked for retirement",
+              )
+            }
+          >
+            Retire
+          </Button>
+        </div>
+      ) : (
+        <PrimaryAction label={block.action} onClick={onReview} disabled={busy} />
+      )}
+    </section>
+  );
+}

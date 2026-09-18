@@ -91,8 +91,8 @@ const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
 const RULE_STATUS_LABEL: Record<NonNullable<KnowledgeActiveRule["status"]>, string> = {
   written: "In Lovable",
   pending: "Staged",
-  stale: "Needs attention",
-  failed: "Needs attention",
+  stale: "Write needs attention",
+  failed: "Write needs attention",
   testing: "Testing",
 };
 

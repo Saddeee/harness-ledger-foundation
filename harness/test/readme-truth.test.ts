@@ -32,7 +32,10 @@ test("README: every in-page anchor points at a heading", () => {
   const anchors = [...readme.matchAll(/\]\(#([^)]+)\)/g)].map((m) => m[1]!);
   assert.ok(anchors.length > 5, "expected a table of contents");
   for (const a of anchors) {
-    assert.ok(headings.includes(a), `anchor #${a} has no heading (headings: ${headings.join(", ")})`);
+    assert.ok(
+      headings.includes(a),
+      `anchor #${a} has no heading (headings: ${headings.join(", ")})`,
+    );
   }
 });
 
@@ -59,7 +62,10 @@ test("README: the test feature is a historical replay, never proof or a paired t
     /Creating project copies currently uses no Lovable builder credits\. Running a Lovable build inside a copy consumes normal Lovable builder credits\./,
   );
   assert.ok(!/copies themselves are free/i.test(readme));
-  assert.ok(!/both builds/i.test(readme), "'both builds' conflates a historical artifact with a new build");
+  assert.ok(
+    !/both builds/i.test(readme),
+    "'both builds' conflates a historical artifact with a new build",
+  );
 });
 
 test("README: hosted limitation is authorization, Skills are not described as written to Lovable, status headings exist", () => {
@@ -70,7 +76,10 @@ test("README: hosted limitation is authorization, Skills are not described as wr
   assert.match(readme, /## .*Current limitations/);
   assert.match(readme, /## .*Next/);
   assert.match(readme, /## .*Use Harness Ledger through MCP/);
-  assert.match(readme, /Lovable MCP lets Harness operate Lovable\. Harness MCP lets your agent operate Harness\./);
+  assert.match(
+    readme,
+    /Lovable MCP lets Harness operate Lovable\. Harness MCP lets your agent operate Harness\./,
+  );
   assert.match(readme, /not wired/i, "Skill writes to Lovable must be stated as not wired");
   assert.match(
     readme,
@@ -85,5 +94,8 @@ test("README: setup promise and the managed block example match the code", () =>
   );
   assert.match(readme, /npm run setup/);
   assert.match(readme, /npm run harness:start/);
-  assert.match(readme, /## Instructions managed by Harness Ledger\n<!-- Manage this section in Harness Ledger\./);
+  assert.match(
+    readme,
+    /## Instructions managed by Harness Ledger\n<!-- Manage this section in Harness Ledger\./,
+  );
 });

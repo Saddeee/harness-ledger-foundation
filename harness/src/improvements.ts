@@ -5,7 +5,7 @@
 // scratchpad/improvement-contract.md and scratchpad/checkpoint-d-contract.md.
 import { z } from "zod";
 import * as store from "./store.js";
-import { composeManagedKnowledge, sha256 } from "./knowledge.js";
+import { composeManagedKnowledge, extractManagedBlock, sha256 } from "./knowledge.js";
 import { lineDiff, type DiffLine } from "./diff.js";
 import { recomputeRuleHealth } from "./analysis/health.js";
 import { parseReplayEnvironment, type ReplayEnvironment } from "./executor/replay-environment.js";
@@ -2028,7 +2028,28 @@ export type TimelineNode = {
   // screen (/judge?run=) instead of leaving a judged/failed test's own
   // history entry as a dead end.
   run_id?: number | null;
+  // Checkpoint 2026-09-18 WP3 (spec §12): what a version node must say
+  // without the reader interpreting a raw log -- the stored reason, the
+  // version restored from (label "Restored Knowledge from version N"), and
+  // the rules this write added or removed, as their instruction text (the
+  // managed block's bullet lines, diffed against the previous written
+  // version of the same target).
+  reason?: string | null;
+  restored_from_version_id?: number | null;
+  rules_added?: string[];
+  rules_removed?: string[];
 };
+
+/** The bullet lines of the managed block in a piece of Knowledge text. */
+function managedBullets(content: string | null): string[] {
+  if (!content) return [];
+  const block = extractManagedBlock(content);
+  if (!block) return [];
+  return block
+    .split("\n")
+    .filter((line) => line.startsWith("- "))
+    .map((line) => line.slice(2));
+}
 
 const TIMELINE_MAX_DIFF_LINES = 400;
 // The History page caps how much it ever shows at once, same spirit as the
@@ -2069,14 +2090,14 @@ function versionLabel(v: {
     case "pending":
       return "Staged";
     case "stale":
-      return "Needs attention";
+      return "Write needs attention";
     case "failed":
       return "Failed";
     case "cancelled":
       return "Cancelled";
     case "written":
       return v.restored_from_version_id != null
-        ? `Went back to before version #${v.restored_from_version_id}`
+        ? `Restored Knowledge from version ${v.restored_from_version_id}`
         : "Written to Lovable";
   }
 }
@@ -2165,6 +2186,8 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
       summary = `${versionRuleIds.length} rule${versionRuleIds.length === 1 ? "" : "s"} added`;
     }
 
+    const beforeBullets = managedBullets(prevVersionContent);
+    const afterBullets = managedBullets(v.new_content);
     nodes.push({
       id: `version:${v.id}`,
       kind: "version",
@@ -2180,6 +2203,10 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
       version_id: v.id,
       restorable: v.status === "written",
       latest_version: v.id === newestWrittenId,
+      reason: v.reason ?? null,
+      restored_from_version_id: v.restored_from_version_id,
+      rules_added: afterBullets.filter((b) => !beforeBullets.includes(b)),
+      rules_removed: beforeBullets.filter((b) => !afterBullets.includes(b)),
     });
     // Only a written version changes what Lovable holds: a stale, failed or
     // cancelled attempt must not become the baseline the next node's

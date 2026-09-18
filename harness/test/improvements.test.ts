@@ -1185,7 +1185,9 @@ test("buildTimeline: a target with 3 versions (one a restore) + 1 external chang
   assert.deepEqual(nVerdict!.rule_ids, [a.rule.id]);
   assert.equal(nVerdict!.diff, null);
 
-  assert.equal(nV3!.label, `Went back to before version #${v1.id}`);
+  assert.equal(nV3!.label, `Restored Knowledge from version ${v1.id}`);
+  assert.equal(nV3!.restored_from_version_id, v1.id);
+  assert.ok(Array.isArray(nV3!.rules_added) && Array.isArray(nV3!.rules_removed));
   assert.equal(nV3!.content, v3.new_content);
   assert.equal(nV3!.version_id, v3.id);
   assert.equal(nV3!.restored_from, v1.id);

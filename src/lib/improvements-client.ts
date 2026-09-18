@@ -143,6 +143,14 @@ export type ImprovementHealth = {
   hurt: number;
   last_applicable_at: string | null;
   since: string | null;
+  // Checkpoint 2026-09-18 WP3 (spec §9): observed and AI-review signals kept
+  // apart, the health status and why a review is asked for.
+  observed_repeat?: number;
+  observed_clear?: number;
+  ai_not_followed?: number;
+  ai_followed?: number;
+  status?: "healthy" | "watch" | "review" | "retire_suggested" | "snoozed";
+  review_reason?: "inactive" | "repeated_issue" | "user_verdict" | "unclear_contradiction" | null;
   // Round 5 Task 7 / spec §5: the other three evidence sources for this same
   // rule -- see KnowledgeActiveRule.verdict/adherence below, which these
   // mirror (this is the Suggestions-list/detail read of the same data, that
@@ -648,6 +656,12 @@ export type TimelineNode = {
   // Round 6 fix wave item 3: only ever set on a `test` node -- the run this
   // node is about, so timeline.tsx can link straight to /judge?run=.
   run_id?: number | null;
+  // Checkpoint 2026-09-18 WP3: version nodes carry their reason, the version
+  // restored from, and the rules added or removed.
+  reason?: string | null;
+  restored_from_version_id?: number | null;
+  rules_added?: string[];
+  rules_removed?: string[];
 };
 
 export type TimelineResponse = {

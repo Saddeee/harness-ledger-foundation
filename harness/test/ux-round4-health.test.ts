@@ -45,14 +45,17 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
     null,
     "no health row yet (rule not live, or rule_health hasn't scored it) -> no line",
   );
+  // Checkpoint 2026-09-18 WP3 (spec §9): the line says what was observed,
+  // never what it caused. Legacy rows (no observed_* fields) use
+  // applicable_tasks/hurt with the same wording.
   assert.equal(
     ux.healthLine({ applicable_tasks: 0, hurt: 0, last_applicable_at: null }),
-    "No builds in this area yet",
+    "No relevant builds since this rule was added.",
   );
   assert.equal(
     ux.healthLine({ applicable_tasks: 4, hurt: 2, last_applicable_at: null }),
-    "Since added: 4 builds in this area · 2 repeat corrections · observed from your real builds",
-    "omits 'last used' when null",
+    "Harness found the same issue in 2 of 4 relevant builds.",
+    "omits the last-build sentence when null",
   );
   assert.equal(
     ux.healthLine({
@@ -60,15 +63,52 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
       hurt: 1,
       last_applicable_at: "2026-09-01T00:00:00Z",
     }),
-    "Since added: 4 builds in this area · 1 repeat correction · last used 1 Sep · observed from your real builds",
-    "singular 'repeat correction' when hurt === 1",
+    "Harness found the same issue in 1 of 4 relevant builds. Last relevant build 1 Sep.",
   );
-  // Fix round 1 (C3 minor): applicable_tasks/hurt both pluralize correctly
-  // at 1.
   assert.equal(
     ux.healthLine({ applicable_tasks: 1, hurt: 0, last_applicable_at: null }),
-    "Since added: 1 build in this area · 0 repeat corrections · observed from your real builds",
-    "singular 'build' when applicable_tasks === 1",
+    "Harness found no repeat of the issue in 1 relevant build.",
+    "singular 'build' when there is one",
+  );
+  assert.equal(
+    ux.observedLine({
+      applicable_tasks: 9,
+      hurt: 9,
+      last_applicable_at: null,
+      observed_repeat: 3,
+      observed_clear: 0,
+    }),
+    "Harness found the same issue in all 3 relevant builds.",
+    "the separately tracked observed counts win over the legacy pair",
+  );
+  assert.equal(
+    ux.aiReviewLine({ ai_not_followed: 3, ai_followed: 0 }),
+    "AI review marked the rule as not followed in 3 of 3 relevant builds.",
+  );
+  assert.deepEqual(
+    ux.attentionBlock({
+      applicable_tasks: 3,
+      hurt: 3,
+      last_applicable_at: null,
+      observed_repeat: 3,
+      observed_clear: 0,
+      review_reason: "repeated_issue",
+    }),
+    {
+      title: "Needs attention",
+      line: "The same issue appeared in 3 relevant builds.",
+      recommendation: "Rewrite this rule or turn it into a Skill.",
+      action: "Review rule",
+    },
+  );
+  assert.equal(
+    ux.attentionBlock({
+      applicable_tasks: 0,
+      hurt: 0,
+      last_applicable_at: null,
+      review_reason: "inactive",
+    })!.title,
+    "Review for relevance",
   );
   for (const health of [
     { applicable_tasks: 0, hurt: 0, last_applicable_at: null },

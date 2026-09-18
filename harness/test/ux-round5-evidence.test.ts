@@ -46,11 +46,11 @@ test("healthLine: never says 'helped', for a scripted range of health inputs", (
   // The spec's own example line, verbatim.
   assert.equal(
     ux.healthLine({ applicable_tasks: 6, hurt: 1, last_applicable_at: "2026-09-03T00:00:00Z" }),
-    "Since added: 6 builds in this area · 1 repeat correction · last used 3 Sep · observed from your real builds",
+    "Harness found the same issue in 1 of 6 relevant builds. Last relevant build 3 Sep.",
   );
   assert.equal(
     ux.healthLine({ applicable_tasks: 0, hurt: 0, last_applicable_at: null }),
-    "No builds in this area yet",
+    "No relevant builds since this rule was added.",
   );
 });
 
@@ -122,12 +122,12 @@ test("verdictLine: 'You said: <verdict>, <day>', mapping keep/review/retire/not_
   );
 });
 
-test("adherenceLine: 'Followed in N of M builds it applied to · judged by AI, with quotes'; null until followed+broke > 0", () => {
+test("adherenceLine: 'AI review marked the rule as not followed in N of M relevant builds.'; null until followed+broke > 0", () => {
   assert.equal(ux.adherenceLine(null), null);
   assert.equal(ux.adherenceLine({ followed: 0, broke: 0, not_applicable: 3 }), null);
   assert.equal(
     ux.adherenceLine({ followed: 5, broke: 1, not_applicable: 2 }),
-    "Followed in 5 of 6 builds it applied to · judged by AI, with quotes",
+    "AI review marked the rule as not followed in 1 of 6 relevant builds. Quotes from Lovable's replies are in Details.",
   );
 });
 

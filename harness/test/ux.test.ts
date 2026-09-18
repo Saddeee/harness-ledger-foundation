@@ -389,11 +389,11 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   );
   assert.equal(
     ux.lovableStatusLine({ write_status: "stale", written_at: null, stale_reason: null }),
-    "Needs attention: Knowledge changed in Lovable — review the text again",
+    "Write needs attention: Knowledge changed in Lovable — review the text again",
   );
   assert.equal(
     ux.lovableStatusLine({ write_status: "failed", written_at: null }),
-    "Needs attention: adding failed — see Details",
+    "Write needs attention: adding failed — see Details",
   );
   assert.equal(
     ux.lovableStatusLine({ write_status: "reverted", written_at: "2026-09-10T08:00:00Z" }),
@@ -444,7 +444,7 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
       "In Lovable",
       "Reverted",
       "Retired",
-      "Needs attention",
+      "Write needs attention",
       "Skipped",
     ],
   );
@@ -460,8 +460,8 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
   assert.equal(g("accepted", "pending"), "Waiting to be written");
   assert.equal(g("accepted", "written"), "In Lovable");
   assert.equal(g("accepted", "reverted"), "Reverted");
-  assert.equal(g("accepted", "stale"), "Needs attention");
-  assert.equal(g("accepted", "failed"), "Needs attention");
+  assert.equal(g("accepted", "stale"), "Write needs attention");
+  assert.equal(g("accepted", "failed"), "Write needs attention");
   assert.equal(g("accepted", "none", true), "Waiting to be tested");
   assert.equal(
     g("accepted", "written", true),

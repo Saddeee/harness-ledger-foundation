@@ -61,7 +61,7 @@ test("instructions.tsx: renders a rules table, and the old per-version history v
     "Observed",
     "In Lovable",
     "Staged",
-    "Needs attention",
+    "Write needs attention",
     "Testing",
   ]) {
     assert.ok(raw.includes(text), `instructions.tsx missing rules-table text "${text}"`);
@@ -150,7 +150,7 @@ test("timeline.tsx: aria-expanded nodes, a diff toggle, Restore, nothing expande
   assert.ok(raw.includes("Undo this change"));
   assert.ok(raw.includes("Go back to before this change"));
   assert.ok(raw.includes("Open suggestion"));
-  assert.ok(raw.includes("went back to before #"));
+  assert.ok(raw.includes("restored from version {node.restored_from}"));
 
   // a single selection, defaulting to nothing selected -- never expanded by
   // default.
@@ -187,7 +187,7 @@ test("every History timeline label from spec §3b appears in improvements.ts or 
   for (const label of [
     "Written to Lovable",
     "Staged",
-    "Needs attention",
+    "Write needs attention",
     "Failed",
     "Cancelled",
     "Changed in Lovable (outside Harness Ledger)",
