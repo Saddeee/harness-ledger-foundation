@@ -626,7 +626,10 @@ export function attentionBlock(health: HealthLike | null | undefined): {
       line: "No relevant task in the last 60 days.",
       recommendation: "Decide whether this rule still belongs in Knowledge.",
       action: "Review rule",
-      options: ["Keep", "Archive", "Move to Skill", "Retest", "Retire"],
+      // "Archive" (spec §10.1) is not a distinct state in this version: a
+      // retired rule keeps its record and can be re-added, which is what
+      // archiving would do. Recorded in DECISIONS.md.
+      options: ["Keep", "Move to Skill", "Retest", "Retire"],
     };
   }
   const n = health.observed_repeat ?? health.hurt;

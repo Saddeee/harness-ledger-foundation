@@ -64,7 +64,7 @@ test("Needs attention and Review for relevance blocks", () => {
     review_reason: "inactive",
   })!;
   assert.equal(inactive.title, "Review for relevance");
-  assert.deepEqual(inactive.options, ["Keep", "Archive", "Move to Skill", "Retest", "Retire"]);
+  assert.deepEqual(inactive.options, ["Keep", "Move to Skill", "Retest", "Retire"]);
   assert.equal(ux.attentionBlock({ applicable_tasks: 1, hurt: 0, last_applicable_at: null }), null);
 });
 
