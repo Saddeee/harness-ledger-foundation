@@ -41,3 +41,18 @@ and no credit was spent in this checkpoint.
   (backend) and `d7ab4a0` (copy, History, attention blocks), plus the Archive note.
 - Final: 852 tests pass; both typechecks clean; lint 0 errors; fresh clone `npm run setup` 21 s and 852 pass.
 - No Lovable operation performed; 0 credits spent. Only remote action: tag `hosted-foundation-v1` pushed.
+
+## Checkpoint 2 (2026-09-18, 19:48–23:00 UTC)
+
+- Live DB was already at schema 21 (owner restarted the dev server at 19:36 UTC). Backup
+  `harness.db.bak-checkpoint2-202609181948` taken with the SQLite backup API and verified (integrity ok,
+  7 runs historical_replay with env, 22 versions, decisions and verdict mapping intact). Migration v22 added.
+- Seven parallel Sonnet packages (2-A onboarding/Overview, 2-B Inbox/detail, 2-C Instructions/Skills/History,
+  2-D replay conclusion, 2-E OpenAI compatibility + Test provider, 2-F safety gaps + MCP Skill tools,
+  2-G capability manifest); integrated in commit `abd5ff3` with 992 tests green.
+- Naming sweep to "Harness Ledger" (commit `8ce278c`), Settings mode copy, landing page reorder, README
+  two-depth rewrite with manifest validation.
+- Verification: 991 tests; typechecks; lint 0 errors; build (no better-sqlite3 / DB path in `.output`);
+  local smoke on a DB copy (all pages 200, run 7 view, provider test route — one real Claude Code call of
+  about 11 tokens against the copy's configured provider); hosted smoke; fresh clone setup + 990 tests.
+- No Lovable operation; 0 Lovable credits. Branch pushed to origin as a backup (not merged).

@@ -128,6 +128,20 @@ The WP3 subagent hit the session rate limit mid-edit. Its backend half (health s
 review status) was reviewed, its duplicated verdict bump removed, and the copy, History and detail-page half
 was implemented by the orchestrator.
 
+## D13 — Checkpoint 2 (product surface)
+
+- One name: "Harness Ledger" everywhere a person reads it; pinned by `harness/test/ux-naming.test.ts`.
+- Three-level hierarchy on every page (action / explanation / technical details collapsed); nothing deleted.
+- Derived replay conclusion is computed on read from verdicts and quality; "Possible regression" only when
+  the judge ticks the regression box; never `controlled_support` for a historical replay.
+- Deletion of a test copy is "requested" until one read-back proves absence (404); no loops.
+- OpenAI parameters come from one explicit capability table; one corrected retry, never an identical one.
+- Unimplemented automatic-mode controls (per-Skill permissions, frequency limits, risk restrictions) are named
+  as planned in Settings and README.
+- The Reviewer-facing "Overview" is a real page again (it had been folded into Inbox in Round 1); Inbox stays.
+- The landing page's primary button is "Open Harness Ledger" (owner: "from the landing page I can't get to
+  the product UI locally").
+
 ## D9 — Documents
 
 Root-level `PLAN.md`, `DECISIONS.md`, `VERIFICATION.md`, `build-log.md`, `SPEC.md`, `DEMO_PLAN.md` are the

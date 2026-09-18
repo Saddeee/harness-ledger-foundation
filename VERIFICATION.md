@@ -89,3 +89,23 @@ blocked, inferred. Command outputs are the tails as run; full logs are not kept 
 - Reanalyse history is verified with fake LLM calls only.
 - Harness Ledger MCP over stdio with a real client was not exercised (in-memory transport only).
 - The Cloudflare build was not served with `wrangler dev`; hosted mode was exercised through the dev server's hosted code path.
+
+## F. Checkpoint 2 (2026-09-18 evening)
+
+| Check | Result |
+|---|---|
+| Database backup | `harness/data/harness.db.bak-checkpoint2-202609181948` via SQLite backup API; integrity ok; schema 21; 7 runs all `historical_replay` with environment records; 22 Knowledge versions (17 written); 4 human decisions; verdicts mapped (keep 1, not_sure 2); retire proposals intact; git-ignored |
+| Migration on a copy of the current DB | local smoke on a copy applied v22; `copy_deletion_status` = none / requested as expected |
+| harness tests | 991 pass (main checkout); 990 in the fresh clone (the `.output` grep is skipped there) |
+| root + harness typecheck | clean |
+| lint | 0 errors, 7 pre-existing warnings |
+| production build | exit 0; `.output` contains neither better-sqlite3 nor the local DB path (also pinned by `harness/test/hosted-build.test.ts`) |
+| hosted-mode smoke | runtime `hosted`; `/` and `/onboarding` 200 |
+| local-mode smoke | runtime `local`; every page 200 (`/`, `/login`, `/onboarding`, `/overview`, `/inbox`, `/instructions`, `/skills`, `/tests`, `/history`, `/judge?run=7`, `/settings`); run 7 view exposes `conclusion` (null, unjudged) and deletion statuses; provider test route returned ok (one real Claude Code call, about 11 tokens) |
+| MCP protocol tests | `mcp-server.test.ts` 21 pass; 18 tools; budget-parity byte-for-byte |
+| setup fresh clone | 21 s; schema 22; tests green |
+| README links, wording, manifest | `readme-truth.test.ts` 6 pass |
+| capability manifest | `capabilities.test.ts` 9 pass (working ⇒ verification reference; files exist; mirror equal) |
+| OpenAI compatibility fakes | `llm-openai-compat.test.ts` 21 pass; `ux-provider-test.test.ts` 8 pass |
+| naming | `ux-naming.test.ts` |
+| visual review | NOT done here (no browser): onboarding, Overview, Inbox card, detail, Instructions, Skills, History, replay page need the owner's eyes at http://127.0.0.1:8081 |

@@ -1,5 +1,17 @@
 # Harness Ledger — handoff (updated 2026-09-18 after the truth checkpoint; see §0)
 
+## 0a. Checkpoint 2 (2026-09-18 evening): product surface
+
+Read `docs/PR-SUMMARY.md` for the whole picture. New since §0: onboarding (`/onboarding`) and a real
+Overview (`/overview`, first in nav) with one next action; Inbox cards and the suggestion detail follow the
+three-level hierarchy; Instructions leads with "Needs your attention"; Skills page has "In Lovable" and
+"Proposed by Harness Ledger"; History shows current Knowledge above the timeline; the replay page shows
+"Evidence strength", a derived conclusion and "Why this is an approximation"; OpenAI parameter compatibility
+with a Test provider button; copy deletion reads back before "confirmed"; Harness Ledger MCP gained five
+Skill-proposal tools; a capability manifest (`harness/src/capabilities.ts`) is what README and the landing
+page are tested against; the product is always called "Harness Ledger". Migration v22 applies on the next
+restart. The branch is pushed to origin as a backup; nothing merged, nothing published, 0 credits.
+
 ## 0. Checkpoint 2026-09-18 (read this first; the sections below it are older and partly superseded)
 
 Start with `PLAN.md`, `DECISIONS.md`, `VERIFICATION.md`, `SPEC.md`, `DEMO_PLAN.md`, `build-log.md` at the
