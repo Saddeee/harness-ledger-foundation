@@ -28,3 +28,16 @@ and no credit was spent in this checkpoint.
 - Dispatched five implementers in parallel (Sonnet) on disjoint files: WP1b replay UX, WP4 Skills, WP5
   sync/analysis, WP6 Harness MCP, WP7 setup scripts.
 - Wrote `SPEC.md`, `DEMO_PLAN.md`.
+- Commit `58d6302`: setup scripts (WP7), verified in a scratch clone.
+- Commit `56cdb3d`: landing page and verification ledger.
+- Commits `d47fd7c`, `d8e145b`, `30cc9b7`, `b822386`: Skills lifecycle (WP4), replay page (WP1b), analysis
+  context and reanalysis (WP5), Harness MCP (WP6). Five pinned tests reconciled; setting key folded into
+  store.ts; automatic-analysis toggle added to Settings.
+- Commit `64637ac` (README truth pass): README rewritten with a link/wording test; History screenshot
+  removed (obsolete labels).
+- Production build: exit 0, no better-sqlite3 in `.output`. Hosted-mode smoke and local-runtime smoke on
+  spare ports (see VERIFICATION.md).
+- WP3 subagent terminated by the session rate limit; orchestrator finished it: commits `bb1c063`
+  (backend) and `d7ab4a0` (copy, History, attention blocks), plus the Archive note.
+- Final: 852 tests pass; both typechecks clean; lint 0 errors; fresh clone `npm run setup` 21 s and 852 pass.
+- No Lovable operation performed; 0 credits spent. Only remote action: tag `hosted-foundation-v1` pushed.

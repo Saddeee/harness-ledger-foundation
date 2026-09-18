@@ -19,18 +19,18 @@ blocked, inferred. Command outputs are the tails as run; full logs are not kept 
 
 | Check | Command | Result |
 |---|---|---|
-| harness tests | `cd harness && npm test` | pending |
-| root typecheck | `npm run typecheck` | pending |
-| harness typecheck | `cd harness && npm run typecheck` | pending |
-| lint | `npm run lint` | pending |
-| production build (hosted preview) | `npm run build` | verified: exit 0, preset cloudflare-module, `.output/` generated (2026-09-18 05:05 UTC) |
+| harness tests | `cd harness && npm test` | verified: 852 pass, 0 fail (final, commit after WP3) |
+| root typecheck | `npm run typecheck` | verified: clean |
+| harness typecheck | `cd harness && npm run typecheck` | verified: clean |
+| lint | `npm run lint` | verified: 0 errors, 7 pre-existing warnings (react-refresh only-export-components) |
+| production build (hosted preview) | `npm run build` | verified twice (05:05 and after WP3): exit 0, preset cloudflare-module |
 | hosted build imports no better-sqlite3 | `grep -rl better-sqlite3 .output \| wc -l` | verified: 0 files; `harness/dist/*` appears only as dynamic-import strings behind `HARNESS_RUNTIME` |
 | local runtime smoke | dev server on 127.0.0.1:18713 with `HARNESS_RUNTIME=local` against a copy of the live DB, cron-secret auth | verified: runtime `local`; skills route available; `improvements?run=7` → kind historical_replay, quality historical_approximation, Project Knowledge nearest_earlier_version, other active rule = kronor; `runs=1` lists 1–7 (1–2 not_comparable); executor route returns `automatic_analysis_after_sync: false` |
 | hosted-mode smoke | dev server on 127.0.0.1:18712 without `HARNESS_RUNTIME` | verified: runtime `{"mode":"hosted"}`; skills route → "This is the hosted preview…"; unauthenticated → 401; landing 200. The Cloudflare build itself needs `wrangler dev`, not run here |
 | MCP protocol smoke | `harness/test/mcp-server.test.ts` (in-memory transport) | verified: 14 pass; 13 tools; parity refusals identical to the UI path |
 | README links and truth | `harness/test/readme-truth.test.ts` | verified: 5 pass (anchors, relative links, banned wording, hosted wording, setup promise, block example) |
 | setup scripts | `harness/test/setup-scripts.test.ts`; fresh clone `npm run setup` | verified: 9 pass; WP7 ran `npm run setup` in a scratch clone (Node 22.23.2, installs, build, schema 21, 0700 data dir) |
-| fresh clone | `git clone` into scratch, `npm run setup` | pending |
+| fresh clone | `git clone --branch local-harness-dev` into scratch, `npm run setup`, `npm test`, `harness-start --print-only` | verified: setup 21 s, schema 21, 852 tests pass in the clone, HOST 127.0.0.1 and absolute DB path |
 
 ## C. Required test list from the checkpoint brief → where it lives
 
@@ -66,3 +66,26 @@ blocked, inferred. Command outputs are the tails as run; full logs are not kept 
 | setup scripts validate Node; local start binds 127.0.0.1 | `setup-scripts.test.ts` |
 | hosted build does not import better-sqlite3 | build output grep (B) |
 | README links valid; README status matches verified functionality | `readme-truth.test.ts` |
+
+## D. Skills capability matrix (final)
+
+| Capability | Status |
+|---|---|
+| list workspace Skills, read Skill content | verified (sync + Skills page; `executor.test.ts`) |
+| propose a Skill from a correction | verified (Rule writer schema + `analysis-propose.test.ts`; live model output not exercised) |
+| edit / approve / retire a proposed Skill; version; restore a revision | verified (`skill-proposals.test.ts`, local only) |
+| link a Skill proposal to correction evidence | verified (proposal row references the candidate; UI links to the suggestion) |
+| connect to project rules (Knowledge line pointing to the Skill) | verified for destination "both" (Knowledge line + Skill draft) |
+| create / update a Harness-managed Skill in Lovable | unavailable in this version (not wired; Lovable MCP tools exist; REST path deprecated) |
+| enable / disable for selected projects | unavailable (workspace Skills apply to all projects; project Skills live in the project repo) |
+| user-owned Skill protection | verified (`SkillProposalOwnershipError`; tests) |
+| test a Skill in a replay; observe whether followed | unavailable |
+
+## E. Claims still unverified or inferred
+
+- The Rule writer's real model output for `destination`/`skill_draft` has not been exercised against a live provider (no Analyse now was run). Schema strict-compatibility is unit-tested.
+- The classifier's contradiction `kind` has not been exercised live.
+- The replay environment record is verified on backfilled runs and fake-server tests; no new live replay was run.
+- Reanalyse history is verified with fake LLM calls only.
+- Harness MCP over stdio with a real client was not exercised (in-memory transport only).
+- The Cloudflare build was not served with `wrangler dev`; hosted mode was exercised through the dev server's hosted code path.

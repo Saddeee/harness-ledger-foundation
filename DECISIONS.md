@@ -94,9 +94,10 @@ keeping them documented as "safe" would be false.
 
 ## D6 — Managed block heading: keep recognising the old heading
 
-Pending `docs/audit/knowledge-history.md`. Intent: adopt the required heading and comment line, and treat a
-live block with the old heading and matching bullet lines as Harness's own so no existing project reads as
-"edited externally" after the upgrade.
+**Decision (done, commit f81df04):** the block now carries the required heading and the conflict note.
+Blocks are compared by their bullet lines (`normalizeBlockForCompare`), so a live block written under the
+earlier heading is still Harness Ledger's own; the next write replaces the heading. Own-block recognition
+never depended on the heading text (`docs/audit/knowledge-history.md` §2), which made the change low-risk.
 
 ## D7 — Sync and analysis remain separate; automatic analysis is an explicit, default-off setting
 
@@ -111,9 +112,21 @@ manual), the LLM roles never see Knowledge or Skills, and nothing records which 
 
 ## D8 — Rule usefulness, not causality
 
-Pending `docs/audit/rule-health.md`. Intent: the user question is "Is this rule still useful?" (Keep / Review /
+**Decision (done, commits d4ae5bb, bb1c063, d7ab4a0):** the user question is "Is this rule still useful?" (Keep / Review /
 Retire / Not sure); observed repeat corrections and AI review are shown as separate lines; inactivity opens a
 relevance review, never a retirement; an opposite request is classified before it questions a rule.
+
+## D11 — "Archive" is not a separate state
+
+The relevance review offers Keep / Move to Skill / Retest / Retire. A retired rule keeps its record and can be
+re-added, which is what an archive would do; adding a fifth state (`disabled`) with its own copy and tests was
+not worth the confusion before the demo. Recorded as a disagreement with §10.1 of the request.
+
+## D12 — WP3 finished by the orchestrator
+
+The WP3 subagent hit the session rate limit mid-edit. Its backend half (health signals, contradiction kinds,
+review status) was reviewed, its duplicated verdict bump removed, and the copy, History and detail-page half
+was implemented by the orchestrator.
 
 ## D9 — Documents
 

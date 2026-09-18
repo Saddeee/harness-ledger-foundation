@@ -1,4 +1,49 @@
-# Harness Ledger — handoff (updated 2026-09-14 after Round 7: live end-to-end test, proof redesign, review fixes)
+# Harness Ledger — handoff (updated 2026-09-18 after the truth checkpoint; see §0)
+
+## 0. Checkpoint 2026-09-18 (read this first; the sections below it are older and partly superseded)
+
+Start with `PLAN.md`, `DECISIONS.md`, `VERIFICATION.md`, `SPEC.md`, `DEMO_PLAN.md`, `build-log.md` at the
+repo root and the audits under `docs/audit/`. Branch `local-harness-dev` at the checkpoint's last commit;
+`main` is still the Lovable-built state `3fff0d9`, now also tagged `hosted-foundation-v1` (pushed). Nothing
+was merged, pushed (except the tag) or republished. No Lovable operation ran; 0 credits spent.
+
+What changed, in one screen:
+
+- **The test is a historical replay.** "Paired test", "proof" and "both builds" are gone from copy and README.
+  Labels: Historical result / Replay with rule. Migration v18 records for every run which Project Knowledge
+  the copy started from (exact / nearest earlier / today's / none), keeps the rules that were live at the time
+  (the old composer dropped them: runs 4 and 7 lost the kronor rule), and a quality label. Runs 1–7 were
+  backfilled: 3, 5, 6 had silently used today's Knowledge. The judging page shows the environment and an
+  evidence-strength line; technical details are collapsed. Paired comparison is deferred (DECISIONS D3).
+- **Managed block** now reads `## Instructions managed by Harness Ledger` plus a conflict note; blocks
+  written under the old heading are still recognised as Harness Ledger's own (bullet-line comparison).
+- **Skills** are a first-class destination: the Rule writer proposes Knowledge / Skill / both with a reason
+  and a SKILL.md draft (migration v19); the user can change the destination, edit, approve, retire and restore
+  a proposal locally. Writing a Skill to Lovable is NOT wired (REST path deprecated by Lovable; MCP tools
+  exist; needs one approved live write to verify). The UI, README and landing page say so.
+- **Analysis** records a context packet per model call (migration v20: ids, reasons, size, truncation,
+  strategy version), includes live rules, Skill names and older term-matched messages; "Reanalyse history" is
+  a separate, scoped, estimated action that never overwrites a human decision (disagreement review cards in
+  the Inbox). `automatic_analysis_after_sync` is a new setting, default off (Settings › Sync schedule).
+- **Rule usefulness** (migration v21): verdicts are Keep / Review / Retire / Not sure; observed repeat
+  corrections and AI review are separate lines; inactivity opens "Review for relevance", never a retirement;
+  an opposite request is classified (one-task exception etc.) before it questions a rule.
+- **History**: "Restored Knowledge from version N" with reason, restored-from, rules added/removed.
+- **Harness MCP** rewritten: 13 tools over the adapter (same permissions as the buttons); the raw store tools
+  that could fabricate a written state are gone; the old unauthenticated `harness/src/web` server is deleted.
+- **Setup**: `npm run setup` and `npm run harness:start` (127.0.0.1, repo-local DB). README rewritten with a
+  truth test (`harness/test/readme-truth.test.ts`). Landing page rebuilt (`src/lib/landing-copy.ts`).
+- Verification: 852 tests, both typechecks, lint (0 errors), production build (no better-sqlite3 in
+  `.output`), hosted-mode and local-runtime smoke on spare ports, fresh clone setup in 21 s.
+
+**Restart the owner's dev server** to pick up migrations v18–v21 (they apply on first start and are additive
+except the verdict/health table rebuilds, which keep every row). Back up `harness/data/harness.db` first.
+
+Owner decisions still needed: approve the demo fixture plan (`DEMO_PLAN.md`, Nordic Booking Desk, about
+8–16 credits), whether to merge `local-harness-dev` to `main` (see the release report in the session
+summary), the first paid Skill write, and whether to build the paired comparison next.
+
+---
 
 For the next agent. Everything here comes from the working sessions of 2026-09-11 → 2026-09-13 with the owner (Lovable workspace `937baaeb85dfcb22e8b2`, project `28bd5471-78e0-43af-a29b-5018198cb13c`). Read this before touching anything. The owner's rules at the end are binding.
 
