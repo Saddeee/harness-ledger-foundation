@@ -20,7 +20,7 @@ export type Capability = {
   verified_at: string | null;
   /**
    * A pointer to the evidence: a test file (e.g. "harness/test/executor.test.ts"), a doc
-   * reference (e.g. "DECISIONS.md §D3", "docs/audit/replay.md"), or a short note about a live
+   * reference (a test file, or a short note about a live
    * observation, or a combination joined with "; ". Null if there is nothing to point to yet.
    */
   verification: string | null;
@@ -35,7 +35,7 @@ export const CAPABILITIES: readonly Capability[] = [
     status: "working",
     runtime: "local",
     verified_at: "2026-09-15",
-    verification: "harness/test/executor-auth.test.ts; docs/HANDOFF.md",
+    verification: "harness/test/executor-auth.test.ts; live connection in use since 2026-09-11",
     limitation:
       "Works through the local runtime's own loopback sign-in; hosted third-party authorization does not work yet.",
   },
@@ -112,7 +112,7 @@ export const CAPABILITIES: readonly Capability[] = [
     status: "planned",
     runtime: "local",
     verified_at: null,
-    verification: "DECISIONS.md §D3",
+    verification: null,
     limitation:
       "Not built yet: it needs a two-arm run design and two live Lovable builds to verify, which costs credits the owner has not approved spending.",
   },
@@ -142,7 +142,7 @@ export const CAPABILITIES: readonly Capability[] = [
     status: "blocked",
     runtime: "local",
     verified_at: null,
-    verification: "DECISIONS.md §D4",
+    verification: null,
     limitation:
       "Lovable's REST Skill endpoints are deprecated with no replacement, and a write through Lovable's MCP has not been tried; it needs one approved live write to verify.",
   },
@@ -172,7 +172,7 @@ export const CAPABILITIES: readonly Capability[] = [
     status: "blocked",
     runtime: "hosted",
     verified_at: null,
-    verification: "docs/audit/setup-hosted-privacy.md",
+    verification: null,
     limitation:
       'Lovable\'s authorization server rejects the hosted OAuth client with "Client Not Found"; the operations exist but hosted sign-in does not work yet.',
   },

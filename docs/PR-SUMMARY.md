@@ -32,7 +32,7 @@
 Local runtime and hosted preview are adapters around shared product logic (`harness/src/adapter.ts`). The
 hosted build never imports better-sqlite3 or the local DB path (tested). Harness Ledger MCP calls only the
 adapter, so an agent has exactly the app's permissions (budget-parity and ownership tests). Deletion of a test
-copy reads back before it is called confirmed. All decisions: `DECISIONS.md`.
+copy reads back before it is called confirmed. 
 
 ## Verified capabilities
 

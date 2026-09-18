@@ -34,7 +34,7 @@ the demo itself shows only this:
 A written plan for a new real Lovable project used to demonstrate Harness Ledger end to end. **Nothing in
 this plan has been executed.** Every step below that touches Lovable costs credits or mutates a Lovable
 resource and needs the owner's explicit go-ahead at that step. Record every prompt, every cost and every rerun
-in `build-log.md` as it happens.
+as it happens.
 
 ## 0. Preconditions (no credits)
 

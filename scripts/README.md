@@ -1,7 +1,7 @@
 # scripts/
 
 Two small, dependency-free Node ESM scripts invoked via `npm run setup` / `npm run harness:start` (root
-`package.json`). See `docs/audit/setup-hosted-privacy.md` Part A for the design rationale.
+`package.json`).
 
 - `lib.mjs` — pure helpers (Node version check, default DB path, default env), unit-tested directly in
   `harness/test/setup-scripts.test.ts`.

@@ -5,7 +5,7 @@ your own machine. This is intentionally separate from `../src`, which is the
 hosted Lovable app (landing page + preserved hosted-runtime preview). Nothing in
 here is required by, or should be imported into, the hosted app.
 
-See `../SPEC.md` ("Architecture pivot" section) for why this exists: Lovable's
+Why this exists: Lovable's
 hosted OAuth client-metadata-document flow is currently rejected by Lovable's
 own authorization server ("Client Not Found"), so there is no supported way yet
 for a hosted app to authenticate to a user's Lovable account. Claude Code's own
@@ -218,4 +218,4 @@ same SQLite database as everything else, and both surfaced in the product UI
 pages.
 
 This is deliberately the smallest possible slice -- Skills, verification, and
-experiments are later checkpoints (see `../SPEC.md`).
+experiments came in later rounds.

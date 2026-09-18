@@ -366,7 +366,7 @@ npm run build                   # production build (hosted preview; never import
 cd harness && npm run llm:smoke # one real model call, after changing harness/src/llm
 ```
 
-Besides behaviour tests, structural tests read the page source and pin product copy and rules (for example, that pages only call the allowed routes, that the replay is never described as a comparison it is not, that this README's links resolve). A copy change updates its test on purpose. The working documents `PLAN.md`, `DECISIONS.md`, `VERIFICATION.md`, `SPEC.md`, `DEMO_PLAN.md` and `build-log.md` record what was verified and why.
+Besides behaviour tests, structural tests read the page source and pin product copy and rules (for example, that pages only call the allowed routes, that the replay is never described as a comparison it is not, that this README's links resolve). A copy change updates its test on purpose.
 
 ---
 

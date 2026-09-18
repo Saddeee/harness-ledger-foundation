@@ -46,3 +46,6 @@ harness/tmp/
 *.njsproj
 *.sln
 *.sw?
+
+# Working notes for AI sessions (plans, decisions, audits, handoff); not part of the product
+/.harness-notes/
