@@ -38,6 +38,30 @@ function isLlmProvider(value: unknown): value is LlmProvider {
   return typeof value === "string" && (LLM_PROVIDERS as readonly string[]).includes(value);
 }
 
+// ---- Checkpoint 2026-09-18 WP5 (D7): "Reanalyse history" ----
+// A small local shape/validator, same convention as isLlmProvider above --
+// the real validation (dates, project ids) happens in
+// harness/src/analysis/reanalyse.ts; this just gets a well-typed object out
+// of an untrusted JSON body.
+type ReanalyseScopeBody = {
+  project_ids: string[];
+  from: string;
+  to: string;
+  include_reviewed: boolean;
+};
+
+function parseReanalyseScopeBody(body: Record<string, unknown>): ReanalyseScopeBody {
+  const projectIds = Array.isArray(body["project_ids"])
+    ? body["project_ids"].filter((x): x is string => typeof x === "string")
+    : [];
+  const from = typeof body["from"] === "string" ? body["from"] : "";
+  const to = typeof body["to"] === "string" ? body["to"] : "";
+  if (!from || !to) throw new Error("from and to dates are required");
+  const includeReviewed = body["include_reviewed"] === true;
+  return { project_ids: projectIds, from, to, include_reviewed: includeReviewed };
+}
+// ---- end Checkpoint 2026-09-18 WP5 ----
+
 type Executor = NonNullable<Awaited<ReturnType<typeof loadHarnessExecutor>>>;
 
 // A connect flow already in progress (across concurrent requests): the
@@ -203,6 +227,10 @@ async function handleGet({ request }: { request: Request }) {
         // switch -- read here alongside every other setting this route
         // already exposes.
         keep_test_copies: settings.keep_test_copies === "true",
+        // Checkpoint 2026-09-18 WP5 (D7): default-off, read via its own
+        // module rather than the `settings` row above -- see
+        // harness/src/analysis/context.ts's header for why.
+        automatic_analysis_after_sync: adapter.getAutomaticAnalysisSetting(),
       },
       last_run,
       next_run_at,
@@ -225,6 +253,11 @@ async function handleGet({ request }: { request: Request }) {
         queued: adapter.hasOpenAnalysisRequest(),
         awaiting_analysis: adapter.countHistoryItemsAwaitingAnalysis(),
         provider_ready,
+        // Checkpoint 2026-09-18 WP5 (D7): open review items where a newer
+        // analysis disagreed with a decision a person already made -- the
+        // Inbox renders one card per row, Accept/Dismiss post back to the
+        // actions below.
+        disagreements: adapter.listAnalysisDisagreements("open"),
       },
       defaults: { max_active_rules: Number(settings.max_active_rules) },
       // Round 6 Task 6b / spec §6: the Lovable-credits Settings section and
@@ -313,6 +346,10 @@ async function handlePost({ request }: { request: Request }) {
         patch["sync_window_start_hour"] = String(body["window_start_hour"]);
       if (body["window_end_hour"] !== undefined)
         patch["sync_window_end_hour"] = String(body["window_end_hour"]);
+      // Checkpoint 2026-09-18 (D7): saved with the schedule, default off.
+      if (body["automatic_analysis_after_sync"] !== undefined)
+        patch["automatic_analysis_after_sync"] =
+          body["automatic_analysis_after_sync"] === true ? "true" : "false";
       const settings = adapter.setSettings(patch);
       return Response.json({ available: true, settings });
     }
@@ -345,8 +382,54 @@ async function handlePost({ request }: { request: Request }) {
         patch["lovable_monthly_credit_budget"] = String(body["lovable_monthly_credit_budget"]);
       if (body["keep_test_copies"] !== undefined)
         patch["keep_test_copies"] = String(body["keep_test_copies"]);
+      // Checkpoint 2026-09-18 WP5 (D7): a separate write from the patch
+      // above -- store.setSettings validates its patch against a fixed
+      // SettingKey union this key isn't part of this checkpoint (see
+      // harness/src/analysis/context.ts's header).
+      if (body["automatic_analysis_after_sync"] !== undefined)
+        patch["automatic_analysis_after_sync"] =
+          body["automatic_analysis_after_sync"] === true ? "true" : "false";
       const settings = adapter.setSettings(patch);
-      return Response.json({ available: true, settings });
+      return Response.json({
+        available: true,
+        settings: {
+          ...settings,
+          automatic_analysis_after_sync: adapter.getAutomaticAnalysisSetting(),
+        },
+      });
+    }
+
+    // Checkpoint 2026-09-18 WP5 (D7): "Reanalyse history" -- an estimate
+    // (candidate counts, token cost, provider/model per role, budget
+    // remaining) shown before confirming, then the scoped, non-coalesced
+    // request itself.
+    if (action === "reanalyse_estimate") {
+      const scope = parseReanalyseScopeBody(body);
+      const estimate = adapter.estimateReanalysis(scope);
+      return Response.json({ available: true, estimate });
+    }
+
+    if (action === "reanalyse") {
+      const scope = parseReanalyseScopeBody(body);
+      const reason = typeof body["reason"] === "string" ? body["reason"] : "";
+      const result = adapter.requestReanalysis(scope, reason);
+      // Start now in this process when it runs the schedule; otherwise the
+      // schedule's own tick picks the request up -- same pattern as
+      // analyse_now above.
+      const executor = await loadHarnessExecutor();
+      executor?.schedule.kickAnalysisNow();
+      return Response.json({ available: true, requested: true, id: result.id });
+    }
+
+    if (action === "accept_disagreement" || action === "dismiss_disagreement") {
+      const id = Number(body["id"]);
+      if (!Number.isInteger(id)) throw new Error("id must be an integer");
+      if (action === "accept_disagreement") adapter.acceptDisagreement(id);
+      else adapter.dismissDisagreement(id);
+      return Response.json({
+        available: true,
+        disagreements: adapter.listAnalysisDisagreements("open"),
+      });
     }
 
     if (action === "llm_settings") {

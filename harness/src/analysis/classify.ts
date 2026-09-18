@@ -20,6 +20,20 @@ import type {
   MessageClassificationValue,
   UnclassifiedUserMessage,
 } from "../store.js";
+// Checkpoint 2026-09-18 WP5 (D7): the context packet -- initial request,
+// latest reply, Skill names and term-matched older messages -- appended to
+// the prompt as an optional 4th argument, and recorded per call. See
+// context.ts's own header for why this lives in a new module rather than
+// store.ts.
+import {
+  buildContextPacket,
+  contentHashOf,
+  CONTEXT_STRATEGY_VERSION,
+  PROMPT_VERSION,
+  recordAnalysisContext,
+  stampClassification,
+  type ContextPacket,
+} from "./context.js";
 
 const CONTEXT_MESSAGE_CHAR_LIMIT = 1500;
 const SUMMARY_CHAR_LIMIT = 120;
@@ -91,6 +105,10 @@ export function classifierUserPrompt(
   message: Pick<UnclassifiedUserMessage, "content">,
   context: ContextMessage[],
   liveRules: { id: number; instruction: string }[] = [],
+  // Checkpoint 2026-09-18 WP5: optional so every existing call site/test
+  // above (2 or 3 args) is unaffected -- omitting it renders exactly what
+  // this function always rendered.
+  contextPacket?: ContextPacket,
 ): string {
   const parts: string[] = [];
   if (liveRules.length > 0) {
@@ -103,11 +121,22 @@ export function classifierUserPrompt(
   if (context.length > 0) {
     parts.push(`Context (oldest first):\n${context.map(renderContextMessage).join("\n\n")}`);
   }
+  if (contextPacket) {
+    const blocks = contextPacket.text_blocks;
+    for (const block of [
+      blocks.initial_request,
+      blocks.latest_reply,
+      blocks.skills,
+      blocks.older_messages,
+    ]) {
+      if (block) parts.push(block);
+    }
+  }
   parts.push(`Message to classify:\n${truncate(message.content, CONTEXT_MESSAGE_CHAR_LIMIT)}`);
   return parts.join("\n\n");
 }
 
-type RawClassifierOutput = {
+export type RawClassifierOutput = {
   classification?: unknown;
   tags?: unknown;
   summary?: unknown;
@@ -148,7 +177,7 @@ export function validateClassifierOutput(raw: RawClassifierOutput): ValidatedCla
  * and written -- its own or its workspace's). Suggestions still waiting in
  * the Inbox are not shown: a message going against one of those is not "you
  * asked for the opposite of a live rule". */
-function rulesInLovable(projectId: string): { id: number; instruction: string }[] {
+export function rulesInLovable(projectId: string): { id: number; instruction: string }[] {
   const workspaceId = store.getProjectMeta(projectId)?.workspace_id ?? null;
   return store
     .listLiveRulesWithTargets()
@@ -180,14 +209,39 @@ export async function classifyPending(
     opts.onProgress?.(classified + failed, pending.length);
     const context = store.listContextBefore(message.id, DEFAULT_CONTEXT_SIZE);
     const liveRules = message.project_id ? rulesInLovable(message.project_id) : [];
+    // Checkpoint 2026-09-18 WP5: the context packet -- built before the
+    // call (its text is part of the prompt), recorded right after the call
+    // succeeds (analysis_context.llm_call_id is null here: this module has
+    // no access to the row id createCallLlm's own insertLlmCall assigns --
+    // see this WP's brief, "else null").
+    const contextPacket = buildContextPacket({
+      role: "classifier",
+      projectId: message.project_id,
+      currentMessage: {
+        id: message.id,
+        external_id: message.external_id,
+        content: message.content,
+        occurred_at: message.occurred_at,
+      },
+      windowMessages: context,
+      liveRules,
+    });
     try {
       const result = await callLlm<RawClassifierOutput>({
         role: "classifier",
         system: classifierSystemPrompt(),
-        user: classifierUserPrompt(message, context, liveRules),
+        user: classifierUserPrompt(message, context, liveRules, contextPacket),
         schema: CLASSIFIER_JSON_SCHEMA,
         schemaName: "message_classification",
         runId: opts.runId,
+      });
+      recordAnalysisContext({
+        runId: opts.runId ?? null,
+        llmCallId: null,
+        role: "classifier",
+        targetHistoryItemId: message.id,
+        packet: contextPacket,
+        contentHash: contentHashOf(message.content),
       });
       const validated = validateClassifierOutput(result.json);
       store.insertMessageClassification({
@@ -196,6 +250,11 @@ export async function classifyPending(
         tags: validated.tags,
         summary: validated.summary,
         run_id: opts.runId ?? null,
+      });
+      stampClassification(message.id, {
+        contentHash: contentHashOf(message.content),
+        promptVersion: PROMPT_VERSION.classifier,
+        strategyVersion: CONTEXT_STRATEGY_VERSION,
       });
       // Round 7: the user asked for the opposite of a live rule -- offer to
       // retire it (Retire/Keep in the Inbox), once per rule.

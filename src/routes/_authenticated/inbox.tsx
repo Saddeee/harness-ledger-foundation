@@ -1,15 +1,294 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { DecisionCard, type Improvement } from "@/components/harness/improvement";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import {
   executorQueryOptions,
   fetchImprovements,
+  fetchProjects,
   lovableOf,
+  postExecutor,
   postImprovementAction,
+  type AllowedProject,
 } from "@/lib/improvements-client";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  ANALYSE_NOW_SCOPE_LINE,
+  DISAGREEMENT_ACCEPT_BUTTON,
+  DISAGREEMENT_DISMISS_BUTTON,
+  DISAGREEMENT_TITLE,
+  REANALYSE_BODY,
+  REANALYSE_CANCEL_BUTTON,
+  REANALYSE_CONFIRM_BUTTON,
+  REANALYSE_FROM_LABEL,
+  REANALYSE_INCLUDE_REVIEWED_LABEL,
+  REANALYSE_PROJECTS_LABEL,
+  REANALYSE_REASON_LABEL,
+  REANALYSE_REASON_PLACEHOLDER,
+  REANALYSE_TITLE,
+  REANALYSE_TO_LABEL,
+  REANALYSE_TRIGGER_BUTTON,
+  disagreementBodyLine,
+  reanalyseEstimateLine,
+} from "@/lib/harness-ux";
+
+// Checkpoint 2026-09-18 WP5 (D7): the executor route's GET response gained
+// `analysis.disagreements` and the POST route gained `reanalyse_estimate` /
+// `reanalyse` / `accept_disagreement` / `dismiss_disagreement` this
+// checkpoint -- improvements-client.ts's own ExecutorAnalysis/ExecutorSettings
+// types are not part of this WP's editable surface, so these local shapes
+// describe just the additional fields, kept structurally compatible with
+// what the route actually returns (see executor.ts's GET handler).
+type AnalysisDisagreement = {
+  id: number;
+  correction_candidate_id: number;
+  previous_json: string;
+  proposed_json: string;
+  status: "open" | "accepted" | "dismissed";
+};
+type ReanalysisEstimate = {
+  messages: number;
+  corrections: number;
+  episodes: number;
+  estimated_tokens: number;
+  models: { classifier: { provider: string; model: string } };
+  budget_remaining: number;
+};
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+function daysAgoIso(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The "Reanalyse history" confirm dialog: scope (projects, date range,
+ * whether to include records already decided on), a reason, and the
+ * estimate line -- refreshed whenever the scope changes. Confirming posts
+ * `reanalyse` to the executor route; it is never coalesced with an ordinary
+ * "Analyse now" request. */
+function ReanalyseDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const qc = useQueryClient();
+  const projects = useQuery({ queryKey: ["harness-projects"], queryFn: fetchProjects });
+  const allowed: AllowedProject[] = projects.data?.allowed ?? [];
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [from, setFrom] = useState(() => daysAgoIso(30));
+  const [to, setTo] = useState(() => todayIso());
+  const [includeReviewed, setIncludeReviewed] = useState(false);
+  const [reason, setReason] = useState("");
+  const [estimate, setEstimate] = useState<ReanalysisEstimate | null>(null);
+
+  const scopeBody = () => ({
+    project_ids: [...selected],
+    from,
+    to,
+    include_reviewed: includeReviewed,
+  });
+
+  const estimateMutation = useMutation({
+    mutationFn: () => postExecutor({ action: "reanalyse_estimate", ...scopeBody() }),
+    onSuccess: (res) => setEstimate((res as { estimate?: ReanalysisEstimate }).estimate ?? null),
+  });
+
+  // Re-estimate whenever the scope changes, while the dialog is open.
+  useEffect(() => {
+    if (!open) return;
+    setEstimate(null);
+    void estimateMutation.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, from, to, includeReviewed, selected.size]);
+
+  const reanalyse = useMutation({
+    mutationFn: () => postExecutor({ action: "reanalyse", ...scopeBody(), reason }),
+    onSuccess: () => {
+      toast.success("Reanalyse queued");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not queue reanalyse"),
+  });
+
+  const toggleProject = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{REANALYSE_TITLE}</DialogTitle>
+          <DialogDescription>{REANALYSE_BODY}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>{REANALYSE_PROJECTS_LABEL}</Label>
+            <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+              {allowed.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No projects yet.</p>
+              ) : (
+                allowed.map((p) => (
+                  <label key={p.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={selected.has(p.id)}
+                      onCheckedChange={() => toggleProject(p.id)}
+                    />
+                    {p.name}
+                  </label>
+                ))
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              None checked means every project you've allowed.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="reanalyse-from">{REANALYSE_FROM_LABEL}</Label>
+              <Input
+                id="reanalyse-from"
+                type="date"
+                value={from}
+                max={to}
+                onChange={(e) => setFrom(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="reanalyse-to">{REANALYSE_TO_LABEL}</Label>
+              <Input
+                id="reanalyse-to"
+                type="date"
+                value={to}
+                min={from}
+                onChange={(e) => setTo(e.target.value)}
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={includeReviewed}
+              onCheckedChange={(v) => setIncludeReviewed(v === true)}
+            />
+            {REANALYSE_INCLUDE_REVIEWED_LABEL}
+          </label>
+          <div className="space-y-1">
+            <Label htmlFor="reanalyse-reason">{REANALYSE_REASON_LABEL}</Label>
+            <Input
+              id="reanalyse-reason"
+              value={reason}
+              placeholder={REANALYSE_REASON_PLACEHOLDER}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground" role="status">
+            {estimate
+              ? reanalyseEstimateLine({
+                  messages: estimate.messages,
+                  estimated_tokens: estimate.estimated_tokens,
+                  model: estimate.models.classifier.model,
+                  budget_remaining: estimate.budget_remaining,
+                })
+              : "Estimating…"}
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {REANALYSE_CANCEL_BUTTON}
+          </Button>
+          <Button
+            onClick={() => reanalyse.mutate()}
+            disabled={reanalyse.isPending || !reason.trim()}
+          >
+            {reanalyse.isPending ? "Queuing…" : REANALYSE_CONFIRM_BUTTON}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DisagreementCard({ item }: { item: AnalysisDisagreement }) {
+  const qc = useQueryClient();
+  const previous = (() => {
+    try {
+      return JSON.parse(item.previous_json) as { classification?: string };
+    } catch {
+      return {};
+    }
+  })();
+  const proposed = (() => {
+    try {
+      return JSON.parse(item.proposed_json) as { classification?: string };
+    } catch {
+      return {};
+    }
+  })();
+
+  const respond = useMutation({
+    mutationFn: (action: "accept_disagreement" | "dismiss_disagreement") =>
+      postExecutor({ action, id: item.id }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not update"),
+  });
+
+  return (
+    <div className="space-y-2 rounded-md border bg-card p-4 text-sm">
+      <p className="font-medium">{DISAGREEMENT_TITLE}</p>
+      <p className="text-muted-foreground">
+        {disagreementBodyLine(
+          previous.classification ?? "unknown",
+          proposed.classification ?? "unknown",
+        )}
+      </p>
+      <div className="flex gap-3">
+        <button
+          type="button"
+          className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          disabled={respond.isPending}
+          onClick={() => respond.mutate("accept_disagreement")}
+        >
+          {DISAGREEMENT_ACCEPT_BUTTON}
+        </button>
+        <button
+          type="button"
+          className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          disabled={respond.isPending}
+          onClick={() => respond.mutate("dismiss_disagreement")}
+        >
+          {DISAGREEMENT_DISMISS_BUTTON}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export const Route = createFileRoute("/_authenticated/inbox")({
   // Round 5 Task 5 / spec §2: the Inbox has no detail view of its own any
@@ -99,6 +378,8 @@ function Page() {
   // or by leaving the page (component state only -- a reload starts clean).
   const [confirmed, setConfirmed] = useState<Map<number, string>>(new Map());
   const [undoing, setUndoing] = useState<Set<number>>(new Set());
+  // Checkpoint 2026-09-18 WP5 (D7): "Reanalyse history" confirm dialog.
+  const [reanalyseOpen, setReanalyseOpen] = useState(false);
 
   const query = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
   const refresh = () => qc.invalidateQueries({ queryKey: ["harness-improvements"] });
@@ -224,10 +505,35 @@ function Page() {
       ? `Nothing needs your decision. Harness Ledger accepted ${autoAcceptedSince} suggestion${autoAcceptedSince === 1 ? "" : "s"} automatically since your last visit; see Suggestions.`
       : "Nothing needs your decision. Everything you've decided on is under Suggestions.";
 
+  // Checkpoint 2026-09-18 WP5 (D7): open review items where a newer
+  // analysis disagreed with a decision already made -- see the executor
+  // route's GET handler (`analysis.disagreements`), a field this WP added
+  // that isn't (yet) part of improvements-client.ts's own ExecutorAnalysis
+  // type.
+  const disagreements =
+    (executor.data?.analysis as unknown as { disagreements?: AnalysisDisagreement[] } | undefined)
+      ?.disagreements ?? [];
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Inbox</h1>
       <AnalyseNotice />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">{ANALYSE_NOW_SCOPE_LINE}</p>
+        <Button size="sm" variant="outline" onClick={() => setReanalyseOpen(true)}>
+          {REANALYSE_TRIGGER_BUTTON}
+        </Button>
+      </div>
+      <ReanalyseDialog open={reanalyseOpen} onOpenChange={setReanalyseOpen} />
+      {disagreements.length > 0 ? (
+        <ul className="space-y-3">
+          {disagreements.map((d) => (
+            <li key={d.id}>
+              <DisagreementCard item={d} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {list.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0

@@ -39,6 +39,11 @@ import {
   testAction,
 } from "./experiments-actions.js";
 import { kickExperimentRunner } from "./experiments-queue.js";
+// Checkpoint 2026-09-18 WP5 (D7): the automatic-analysis-after-sync
+// setting/reader lives in analysis/context.ts, not store.ts (WP4 owns
+// store.ts's SettingKey/SETTING_DEFAULTS this checkpoint) -- see that
+// file's header for why.
+import { getAutomaticAnalysisSetting } from "../analysis/context.js";
 
 const FETCHED_BY = "executor";
 /** Enough recent ids that a page of history cannot step over the known window. */
@@ -980,6 +985,26 @@ export async function runAll(
   } catch (err) {
     store.insertEvent("executor.sync.kick_experiment_error", null, { error: errorMessage(err) });
   }
+
+  // ---- Checkpoint 2026-09-18 WP5: automatic analysis after sync (D7) ----
+  // Default off. Only a SUCCESSFUL sync ever queues an analysis request,
+  // and only via the existing coalescing store.requestAnalysis() -- this
+  // never calls an LLM itself; the scheduler's own analysis path (already
+  // gated on an open request, see executor/schedule.ts's maybeRunAnalysis)
+  // does the real work later, exactly as if a person had pressed
+  // "Analyse now". Isolated in its own try/catch, same convention as the
+  // health recompute and kickExperimentRunner above: a bug here must never
+  // flip an otherwise-successful sync to ok:false.
+  if (ok && getAutomaticAnalysisSetting()) {
+    try {
+      store.requestAnalysis();
+    } catch (err) {
+      store.insertEvent("executor.sync.automatic_analysis_error", null, {
+        error: errorMessage(err),
+      });
+    }
+  }
+  // ---- end Checkpoint 2026-09-18 WP5 ----
 
   return { runId, ok, ran: true, counts, ...(error ? { error } : {}) };
 }

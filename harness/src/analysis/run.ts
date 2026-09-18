@@ -17,6 +17,12 @@ import { recomputeRuleHealth } from "./health.js";
 import { proposeRetirements } from "./retire.js";
 import { keyStatus } from "../llm-keys.js";
 import { defaultExec, type Exec } from "../llm/claude-code.js";
+// Checkpoint 2026-09-18 WP5 (D7): "Reanalyse history" requests are taken
+// from the same analysis_requests table (store.takeAnalysisRequest doesn't
+// distinguish mode -- see reanalyse.ts's own header), so every request this
+// run takes is checked for mode='reanalyse' and run through its own pass,
+// alongside (not instead of) the ordinary incremental pipeline below.
+import { getAnalysisRequest, runReanalysisPass, type ReanalyseScope } from "./reanalyse.js";
 
 const PROVIDER_NAMES: Partial<Record<LlmProvider, string>> = {
   openai: "OpenAI",
@@ -148,6 +154,12 @@ export type AnalysisCounts = {
   // classify/mine's own `failed`).
   judged: number;
   judge_failed: number;
+  // Checkpoint 2026-09-18 WP5: any 'reanalyse'-mode requests this run took
+  // (see reanalyse.ts) -- how many messages were reclassified in place, and
+  // how many disagreed with a human-reviewed decision (a review item was
+  // opened for each, nothing was overwritten).
+  reanalysed: number;
+  disagreements: number;
 };
 
 export type RunAnalysisResult = {
@@ -169,6 +181,8 @@ const EMPTY_COUNTS: AnalysisCounts = {
   auto_accepted: 0,
   judged: 0,
   judge_failed: 0,
+  reanalysed: 0,
+  disagreements: 0,
 };
 
 /**
@@ -188,10 +202,22 @@ export async function runAnalysis(
 ): Promise<RunAnalysisResult> {
   const runId = store.startAnalysisRun(kind);
   const requestIds: number[] = [];
+  const reanalyseScopes: ReanalyseScope[] = [];
   for (;;) {
     const id = store.takeAnalysisRequest(runId);
     if (id === null) break;
     requestIds.push(id);
+    const request = getAnalysisRequest(id);
+    if (request?.mode === "reanalyse" && request.scope_json) {
+      try {
+        reanalyseScopes.push(JSON.parse(request.scope_json) as ReanalyseScope);
+      } catch {
+        // Malformed scope_json (should never happen -- requestReanalysis is
+        // the only writer): skip it rather than fail the whole run: the
+        // request is still marked done below like every other request this
+        // run took.
+      }
+    }
   }
 
   const maxCalls = opts.maxCalls ?? PER_RUN_CALL_CAP;
@@ -265,6 +291,21 @@ export async function runAnalysis(
         });
         counts.judged = judgeResult.judged;
         counts.judge_failed = judgeResult.failed;
+      }
+
+      // Checkpoint 2026-09-18 WP5: any 'reanalyse'-mode requests this run
+      // took, each run through its own pass (reclassifies messages in its
+      // scope even if already classified; a human-reviewed disagreement
+      // opens a review item instead of overwriting anything -- see
+      // reanalyse.ts's runReanalysisPass). Alongside the incremental
+      // pipeline above, not instead of it -- an "Analyse now" request open
+      // at the same time still gets its own ordinary pass.
+      progress("classify");
+      for (const scope of reanalyseScopes) {
+        const reanalyseResult = await runReanalysisPass(callLlm, scope, runId);
+        counts.reanalysed += reanalyseResult.updated;
+        counts.disagreements += reanalyseResult.disagreements;
+        counts.failed += reanalyseResult.failed;
       }
 
       // Fix round 1 item 3 (controller ruling): new rule_adherence rows

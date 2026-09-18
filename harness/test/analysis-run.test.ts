@@ -132,6 +132,8 @@ test("runAnalysis: provider not ready (no API key) finishes ok:false with the re
     auto_accepted: 0,
     judged: 0,
     judge_failed: 0,
+    reanalysed: 0,
+    disagreements: 0,
   });
   assert.equal(result.tokens, 0);
   assert.equal(result.costUsd, 0);
@@ -216,6 +218,8 @@ test("runAnalysis: main path -- consumes an open request, classifies, segments, 
     // finds nothing to score and never calls the LLM at all.
     judged: 0,
     judge_failed: 0,
+    reanalysed: 0,
+    disagreements: 0,
   });
 
   // Three real calls were made (2 classify + 1 rule_writer), each logging
@@ -580,4 +584,99 @@ test("runAnalysis: records its step and counts while it runs, for the Inbox's pr
     .prepare(`SELECT progress_json FROM analysis_runs WHERE id = ?`)
     .get(result.runId) as { progress_json: string };
   assert.equal(JSON.parse(last.progress_json).stage, "health");
+});
+
+// ---- Checkpoint 2026-09-18 WP5 (D7) ----
+
+test("runAnalysis (incremental): an already-classified message is never reclassified -- classifyPending only ever selects unclassified messages", async () => {
+  llmKeys.setKey("openai", "sk-test-not-a-real-key");
+  const PROJECT = "proj-run-incremental-skip";
+  store.allowProject(PROJECT, "Run Incremental Skip");
+
+  const already = insertMessage(PROJECT, "user", "Already classified message.", ts(30));
+  store.insertMessageClassification({
+    history_item_id: already.id,
+    classification: "other",
+    tags: [],
+    summary: "pre-existing",
+    run_id: null,
+  });
+  const fresh = insertMessage(PROJECT, "user", "A brand new message to classify.", ts(31));
+
+  store.requestAnalysis();
+  // No canned response for "Already classified message." -- if
+  // classifyPending (an ordinary incremental run) ever tried to reclassify
+  // it, this fake would throw and the assertion below would see it counted
+  // as `failed`, not simply absent from the call.
+  const result = await run.runAnalysis(
+    fakeCallLlm({
+      classify: {
+        "A brand new message to classify.": {
+          classification: "new_task",
+          tags: ["general"],
+          summary: "New message.",
+        },
+      },
+    }),
+  );
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.counts.classified, 1);
+  assert.equal(result.counts.failed, 0, "the already-classified message was never even attempted");
+
+  const untouched = db
+    .prepare(`SELECT summary FROM message_classifications WHERE history_item_id = ?`)
+    .get(already.id) as { summary: string };
+  assert.equal(untouched.summary, "pre-existing", "its row is unchanged");
+  void fresh;
+});
+
+test("runAnalysis: a 'reanalyse'-mode request runs alongside the ordinary incremental pipeline, is completed, and its counts are recorded separately", async () => {
+  llmKeys.setKey("openai", "sk-test-not-a-real-key");
+  const reanalyse = await import("../src/analysis/reanalyse.js");
+
+  const PROJECT = "proj-run-reanalyse-mode";
+  store.allowProject(PROJECT, "Run Reanalyse Mode");
+
+  const msg = insertMessage(PROJECT, "user", "The totals column is misaligned.", ts(40));
+  store.insertMessageClassification({
+    history_item_id: msg.id,
+    classification: "other",
+    tags: [],
+    summary: "old",
+    run_id: null,
+  });
+
+  const { id: reanalyseRequestId } = reanalyse.requestReanalysis(
+    {
+      project_ids: [PROJECT],
+      from: "2026-09-02",
+      to: "2026-09-03",
+      include_reviewed: true,
+    },
+    "spot-checking an old batch",
+  );
+
+  const result = await run.runAnalysis(
+    fakeCallLlm({
+      classify: {
+        "The totals column is misaligned.": {
+          classification: "correction",
+          tags: [],
+          summary: "Totals column misaligned.",
+        },
+      },
+    }),
+  );
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.counts.reanalysed, 1);
+  assert.equal(result.counts.disagreements, 0);
+
+  assert.equal(requestStatus(reanalyseRequestId), "done");
+  const requestRow = reanalyse.getAnalysisRequest(reanalyseRequestId)!;
+  assert.equal(requestRow.mode, "reanalyse", "mode is preserved through to completion");
+
+  const row = db
+    .prepare(`SELECT classification FROM message_classifications WHERE history_item_id = ?`)
+    .get(msg.id) as { classification: string };
+  assert.equal(row.classification, "correction");
 });
