@@ -1,32 +1,37 @@
 # Harness Ledger
 
-Harness Ledger turns the corrections you give Lovable into standing instructions in your Lovable Knowledge, and then checks whether those instructions actually earn their place.
+Harness Ledger turns the corrections you give Lovable into versioned Knowledge and Skills, then collects evidence about whether those instructions still deserve to remain.
 
-**New here?** Read [What it is](#1-what-it-is) and [How it works](#2-how-it-works), then follow [Getting started](#7-getting-started): six steps, about ten minutes, all on your own computer.
+It creates an evidence trail from correction to persistent instruction, lets you replay the original task, observes later relevant builds, and keeps the instruction lifecycle reversible.
+
+**New here?** Read [What it is](#1-what-it-is) and [How it works](#2-how-it-works), then follow [Getting started](#8-getting-started).
 
 ## Contents
 
 1. [What it is](#1-what-it-is)
 2. [How it works](#2-how-it-works)
-3. [Proof: paired tests](#3-proof-paired-tests)
-4. [Why it runs on your machine](#4-why-it-runs-on-your-machine)
-5. [Safety and cost](#5-safety-and-cost)
-6. [The app at a glance](#6-the-app-at-a-glance)
-7. [Getting started](#7-getting-started)
-8. [Architecture](#8-architecture)
-9. [Development](#9-development)
-10. [Status and roadmap](#10-status-and-roadmap)
-11. [FAQ](#11-faq)
+3. [Test a rule against a previous correction](#3-test-a-rule-against-a-previous-correction)
+4. [Knowledge and Skills](#4-knowledge-and-skills)
+5. [Sync, Analysis and Reanalyse history](#5-sync-analysis-and-reanalyse-history)
+6. [Safety, cost and privacy](#6-safety-cost-and-privacy)
+7. [The app at a glance](#7-the-app-at-a-glance)
+8. [Getting started](#8-getting-started)
+9. [Use Harness Ledger through MCP](#9-use-harness-ledger-through-mcp)
+10. [Why it runs on your machine](#10-why-it-runs-on-your-machine)
+11. [Architecture](#11-architecture)
+12. [Development](#12-development)
+13. [Status](#13-status)
+14. [FAQ](#14-faq)
 
 ---
 
 ## 1. What it is
 
-Every time you correct Lovable ("no, use kronor", "don't touch the login page", "sentence case, please") you teach it something. Lovable has a place to keep that lesson permanently, **Knowledge**: instructions for a project (or your whole workspace) that Lovable's agent reads on every request. Almost nobody maintains it. So the same corrections come back, chat after chat.
+Every time you correct Lovable ("no, use kronor", "don't touch the login page", "sentence case, please") you teach it something. Lovable has two places to keep that lesson: **Knowledge**, instructions for a project or your whole workspace that Lovable's agent reads on every request, and **Skills**, procedures it follows for a kind of task. Almost nobody maintains them. So the same corrections come back, chat after chat.
 
-Harness Ledger reads your own chat history with Lovable, finds where you corrected it, and proposes one instruction per correction. You decide: add it to this project, add it to all your projects, skip it, or test it first. What you approve is written into your Knowledge inside a marked block that Harness Ledger owns, every version is kept, and anything can be undone. Once a rule is live, Harness Ledger watches your later builds and suggests retiring rules that don't hold up.
+Harness Ledger reads your own chat history with Lovable, finds where you corrected it, and proposes one instruction per correction with a recommended destination: Knowledge, a Skill, or both. You decide: edit it, add it to this project or to all your projects, test it against the original request first, or skip it. What you approve to Knowledge is written inside a marked block that Harness Ledger owns, read back, and versioned; anything can be undone. Once a rule is live, Harness Ledger watches your later builds and asks, with evidence, whether the rule is still useful.
 
-Autonomy is available (it can accept confident suggestions for you), but the default is manual. Nothing spends Lovable credits or AI tokens unless you press a button that says so, and every number on screen says where it came from.
+Autonomy is available (it can accept confident suggestions for you), but the default is to ask. Nothing spends Lovable credits or AI tokens unless you press a button that says so, and every number on screen says where it came from.
 
 ![A suggestion card in the Inbox](docs/images/inbox-suggestion.png)
 
@@ -34,27 +39,27 @@ Autonomy is available (it can accept confident suggestions for you), but the def
 
 ## 2. How it works
 
-Four words, four different things. Analysis has three AI roles: the **Classifier**, the **Rule writer** and the **Judge**.
-
-| Word           | Meaning                                                                                                                                                                                | Cost      |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| **Sync**       | Reading your chats, Knowledge and Skills from Lovable (hourly, or "Sync now")                                                                                                          | Free      |
-| **Analysis**   | The AI step, on "Analyse now": the **Classifier** finds corrections, the **Rule writer** proposes one instruction per correction, the **Judge** checks later builds against live rules | AI tokens |
-| **Suggestion** | A proposed rule you haven't decided on                                                                                                                                                 | Free      |
-| **Rule**       | A suggestion you accepted, written to Lovable Knowledge                                                                                                                                | Free      |
+| Word                  | Meaning                                                                                                                                                                                                                      | Cost      |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| **Sync**              | Reading your chats, Knowledge and Skills from Lovable (hourly, or "Sync now"). Incremental: only what is new.                                                                                                                | None      |
+| **Analysis**          | The AI step, on "Analyse now": the **Classifier** finds corrections, the **Rule writer** proposes one instruction per correction with a destination, the **Judge** checks later builds against live rules. Only new records. | AI tokens |
+| **Reanalyse history** | A separate, scoped pass over older records you choose, with an estimate and a confirmation. Never overwrites a decision you made.                                                                                            | AI tokens |
+| **Suggestion**        | A proposed instruction you haven't decided on                                                                                                                                                                                | None      |
+| **Rule**              | A suggestion you accepted, written to Lovable Knowledge                                                                                                                                                                      | None      |
+| **Skill proposal**    | A draft Skill kept and versioned locally                                                                                                                                                                                     | None      |
 
 ```mermaid
 flowchart TD
     A[Sync<br/>chats, Knowledge, Skills] --> B[Analysis<br/>Classifier, Rule writer, Judge]
     B --> C{You decide<br/>in the Inbox}
-    C -->|Add| D[Written to Lovable Knowledge<br/>verified, versioned]
+    C -->|Add| D[Written to Lovable Knowledge<br/>read back, versioned]
     C -->|Skip| E[Remembered<br/>never proposed again]
-    C -->|Test it first| F[Paired test]
+    C -->|Test it first| F[Historical replay]
     F -->|Add it now| D
     D --> G[Observed on later builds]
-    G --> H{Still earning<br/>its place?}
-    H -->|No| I[Retire or Keep]
-    H -->|Yes| G
+    G --> H{Still useful?}
+    H -->|Review or retire| I[Keep, review, retire, restore]
+    H -->|Keep| G
     E -.feedback.-> B
 ```
 
@@ -62,90 +67,98 @@ flowchart TD
 
 ```
 <!-- harness:start -->
-## Instructions managed by Harness Ledger (edit above this line, not inside)
+## Instructions managed by Harness Ledger
+<!-- Manage this section in Harness Ledger. Manual edits cause a conflict and are never overwritten automatically. -->
 - Show every money amount in this app in Swedish kronor, e.g. "125 kr".
 - Write all UI text in sentence case.
 <!-- harness:end -->
 ```
 
-Every write reads your Knowledge fresh, writes, reads it back, and only counts as done when the read-back matches. If you edited your own text in Lovable meanwhile, the rules are recomposed around it; if someone edited inside the block, the write stops instead of overwriting. Removing the last rule removes the whole block.
+Every write reads your Knowledge fresh, compares it with what Harness Ledger last wrote, composes the block, writes, reads it back, and only counts as done when the read-back matches exactly. If you edited your own text in Lovable meanwhile, the rules are recomposed around it. If someone edited inside the block, the write stops with a conflict instead of overwriting. Removing the last rule removes the whole block. Blocks written under the earlier heading are still recognised as Harness Ledger's own.
 
-**Watching later builds.** For each live rule, Harness Ledger counts the later builds in that rule's area and how many still needed the same correction. The Judge also reads Lovable's replies and records whether the rule was followed, with a quote. It never claims a rule "helped"; it shows what was observed.
+**Watching later builds.** For each live rule, Harness Ledger reports two things separately: what it observed ("Harness found the same issue in 2 of 3 relevant builds") and what the AI review found in Lovable's replies ("AI review marked the rule as not followed in 3 of 3 relevant builds", with a quote). It never claims a rule caused an outcome.
 
-**Retiring rules.** A rule is suggested for retirement when more of its builds repeated the correction than didn't, when it hasn't applied in 60 days, when a newer rule contradicts it, or when you ask Lovable for the opposite of what it says. You choose **Retire** or **Keep** (Keep asks again in 30 days).
-
-**A short example.** You tell Lovable "no, not dollars, use kronor". After the next sync, Analyse now classifies that message as a correction and proposes _"Show every money amount in kronor."_ You press **Add to this project**: it is written to Lovable Knowledge within seconds and shows "Written to Lovable 14:32". Weeks later you ask Lovable to switch to euros; Harness Ledger notices the message goes against the live rule and offers to retire it, quoting your message.
+**Is this rule still useful?** That is the question on every rule, with **Keep**, **Review**, **Retire** and **Not sure**. Repeated issues open a "Needs attention" recommendation (rewrite the rule or turn it into a Skill). A rule with no relevant task for 60 days opens "Review for relevance", not a retirement. When you ask Lovable for the opposite of a live rule, the message is classified first: a one-task exception or a temporary override is noted; only a permanent change of preference or a genuine contradiction questions the rule.
 
 ---
 
-## 3. Proof: paired tests
+## 3. Test a rule against a previous correction
 
-A paired test answers "would this rule have avoided my correction?" on a real build:
+The available test is a **historical replay**. It answers: "Would the original correction still be needed in the replay?"
 
-1. Harness Ledger copies your project as it was **just before** the original request and puts only this rule in the copy's Knowledge.
-2. It sends the copy the same request, and records Lovable's summary, reply, diff, a screenshot and the exact credit cost Lovable reports.
-3. Optionally (on by default, free) it also copies your project **right after** the original request, so you can open your real original build next to the new one.
-4. Both builds stay in your workspace as normal Lovable projects you can open and keep building on, until you delete them.
+1. Harness Ledger copies your project as it was **just before** the original request.
+2. It puts the Project Knowledge that was in force at that time (from its own snapshot history) plus the candidate rule into the copy. The rules that were live then stay; the candidate is the only addition.
+3. It sends the copy the same request and records Lovable's summary, reply, diff, a screenshot and the credit cost Lovable reports.
+4. Optionally (on by default) it also copies your project right after the original request, so the **Historical result** can be opened next to the **Replay with rule**.
 
-You judge on one screen, for each correction the rule came from: **Still needed? Yes / No / Unclear**.
+You judge per correction: **Yes / No / Unclear**. The page also shows the **replay environment**: code state, Project Knowledge and how it was chosen (exact version, nearest earlier version, today's Knowledge, or none on file), Workspace Knowledge, Skills, chat history, the candidate, other active rules, and the uncontrolled context. Every historical replay is labelled a **historical approximation**: the historical result ran in a different Lovable environment, and Lovable's own project memory, workspace Knowledge, Skills and builder version come from today. It is evidence about the correction, not proof that the rule alone caused any difference.
 
-![The judging screen with both builds side by side](docs/images/judge-both-builds.png)
+Creating project copies currently uses no Lovable builder credits. Running a Lovable build inside a copy consumes normal Lovable builder credits. Copies stay in your workspace until you delete them (Settings › "Keep test builds as projects", on by default); a failed test's copies are always deleted; if a delete fails the copy is set private and the page says so. Screenshots stay after a copy is deleted.
 
-What it does not prove:
-
-- **One build is evidence, not proof.**
-- **Lovable's project memory is copied as it is today.** In the screenshot above, the rebuilt copy came out in euros and lowercase, preferences given to Lovable after the replayed request. The judging screen says so.
-- **Screenshots only prove visual rules.** "Don't break login" needs a behavioural check, which is on the roadmap.
+**Not implemented yet: paired comparison.** Two fresh builds from the same historical state, a control without the rule and a treatment with it, both in today's Lovable, so the rule is the intended difference. See [Status](#13-status).
 
 ---
 
-## 4. Why it runs on your machine
+## 4. Knowledge and Skills
 
-The goal was to run Harness Ledger inside Lovable as a hosted app. That isn't possible today: there is no public Lovable API that lets a third-party hosted app read a user's chats and write their Knowledge, and Lovable's authorization server rejected the hosted OAuth client ("Client Not Found").
+|         | Knowledge                                                  | Skills                                  | Knowledge plus Skill                                       |
+| ------- | ---------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------- |
+| Use for | Short standing rules and project context, always available | Task-specific procedures and checklists | A short reminder in Knowledge pointing to a detailed Skill |
 
-So Harness Ledger runs locally, with its own Lovable login:
+Every suggestion shows the **recommended destination**, why, and the alternative; you can change it. A Skill proposal is a draft SKILL.md you can edit, approve, retire, or restore from any revision.
 
-- **OAuth on your machine.** The local runtime registers with Lovable's authorization server and completes the login through a listener on `127.0.0.1:8765`. Tokens stay in `harness/data/lovable-auth.json` (mode 0600).
-- **Lovable MCP** (`mcp.lovable.dev`) for reading chats, Knowledge and Skills, and writing Knowledge.
-- **Lovable REST API** (`api.lovable.dev`) for paired tests: copying a project, sending the request, reading the result, deleting the copy.
+Exact status of Skills today:
 
-The web app itself was built with Lovable (TanStack Start, React, shadcn/ui, Supabase auth). Its hosted deployment shows a "runs on your machine" message, and the hosted OAuth client document is already in place for the day Lovable supports that flow.
+| Capability                                                                            | Status                                                                                                                |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Read workspace Skills and keep their history (with deletions)                         | Working                                                                                                               |
+| Propose a Skill from a correction; edit; approve; version; restore a revision; retire | Working, locally                                                                                                      |
+| Create or update a Skill in Lovable                                                   | Not wired                                                                                                             |
+| Enable or disable a Skill for selected projects                                       | Not wired (workspace Skills apply to every project; Lovable's per-project switch is for Skills inside a project repo) |
+| Test a Skill in a replay; observe whether a Skill was followed                        | Not implemented                                                                                                       |
 
----
-
-## 5. Safety and cost
-
-- **Lovable credits** are spent only by starting a paired test. There is a monthly budget (default 12), one test runs at a time, and the recorded cost is Lovable's own figure. In this project's testing a small build cost 0.3–0.8 credits.
-- **AI tokens** are spent only by Analyse now, within a monthly token budget checked before every call. Providers: OpenAI, Anthropic or Google with your key, or **Claude Code** on your own subscription.
-- **Analyse now only processes what's new:** unread messages, corrections without a suggestion, builds not yet checked.
-- **Keys and tokens** never go into the database or logs.
-- **Everything is reversible:** Undo before a write, Remove from Knowledge and Re-add after, and in History "Undo this change" / "Go back to before this change". Going back refuses if Knowledge was edited in Lovable since, so your edits are never lost.
-- **Privacy:** chat text leaves your machine only to the AI provider you chose, only during Analyse now. There is no Harness Ledger server.
+User-owned Skills are protected: Harness Ledger never edits a Skill it did not create.
 
 ---
 
-## 6. The app at a glance
+## 5. Sync, Analysis and Reanalyse history
 
-| Page             | What it's for                                                                                               |
-| ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Inbox**        | Only what needs a decision, with Add / Skip / Test buttons on each card, and Analyse now with live progress |
-| **Suggestions**  | Every suggestion with its evidence; edit wording before adding                                              |
-| **Instructions** | What is in your Knowledge now, per project and workspace, with each rule's observed health and your verdict |
-| **History**      | A timeline of every write, decision, skill change and test, with diffs and "Undo this change"               |
-| **Tests**        | Every paired test: project, status, cost, links to the builds, your notes                                   |
-| **Skills**       | Your workspace Skills and how they changed (read-only)                                                      |
-| **Projects**     | Connect Lovable, choose which projects Harness Ledger may read, per-project limits                          |
-| **Settings**     | Ask or automatic decisions, evidence sources, credit and token budgets, sync schedule, AI provider          |
+- **Sync** retrieves new Lovable data (messages, Knowledge, Skills, project names) and stores it locally with stable remote ids; it stops at the first message it already has and resumes parked cursors.
+- **Analysis** sends selected context to the AI provider you configured. Ordinary Analyse now processes only new or changed messages, unclassified follow-ups, corrections without a suggestion, and builds not yet checked against a rule. Older local messages may be read as context for a new message (when it refers to something said earlier) without being analysed or billed again. Every model call records which items it was shown and why.
+- **Reanalyse history** is a separate action: choose projects, a date range, whether to include records you already decided on, and a reason; see the estimate; confirm. If a newer analysis disagrees with a decision you made, it opens a review item ("A newer analysis disagrees with your previous decision") instead of changing anything.
+- **Automatic Sync** (hourly, while the app runs) and **automatic Analysis after Sync** are separate settings. The second is off by default, so scheduled Sync never spends AI tokens unless you turn it on.
+
+---
+
+## 6. Safety, cost and privacy
+
+- **Lovable credits** are spent only by starting a replay. There is a monthly budget (default 12), one replay runs at a time, and the recorded cost is Lovable's own figure.
+- **AI tokens** are spent only by Analyse now or Reanalyse history, within a monthly token budget checked before every call. Providers: OpenAI, Anthropic or Google with your key, or **Claude Code** on your own subscription.
+- **Reversible:** Undo before a write, Remove from Knowledge and Re-add after, and in History "Restored Knowledge from version N" with the reason, actor and the rules added or removed. Restoring refuses if Knowledge was edited in Lovable since, so your edits are never lost.
+- **Privacy:** Synced project data is stored locally. During analysis, selected chat, build, Knowledge and Skill context is sent only to the AI provider you configured. During a replay, the historical prompt and configured instruction context are sent to Lovable inside temporary project copies. Harness Ledger does not operate its own remote analysis service. Screenshots and diffs are not sent to the AI Judge (it reads Lovable's reply text). Model calls are logged with token counts, never with prompt or response text.
+- **Credentials:** the Lovable token lives in `harness/data/lovable-auth.json` and provider keys in `harness/data/llm-keys.json`, both mode 0600 in a 0700 directory, never in SQLite, responses or logs. Chat text is scrubbed of secrets before it is stored.
+- **The app account:** the interface retains the sign-in system from the hosted-capable Lovable foundation. Signing in creates an account and default settings in that hosted Supabase project; operational Harness data (chats, rules, versions, tests) remains in local SQLite. A future packaged local edition may replace this sign-in step with a local-only unlock.
+
+---
+
+## 7. The app at a glance
+
+| Page             | What it's for                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Inbox**        | Only what needs a decision, with Add / Skip / Test on each card; Analyse now with live progress; Reanalyse history     |
+| **Suggestions**  | Every suggestion with its evidence, recommended destination and Skill draft; edit before adding                        |
+| **Instructions** | Each rule: current status, recommendation, primary action, the instruction, observations, test evidence, versions      |
+| **History**      | A timeline per project or workspace: versions, restores, decisions, Skill changes, tests                               |
+| **Tests**        | Every replay: kind, evidence strength, status, cost, links to the copies, your notes                                   |
+| **Skills**       | Skill proposals (local) and your workspace Skills with their history                                                   |
+| **Projects**     | Connect Lovable, choose which projects Harness Ledger may read, per-project limits                                     |
+| **Settings**     | Ask or automatic decisions, evidence sources, credit and token budgets, sync schedule, automatic analysis, AI provider |
 
 ![Analysis progress in the Inbox](docs/images/analysis-progress.png)
 
-![A rule on the Instructions page](docs/images/instructions-rules.png)
-
-![The History timeline with a change shown as a diff](docs/images/history-timeline.png)
-
 ---
 
-## 7. Getting started
+## 8. Getting started
 
 It takes about ten minutes. Everything runs on your computer, and the only outside services are Lovable and the AI provider you pick.
 
@@ -207,7 +220,7 @@ The login returns to `127.0.0.1:8765` on the computer running the app. If you ru
 ### Step 4: Choose projects and sync
 
 1. On **Projects**, switch on the projects Harness Ledger may read. Nothing else is touched.
-2. Press **Sync now**. Your chats, Knowledge and Skills are read. Sync is free and repeats every hour while the app runs.
+2. Press **Sync now**. Your chats, Knowledge and Skills are read. Sync uses no credits and no AI tokens, and repeats every hour while the app runs.
 
 ### Step 5: Pick an AI provider
 
@@ -216,7 +229,7 @@ In **Settings › AI analysis**, choose **Claude Code (your subscription)**, or 
 ### Step 6: Analyse and decide
 
 1. Go to **Inbox** and press **Analyse now**. A progress bar shows each step: reading your new messages, grouping them into tasks, writing suggestions, checking your rules against recent builds.
-2. Each suggestion card shows the correction it came from. Choose **Add to this project**, **Add to all my projects**, **Skip**, or **Test this rule** first (a paired test, see [Proof](#3-proof-paired-tests); it runs one real Lovable build, so it uses credits).
+2. Each suggestion card shows the correction it came from and the recommended destination (Knowledge, Skill or both). Choose **Add to this project**, **Add to all my projects**, **Skip**, or **Test this rule** first (a historical replay, see [Test a rule](#3-test-a-rule-against-a-previous-correction); it runs one real Lovable build, so it uses credits).
 3. An added rule appears in your Lovable Knowledge within seconds, and on **Instructions** and **History** here.
 
 That's the whole loop. From then on: chat with Lovable as usual, and press Analyse now whenever you want new suggestions.
@@ -227,7 +240,7 @@ That's the whole loop. From then on: chat with Lovable as usual, and press Analy
 
 ### Command line (optional)
 
-Everything above also works without the browser. Run these from the repo root. They don't need `HARNESS_RUNTIME` (that only switches on the web app's local mode), and without `HARNESS_DB_PATH` they use the same `harness/data/harness.db`:
+Everything above also works without the browser (and see [Use Harness Ledger through MCP](#9-use-harness-ledger-through-mcp)). Run these from the repo root. They don't need `HARNESS_RUNTIME` (that only switches on the web app's local mode), and without `HARNESS_DB_PATH` they use the same `harness/data/harness.db`:
 
 ```sh
 npm run harness:executor -- --connect      # Lovable login
@@ -251,7 +264,48 @@ npm run harness:executor -- --disconnect   # forget the Lovable login
 
 ---
 
-## 8. Architecture
+## 9. Use Harness Ledger through MCP
+
+Lovable MCP lets Harness operate Lovable. Harness MCP lets your agent operate Harness.
+
+The web UI is not mandatory. Harness MCP is a local MCP server (`harness/src/mcp-server.ts`, registered in `.mcp.json`) that exposes the same actions as the app, through the same code paths, with the same project allowlist, decision mode, budgets, ownership rules, versioning and audit. It is not a privileged bypass: a tool that would spend credits refuses in exactly the cases the button would.
+
+Implemented and covered by tests:
+
+| Tool                        | What it does                                                                                                                                                         |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `health`                    | Local service health and the database path                                                                                                                           |
+| `list_suggestions`          | Suggestions (open, decided or all) with rule text, correction, destination and status line                                                                           |
+| `explain_suggestion`        | One suggestion in full, with the Knowledge preview for its destination                                                                                               |
+| `decide_suggestion`         | Accept to the project or workspace, skip with a reason, test it first, or change the wording. Writes Knowledge exactly like the button, or refuses in the same words |
+| `list_rules`                | Active and retired rules per project and workspace                                                                                                                   |
+| `list_skills`               | The workspace's current Skill snapshots                                                                                                                              |
+| `start_replay`              | Queue a historical replay for a suggestion; refuses when not connected, already running, or over budget                                                              |
+| `get_replay`                | One replay in full: both sides, environment record, verdicts                                                                                                         |
+| `list_replays`              | Every replay, summarised                                                                                                                                             |
+| `list_knowledge_versions`   | Knowledge write history for a project or the workspace                                                                                                               |
+| `restore_knowledge_version` | Restore a version through the same fresh-read, compare, read-back path                                                                                               |
+| `rule_observations`         | A rule's observed and AI-review counts and your latest verdict                                                                                                       |
+| `timeline`                  | The History timeline for a target                                                                                                                                    |
+
+Run it from a Claude Code session in this repo (the `.mcp.json` entry points at your local database) or any MCP client with `npx tsx harness/src/mcp-server.ts`.
+
+---
+
+## 10. Why it runs on your machine
+
+The Lovable operations Harness needs are available through Lovable's MCP and API surfaces. The current limitation is hosted authorization. The hosted prototype could not complete an approved application-to-Lovable sign-in flow, while the local runtime can authenticate through a localhost callback. Harness therefore runs its operational workflow locally today. The Lovable-hosted application remains the hosted product preview and preserves the hosted adapter for a future approved authorization path.
+
+Local and hosted execution are adapters around shared product logic:
+
+- **Local runtime:** registers with Lovable's authorization server and completes the login through a listener on `127.0.0.1:8765`. Uses **Lovable MCP** (`mcp.lovable.dev`) to read chats, Knowledge and Skills and to write Knowledge, and the **Lovable REST API** (`api.lovable.dev`) for replays: copying a project, sending the request, reading the result, deleting a copy.
+- **Hosted preview:** the same web app deployed by Lovable, showing the product; its pages say the workflow runs on your machine.
+
+Technical detail: Lovable's authorization server answered the hosted OAuth client registration with "Client Not Found". The hosted OAuth routes remain in the repo, unused.
+
+---
+
+## 11. Architecture
 
 Two halves that deliberately don't share a runtime:
 
@@ -265,21 +319,24 @@ src/                          web app (TanStack Start, React, shadcn/ui, Supabas
 
 harness/                      local runtime (Node, SQLite via better-sqlite3)
   src/adapter.ts              the only module the web app imports
-  src/store.ts, migrations.ts all SQL, schema v1-v17
+  src/store.ts, migrations.ts all SQL, schema v1-v21
   src/knowledge.ts            managed block: compose, hash, size cap
   src/improvements.ts         suggestions, rules, versions and every decision action
   src/executor/               Lovable OAuth, MCP client, REST client, sync and write
-                              beats, paired-test runner and queue, schedule lock, CLI
-  src/analysis/               classify, segment, propose (Rule writer), adherence
-                              (Judge), health, retire, run
+                              beats, replay runner and queue, replay environment record,
+                              schedule lock, CLI
+  src/analysis/               classify, segment, propose (Rule writer), context packet,
+                              reanalyse, adherence (Judge), health, retire, run
+  src/mcp-server.ts           Harness MCP: the same actions as the app, over the adapter
+scripts/                      npm run setup and npm run harness:start
   src/llm/                    OpenAI, Anthropic, Google and Claude Code clients, budget
 ```
 
 **Why the split.** The hosted build (Cloudflare via Nitro) can't load native Node modules, so `harness/` is compiled separately and imported only when `HARNESS_RUNTIME=local`. The web app reaches it through one adapter with typed inputs, never raw SQL.
 
-**One sync pass:** read new chat messages for each allowed project (stopping at the first one already stored), snapshot Knowledge and Skills when they changed, run any pending writes, recompute rule health.
+**One sync pass:** read new chat messages for each allowed project (stopping at the first one already stored), snapshot Knowledge and Skills when they changed, run any pending writes, recompute rule health. It queues an analysis only when "automatic analysis after sync" is on.
 
-**One analysis pass:** classify new messages, group them into task episodes, ask the Rule writer once per uncovered correction, auto-accept if you turned that on, let the Judge check unjudged builds, recompute health and retirement suggestions. Each step reports progress to the Inbox.
+**One analysis pass:** classify new messages with a recorded context packet, group them into task episodes, ask the Rule writer once per uncovered correction (destination, wording, Skill draft), auto-accept if you turned that on, let the Judge check unjudged builds, recompute health and review suggestions. Each step reports progress to the Inbox.
 
 **What happens when you press "Add to this project":**
 
@@ -300,44 +357,62 @@ sequenceDiagram
 
 The same read, write, read-back shape is used for Remove, Re-add, wording changes and going back in History.
 
-**Data.** One SQLite file holds synced messages, classifications, task episodes, suggestions, rules and their revisions, every Knowledge snapshot and version, rule health, verdicts and Judge findings, retirement proposals, paired tests and their credit costs, and every analysis run and model call.
+**Data.** One SQLite file holds synced messages, classifications, task episodes, suggestions, rules and their revisions, every Knowledge snapshot and version, rule health, verdicts and Judge findings, retirement proposals, replays with their environment records and credit costs, and every analysis run and model call.
 
 ---
 
-## 9. Development
+## 12. Development
 
 ```sh
-cd harness && npm test          # 700+ tests, no network: fake Lovable server and fake LLM
+cd harness && npm test          # node:test, no network: fake Lovable server and fake LLM
 npm run typecheck               # web app (and `npm run typecheck` in harness/)
 npm run lint                    # ESLint + Prettier (generated Supabase files are skipped)
-npm run build                   # production build
+npm run build                   # production build (hosted preview; never imports better-sqlite3)
 cd harness && npm run llm:smoke # one real model call, after changing harness/src/llm
 ```
 
-Besides behaviour tests, a set of structural tests reads the page source and pins product copy and rules (for example, that pages only call the allowed routes). A copy change updates its test on purpose.
+Besides behaviour tests, structural tests read the page source and pin product copy and rules (for example, that pages only call the allowed routes, that the replay is never described as a comparison it is not, that this README's links resolve). A copy change updates its test on purpose. The working documents `PLAN.md`, `DECISIONS.md`, `VERIFICATION.md`, `SPEC.md`, `DEMO_PLAN.md` and `build-log.md` record what was verified and why.
 
 ---
 
-## 10. Status and roadmap
+## 13. Status
 
-**Working today:** sync, analysis with all three roles, manual and automatic decisions, verified and versioned Knowledge writes with undo, retirement suggestions, paired tests with both builds kept as projects, live analysis progress, History, Tests, Skills.
+### Working in the local prototype
 
-**Next:**
+- Incremental Sync of chats, Knowledge and Skills; hourly schedule with a lock.
+- Analysis with Classifier, Rule writer (destination and Skill drafts) and Judge; recorded context; Reanalyse history with disagreement review.
+- Ask or automatic decisions; verified, versioned Knowledge writes with undo, remove, re-add and restore.
+- Historical replay with the environment record and evidence-strength label; copies kept as projects; screenshots.
+- Rule usefulness: observed and AI-review lines, Keep / Review / Retire / Not sure, review for relevance, classified opposite requests.
+- Skill proposals: propose, edit, approve, version, restore, retire (local).
+- History, Tests, Skills, Projects, Settings pages; Harness MCP with the same permissions as the app.
 
-- **Behavioural checks** for non-visual rules, run against both test copies (e.g. sign in on each).
-- **A fairer test copy**, without Lovable's later project memory.
-- **A scoreboard** across rules and projects, once there are weeks of builds.
-- **Hosted mode**, as soon as Lovable offers an API for third-party apps.
+### Current limitations
+
+- Skills cannot be created or updated in Lovable from Harness Ledger yet.
+- Paired comparison (fresh control and treatment) is not implemented.
+- Behavioural checks (for example, that a login route still works) are not implemented; screenshots show visual results only.
+- Historical context is reconstructed from Harness Ledger's own snapshots; a change made in Lovable between two syncs is only visible from the next snapshot, and Lovable's project memory, Workspace Knowledge and Skills at the time cannot be restored.
+- Hosted authorization is not available; the workflow runs locally, with a developer-oriented setup and the hosted app account.
+- Diffs and edits are not synced (only messages, Knowledge and Skills), so the Rule writer does not see a diff summary.
+
+### Next
+
+- Paired comparison: two fresh builds per test, with the same environment record per arm.
+- Skill creation and updates in Lovable through Lovable MCP, after one approved real write verifies the path.
+- Behavioural checks against replay copies (open a route, sign in) for non-visual rules.
+- Sync of edits and diffs; a scoreboard across rules and projects once there are weeks of builds.
+- A packaged local edition with a local-only unlock instead of the hosted sign-in.
 
 ---
 
-## 11. FAQ
+## 14. FAQ
 
-**Does it change my code?** No. It only writes Lovable Knowledge, inside its own block.
+**Does it change my code?** No. It only writes Lovable Knowledge, inside its own block. Skills are drafted locally and not yet written to Lovable.
 
-**Can it break my Knowledge?** Every write is verified by reading it back, nothing outside the block is touched, every version is kept, and History can take you back.
+**Can it break my Knowledge?** Every write is read back and compared exactly, nothing outside the block is touched, a manual edit inside the block stops the write, every version is kept, and History can restore any of them.
 
-**What does a test cost?** One normal Lovable build; the copies themselves are free. The cost Lovable reports is recorded, and a monthly budget stops tests before they overspend.
+**What does a replay cost?** Creating project copies currently uses no Lovable builder credits. Running a Lovable build inside a copy consumes normal Lovable builder credits. The cost Lovable reports is recorded, and a monthly budget stops replays before they overspend.
 
 **What if I edit Knowledge in Lovable myself?** Your own text is kept, and changes inside Harness Ledger's block are never overwritten.
 
