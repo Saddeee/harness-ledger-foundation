@@ -4073,7 +4073,12 @@ export type ExperimentRunRow = {
   // the replay environment record (see executor/replay-environment.ts).
   kind: ExperimentKind;
   environment_json: string | null;
+  // Migration v22 (checkpoint 2): deletion is confirmed only by a read-back.
+  copy_deletion_status: CopyDeletionStatus;
+  original_copy_deletion_status: CopyDeletionStatus;
 };
+
+export type CopyDeletionStatus = "none" | "requested" | "confirmed" | "failed";
 
 export type ExperimentKind = "historical_replay" | "paired_comparison";
 
@@ -4137,6 +4142,8 @@ const EXPERIMENT_RUN_COLUMNS = new Set<string>([
   "judged_corrections_json",
   "kind",
   "environment_json",
+  "copy_deletion_status",
+  "original_copy_deletion_status",
   "score",
   "verdicts_json",
   "error",

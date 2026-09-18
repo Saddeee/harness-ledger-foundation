@@ -51,13 +51,13 @@ const rule = store.createRule({
 }) as { id: number };
 
 test("additive migration: schema version 3 applied, no data loss on existing tables", () => {
-  assert.equal(schemaVersion(), 21);
+  assert.equal(schemaVersion(), 22);
   const migrations = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     migrations.map((m) => m.version),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22],
   );
   const tableNames = new Set(
     (

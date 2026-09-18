@@ -987,4 +987,21 @@ export const MIGRATIONS: Migration[] = [
                                       'permanent_preference_change','genuine_contradiction','unclear'));
     `,
   },
+  {
+    version: 22,
+    name: "checkpoint2_deletion_confirmation",
+    sql: `
+      -- A copy is "deleted" only once Lovable no longer lists it. A 2xx on
+      -- the delete request means "deletion requested"; a follow-up read that
+      -- proves absence means "confirmed"; anything else stays visible as
+      -- uncertainty. Existing rows: copy_deleted = 1 becomes 'requested'
+      -- (never confirmed by a read-back before this version).
+      ALTER TABLE experiment_runs ADD COLUMN copy_deletion_status TEXT NOT NULL DEFAULT 'none'
+        CHECK (copy_deletion_status IN ('none','requested','confirmed','failed'));
+      ALTER TABLE experiment_runs ADD COLUMN original_copy_deletion_status TEXT NOT NULL DEFAULT 'none'
+        CHECK (original_copy_deletion_status IN ('none','requested','confirmed','failed'));
+      UPDATE experiment_runs SET copy_deletion_status = 'requested' WHERE copy_deleted = 1;
+      UPDATE experiment_runs SET original_copy_deletion_status = 'requested' WHERE original_copy_deleted = 1;
+    `,
+  },
 ];
