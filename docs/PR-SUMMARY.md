@@ -1,4 +1,4 @@
-# PR summary: `local-harness-dev` → `main` (prepared 2026-09-18, not merged)
+# PR summary: `local-harness-dev` → `main` (prepared 2026-09-19, not merged)
 
 ## Product changes
 
@@ -26,6 +26,15 @@
   unsupported, one corrected retry, redaction) and a "Test provider" action in Settings.
 - **Setup.** `npm run setup`, `npm run harness:start` (local runtime, repo-local SQLite, 127.0.0.1).
 - **One product name** everywhere a person reads it: Harness Ledger (and Harness Ledger MCP).
+
+- **Inbox is the single decision queue (2026-09-19).** Suggestions left the navigation; the list route
+  redirects to Inbox and the detail stays reachable from Inbox and History. Inbox items: New instruction, New
+  Skill, Test result, Rule needs attention, Conflict, Action failed — one aggregation (`listInboxItems`) that
+  Overview counts too. History gained filters (All / Suggestions / Knowledge / Skills / Tests / Restores) and
+  the Inbox links "View past decisions". Cards show one primary action with its consequence line.
+- **Rule writer** now follows a minimal-sufficiency principle, returns applicability, exceptions and a scope
+  confidence, and downgrades a low-confidence workspace scope to project at proposal time. Existing rules are
+  untouched.
 
 ## Architecture decision
 
@@ -69,6 +78,6 @@ with an operator checklist.
 
 ## Verification
 
-993/990 harness tests (main checkout / fresh clone), both typechecks, lint (0 errors), production build
+1014/1013 harness tests (main checkout / fresh clone), both typechecks, lint (0 errors), production build
 (no better-sqlite3 in `.output`), hosted-mode and local-mode smoke on spare ports (every page 200), MCP
 protocol tests, README link and manifest tests, OpenAI fake tests, migration on a copy of the live DB.
