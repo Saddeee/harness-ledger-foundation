@@ -199,10 +199,14 @@ test("improvement.tsx: the Inbox card's secondary controls (raw classification, 
 
 // ---- 7. Suggestions detail: the "What happened" story, in order ----
 
+// Round 8 Task 4: "What Harness Ledger learned" is no longer a section
+// heading of its own -- its text (lessonLine) moved inside the collapsed
+// "Why Harness Ledger recommends this" details, so the story's own slice now
+// ends at that details' summary instead.
 test("improvement.tsx: ImprovementDetail's 'What happened' section shows Requested, Built, Your correction, Changed afterward, in that order", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const detail = code.slice(code.indexOf("export function ImprovementDetail"));
-  const story = slice(detail, "What happened", "What Harness Ledger learned");
+  const story = slice(detail, "What happened", "{WHY_RECOMMENDS_TITLE}");
   const order = ["Requested", "Built", "Your correction", "Changed afterward"];
   let last = -1;
   for (const label of order) {
@@ -217,24 +221,32 @@ test("improvement.tsx: ImprovementDetail's 'What happened' section shows Request
   assert.match(story, /"Not recorded"/);
 });
 
-test("improvement.tsx: the six-section order names every section exactly once, before the primary decision", () => {
+// Round 8 Task 4 (review item 6): rewritten with intent -- the old
+// always-open six-section order is gone. The decision card now leads
+// (Project name, the instruction shown once, "Saves to", the action
+// buttons), "What Harness Ledger learned"/"What Harness Ledger
+// recommends"/"Why Knowledge or Skill"/"What the action will do" no longer
+// exist as section headings at all (their surviving content folded into the
+// decision card's "Saves to" line and the collapsed "Why Harness Ledger
+// recommends this" details), and only "What happened" plus that collapsed
+// details remain as named sections, both after the decision card.
+test("improvement.tsx: the old six section headings are gone except 'What happened', which appears exactly once after the decision card", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const detail = code.slice(code.indexOf("export function ImprovementDetail"));
-  for (const heading of [
-    "What happened",
+  for (const gone of [
     "What Harness Ledger learned",
     "What Harness Ledger recommends",
     "Why Knowledge or Skill",
     "What the action will do",
   ]) {
-    const first = detail.indexOf(heading);
-    const second = detail.indexOf(heading, first + 1);
-    assert.ok(first >= 0, `missing section: ${heading}`);
-    assert.equal(second, -1, `section "${heading}" must appear exactly once`);
+    assert.ok(!detail.includes(gone), `section heading "${gone}" should be gone`);
   }
-  const recommendsAt = detail.indexOf("What Harness Ledger recommends");
+  const first = detail.indexOf("What happened");
+  const second = detail.indexOf("What happened", first + 1);
+  assert.ok(first >= 0, "missing section: What happened");
+  assert.equal(second, -1, `section "What happened" must appear exactly once`);
   const decisionAt = detail.indexOf("<DecisionCard");
-  assert.ok(recommendsAt >= 0 && decisionAt > recommendsAt, "the decision card comes last");
+  assert.ok(decisionAt >= 0 && decisionAt < first, "the decision card comes first");
 });
 
 // ---- 8. Technical details: the evidence list moved inside the collapsed <details> ----

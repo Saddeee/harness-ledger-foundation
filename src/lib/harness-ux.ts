@@ -1242,7 +1242,8 @@ export function contentDestinationAlternative(
 // Skill proposals: status and honesty copy. `lovable_state` never has any
 // value other than 'not_created' in this checkpoint -- SKILL_NOT_IN_LOVABLE_LINE
 // is the one sentence responsible for saying so everywhere a Skill proposal
-// is shown (the Skills page and the suggestion detail's DestinationChoice).
+// is shown (the Skills page and the suggestion detail's SkillProposalPanel,
+// Round 8 Task 4).
 export const SKILL_PROPOSAL_STATUS_LABELS: Record<string, string> = {
   proposed: "Proposed",
   approved: "Approved",
@@ -1272,7 +1273,7 @@ export function skillProposalVersionCountLine(count: number): string {
 // ---- Checkpoint 3 S1 ----
 // Publishing an approved, Harness-owned Skill proposal to Lovable as a new
 // workspace Skill -- the "Publish to Lovable" button (Skills page card and
-// the suggestion detail's DestinationChoice, next to Approve/Retire) and the
+// the suggestion detail's SkillProposalPanel, next to Approve/Retire) and the
 // per-state line once lovable_state leaves 'not_created'. Creates only:
 // Harness Ledger never updates or deletes a Skill in Lovable, including one
 // it published itself (see remote_skill_write in capabilities-copy.ts).
@@ -1573,7 +1574,7 @@ export const NOTHING_NEEDS_ATTENTION_LINE = "Nothing needs your attention.";
 
 /** The Skills page's exact honesty line for a locally proposed Skill card
  * -- distinct from SKILL_NOT_IN_LOVABLE_LINE above (that longer sentence
- * stays on the suggestion detail's DestinationChoice and is not touched
+ * stays on the suggestion detail's SkillProposalPanel and is not touched
  * here): the card itself just needs the one short fact. */
 export const SKILL_NOT_PUBLISHED_LINE = "Not published to Lovable yet.";
 
@@ -1998,3 +1999,70 @@ export function scheduleModeLine(owner: "app" | "cli" | null | undefined): strin
   return "Scheduled checks are off";
 }
 // ---- end Round 8 Task 3 ----
+
+// ---- Round 8 Task 4 ----
+// UX round 8 (2026-09-19), review item 6: the suggestion detail page leads
+// with the decision (DecisionCard moves to the top of ImprovementDetail,
+// src/components/harness/improvement.tsx) and shows the instruction text
+// exactly once -- the duplicated h1/h2 title (the instruction's first
+// sentence) is gone, and the "What Harness Ledger recommends" / "Why
+// Knowledge or Skill" sections fold into the decision card's own "Saves to"
+// line and a collapsed "Why Harness Ledger recommends this" <details>. The
+// counter and Previous/Next now browse pending suggestions only.
+
+export const SUGGESTED_INSTRUCTION_LABEL = "Suggested instruction";
+export const SAVES_TO_LABEL = "Saves to";
+
+/** The decision card's "Saves to: X" label -- four exact strings from the
+ * brief, distinct from destinationLabelPlain above (that one keeps the
+ * Inbox card's shorter "Project Knowledge"/"Workspace Knowledge" pair).
+ * Never an internal enum name. */
+export function savesToDestinationLabel(
+  contentDestinationValue: ContentDestinationValue | null | undefined,
+  knowledgeTarget: "project" | "workspace" | "one_time" | null | undefined,
+): string {
+  if (contentDestinationValue === "skill") return "Skill";
+  if (contentDestinationValue === "both") return "Knowledge and Skill";
+  return knowledgeTarget === "workspace"
+    ? "All my projects (Workspace Knowledge)"
+    : "This project's Knowledge";
+}
+
+/** The "What happened" story keeps "Your correction" only when it says
+ * something "Requested" didn't already say (trimmed, verbatim) -- a
+ * correction that just repeats the request would otherwise read as the same
+ * fact told twice. `correction` is required on a real story (never null in
+ * practice), but this stays defensive for an incomplete/test fixture. */
+export function correctionDiffersFromRequest(
+  requested: string | null | undefined,
+  correction: string | null | undefined,
+): boolean {
+  if (correction == null) return false;
+  return (requested ?? "").trim() !== correction.trim();
+}
+
+/** Every pending suggestion's id, in the order the caller's own list gives
+ * them (the route's own fetched list, unchanged order) -- the detail page's
+ * counter and Previous/Next now browse this queue only, never a decided
+ * item mixed in. */
+export function pendingQueueIds(items: { id: number; decision: { status: string } }[]): number[] {
+  return items.filter((i) => i.decision.status === "pending").map((i) => i.id);
+}
+
+/** Where `currentId` sits in the pending queue -- null when it isn't in the
+ * queue at all (a decided item opened by a direct link), which the detail
+ * page reads as "hide the counter and both nav buttons, keep ← Inbox". */
+export function pendingQueuePosition(
+  pendingIds: number[],
+  currentId: number,
+): { index: number; total: number; prevId: number | null; nextId: number | null } | null {
+  const idx = pendingIds.indexOf(currentId);
+  if (idx < 0) return null;
+  return {
+    index: idx + 1,
+    total: pendingIds.length,
+    prevId: idx > 0 ? pendingIds[idx - 1]! : null,
+    nextId: idx < pendingIds.length - 1 ? pendingIds[idx + 1]! : null,
+  };
+}
+// ---- end Round 8 Task 4 ----

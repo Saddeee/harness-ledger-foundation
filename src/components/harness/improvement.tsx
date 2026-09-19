@@ -28,9 +28,7 @@ import {
   contentDestinationAlternative,
   contentDestinationReason,
   DESTINATION_ALTERNATIVE,
-  DESTINATION_CHANGE,
   DESTINATION_LABELS,
-  DESTINATION_RECOMMENDED,
   DESTINATION_WHY,
   destinationLabelPlain,
   evidenceSourceLines,
@@ -124,6 +122,12 @@ import {
   inboxLinkPageLabel,
   failedSummaryParts,
   // ---- end Round 8 Task 2 ----
+  // ---- Round 8 Task 4 ----
+  SUGGESTED_INSTRUCTION_LABEL,
+  SAVES_TO_LABEL,
+  savesToDestinationLabel,
+  correctionDiffersFromRequest,
+  // ---- end Round 8 Task 4 ----
 } from "@/lib/harness-ux";
 
 import {
@@ -133,7 +137,6 @@ import {
   postImprovementAction as post,
   projectName,
   toastWriteOutcome,
-  type ContentDestinationValue,
   type Improvement,
   type TestInfo,
   type Message,
@@ -1449,7 +1452,6 @@ export function DecisionCard({
     size,
   };
   const pending = item.decision.status === "pending";
-  const Title = titleAs;
   const titleId = `improvement-${item.id}`;
 
   if (item.kind === "retire") {
@@ -1491,42 +1493,16 @@ export function DecisionCard({
         )}
       </div>
 
-      {/* body: title + instruction (blockquote or the editor), full width --
-          a sibling of the header row above, never sharing its left column. */}
-      <div
-        className={
-          onOpen ? "space-y-3 cursor-pointer rounded-md -m-1 p-1 hover:bg-accent/50" : "space-y-3"
-        }
-        role={onOpen ? "link" : undefined}
-        tabIndex={onOpen ? 0 : undefined}
-        onClick={onOpen ? () => onOpen(item.id) : undefined}
-        onKeyDown={
-          onOpen
-            ? (e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpen(item.id);
-                }
-              }
-            : undefined
-        }
-      >
-        <Title
-          id={titleId}
-          className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
-        >
-          {onOpen ? (
-            <button
-              type="button"
-              className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => onOpen(item.id)}
-            >
-              {item.title}
-            </button>
-          ) : (
-            item.title
-          )}
-        </Title>
+      {/* body: instruction, full width -- a sibling of the header row above,
+          never sharing its left column. Round 8 Task 4 (review item 6): the
+          duplicated title (the instruction's first sentence as an h1/h2
+          above the box) is gone -- "Suggested instruction" labels the same
+          box instead, shown exactly once. `titleId` moves to this label so
+          the article's own aria-labelledby still resolves to something. */}
+      <div className="space-y-3">
+        <p id={titleId} className="text-xs font-medium text-muted-foreground">
+          {SUGGESTED_INSTRUCTION_LABEL}
+        </p>
         {item.proposed_instruction ? (
           editable && editable.editing ? (
             <div className="space-y-2 rounded-md border p-3">
@@ -1583,6 +1559,20 @@ export function DecisionCard({
           <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
         )}
       </div>
+
+      {/* Round 8 Task 4: "Saves to" names the destination with the existing
+          Change destination control inline -- replaces the removed "Why
+          Knowledge or Skill" card's own recommended-destination heading and
+          radiogroup. The Skill draft (when the destination includes one)
+          follows directly below, unchanged from that removed card. */}
+      <p className="text-sm text-muted-foreground">
+        {SAVES_TO_LABEL}:{" "}
+        <span className="font-medium">
+          {savesToDestinationLabel(item.content_destination?.value ?? null, item.destination)}
+        </span>{" "}
+        &middot; <ChangeDestinationControl item={item} busy={busy} run={run} />
+      </p>
+      <SkillProposalPanel item={item} busy={busy} run={run} />
 
       {pending ? (
         <>
@@ -1676,7 +1666,6 @@ export function ImprovementDetail({
   const lovable = lovableOf(item);
   const accepted = item.decision.status === "accepted";
   const skipped = item.decision.status === "skipped";
-  const pendingDetail = item.decision.status === "pending";
 
   // Arrows move between improvements unless focus is in a text field or a
   // confirmation dialog is open.
@@ -1741,11 +1730,44 @@ export function ImprovementDetail({
         ) : null}
       </div>
 
-      {/* ---- Checkpoint 2 2-B: the six-section suggestion detail order ---- */}
+      {/* ---- Round 8 Task 4 (review item 6): decision first, one copy of
+          the instruction. Replaces the old six-always-open section order
+          (see this file's earlier history for the four now-retired section
+          headings): the decision card now leads, the old action-glossary
+          section is gone outright (each button already carries its own
+          consequence line), and the old lesson/reasoning sections' surviving
+          text folds into one collapsed WHY_RECOMMENDS_TITLE details, reusing
+          Task 1's own constant so the same words label the same fold on
+          both the Inbox card and here. ---- */}
 
-      {/* 1. What happened -- a short, four-line story: what you asked for,
-          what Lovable built, your correction, and whatever Lovable changed
-          afterward (else "Not recorded" -- never fabricated). */}
+      {/* A live rule's own "Needs attention"/"Review for relevance" block
+          (unchanged content and actions) comes first, same as before this
+          round -- the detail page still leads with status and recommendation
+          ahead of the primary decision, never buried under a removed
+          section heading. */}
+      <AttentionBlock item={item} busy={busy} run={run} onReview={() => setEditing(true)} />
+
+      {/* 1. The primary decision. Project name, the instruction (labelled
+          "Suggested instruction", shown exactly once), "Saves to" with the
+          Change destination control, and the action buttons with their
+          consequence lines -- all inside DecisionCard now. */}
+      <DecisionCard
+        item={item}
+        onChanged={onChanged}
+        busy={busy}
+        run={run}
+        titleAs="h1"
+        editable={editable}
+      />
+
+      {item.decision.divergence ? (
+        <p role="status" className="rounded-md border p-3 text-sm">
+          {item.decision.divergence}
+        </p>
+      ) : null}
+
+      {/* 2. What happened -- unchanged content, except "Your correction" is
+          dropped when it just repeats "Requested" verbatim (trimmed). */}
       <section aria-labelledby={`story-${item.id}`} className="space-y-2">
         <h2 id={`story-${item.id}`} className="text-lg font-semibold">
           What happened
@@ -1772,12 +1794,14 @@ export function ImprovementDetail({
                 )}
               </dd>
             </div>
-            <div>
-              <dt className="font-medium">Your correction</dt>
-              <dd className="text-muted-foreground">
-                <ClampedText text={item.story.correction} />
-              </dd>
-            </div>
+            {correctionDiffersFromRequest(item.story.requested, item.story.correction) ? (
+              <div>
+                <dt className="font-medium">Your correction</dt>
+                <dd className="text-muted-foreground">
+                  <ClampedText text={item.story.correction} />
+                </dd>
+              </div>
+            ) : null}
             <div>
               <dt className="font-medium">Changed afterward</dt>
               <dd className="text-muted-foreground">
@@ -1796,114 +1820,38 @@ export function ImprovementDetail({
         )}
       </section>
 
-      {/* 2. What Harness Ledger learned -- the plain-language lesson. */}
-      <section aria-labelledby={`lesson-${item.id}`} className="space-y-2">
-        <h2 id={`lesson-${item.id}`} className="text-lg font-semibold">
-          What Harness Ledger learned
-        </h2>
-        <p className="text-sm">{lessonLine(item)}</p>
-      </section>
+      {/* 3. Why Harness Ledger recommends this -- collapsed: the prediction
+          (lessonLine's own text, the old lesson section's content), then
+          Why, then Alternative (both from the old destination-reasoning
+          card, now retired). */}
+      <details className="rounded-md border">
+        <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {WHY_RECOMMENDS_TITLE}
+        </summary>
+        <div className="space-y-2 border-t p-3 text-sm text-muted-foreground">
+          <p>{lessonLine(item)}</p>
+          {item.content_destination ? (
+            <p>
+              {DESTINATION_WHY}:{" "}
+              {contentDestinationReason(
+                item.content_destination.value,
+                item.content_destination.reason,
+              )}
+            </p>
+          ) : null}
+          {item.content_destination ? (
+            <p>
+              {DESTINATION_ALTERNATIVE}:{" "}
+              {contentDestinationAlternative(
+                item.content_destination.alternative_label,
+                item.content_destination.alternative,
+              )}
+            </p>
+          ) : null}
+        </div>
+      </details>
 
-      {/* 3. What Harness Ledger recommends -- destination, the instruction or
-          Skill draft, and the attention block when a live rule needs one. */}
-      <section aria-labelledby={`recommends-${item.id}`} className="space-y-3">
-        <h2 id={`recommends-${item.id}`} className="text-lg font-semibold">
-          What Harness Ledger recommends
-        </h2>
-        <p className="text-sm">
-          <span className="font-medium">
-            {destinationLabelPlain(item.content_destination?.value ?? null, item.destination)}
-          </span>
-        </p>
-        {item.content_destination?.value === "skill" && item.skill_proposal ? (
-          <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-            {item.skill_proposal.name}
-          </blockquote>
-        ) : item.proposed_instruction ? (
-          <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-            {item.proposed_instruction}
-          </blockquote>
-        ) : (
-          <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
-        )}
-        <AttentionBlock item={item} busy={busy} run={run} onReview={() => setEditing(true)} />
-      </section>
-
-      {/* 4. Why Knowledge or Skill -- reason, alternative, and the change-
-          destination control (the existing DestinationChoice, unchanged). */}
-      <section aria-labelledby={`why-destination-${item.id}`} className="space-y-2">
-        <h2 id={`why-destination-${item.id}`} className="text-lg font-semibold">
-          Why Knowledge or Skill
-        </h2>
-        <DestinationChoice item={item} busy={busy} run={run} />
-      </section>
-
-      {/* 5. What the action will do -- the consequence line for every action
-          actually on offer right now, plus the Knowledge scope. */}
-      <section aria-labelledby={`action-effect-${item.id}`} className="space-y-2">
-        <h2 id={`action-effect-${item.id}`} className="text-lg font-semibold">
-          What the action will do
-        </h2>
-        {pendingDetail ? (
-          <ul className="space-y-1 text-sm text-muted-foreground">
-            {item.content_destination?.value !== "skill" ? (
-              <li>
-                {PRIMARY_ACTION_LABELS.add} ({label(DESTINATION_LABELS, "project")}):{" "}
-                {actionConsequence("add", "project")}
-              </li>
-            ) : null}
-            {item.content_destination?.value !== "skill" ? (
-              <li>
-                {PRIMARY_ACTION_LABELS.add} ({label(DESTINATION_LABELS, "workspace")}):{" "}
-                {actionConsequence("add", "workspace")}
-              </li>
-            ) : null}
-            {item.content_destination?.value === "skill" ||
-            item.content_destination?.value === "both" ? (
-              <li>
-                {PRIMARY_ACTION_LABELS.review_skill}: {actionConsequence("review_skill")}
-              </li>
-            ) : null}
-            {item.test?.available ? (
-              <li>
-                {PRIMARY_ACTION_LABELS.test_first}: {actionConsequence("test_first")}
-              </li>
-            ) : null}
-            <li>
-              {PRIMARY_ACTION_LABELS.skip}: {actionConsequence("skip")}
-            </li>
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {skipped
-              ? actionConsequence("skip")
-              : accepted
-                ? actionConsequence(
-                    "add",
-                    item.destination === "workspace" ? "workspace" : "project",
-                  )
-                : "This suggestion has already been decided."}
-          </p>
-        )}
-      </section>
-
-      {/* 6. The primary decision -- the existing DecisionCard action bar. */}
-      <DecisionCard
-        item={item}
-        onChanged={onChanged}
-        busy={busy}
-        run={run}
-        titleAs="h1"
-        editable={editable}
-      />
-
-      {item.decision.divergence ? (
-        <p role="status" className="rounded-md border p-3 text-sm">
-          {item.decision.divergence}
-        </p>
-      ) : null}
-
-      {/* ---- end Checkpoint 2 2-B section order ---- */}
+      {/* ---- end Round 8 Task 4 section order ---- */}
 
       <AdvancedDetails title="Technical details">
         <DetailSection title="Full message history">
@@ -2017,277 +1965,202 @@ export function ImprovementDetail({
   );
 }
 
-// ---- Checkpoint 2026-09-18 WP4: destination ----
-// Where this suggestion's lesson belongs (Knowledge, a Skill, or both), why,
-// the alternative, and -- when a Skill is on the table -- the local Skill
-// draft itself: its status, an honest "not in Lovable yet" line, and Edit /
-// Approve / Retire. Never claims a Skill was created or updated in Lovable
-// (lovable_state is always "not_created"). Shown on the suggestion detail
-// only (kind "improvement"); a "retire" item has no content_destination.
-// Placed after ImprovementDetail (a function DECLARATION is hoisted, so
-// ImprovementDetail's own JSX above can still reference it) rather than
-// between DecisionCard and ImprovementDetail, which is exactly the source
-// range ux.test.ts's own "Skill should be gone from the detail component"
-// check slices out and scans -- this component legitimately says "Skill"
-// throughout, so it must live outside that boundary.
-const CONTENT_DESTINATION_ORDER: ContentDestinationValue[] = ["knowledge", "skill", "both"];
-
-function DestinationChoice({ item, busy, run }: { item: Improvement; busy: boolean; run: Run }) {
+// ---- Round 8 Task 4 (review item 6), formerly Checkpoint 2026-09-18 WP4 ----
+// The Skill draft that goes with a Skill-bearing destination: its status, an
+// honest "not in Lovable yet" line, and Edit / Approve / Retire / Publish.
+// Never claims a Skill was created or updated in Lovable (lovable_state is
+// always "not_created" until a real publish). Used to be the second half of
+// a larger "Why Knowledge or Skill" card (DestinationChoice) that also drew
+// the recommended-destination heading, the Why/Alternative sentences, and
+// its own "Change destination" radiogroup -- those moved to the decision
+// card's "Saves to" line and the collapsed "Why Harness Ledger recommends
+// this" details (see ImprovementDetail); this panel is what remains, and it
+// still renders directly under that "Saves to" line. Shown on the
+// suggestion detail only (kind "improvement"); a "retire" item has no
+// content_destination. Placed after ImprovementDetail (a function
+// DECLARATION is hoisted, so ImprovementDetail's own JSX above can still
+// reference it) rather than between DecisionCard and ImprovementDetail,
+// which is exactly the source range ux.test.ts's own "Skill should be gone
+// from the detail component" check slices out and scans -- this component
+// legitimately says "Skill" throughout, so it must live outside that
+// boundary.
+function SkillProposalPanel({ item, busy, run }: { item: Improvement; busy: boolean; run: Run }) {
   const destination = item.content_destination;
   const skill = item.skill_proposal;
-  const [changingDestination, setChangingDestination] = useState(false);
   const [editingSkill, setEditingSkill] = useState(false);
   const [skillDraft, setSkillDraft] = useState(skill?.content ?? "");
   // Local "Publishing…" state for the publish button below.
   const [publishing, setPublishing] = useState(false);
-  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  if (!destination) return null;
+  if (!destination || destination.value === "knowledge" || !skill) return null;
 
-  const onOptionKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
-    const step =
-      e.key === "ArrowDown" || e.key === "ArrowRight"
-        ? 1
-        : e.key === "ArrowUp" || e.key === "ArrowLeft"
-          ? -1
-          : 0;
-    if (step === 0) return;
-    e.preventDefault();
-    const from = CONTENT_DESTINATION_ORDER.indexOf(destination.value);
-    const next =
-      CONTENT_DESTINATION_ORDER[
-        (from + step + CONTENT_DESTINATION_ORDER.length) % CONTENT_DESTINATION_ORDER.length
-      ]!;
-    optionRefs.current[CONTENT_DESTINATION_ORDER.indexOf(next)]?.focus();
-  };
-
-  const canEditSkill = skill != null && skill.ownership === "harness";
+  const canEditSkill = skill.ownership === "harness";
 
   return (
-    <section aria-labelledby={`destination-${item.id}`} className="space-y-3 rounded-md border p-4">
-      <h2 id={`destination-${item.id}`} className="text-sm font-semibold">
-        {DESTINATION_RECOMMENDED}: {destination.recommended_label}
-      </h2>
-      <p className="text-sm text-muted-foreground">
-        {DESTINATION_WHY}: {contentDestinationReason(destination.value, destination.reason)}
-      </p>
-      <p className="text-sm text-muted-foreground">
-        {DESTINATION_ALTERNATIVE}:{" "}
-        {contentDestinationAlternative(destination.alternative_label, destination.alternative)}
-      </p>
-
-      {changingDestination ? (
-        <div
-          role="radiogroup"
-          aria-label={DESTINATION_CHANGE}
-          className="flex flex-wrap items-center gap-2"
-        >
-          {CONTENT_DESTINATION_ORDER.map((value, i) => (
-            <Button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={destination.value === value}
-              tabIndex={destination.value === value ? 0 : -1}
-              ref={(el) => {
-                optionRefs.current[i] = el;
-              }}
-              onKeyDown={onOptionKeyDown}
-              variant={destination.value === value ? "default" : "outline"}
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                void run(
-                  { action: "set_content_destination", id: item.id, destination: value },
-                  `Destination: ${CONTENT_DESTINATION_LABELS[value]}`,
-                ).then((ok) => ok && setChangingDestination(false))
-              }
-            >
-              {CONTENT_DESTINATION_LABELS[value]}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={busy}
-          onClick={() => setChangingDestination(true)}
-        >
-          {DESTINATION_CHANGE}
-        </Button>
-      )}
-
-      {destination.value !== "knowledge" && skill ? (
-        <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium">{skill.name}</p>
-            <Badge variant="outline">{skillProposalStatusLabel(skill.status)}</Badge>
-            <span className="text-xs text-muted-foreground">
-              {skillProposalVersionCountLine(skill.revisions.length)}
-            </span>
-          </div>
-          <details className="rounded-md border bg-background">
-            <summary className="cursor-pointer px-2 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Skill content
-            </summary>
-            <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words border-t px-2 py-2 text-xs">
-              {skill.content}
-            </pre>
-          </details>
-          {/* Checkpoint 3 S1: the honesty line depends on lovable_state now
+    <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm font-medium">{skill.name}</p>
+        <Badge variant="outline">{skillProposalStatusLabel(skill.status)}</Badge>
+        <span className="text-xs text-muted-foreground">
+          {skillProposalVersionCountLine(skill.revisions.length)}
+        </span>
+      </div>
+      <details className="rounded-md border bg-background">
+        <summary className="cursor-pointer px-2 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Skill content
+        </summary>
+        <pre className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words border-t px-2 py-2 text-xs">
+          {skill.content}
+        </pre>
+      </details>
+      {/* Checkpoint 3 S1: the honesty line depends on lovable_state now
               -- 'not_created' keeps the original longer sentence, 'created'
               and 'failed' report the actual outcome instead. */}
-          {skill.lovable_state === "created" ? (
-            <p className="text-xs text-muted-foreground">{skillLovableStatusLine(skill)}</p>
-          ) : skill.lovable_state === "failed" ? (
-            <p className="text-xs text-muted-foreground">
-              {skillPublishFailedLine(skill.lovable_error)}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">{SKILL_NOT_IN_LOVABLE_LINE}</p>
-          )}
-          {canEditSkill ? (
-            editingSkill ? (
-              <div className="space-y-2">
-                <Textarea
-                  value={skillDraft}
-                  onChange={(e) => setSkillDraft(e.target.value)}
-                  rows={8}
-                  className="font-mono text-xs"
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        {
-                          action: "edit_skill_proposal",
-                          proposal_id: skill.id,
-                          name: skill.name,
-                          content: skillDraft,
-                        },
-                        "Skill updated",
-                      ).then((ok) => ok && setEditingSkill(false))
-                    }
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setSkillDraft(skill.content);
-                      setEditingSkill(false);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setSkillDraft(skill.content);
-                    setEditingSkill(true);
-                  }}
-                >
-                  Edit
-                </Button>
-                {skill.status !== "approved" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        { action: "approve_skill_proposal", proposal_id: skill.id },
-                        "Skill approved",
-                      )
-                    }
-                  >
-                    Approve
-                  </Button>
-                ) : null}
-                {skill.status !== "retired" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        { action: "retire_skill_proposal", proposal_id: skill.id },
-                        "Skill retired",
-                      )
-                    }
-                  >
-                    Retire
-                  </Button>
-                ) : null}
-                {/* Checkpoint 3 S1: publishing only ever creates a new
+      {skill.lovable_state === "created" ? (
+        <p className="text-xs text-muted-foreground">{skillLovableStatusLine(skill)}</p>
+      ) : skill.lovable_state === "failed" ? (
+        <p className="text-xs text-muted-foreground">
+          {skillPublishFailedLine(skill.lovable_error)}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">{SKILL_NOT_IN_LOVABLE_LINE}</p>
+      )}
+      {canEditSkill ? (
+        editingSkill ? (
+          <div className="space-y-2">
+            <Textarea
+              value={skillDraft}
+              onChange={(e) => setSkillDraft(e.target.value)}
+              rows={8}
+              className="font-mono text-xs"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void run(
+                    {
+                      action: "edit_skill_proposal",
+                      proposal_id: skill.id,
+                      name: skill.name,
+                      content: skillDraft,
+                    },
+                    "Skill updated",
+                  ).then((ok) => ok && setEditingSkill(false))
+                }
+              >
+                Save
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSkillDraft(skill.content);
+                  setEditingSkill(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSkillDraft(skill.content);
+                setEditingSkill(true);
+              }}
+            >
+              Edit
+            </Button>
+            {skill.status !== "approved" ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void run(
+                    { action: "approve_skill_proposal", proposal_id: skill.id },
+                    "Skill approved",
+                  )
+                }
+              >
+                Approve
+              </Button>
+            ) : null}
+            {skill.status !== "retired" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() =>
+                  void run(
+                    { action: "retire_skill_proposal", proposal_id: skill.id },
+                    "Skill retired",
+                  )
+                }
+              >
+                Retire
+              </Button>
+            ) : null}
+            {/* Checkpoint 3 S1: publishing only ever creates a new
                     workspace Skill -- never offered once it already is one
                     (lovable_state 'created'), and never for a proposal that
                     isn't approved yet. */}
-                {skill.status === "approved" && skill.lovable_state === "not_created" ? (
-                  <ConfirmAction
-                    trigger={publishing ? PUBLISHING_SKILL_LABEL : PUBLISH_SKILL_LABEL}
-                    variant="outline"
-                    size="sm"
-                    title={PUBLISH_SKILL_TITLE}
-                    body={publishSkillConfirmBody(skill.name)}
-                    consequences={[]}
-                    confirmLabel={PUBLISH_SKILL_LABEL}
-                    disabled={busy || publishing}
-                    onConfirm={() => {
-                      setPublishing(true);
-                      void run(
-                        { action: "publish_skill_proposal", proposal_id: skill.id },
-                        "Publishing…",
-                      ).finally(() => setPublishing(false));
-                    }}
-                  />
-                ) : null}
-                {skill.lovable_state === "failed" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(
-                        { action: "publish_skill_proposal", proposal_id: skill.id },
-                        "Retrying…",
-                      )
-                    }
-                  >
-                    {RETRY_LABEL}
-                  </Button>
-                ) : null}
-              </div>
-            )
-          ) : (
-            <p className="text-xs text-muted-foreground">{SKILL_OWNED_BY_USER_LINE}</p>
-          )}
-        </div>
-      ) : null}
-    </section>
+            {skill.status === "approved" && skill.lovable_state === "not_created" ? (
+              <ConfirmAction
+                trigger={publishing ? PUBLISHING_SKILL_LABEL : PUBLISH_SKILL_LABEL}
+                variant="outline"
+                size="sm"
+                title={PUBLISH_SKILL_TITLE}
+                body={publishSkillConfirmBody(skill.name)}
+                consequences={[]}
+                confirmLabel={PUBLISH_SKILL_LABEL}
+                disabled={busy || publishing}
+                onConfirm={() => {
+                  setPublishing(true);
+                  void run(
+                    { action: "publish_skill_proposal", proposal_id: skill.id },
+                    "Publishing…",
+                  ).finally(() => setPublishing(false));
+                }}
+              />
+            ) : null}
+            {skill.lovable_state === "failed" ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void run({ action: "publish_skill_proposal", proposal_id: skill.id }, "Retrying…")
+                }
+              >
+                {RETRY_LABEL}
+              </Button>
+            ) : null}
+          </div>
+        )
+      ) : (
+        <p className="text-xs text-muted-foreground">{SKILL_OWNED_BY_USER_LINE}</p>
+      )}
+    </div>
   );
 }
-// ---- end Checkpoint 2026-09-18 WP4: destination ----
+// ---- end Round 8 Task 4 (formerly Checkpoint 2026-09-18 WP4) ----
 
 // ---- Checkpoint 2026-09-18 WP3: "Needs attention" / "Review for relevance" ----
-// Shown above the instruction on the detail page for a live rule whose
-// health asks for a person's decision (health.review_reason). The copy comes
-// from harness-ux.ts#attentionBlock; the options post the same actions the
-// verdict control, the Test button and DestinationChoice post.
+// Shown above the decision card on the detail page (Round 8 Task 4) for a
+// live rule whose health asks for a person's decision (health.review_reason).
+// The copy comes from harness-ux.ts#attentionBlock; the options post the
+// same actions the verdict control, the Test button and SkillProposalPanel
+// post.
 function AttentionBlock({
   item,
   busy,

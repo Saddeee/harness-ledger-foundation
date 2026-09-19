@@ -125,12 +125,15 @@ test("clamped-text.tsx: only shows the button once the text actually overflows (
   assert.match(code, /\{overflowing \?/);
 });
 
+// Round 8 Task 4: "What Harness Ledger learned" is no longer a section
+// heading -- the story's slice now ends at the collapsed "Why Harness
+// Ledger recommends this" details that follows it instead.
 test("improvement.tsx: the 'What happened' story (Requested/Built/Your correction/Changed afterward) renders through ClampedText, Built and Changed afterward with markdown", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const detail = code.slice(code.indexOf("export function ImprovementDetail"));
   const story = detail.slice(
     detail.indexOf("What happened"),
-    detail.indexOf("What Harness Ledger learned"),
+    detail.indexOf("{WHY_RECOMMENDS_TITLE}"),
   );
   assert.match(story, /<ClampedText text=\{item\.story\.requested\}\s*\/>/);
   assert.match(story, /<ClampedText text=\{item\.story\.correction\}\s*\/>/);

@@ -149,24 +149,27 @@ test('improvement.tsx: lists use size="sm", the detail page uses the default -- 
 // ---- 2. Header row -> title -> body (full width) -> status lines -> bar --
 // the editor block moved OUT of a two-column header into its own sibling.
 
-test("improvement.tsx: DecisionCard's header row (project + badges) and its body (title + instruction/editor) are siblings, not columns of one shared row", () => {
+// Round 8 Task 4: rewritten with intent -- the body no longer carries a
+// duplicated title (removed, see review item 6), so its own onOpen-ternary
+// wrapper (dead code on this branch -- onOpen is never passed to the
+// non-compact DecisionCard) is gone too; the body is now a plain sibling
+// <div className="space-y-3"> labelled "Suggested instruction".
+test("improvement.tsx: DecisionCard's header row (project + badges) and its body (instruction/editor) are siblings, not columns of one shared row", () => {
   const raw = readApp(IMPROVEMENT);
   const headerAt = raw.indexOf(
     "{/* header row: project name left, status badges right -- the body",
   );
   assert.ok(headerAt >= 0, "expected the header-row marker in DecisionCard");
-  const bodyAt = raw.indexOf(
-    "{/* body: title + instruction (blockquote or the editor), full width",
-  );
+  const bodyAt = raw.indexOf("{/* body: instruction, full width -- a sibling of the header row");
   assert.ok(bodyAt > headerAt, "expected the body marker after the header row");
   // Structural check (regex on the JSX): the header row's own </div> is
-  // immediately followed by the body marker and the click-wrapper's own
-  // opening <div -- i.e. the body sits beside the header row, not nested
-  // inside its left column.
-  const between = raw.slice(headerAt, bodyAt + 400);
+  // immediately followed by the body marker and the body's own opening
+  // <div className="space-y-3"> -- i.e. the body sits beside the header
+  // row, not nested inside its left column.
+  const between = raw.slice(headerAt, bodyAt + 500);
   assert.match(
     between,
-    /<\/div>\s*\n\s*\{\/\* body: title \+ instruction[\s\S]{0,220}\*\/\}\s*\n\s*<div\s*\n\s*className=\{\s*\n\s*onOpen \?/,
+    /<\/div>\s*\n\s*\{\/\* body: instruction, full width[\s\S]{0,600}\*\/\}\s*\n\s*<div className="space-y-3">/,
     "the body's own <div> must open right after the header row's </div> closes -- a sibling, not a nested column",
   );
   // The editor (editable.editing) and the plain blockquote both live inside

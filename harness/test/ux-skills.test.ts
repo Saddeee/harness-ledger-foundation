@@ -68,14 +68,23 @@ test("harness-ux.ts: the generic destination reasons match the brief, one per de
   assert.equal(ux.contentDestinationReason("skill", "a real reason"), "a real reason");
 });
 
-// ---- 2. DestinationChoice exists and is rendered on the suggestion detail ----
+// ---- 2. SkillProposalPanel exists and is rendered on the suggestion detail ----
+// Round 8 Task 4 (review item 6): rewritten with intent -- DestinationChoice
+// (the "Why Knowledge or Skill" card: a recommended-destination heading, the
+// Why/Alternative sentences, and its own Change-destination radiogroup) is
+// gone. Its Why/Alternative sentences moved into the collapsed "Why Harness
+// Ledger recommends this" details; the Change-destination control moved to
+// the decision card's "Saves to" line (reusing the existing
+// ChangeDestinationControl); the Skill draft itself (name, content,
+// Edit/Approve/Retire/Publish) is what's left, renamed SkillProposalPanel,
+// still rendered directly under that "Saves to" line.
 
-test("improvement.tsx: DestinationChoice exists and is rendered on the suggestion detail", () => {
+test("improvement.tsx: SkillProposalPanel exists and is rendered on the suggestion detail", () => {
   const code = codeOnly(readApp(DETAIL));
-  assert.match(code, /function DestinationChoice\(/);
-  assert.match(code, /<DestinationChoice item={item} busy={busy} run={run} \/>/);
-  // The three destination options, and the change control.
-  assert.match(code, /CONTENT_DESTINATION_ORDER.*=.*\[.*"knowledge".*"skill".*"both".*\]/s);
+  assert.match(code, /function SkillProposalPanel\(/);
+  assert.match(code, /<SkillProposalPanel item={item} busy={busy} run={run} \/>/);
+  // The three destination options live on the shared ChangeDestinationControl now.
+  assert.match(code, /\(\["knowledge", "skill", "both"\] as const\)\.map\(/);
   assert.match(code, /action: "set_content_destination"/);
   assert.match(code, /action: "edit_skill_proposal"/);
   assert.match(code, /action: "approve_skill_proposal"/);

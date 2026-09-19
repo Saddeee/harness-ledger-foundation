@@ -126,22 +126,23 @@ test("default technical sections are collapsed and the detail page wraps them in
   assert.ok(detail.indexOf("developer-view:end") < detail.lastIndexOf("</AdvancedDetails>"));
 });
 
-// Checkpoint 2 2-B: rewritten with intent for the new six-section order
-// (spec: What happened -> What Harness Ledger learned -> What Harness
-// Ledger recommends -> Why Knowledge or Skill -> What the action will do ->
-// the primary decision), with the raw message list and classification
-// reasoning demoted into the Technical details, collapsed, last.
-test("detail page order: back, the six sections in order, the primary decision, Technical details, developer view last", () => {
+// Round 8 Task 4 (review item 6): rewritten with intent -- the decision
+// card now leads (back label, then AttentionBlock when a live rule needs
+// one, then DecisionCard itself), followed by "What happened" and the
+// collapsed "Why Harness Ledger recommends this" details (replacing "What
+// Harness Ledger learned"/"What Harness Ledger recommends"/"Why Knowledge
+// or Skill"/"What the action will do", all gone), with the raw message list
+// and classification reasoning still demoted into the Technical details,
+// collapsed, last.
+test("detail page order: back, the primary decision, What happened, the collapsed why-recommends details, Technical details, developer view last", () => {
   const detail = codeOnly(readApp(DETAIL));
   const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
   const order = [
     "{backLabel}",
-    "What happened",
-    "What Harness Ledger learned",
-    "What Harness Ledger recommends",
-    "Why Knowledge or Skill",
-    "What the action will do",
+    "<AttentionBlock",
     "<DecisionCard",
+    "What happened",
+    "{WHY_RECOMMENDS_TITLE}",
     'title="Technical details"',
     "How Harness Ledger read this",
     "Wording history",
@@ -195,8 +196,10 @@ test("decision card: three buttons for pending items, decision buttons shown inl
     card,
     /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
   );
-  assert.match(card, /\{onOpen \? \(/);
-  assert.match(card, /onClick=\{\(\) => onOpen\(item\.id\)\}/);
+  // Round 8 Task 4: the onOpen-driven title button is gone along with the
+  // duplicated title itself (review item 6) -- onOpen was never passed to
+  // the non-compact DecisionCard the detail page renders anyway.
+  assert.ok(!/\{onOpen \? \(/.test(card), "no onOpen-driven title left in the non-compact card");
   assert.ok(
     !/>\s*Details\s*<\/button>/.test(card),
     "no separate Details link; the card opens the item",

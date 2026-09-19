@@ -189,7 +189,7 @@ function ProposalCard({ proposal }: { proposal: SkillProposalCard }) {
 // passes it here instead, so the "In Lovable" entry it produced carries one
 // short line saying where it came from and when, with a link to the
 // proposal's own versions (the suggestion detail already shows them; see
-// DestinationChoice in improvement.tsx).
+// SkillProposalPanel in improvement.tsx, Round 8 Task 4).
 function SkillSection({
   skill,
   workspaceId,

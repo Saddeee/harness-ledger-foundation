@@ -157,31 +157,39 @@ test("Inbox: no Previous/Next browser of its own -- that only ever lived in the 
 // section). Previous/Next now browse the four fixed sections in their
 // on-page order: Open, Waiting to be written, Waiting to be tested, Decided
 // earlier.
-test("Improvements: passes the on-page section order (Open, Waiting to be written, Waiting to be tested, Decided earlier) to Previous/Next", () => {
-  // Checkpoint 3: the Suggestions list is gone; the detail route orders
-  // Previous/Next by the API's own order.
+// Round 8 Task 4 (review item 6): rewritten with intent -- Previous/Next
+// (and the "N of M" counter) now browse pending suggestions only, via the
+// pure pendingQueueIds/pendingQueuePosition helpers (harness-ux.ts), not
+// every improvement the API returns.
+test("Improvements: Previous/Next browse the pending queue only, via pendingQueueIds/pendingQueuePosition", () => {
   const ledger = codeOnly(readApp(LEDGER));
-  assert.match(ledger, /const order = all\.map\(\(i\) => i\.id\);/);
+  assert.match(ledger, /const pendingIds = pendingQueueIds\(all\);/);
+  assert.match(ledger, /const pos = pendingQueuePosition\(pendingIds, selected\.id\);/);
   assert.match(
     ledger,
-    /position=\{idx >= 0 \? \{ index: idx \+ 1, total: order\.length \} : undefined\}/,
+    /position=\{pos \? \{ index: pos\.index, total: pos\.total \} : undefined\}/,
   );
-  assert.match(ledger, /onPrev=\{idx > 0 \? \(\) => open\(order\[idx - 1\]!\) : undefined\}/);
   assert.match(
     ledger,
-    /onNext=\{idx >= 0 && idx < order\.length - 1 \? \(\) => open\(order\[idx \+ 1\]!\) : undefined\}/,
+    /onPrev=\{pos\?\.prevId != null \? \(\) => open\(pos\.prevId!\) : undefined\}/,
+  );
+  assert.match(
+    ledger,
+    /onNext=\{pos\?\.nextId != null \? \(\) => open\(pos\.nextId!\) : undefined\}/,
   );
 });
 
 // Checkpoint 2 2-B adds a second radiogroup with two options ("This
 // project"/"All my projects") inside AddInstructionConfirm, the Inbox
 // card's single "Add instruction" dialog -- rewritten with intent, seven to
-// nine in source.
-test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 Task 5 "Why?" radiogroup, one radiogroup mapped over three options in DestinationChoice (checkpoint 2026-09-18 WP4), two from AddInstructionConfirm\'s project/workspace choice (checkpoint 2 2-B), nine in source', () => {
+// nine in source. Round 8 Task 4: DestinationChoice's own radiogroup (the
+// "Why Knowledge or Skill" card's Change-destination control) is gone --
+// the decision card's "Saves to" line now reuses the existing
+// ChangeDestinationControl (already counted below) instead of a second,
+// near-duplicate one -- nine in source, not ten.
+test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 Task 5 "Why?" radiogroup, one from the shared ChangeDestinationControl (Round 8 Task 4), two from AddInstructionConfirm\'s project/workspace choice (checkpoint 2 2-B), one from the Skill card\'s "Use Knowledge instead" choice, nine in source', () => {
   const detail = codeOnly(readApp(DETAIL));
-  // Checkpoint 3: the Skill card's "Use Knowledge instead" choice adds one
-  // more mapped radiogroup -- ten in source (codeOnly strips the comment).
-  assert.equal(count(detail, 'role="radio"'), 10);
+  assert.equal(count(detail, 'role="radio"'), 9);
 });
 
 test("cost wording stays honest: 'Lovable credits' <= 2 and 'Harness Ledger analysis' == 1 on improvement.tsx", () => {
