@@ -130,7 +130,7 @@ test("tests.tsx: a collapsed <details> lists undeleted test copies when there ar
 
 // ---- 3. NAV includes Tests, in order, between History and Skills ----
 
-test("route.tsx: NAV includes Tests between History and Skills", () => {
+test("route.tsx: NAV includes Tests between Skills and History (checkpoint 3 order)", () => {
   const code = codeOnly(readApp(ROUTE));
   const allItems = code.match(/\{ to: "\/([^"]+)", label: "([^"]+)" \}/g);
   assert.ok(allItems);
@@ -139,8 +139,8 @@ test("route.tsx: NAV includes Tests between History and Skills", () => {
   const testsIdx = routes.indexOf("tests");
   const skillsIdx = routes.indexOf("skills");
   assert.ok(historyIdx >= 0 && testsIdx >= 0 && skillsIdx >= 0);
-  assert.equal(testsIdx, historyIdx + 1, "Tests sits immediately after History");
-  assert.equal(skillsIdx, testsIdx + 1, "Skills sits immediately after Tests");
+  assert.equal(testsIdx, skillsIdx + 1, "Tests sits immediately after Skills");
+  assert.equal(historyIdx, testsIdx + 1, "History sits immediately after Tests");
 });
 
 // ---- 4. the client fetches only the six local harness routes ----

@@ -32,7 +32,7 @@ export const LOOP_STEPS = [
   },
   {
     title: "Review Knowledge or Skill",
-    text: "Each suggestion says where the lesson belongs and why. Edit the wording or change the destination.",
+    text: "Inbox contains everything that needs your attention. Each suggestion says where the lesson belongs and why; edit the wording or change the destination.",
   },
   {
     title: "Test if you want",

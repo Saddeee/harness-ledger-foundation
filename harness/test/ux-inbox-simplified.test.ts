@@ -179,14 +179,14 @@ test("improvement.tsx: the Inbox card never spells out an internal enum name -- 
 });
 
 test("improvement.tsx: the Inbox card's secondary controls (raw classification, the alternative destination, changing scope) collapse into a 'More' <details>, never sharing the primary action's visual weight", () => {
+  // Checkpoint 3: the collapsed section is "Why Harness Ledger recommends
+  // this" (prediction paragraphs, the alternative destination); secondary
+  // controls are text actions, never the primary's styling.
   const compact = compactCardSource();
   const more = slice(compact, '<details className="rounded-md border">', "</details>");
-  assert.match(more, />\s*More\s*</);
+  assert.match(more, /\{WHY_RECOMMENDS_TITLE\}/);
   assert.match(more, /whyFor\(item\.classification\)/);
   assert.match(more, /contentDestinationAlternative\(/);
-  // The alternative-scope Add lives here too, styled outline (never the
-  // recommended action's own default styling).
-  assert.match(more, /variant="outline"/);
 });
 
 // ---- 7. Suggestions detail: the "What happened" story, in order ----

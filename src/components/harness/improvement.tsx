@@ -53,7 +53,10 @@ import {
   retireSinceLine,
   SEE_ON_TESTS_LABEL,
   SKILL_NOT_IN_LOVABLE_LINE,
+  SKILL_NOT_PUBLISHED_LINE,
   SKILL_OWNED_BY_USER_LINE,
+  REVIEW_SKILL_LABEL,
+  skillProposalPurpose,
   skillProposalStatusLabel,
   skillProposalVersionCountLine,
   START_TEST_LABEL,
@@ -84,6 +87,25 @@ import {
   versionStatusLine,
   whyFor,
   wordingChangeLine,
+  // ---- Checkpoint 3 I2: the Inbox queue's own card copy ----
+  INBOX_TYPE_LABELS,
+  WHY_RECOMMENDS_TITLE,
+  TEST_IN_PROGRESS_LINE,
+  USE_KNOWLEDGE_INSTEAD,
+  EDIT_LABEL,
+  CHANGE_DESTINATION_LABEL,
+  VIEW_DETAILS_LABEL,
+  VIEW_EVIDENCE_LABEL,
+  JUDGE_REPLAY_LABEL,
+  REVIEW_RULE_LABEL,
+  REVIEW_LABEL,
+  RETRY_LABEL,
+  VIEW_LABEL,
+  YOUR_VERDICT_NEEDED_LINE,
+  replayJudgedLine,
+  inboxActionConsequence,
+  FIELD_LABELS,
+  type ReplayConclusionLike,
 } from "@/lib/harness-ux";
 
 import {
@@ -97,6 +119,8 @@ import {
   type Improvement,
   type TestInfo,
   type Message,
+  type InboxItem,
+  type InboxItemLink,
 } from "@/lib/improvements-client";
 
 export type { Improvement, Message };
@@ -1100,12 +1124,18 @@ function CompactDecisionCard({
   busy,
   run,
   isNew,
+  conclusion,
 }: {
   item: Improvement;
   onOpen?: ((id: number) => void) | undefined;
   busy: boolean;
   run: Run;
   isNew?: boolean | undefined;
+  // Checkpoint 3 I2: set only by the Inbox, from InboxItem.conclusion, when
+  // this suggestion's own staged test has been judged but the suggestion
+  // itself is still pending -- ImprovementDetail's own DecisionCard call has
+  // no InboxItem to read this from, so it never passes it.
+  conclusion?: ReplayConclusionLike | null | undefined;
 }) {
   const titleId = `improvement-${item.id}`;
   // Round 6 Task 4 / spec §4: the Inbox is always a list -- every button in
@@ -1122,11 +1152,28 @@ function CompactDecisionCard({
     : whyFor(item.classification);
   const recommended = recommendedPrimaryAction(item);
   const canTest = item.test?.available === true;
+  // Checkpoint 3 I2: by the Inbox item contract, this card only ever renders
+  // a new_instruction item (content_destination knowledge or both -- a
+  // skill-only suggestion is its own new_skill Inbox item, see NewSkillCard
+  // below); `skillOnly` is kept only as a defensive fallback, never expected
+  // to be true here.
+  const runStatus = item.test?.run?.status;
+  const testRunning = runStatus === "queued" || runStatus === "copying" || runStatus === "building";
+  // Checkpoint 3 I2: never show the same text twice -- when the plain-
+  // language lesson and the proposed instruction read identically, the
+  // instruction blockquote is dropped and the lesson (already the heading)
+  // stands alone.
+  const lesson = lessonLine(item);
+  const instructionText = item.proposed_instruction?.trim() || null;
+  const showInstruction = instructionText != null && instructionText !== lesson.trim();
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
-      {/* header row: project name left, status badges right */}
+      {/* header row: project name + type label left, New badge right */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold">{projectName(item)}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold">{projectName(item)}</p>
+          <span className="text-xs text-muted-foreground">{INBOX_TYPE_LABELS.new_instruction}</span>
+        </div>
         {isNew ? <Badge variant="default">New</Badge> : null}
       </div>
       <h2 id={titleId} className="text-base font-medium">
@@ -1135,25 +1182,30 @@ function CompactDecisionCard({
           className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => onOpen?.(item.id)}
         >
-          {item.title}
+          {lesson}
         </button>
       </h2>
       {/* body: full width, a sibling of the header row above */}
-      {/* Checkpoint 2 2-B: the plain-language lesson first, then the
-          proposed instruction (or, for a skill-only destination, the Skill
-          name in its place). */}
-      <p className="text-sm">{lessonLine(item)}</p>
+      {/* Checkpoint 2 2-B / Checkpoint 3 I2: the plain-language lesson is the
+          heading above; the proposed instruction (or, for a skill-only
+          destination, the Skill name) follows, only when it says something
+          the lesson didn't already say. */}
       {skillOnly ? (
         <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
           {item.skill_proposal?.name ?? NO_INSTRUCTION}
         </blockquote>
-      ) : item.proposed_instruction ? (
+      ) : showInstruction ? (
         <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-          {item.proposed_instruction}
+          {instructionText}
         </blockquote>
-      ) : (
+      ) : !instructionText ? (
         <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
-      )}
+      ) : null}
+      {item.content_destination?.value === "both" && item.skill_proposal ? (
+        <p className="text-xs text-muted-foreground">
+          Also creates the Skill "{item.skill_proposal.name}".
+        </p>
+      ) : null}
       <p className="text-xs text-muted-foreground">
         <span className="font-medium">{destLabel}</span>
         {" — "}
@@ -1163,6 +1215,13 @@ function CompactDecisionCard({
         <p role="status" className="text-xs text-muted-foreground">
           {item.unsure}
         </p>
+      ) : null}
+      {/* Checkpoint 3 I2: a staged test judged while the suggestion itself
+          is still pending -- shown alongside TestStatusLine's own judged-run
+          line (that one is a link to the comparison; this one names the
+          conclusion directly). */}
+      {replayJudgedLine(conclusion) ? (
+        <p className="text-xs font-medium">{replayJudgedLine(conclusion)}</p>
       ) : null}
       <TestStatusLine item={item} />
       <div className={ACTION_BAR_CLASS}>
@@ -1175,14 +1234,18 @@ function CompactDecisionCard({
           </div>
         ) : recommended === "test_first" ? (
           <div className="space-y-1">
-            <TestButton
-              item={item}
-              busy={busy}
-              run={run}
-              size={size}
-              trigger={PRIMARY_ACTION_LABELS.test_first}
-              variant="default"
-            />
+            {testRunning ? (
+              <p className="text-sm text-muted-foreground">{TEST_IN_PROGRESS_LINE}</p>
+            ) : (
+              <TestButton
+                item={item}
+                busy={busy}
+                run={run}
+                size={size}
+                trigger={PRIMARY_ACTION_LABELS.test_first}
+                variant="default"
+              />
+            )}
             <p className="text-xs text-muted-foreground">{actionConsequence("test_first")}</p>
           </div>
         ) : (
@@ -1192,24 +1255,58 @@ function CompactDecisionCard({
           </div>
         )}
         {/* Test first stays offered even when it isn't the recommendation,
-            whenever it's actually available -- never the other way round. */}
-        {recommended !== "test_first" && canTest ? (
-          <TestButton
-            item={item}
-            busy={busy}
-            run={run}
-            size={size}
-            trigger={PRIMARY_ACTION_LABELS.test_first}
-          />
+            whenever it's actually available -- never the other way round;
+            an already-running test shows the status line instead of a
+            second, confusing "Test first" button. */}
+        {recommended !== "test_first" ? (
+          testRunning ? (
+            <p className="text-xs text-muted-foreground">{TEST_IN_PROGRESS_LINE}</p>
+          ) : canTest ? (
+            <TestButton
+              item={item}
+              busy={busy}
+              run={run}
+              size={size}
+              trigger={PRIMARY_ACTION_LABELS.test_first}
+            />
+          ) : null
         ) : null}
-        <SkipConfirm item={item} busy={busy} run={run} size={size} />
       </div>
+      {/* Checkpoint 3 I2: tertiary text actions -- Edit, Skip, Change
+          destination, View details -- ghost/link style, never sharing the
+          primary action bar's visual weight. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className="text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onOpen?.(item.id)}
+        >
+          {EDIT_LABEL}
+        </button>
+        <SkipConfirm item={item} busy={busy} run={run} size={size} />
+        <ChangeDestinationControl item={item} busy={busy} run={run} />
+        <button
+          type="button"
+          className="text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onOpen?.(item.id)}
+        >
+          {VIEW_DETAILS_LABEL}
+        </button>
+      </div>
+      {/* Checkpoint 3 I2: prediction paragraphs collapse here; everything
+          technical stays on the detail page. */}
       <details className="rounded-md border">
         <summary className="cursor-pointer px-2 py-1 text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          More
+          {WHY_RECOMMENDS_TITLE}
         </summary>
         <div className="space-y-2 border-t p-2 text-xs text-muted-foreground">
           <p>{whyFor(item.classification)}</p>
+          {predictedFailureOf(item) ? <p>Without this rule, {predictedFailureOf(item)}.</p> : null}
+          {appliesWhenOf(item) ? (
+            <p>
+              {FIELD_LABELS["applies_when"]}: {appliesWhenOf(item)}
+            </p>
+          ) : null}
           {item.content_destination ? (
             <p>
               {DESTINATION_ALTERNATIVE}:{" "}
@@ -1219,26 +1316,27 @@ function CompactDecisionCard({
               )}
             </p>
           ) : null}
-          {!skillOnly && recommended !== "add" ? (
-            <AddInstructionConfirm
-              item={item}
-              busy={busy}
-              run={run}
-              size={size}
-              variant="outline"
-            />
-          ) : null}
-          <Link
-            to="/ledger"
-            search={{ improvement: item.id }}
-            className="text-primary underline underline-offset-2"
-          >
-            Open the full suggestion (change destination or scope, edit wording, see evidence) →
-          </Link>
         </div>
       </details>
     </article>
   );
+}
+
+// Checkpoint 3 I2: the rule row behind an improvement carries applies_when/
+// predicted_failure (harness/src/store.ts's own rules table columns), but
+// Improvement.developer.rule is typed `unknown` (the Developer view's own
+// raw-JSON convention) -- these two narrow it just enough for the
+// prediction paragraphs above, defensively (an older/retire item may have
+// no rule yet).
+function predictedFailureOf(item: Improvement): string | null {
+  const rule = item.developer.rule as { predicted_failure?: unknown } | null;
+  const v = rule?.predicted_failure;
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+function appliesWhenOf(item: Improvement): string | null {
+  const rule = item.developer.rule as { applies_when?: unknown } | null;
+  const v = rule?.applies_when;
+  return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
 export function DecisionCard({
@@ -1251,6 +1349,7 @@ export function DecisionCard({
   editable,
   isNew,
   compact,
+  conclusion,
 }: {
   item: Improvement;
   onChanged: (msg: string) => void;
@@ -1268,6 +1367,9 @@ export function DecisionCard({
   // CompactDecisionCard above. Ledger and the detail page never pass it, so
   // their own rendering below is unchanged.
   compact?: boolean;
+  // Checkpoint 3 I2: Inbox-only, from InboxItem.conclusion -- see
+  // CompactDecisionCard's own doc comment.
+  conclusion?: ReplayConclusionLike | null | undefined;
 }) {
   const own = useRun(onChanged);
   const busy = busyProp ?? own.busy;
@@ -1293,7 +1395,16 @@ export function DecisionCard({
   }
 
   if (compact) {
-    return <CompactDecisionCard item={item} onOpen={onOpen} busy={busy} run={run} isNew={isNew} />;
+    return (
+      <CompactDecisionCard
+        item={item}
+        onOpen={onOpen}
+        busy={busy}
+        run={run}
+        isNew={isNew}
+        conclusion={conclusion}
+      />
+    );
   }
 
   return (
@@ -2227,3 +2338,330 @@ function AddInstructionConfirm({
   );
 }
 // ---- end Checkpoint 2 2-B ----
+
+// ---- Checkpoint 3 I2: the Inbox queue's non-Knowledge card types ----
+// The Knowledge card (new_instruction, CompactDecisionCard above) and the
+// Skill card just below share one convention with the four cards after it
+// (test_result, rule_attention, conflict, action_failed): a header row
+// (project + the item's own INBOX_TYPE_LABELS text), a title, one primary
+// action with its consequence line directly underneath (never four equally
+// prominent buttons), and nothing else claiming the same visual weight.
+// Placed at the very end of the file for the same reason AddInstructionConfirm
+// is (see its own comment above) -- every gap between the existing functions
+// is already a structural test's own slice boundary.
+
+/** The Knowledge card's own "Change destination" tertiary action: collapsed
+ * to a single ghost/link button until pressed, then a small Knowledge/
+ * Skill/Both row that posts the existing set_content_destination action --
+ * no new mutation path, no confirmation dialog (changing where a still-
+ * pending suggestion would go writes nothing to Lovable by itself). */
+function ChangeDestinationControl({
+  item,
+  busy,
+  run,
+}: {
+  item: Improvement;
+  busy: boolean;
+  run: Run;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = item.content_destination?.value ?? "knowledge";
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => setOpen(true)}
+      >
+        {CHANGE_DESTINATION_LABEL}
+      </button>
+    );
+  }
+  return (
+    <div role="radiogroup" aria-label={CHANGE_DESTINATION_LABEL} className="flex flex-wrap gap-1">
+      {(["knowledge", "skill", "both"] as const).map((value) => (
+        <Button
+          key={value}
+          type="button"
+          role="radio"
+          aria-checked={value === current}
+          size="sm"
+          variant={value === current ? "default" : "outline"}
+          disabled={busy}
+          onClick={() =>
+            void run(
+              { action: "set_content_destination", id: item.id, destination: value },
+              "Destination changed.",
+            )
+          }
+        >
+          {CONTENT_DESTINATION_LABELS[value]}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+/** The Skill card (new_skill Inbox items): a locally proposed Skill, never
+ * yet published to Lovable. Primary "Review Skill" opens the detail page
+ * (the same ImprovementDetail every other card links to); secondary "Use
+ * Knowledge instead" posts the existing set_content_destination action --
+ * no new mutation path. */
+export function NewSkillCard({
+  item,
+  onOpen,
+  busy,
+  run,
+}: {
+  item: Improvement;
+  onOpen?: ((id: number) => void) | undefined;
+  busy: boolean;
+  run: Run;
+}) {
+  const titleId = `improvement-${item.id}`;
+  const scopeLabel = item.destination === "workspace" ? "Workspace" : "Project";
+  const purpose = skillProposalPurpose(
+    item.skill_proposal?.content ?? null,
+    item.proposed_instruction,
+  );
+  const destinationReason = item.content_destination
+    ? contentDestinationReason(item.content_destination.value, item.content_destination.reason)
+    : whyFor(item.classification);
+  return (
+    <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">
+          {projectName(item)} · {scopeLabel}
+        </p>
+        <span className="text-xs text-muted-foreground">{INBOX_TYPE_LABELS.new_skill}</span>
+      </div>
+      <h2 id={titleId} className="text-base font-medium">
+        <button
+          type="button"
+          className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onOpen?.(item.id)}
+        >
+          {item.skill_proposal?.name ?? item.title}
+        </button>
+      </h2>
+      <p className="text-sm">{purpose}</p>
+      <p className="text-xs text-muted-foreground">
+        <span className="font-medium">Why a Skill rather than Knowledge</span>
+        {" — "}
+        {destinationReason}
+      </p>
+      <p className="text-xs text-muted-foreground">{SKILL_NOT_PUBLISHED_LINE}</p>
+      <div className={ACTION_BAR_CLASS}>
+        <div className="space-y-1">
+          <Button type="button" size="sm" onClick={() => onOpen?.(item.id)}>
+            {REVIEW_SKILL_LABEL}
+          </Button>
+          <p className="text-xs text-muted-foreground">{actionConsequence("review_skill")}</p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() =>
+            void run(
+              { action: "set_content_destination", id: item.id, destination: "knowledge" },
+              "Moved to Knowledge.",
+            )
+          }
+        >
+          {USE_KNOWLEDGE_INSTEAD}
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <SkipConfirm item={item} busy={busy} run={run} size="sm" />
+        <button
+          type="button"
+          className="text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onOpen?.(item.id)}
+        >
+          {VIEW_EVIDENCE_LABEL}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+/** Where an Inbox item's own `link` points -- one place every non-Knowledge/
+ * Skill card resolves it, so the six page names in the contract's own
+ * `link.page` union are only ever switched on here. */
+/** The page an Inbox item opens, as a plain href -- the pages are all
+ * inside the authenticated shell and the ids are numbers, so a string href
+ * keeps the typed router out of a dynamic switch. */
+function inboxLinkHref(link: InboxItemLink): string {
+  switch (link.page) {
+    case "detail":
+      return link.improvement_id != null ? `/ledger?improvement=${link.improvement_id}` : "/inbox";
+    case "judge":
+      return link.run_id != null ? `/judge?run=${link.run_id}` : "/tests";
+    case "instructions":
+      return "/instructions";
+    case "skills":
+      return "/skills";
+    case "tests":
+      return "/tests";
+    case "history":
+      return "/history";
+    case "inbox":
+      return "/inbox";
+  }
+}
+
+function InboxCardHeader({ item }: { item: InboxItem }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p className="text-sm font-semibold">{item.project_name ?? "Workspace"}</p>
+      <span className="text-xs text-muted-foreground">{INBOX_TYPE_LABELS[item.type]}</span>
+    </div>
+  );
+}
+
+/** The test_result card: a replay awaiting a verdict. Primary "Judge
+ * replay" -- recording a verdict changes nothing in Lovable and uses no
+ * tokens or Lovable spend, stated directly underneath. */
+export function TestResultCard({ item }: { item: InboxItem }) {
+  const titleId = `inbox-${item.id}`;
+  const href = inboxLinkHref(item.link);
+  return (
+    <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      <InboxCardHeader item={item} />
+      <h2 id={titleId} className="text-base font-medium">
+        {item.title}
+      </h2>
+      <p className="text-sm text-muted-foreground">{item.summary ?? YOUR_VERDICT_NEEDED_LINE}</p>
+      <p className="text-xs text-muted-foreground">{YOUR_VERDICT_NEEDED_LINE}</p>
+      {replayJudgedLine(item.conclusion) ? (
+        <p className="text-xs text-muted-foreground">{replayJudgedLine(item.conclusion)}</p>
+      ) : null}
+      <div className={ACTION_BAR_CLASS}>
+        <div className="space-y-1">
+          <Button asChild type="button" size="sm">
+            <a href={href}>{JUDGE_REPLAY_LABEL}</a>
+          </Button>
+          <p className="text-xs text-muted-foreground">{inboxActionConsequence("judge_replay")}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** The rule_attention card: an open retire proposal, or a live rule whose
+ * health asks for review. Primary "Review rule" opens wherever the
+ * contract's own `link` points (the retire proposal's or the rule's own
+ * detail) -- reviewing decides nothing by itself. */
+export function RuleAttentionCard({ item }: { item: InboxItem }) {
+  const titleId = `inbox-${item.id}`;
+  const href = inboxLinkHref(item.link);
+  return (
+    <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      <InboxCardHeader item={item} />
+      <h2 id={titleId} className="text-base font-medium">
+        {item.title}
+      </h2>
+      {item.summary ? <p className="text-sm text-muted-foreground">{item.summary}</p> : null}
+      <div className={ACTION_BAR_CLASS}>
+        <div className="space-y-1">
+          <Button asChild type="button" size="sm">
+            <a href={href}>{REVIEW_RULE_LABEL}</a>
+          </Button>
+          <p className="text-xs text-muted-foreground">{inboxActionConsequence("review_rule")}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** The conflict card for a stale Knowledge write (a write conflict, not an
+ * open re-analysis disagreement -- see inbox.tsx's own DisagreementCard for
+ * that case, reused as-is per the checkpoint 3 brief). Primary "Review"
+ * opens the Instructions row this conflict is about. */
+export function ConflictCard({ item }: { item: InboxItem }) {
+  const titleId = `inbox-${item.id}`;
+  const href = inboxLinkHref(item.link);
+  return (
+    <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      <InboxCardHeader item={item} />
+      <h2 id={titleId} className="text-base font-medium">
+        {item.title}
+      </h2>
+      {item.summary ? <p className="text-sm text-muted-foreground">{item.summary}</p> : null}
+      <div className={ACTION_BAR_CLASS}>
+        <div className="space-y-1">
+          <Button asChild type="button" size="sm">
+            <a href={href}>{REVIEW_LABEL}</a>
+          </Button>
+          <p className="text-xs text-muted-foreground">{inboxActionConsequence("review_rule")}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** The action_failed card: a failed Knowledge write, test run, or copy
+ * cleanup. "Retry" only when there's a specific failed Knowledge write on
+ * this same suggestion to retry (the existing retry_write action, never a
+ * new mutation path); every other case is honestly a "View" link to wherever
+ * the contract's own `link` points, since there is nothing this card can
+ * retry on its own. */
+export function ActionFailedCard({
+  item,
+  busy,
+  run,
+}: {
+  item: InboxItem;
+  busy: boolean;
+  run: Run;
+}) {
+  const titleId = `inbox-${item.id}`;
+  const href = inboxLinkHref(item.link);
+  const failedVersion = item.improvement?.lovable?.versions.find(
+    (v) => v.status === "failed" || v.status === "stale",
+  );
+  const canRetryWrite = item.improvement != null && failedVersion != null;
+  return (
+    <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
+      <InboxCardHeader item={item} />
+      <h2 id={titleId} className="text-base font-medium">
+        {item.title}
+      </h2>
+      {item.summary ? <p className="text-sm text-muted-foreground">{item.summary}</p> : null}
+      <div className={ACTION_BAR_CLASS}>
+        {canRetryWrite ? (
+          <div className="space-y-1">
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  {
+                    action: "retry_write",
+                    id: item.improvement!.id,
+                    version_id: failedVersion!.id,
+                  },
+                  "Retrying…",
+                )
+              }
+            >
+              {RETRY_LABEL}
+            </Button>
+            <p className="text-xs text-muted-foreground">{inboxActionConsequence("retry")}</p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <Button asChild type="button" size="sm" variant="outline">
+              <a href={href}>{VIEW_LABEL}</a>
+            </Button>
+            <p className="text-xs text-muted-foreground">{inboxActionConsequence("review_rule")}</p>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+// ---- end Checkpoint 3 I2 ----

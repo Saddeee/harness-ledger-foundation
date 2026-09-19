@@ -62,6 +62,20 @@ async function handleGet({ request }: { request: Request }) {
       return Response.json({ available: true, runs: adapter.listTestRunSummaries() });
     }
 
+    // Checkpoint 3 I1: the Inbox's own read (?inbox=1) -- same route as
+    // everything else here, not a seventh one. adapter.listInboxItems is
+    // the single Inbox aggregation the whole app reads (see its own header
+    // comment); this branch adds no logic of its own beyond the connected
+    // flag every other branch here already computes the same way.
+    if (new URL(request.url).searchParams.get("inbox") !== null) {
+      const connected = await isConnected();
+      return Response.json({
+        available: true,
+        items: adapter.listInboxItems({ connected }),
+        count: adapter.inboxCount({ connected }),
+      });
+    }
+
     const settings = adapter.getSettings();
     return Response.json({
       available: true,

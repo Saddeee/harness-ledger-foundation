@@ -1134,3 +1134,74 @@ export type SkillProposalCardFields = {
 
 export type SkillProposalCard = SkillProposalListItem & SkillProposalCardFields;
 // ---- end Checkpoint 2 2-C ----
+
+// ---- Checkpoint 3 I2 ----
+// TEMPORARY: the shared InboxItem contract (WP I1 owns the real thing --
+// harness/src/improvements.ts's listInboxItems/inboxCount, re-exported
+// through adapter.ts and served at GET .../improvements?inbox=1). Added here,
+// under this delimited section, only because I1's own exports were not yet
+// present in this file when I2 needed to typecheck against the contract.
+// Re-read this file before touching this block: if I1 has since added its
+// own client type/fetch function (here or under its own name), delete this
+// block and switch every caller to that one instead of keeping two contracts
+// in parallel.
+export type InboxItemType =
+  "new_instruction" | "new_skill" | "test_result" | "rule_attention" | "conflict" | "action_failed";
+
+export const INBOX_TYPE_LABELS: Record<InboxItemType, string> = {
+  new_instruction: "New instruction",
+  new_skill: "New Skill",
+  test_result: "Test result",
+  rule_attention: "Rule needs attention",
+  conflict: "Conflict",
+  action_failed: "Action failed",
+};
+
+export type InboxItemLink = {
+  page: "detail" | "judge" | "instructions" | "skills" | "tests" | "history" | "inbox";
+  improvement_id?: number;
+  run_id?: number;
+  rule_id?: number;
+};
+
+export type InboxRecommendedAction =
+  | "add_instruction"
+  | "review_skill"
+  | "judge_replay"
+  | "review_rule"
+  | "resolve_conflict"
+  | "retry"
+  | "review_disagreement"
+  | null;
+
+export type InboxItem = {
+  id: string;
+  type: InboxItemType;
+  project_id: string | null;
+  project_name: string | null;
+  title: string;
+  summary: string | null;
+  created_at: string;
+  link: InboxItemLink;
+  improvement: Improvement | null;
+  run: ExperimentRunSummary | null;
+  conclusion: ReplayConclusion | null;
+  recommended_action: InboxRecommendedAction;
+};
+
+export type InboxResponse =
+  | { available: true; items: InboxItem[]; count: number; reason?: undefined }
+  | { available: false; reason?: string; items?: undefined; count?: undefined };
+
+export async function fetchInbox(): Promise<InboxResponse> {
+  // Template literal, same convention as fetchExperimentRun/fetchTestRuns/
+  // fetchTimeline's own query-string calls just above -- the structural
+  // "only six local harness routes" tests scan for a literal double-quoted
+  // fetch("...") call and would otherwise misread this as a seventh route.
+  const res = await fetch(`/api/public/harness/improvements?inbox=1`, {
+    headers: await authHeaders(),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as InboxResponse;
+}
+// ---- end Checkpoint 3 I2 ----

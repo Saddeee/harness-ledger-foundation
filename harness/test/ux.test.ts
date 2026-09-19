@@ -525,48 +525,25 @@ test("lovableStatusLine / decisionSentence / improvementGroup follow the write l
 // "Reverted" are gone from this page entirely, replaced by a one-line
 // pointer to the Instructions page (those items are rules now, not
 // suggestions).
-test("Suggestions page: Open/Waiting/Decided-earlier sections, no In Lovable/Reverted listing, decision cards, restore lives in the card", () => {
+test("ledger.tsx (checkpoint 3): the detail route only -- no list, no sections, no archive; redirects to the Inbox without ?improvement", () => {
   const ledger = codeOnly(readApp(LEDGER));
-  assert.ok(!/IMPROVEMENT_GROUPS/.test(ledger), "no more generic group iteration on this page");
-  assert.match(
-    ledger,
-    /const pending = all\.filter\(\(i\) => i\.decision\.status === "pending"\);/,
-  );
-  assert.match(ledger, /const openItems = \[\.\.\.pending, \.\.\.needsAttention\];/);
-  assert.match(ledger, />\s*Open\{" "\}/, "the Open section heading");
-  assert.match(ledger, />\s*Waiting to be written\{" "\}/);
-  assert.match(ledger, />\s*Waiting to be tested\{" "\}/);
-  assert.match(ledger, /Decided earlier \(\{decidedEarlier\.length\}\)/);
-  assert.match(
-    ledger,
-    /Rules already in Lovable are on the/,
-    "a pointer, not a listing, for rules already in Lovable",
-  );
-  // Retired/Skipped are gone from the page's own section headings -- they
-  // only ever appear now inside the collapsed "Decided earlier" details.
-  assert.ok(!/>\s*In Lovable\{" "\}/.test(ledger));
-  assert.ok(!/>\s*Reverted\{" "\}/.test(ledger));
-  assert.ok(!/Everything Harness Ledger has learned/.test(ledger), "no subtitle on Suggestions");
+  assert.ok(!/IMPROVEMENT_GROUPS/.test(ledger), "no group iteration on this page");
   assert.ok(
-    !/Needs your decision|Waiting for proof|Ready to add|Decide later/.test(ledger),
-    "old group names are gone",
+    !/Decided earlier/.test(ledger),
+    "the Decided earlier archive is gone (History holds past decisions)",
   );
-  assert.match(ledger, /<DecisionCard item=\{i\} onChanged=\{refresh\} onOpen=\{open\} \/>/);
+  assert.ok(!/>\s*Open\{" "\}/.test(ledger) && !/Waiting to be written/.test(ledger));
+  assert.match(ledger, /<ImprovementDetail/);
+  assert.match(ledger, /to: "\/inbox"/, "no improvement selected → Inbox");
   assert.ok(
     !/Restore previous version|action: "restore"|ConfirmAction|ImprovementCard|ClickableCard/.test(
       ledger,
     ),
   );
-  assert.ok(
-    !/export function ImprovementCard/.test(readApp(DETAIL)),
-    "the temporary wrapper is gone",
-  );
-  // Decided earlier is the only <details> on this page, and it is collapsed.
+  assert.ok(!/postImprovementAction\(/.test(ledger), "the detail route posts nothing of its own");
   for (const tag of ledger.match(/<details[^>]*>/g) ?? []) {
     assert.ok(!/\sopen\b/.test(tag), `details tag must not be open: ${tag}`);
   }
-  const inbox = codeOnly(readApp(INBOX));
-  assert.match(inbox, /i\.decision\.status === "pending"/, "only pending items are in Inbox");
 });
 
 test("wording history: reasons only for changes made in this UI; anything else is 'Updated by Harness Ledger'", () => {
@@ -616,29 +593,28 @@ test("Settings: hosted usage cards live under Advanced, gated to the hosted runt
   assert.ok(!/queryKey: \["overview"\]/.test(settings));
 });
 
-test("nav: Overview, Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in every runtime; How Harness Ledger works links to the landing page", () => {
+test("nav: Overview, Inbox, Instructions, Skills, Tests, History, Projects, Settings in every runtime (checkpoint 3: no Suggestions); How Harness Ledger works links to the landing page", () => {
   // Checkpoint 2 WP2-A: Overview is real again (a next-action page, not the
   // redirect it used to be) and sits first in the sidebar -- updated here
   // with intent rather than left pinning the old "Overview is gone" state.
   const shell = codeOnly(readApp(SHELL));
   assert.match(shell, /\{ to: "\/overview", label: "Overview" \}/);
   assert.match(shell, /\{ to: "\/inbox", label: "Inbox" \}/);
-  assert.match(shell, /\{ to: "\/ledger", label: "Suggestions" \}/);
+  assert.ok(!/label: "Suggestions"/.test(shell), "Suggestions left the navigation (checkpoint 3)");
   assert.match(shell, /\{ to: "\/instructions", label: "Instructions" \}/);
   assert.match(shell, /\{ to: "\/history", label: "History" \}/);
   assert.match(shell, /\{ to: "\/tests", label: "Tests" \}/);
   assert.match(shell, /\{ to: "\/skills", label: "Skills" \}/);
   assert.match(shell, /\{ to: "\/projects", label: "Projects" \}/);
   assert.match(shell, /\{ to: "\/settings", label: "Settings" \}/);
-  assert.equal(count(shell, 'label: "'), 9, "exactly nine nav items");
+  assert.equal(count(shell, 'label: "'), 8, "exactly eight nav items");
   const navOrder = [
     'label: "Overview"',
     'label: "Inbox"',
-    'label: "Suggestions"',
     'label: "Instructions"',
-    'label: "History"',
-    'label: "Tests"',
     'label: "Skills"',
+    'label: "Tests"',
+    'label: "History"',
     'label: "Projects"',
     'label: "Settings"',
   ];
@@ -741,8 +717,10 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
   // jump from 26 to 29, recomputed directly against the file rather than
   // hand-counted, inventoried here so a FUTURE bump still gets looked at,
   // rather than this assertion silently loosening forever.
+  // Checkpoint 3: inboxActionConsequence's "Judge replay" line ("No
+  // credits, no AI tokens.") is the jump from 29 to 30.
   const creditMatches = (uxSource.match(/credit/gi) || []).length;
-  assert.equal(creditMatches, 29);
+  assert.equal(creditMatches, 30);
 });
 
 test("no internal vocabulary in user-facing JSX outside the Developer view", () => {
@@ -844,20 +822,23 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
   ]);
 });
 
-test("Inbox: a count line, then compact decision cards you can act on without opening them", () => {
+test("Inbox: a count line, then one card per unresolved item (checkpoint 3: the unified queue)", () => {
   const inbox = codeOnly(readApp(INBOX));
-  // onChanged also turns the item into a confirmation row (see
-  // ux-inbox-logic.test.ts), so it's no longer bare `refresh`. Round 4 Task
-  // C3 adds an `isNew` prop after onOpen (see ux-round4-health.test.ts), so
-  // this no longer requires the tag to close right after onOpen. Round 5
-  // Task 5 / spec §2: the card is `compact` now, and `onOpen` (no longer
-  // named `open`) navigates to Suggestions rather than an in-page detail.
+  assert.match(inbox, /inboxCountLine\(count\)/);
   assert.match(
     inbox,
-    /<DecisionCard\s+compact\s+item=\{i\}\s+onChanged=\{\(msg\)\s*=>\s*confirmDecision\(i\.id,\s*msg\)\}\s+onOpen=\{onOpen\}/,
+    /<DecisionCard\s+compact\s+item=\{it\.improvement\}\s+onChanged=\{\(msg\)\s*=>\s*confirmDecision\(it\.improvement!\.id,\s*msg\)\}\s+onOpen=\{onOpen\}/,
   );
-  assert.match(inbox, /"One suggestion is waiting for your decision\."/);
-  assert.match(inbox, /`\$\{pending\.length\} suggestions are waiting for your decision\.`/);
+  for (const card of [
+    "<NewSkillCard",
+    "<TestResultCard",
+    "<RuleAttentionCard",
+    "<ConflictCard",
+    "<ActionFailedCard",
+  ]) {
+    assert.ok(inbox.includes(card), `Inbox renders ${card}`);
+  }
+  assert.ok(!/suggestions are waiting for your decision/.test(inbox), "the old count line is gone");
   assert.ok(!/ImprovementCard|ClickableCard|isDeferred/.test(inbox));
   assert.ok(!/>\s*Review\s*<\/Button>/.test(inbox));
 });

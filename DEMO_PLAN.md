@@ -104,7 +104,7 @@ Decision: **Add to this project.** Confirm on Instructions that it is written (s
 Lovable …") and that the Knowledge in Lovable holds the managed block with the new heading and note.
 
 Stop condition: if Analyse now proposes nothing, check the classification of the correction message on the
-Suggestions page; if it was classified as a new task, note it, and ask the owner before re-running analysis.
+suggestion detail (open it from History › Suggestions); if it was classified as a new task, note it, and ask the owner before re-running analysis.
 
 ## 3. Later test task (credits: one build, expected 0.5–1.5)
 

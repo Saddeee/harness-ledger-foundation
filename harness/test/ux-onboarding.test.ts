@@ -119,14 +119,14 @@ test("onboarding page: connect, projects, mode, provider and sync steps each pos
 test("nav: Overview is first, and every one of the eight existing pages is kept", () => {
   const shell = codeOnly(readApp(ROUTE));
   const labels = [...shell.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
+  // Checkpoint 3: Suggestions left the navigation; Inbox is the queue.
   assert.deepEqual(labels, [
     "Overview",
     "Inbox",
-    "Suggestions",
     "Instructions",
-    "History",
-    "Tests",
     "Skills",
+    "Tests",
+    "History",
     "Projects",
     "Settings",
   ]);
@@ -160,10 +160,18 @@ const BASE_STATE: import("../../src/lib/onboarding-copy.ts").OverviewState = {
   blockedOrFailedCount: 0,
   pendingSuggestions: 0,
   rulesNeedingAttention: 0,
-  skillProposalsPending: 0,
   replaysAwaitingVerdict: 0,
   firstJudgingRunId: null,
   newActivity: false,
+  inboxCount: 0,
+  inboxTypeCounts: {
+    new_instruction: 0,
+    new_skill: 0,
+    test_result: 0,
+    rule_attention: 0,
+    conflict: 0,
+    action_failed: 0,
+  },
 };
 
 test("overviewNextAction: not connected takes priority over everything else", () => {
@@ -195,7 +203,7 @@ test("overviewNextAction: project allowed but no provider configured", () => {
 test("overviewNextAction: set up, but a blocked/failed write or run needs attention", () => {
   const action = copy.overviewNextAction({ ...BASE_STATE, blockedOrFailedCount: 1 });
   assert.equal(action.headline, "One action needs attention.");
-  assert.equal(action.to, "/ledger");
+  assert.equal(action.to, "/inbox");
 });
 
 test("overviewNextAction: pending suggestions, singular and plural", () => {
@@ -212,13 +220,15 @@ test("overviewNextAction: pending suggestions, singular and plural", () => {
 test("overviewNextAction: a rule needs attention", () => {
   const action = copy.overviewNextAction({ ...BASE_STATE, rulesNeedingAttention: 1 });
   assert.equal(action.headline, "One rule may need attention.");
-  assert.equal(action.to, "/instructions");
+  assert.equal(action.to, "/inbox");
 });
 
-test("overviewNextAction: a Skill proposal is waiting", () => {
-  const action = copy.overviewNextAction({ ...BASE_STATE, skillProposalsPending: 1 });
-  assert.equal(action.headline, "One Skill proposal is waiting.");
-  assert.equal(action.to, "/skills");
+test("overviewNextAction: a Skill proposal waiting is one pending suggestion in the Inbox", () => {
+  // Checkpoint 3: new_skill items are Inbox items; the Overview counts them
+  // with the other suggestions and sends the user to the Inbox.
+  const action = copy.overviewNextAction({ ...BASE_STATE, pendingSuggestions: 1 });
+  assert.equal(action.headline, "One suggestion needs your review.");
+  assert.equal(action.to, "/inbox");
 });
 
 test("overviewNextAction: a replay is ready to judge, and links straight to it", () => {
@@ -254,44 +264,60 @@ test("overviewNextAction: fully caught up offers Sync now", () => {
   assert.equal(action.consequence, copy.SYNC_NOW_CONSEQUENCE);
 });
 
-test("overviewMonitorRows: five buckets, each a link, in the state's own counts", () => {
+test("overviewMonitorRows: one row per Inbox item type, in the Inbox's own order, every row linking to the Inbox", () => {
   const rows = copy.overviewMonitorRows({
     ...BASE_STATE,
-    pendingSuggestions: 2,
-    skillProposalsPending: 1,
-    rulesNeedingAttention: 3,
-    replaysAwaitingVerdict: 1,
-    blockedOrFailedCount: 4,
+    inboxTypeCounts: {
+      new_instruction: 2,
+      new_skill: 1,
+      test_result: 1,
+      rule_attention: 3,
+      conflict: 0,
+      action_failed: 4,
+    },
   });
-  assert.deepEqual(rows, [
-    { label: "New suggestions", count: 2, to: "/inbox" },
-    { label: "Skill proposals", count: 1, to: "/skills" },
-    { label: "Rules needing attention", count: 3, to: "/instructions" },
-    { label: "Completed replays", count: 1, to: "/tests" },
-    { label: "Blocked or failed actions", count: 4, to: "/ledger" },
-  ]);
+  assert.deepEqual(
+    rows.map((r) => [r.label, r.count, r.to]),
+    [
+      ["Action failed", 4, "/inbox"],
+      ["Conflict", 0, "/inbox"],
+      ["Test result", 1, "/inbox"],
+      ["Rule needs attention", 3, "/inbox"],
+      ["New instruction", 2, "/inbox"],
+      ["New Skill", 1, "/inbox"],
+    ],
+  );
 });
 
-// ---- buildOverviewState: the one place enum values are compared ----
+// ---- buildOverviewState: counts come from the Inbox read, never re-derived ----
 
-test("buildOverviewState: derives every count from the improvements/executor/tests reads", () => {
+test("buildOverviewState: derives every count from the Inbox read, so Overview and Inbox can never disagree", () => {
+  const item = (type: string, extra: Record<string, unknown> = {}) => ({
+    id: `${type}:1`,
+    type,
+    project_id: null,
+    project_name: null,
+    title: "t",
+    summary: null,
+    created_at: "2026-09-18T00:00:00Z",
+    link: { page: "inbox" },
+    improvement: null,
+    run: null,
+    conclusion: null,
+    recommended_action: null,
+    ...extra,
+  });
   const state = copy.buildOverviewState({
-    improvements: {
+    inbox: {
       available: true,
-      counts: { pending: 2, retire: 1, auto_accepted_since_seen: 0 },
-      improvements: [
-        {
-          kind: "improvement",
-          health: { status: "review" },
-          skill_proposal: null,
-          lovable: { write_status: "failed" },
-        },
-        {
-          kind: "improvement",
-          health: { status: "healthy" },
-          skill_proposal: { status: "proposed" },
-          lovable: { write_status: "written" },
-        },
+      count: 6,
+      items: [
+        item("new_instruction"),
+        item("new_skill"),
+        item("rule_attention"),
+        item("test_result", { link: { page: "judge", run_id: 9 } }),
+        item("action_failed"),
+        item("conflict"),
       ],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any,
@@ -306,25 +332,22 @@ test("buildOverviewState: derives every count from the improvements/executor/tes
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any,
-    testRuns: {
-      available: true,
-      runs: [
-        { id: 9, status: "judging" },
-        { id: 10, status: "failed" },
-      ],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any,
     allowedProjectCount: 2,
   });
 
   assert.equal(state.connected, true);
   assert.equal(state.hasAllowedProject, true);
   assert.equal(state.providerReady, true);
-  assert.equal(state.blockedOrFailedCount, 2); // one failed write + one failed run
-  assert.equal(state.pendingSuggestions, 2);
-  assert.equal(state.rulesNeedingAttention, 1 + 1); // one "review" item + counts.retire
-  assert.equal(state.skillProposalsPending, 1);
+  assert.equal(state.blockedOrFailedCount, 2); // action_failed + conflict
+  assert.equal(state.pendingSuggestions, 2); // new_instruction + new_skill
+  assert.equal(state.rulesNeedingAttention, 1);
   assert.equal(state.replaysAwaitingVerdict, 1);
   assert.equal(state.firstJudgingRunId, 9);
   assert.equal(state.newActivity, true);
+  assert.equal(state.inboxCount, 6);
+  assert.equal(
+    Object.values(state.inboxTypeCounts).reduce((a, b) => a + b, 0),
+    state.inboxCount,
+    "the Overview's buckets add up to the Inbox count",
+  );
 });

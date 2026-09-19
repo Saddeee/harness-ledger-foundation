@@ -249,11 +249,10 @@ test("ledger.tsx and improvement.tsx: a decided item shows an 'Accepted automati
   assert.match(combined, /Accepted automatically/);
   assert.match(combined, /item\.decided_by === "automatic"/);
 
-  // ledger.tsx never builds its own badge -- every decided item's card
-  // comes from DecisionCard's own (shared, non-compact) rendering, so the
-  // marker only has to exist there once, not duplicated per caller.
+  // Checkpoint 3: ledger.tsx is the detail route only (ImprovementDetail);
+  // it never builds its own badge.
   const ledgerCode = codeOnly(readApp(LEDGER));
-  assert.match(ledgerCode, /<DecisionCard item=\{i\} onChanged=\{refresh\} onOpen=\{open\} \/>/);
+  assert.match(ledgerCode, /<ImprovementDetail/);
   assert.ok(
     !/Accepted automatically/.test(ledgerCode),
     "ledger.tsx itself renders no badge directly",
@@ -277,12 +276,12 @@ test("inbox.tsx: the empty state names how many Harness Ledger accepted automati
   assert.match(code, /auto_accepted_since_seen/);
   assert.match(
     code,
-    /Nothing needs your decision\. Harness Ledger accepted \$\{autoAcceptedSince\} suggestion\$\{autoAcceptedSince === 1 \? "" : "s"\} automatically since your last visit; see Suggestions\./,
+    /Nothing needs your decision\. Harness Ledger accepted \$\{autoAcceptedSince\} suggestion\$\{autoAcceptedSince === 1 \? "" : "s"\} automatically since your last visit; see History\./,
   );
   // The plain line still exists for ask mode / nothing auto-accepted yet.
   assert.ok(
     readApp(INBOX).includes(
-      "Nothing needs your decision. Everything you've decided on is under Suggestions.",
+      "Nothing needs your decision. Everything you've decided on is under History.",
     ),
   );
 });

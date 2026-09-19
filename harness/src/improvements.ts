@@ -1765,6 +1765,16 @@ export function improvementAction(input: unknown, actor: string = ACTOR): Improv
         actor,
         reason: "approved",
       });
+      // Checkpoint 3 I1: approving a skill-only suggestion's Skill IS its
+      // decision -- without this, a suggestion whose destination is "skill"
+      // stays pending forever when the user approves the Skill proposal
+      // directly here rather than via "accept" (whose own skill branch
+      // above already marks it decided), so it would never leave the
+      // Inbox. Runs after setSkillProposalStatus so the ownership refusal
+      // above still throws before anything here executes. See
+      // markSkillDecisionIfPending in the "Checkpoint 3 I1: Inbox" block
+      // at the end of this file.
+      markSkillDecisionIfPending(before.correction_candidate_id, actor);
     } else if (a.action === "retire_skill_proposal") {
       store.setSkillProposalStatus({
         id: a.proposal_id,
@@ -3426,3 +3436,442 @@ export function listTestRunSummaries(): ExperimentRunSummary[] {
   });
 }
 // ---- end Round 6c ----
+
+// ---- Checkpoint 3 I1: Inbox ----
+// The Inbox is the single decision queue (checkpoint 3): every open thing
+// across Suggestions, Tests, Instructions and re-analysis review folds into
+// one sorted list here, built entirely from reads this file (plus
+// store.ts/analysis/reanalyse.ts) already expose -- no new table, no new
+// column, no new mutation. See the "INBOX ITEM CONTRACT" this implements
+// for the exact shape/sources; WP I2 (the Inbox page) consumes it as-is.
+import { listAnalysisDisagreements } from "./analysis/reanalyse.js";
+
+export type InboxItemType =
+  "new_instruction" | "new_skill" | "test_result" | "rule_attention" | "conflict" | "action_failed";
+
+export const INBOX_TYPE_LABELS: Record<InboxItemType, string> = {
+  new_instruction: "New instruction",
+  new_skill: "New Skill",
+  test_result: "Test result",
+  rule_attention: "Rule needs attention",
+  conflict: "Conflict",
+  action_failed: "Action failed",
+};
+
+export type InboxItem = {
+  id: string; // "suggestion:12" | "run:7" | "rule:24" | "write:33" | "disagreement:2" | "cleanup:7"
+  type: InboxItemType;
+  project_id: string | null;
+  project_name: string | null;
+  title: string;
+  summary: string | null;
+  created_at: string;
+  link: {
+    page: "detail" | "judge" | "instructions" | "skills" | "tests" | "history" | "inbox";
+    improvement_id?: number;
+    run_id?: number;
+    rule_id?: number;
+  };
+  improvement: Improvement | null;
+  run: ExperimentRunSummary | null;
+  conclusion: ReplayConclusion | null;
+  recommended_action:
+    | "add_instruction"
+    | "review_skill"
+    | "judge_replay"
+    | "review_rule"
+    | "resolve_conflict"
+    | "retry"
+    | "review_disagreement"
+    | null;
+};
+
+// Sort order (spec): action_failed and conflict share the top tier, then
+// test_result, then rule_attention, then new_instruction/new_skill --
+// newest first inside (and, by this same key, across) a tier.
+const INBOX_TYPE_PRIORITY: Record<InboxItemType, number> = {
+  action_failed: 0,
+  conflict: 0,
+  test_result: 1,
+  rule_attention: 2,
+  new_instruction: 3,
+  new_skill: 3,
+};
+
+function inboxCreatedAtMs(iso: string): number {
+  const d = new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + "Z");
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+function sortInboxItems(items: InboxItem[]): InboxItem[] {
+  return [...items].sort((a, b) => {
+    const byType = INBOX_TYPE_PRIORITY[a.type] - INBOX_TYPE_PRIORITY[b.type];
+    if (byType !== 0) return byType;
+    return inboxCreatedAtMs(b.created_at) - inboxCreatedAtMs(a.created_at);
+  });
+}
+
+// A knowledge_versions row's target resolved to the same {project_id,
+// project_name} shape every InboxItem carries -- "Workspace" for a
+// workspace target mirrors buildRetireItem's own convention above.
+function inboxTargetProject(
+  target: "project" | "workspace",
+  projectId: string | null,
+): { project_id: string | null; project_name: string | null } {
+  if (target === "workspace") return { project_id: null, project_name: "Workspace" };
+  if (!projectId) return { project_id: null, project_name: null };
+  return {
+    project_id: projectId,
+    project_name: store.getProjectMeta(projectId)?.name ?? projectId,
+  };
+}
+
+function inboxKnowledgeVersionTitle(v: store.KnowledgeVersionRow): string {
+  if (v.rule_id != null) {
+    const found = store.getRule(v.rule_id) as { rule: { instruction: string } } | null;
+    if (found) return titleFor(found.rule.instruction) || found.rule.instruction;
+  }
+  return TARGET_LABEL[v.target];
+}
+
+// One entry per (target, project/workspace id) -- the newest row for that
+// target, any status. store.listKnowledgeVersions() with no ruleId returns
+// every row ordered id DESC (newest first), so the first row seen per key
+// below is that target's newest.
+function newestKnowledgeVersionsPerTarget(): store.KnowledgeVersionRow[] {
+  const all = store.listKnowledgeVersions() as store.KnowledgeVersionRow[];
+  const seen = new Set<string>();
+  const newest: store.KnowledgeVersionRow[] = [];
+  for (const v of all) {
+    const key = `${v.target}:${v.target === "project" ? (v.project_id ?? "") : (v.workspace_id ?? "")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    newest.push(v);
+  }
+  return newest;
+}
+
+// conflict (a stale write) and action_failed (a failed write), both sourced
+// from knowledge_versions, both gated to "newest for their target" so a
+// superseded stale/failed attempt a later write already fixed never lingers
+// in the Inbox.
+function buildKnowledgeVersionInboxItems(): InboxItem[] {
+  const items: InboxItem[] = [];
+  for (const v of newestKnowledgeVersionsPerTarget()) {
+    if (v.status !== "stale" && v.status !== "failed") continue;
+    const { project_id, project_name } = inboxTargetProject(
+      v.target,
+      v.target === "project" ? v.project_id : null,
+    );
+    const type: InboxItemType = v.status === "stale" ? "conflict" : "action_failed";
+    items.push({
+      id: `write:${v.id}`,
+      type,
+      project_id,
+      project_name,
+      title: inboxKnowledgeVersionTitle(v),
+      summary:
+        v.error ??
+        (v.status === "stale"
+          ? "Knowledge changed in Lovable — review the text again"
+          : "Adding this to Lovable failed."),
+      created_at: v.created_at,
+      link: { page: "instructions", ...(v.rule_id != null ? { rule_id: v.rule_id } : {}) },
+      improvement: null,
+      run: null,
+      conclusion: null,
+      recommended_action: type === "conflict" ? "resolve_conflict" : "retry",
+    });
+  }
+  return items;
+}
+
+// conflict: an open analysis_disagreements row -- a later re-analysis pass
+// disagreeing with a classification the user already reviewed. Decided
+// right on its own Inbox card (accept/dismiss), so it links back to the
+// Inbox itself rather than navigating anywhere else.
+function buildDisagreementInboxItems(): InboxItem[] {
+  return listAnalysisDisagreements("open").map((row) => {
+    const improvement = getImprovement(row.correction_candidate_id);
+    let previousClassification: string | null = null;
+    let proposedClassification: string | null = null;
+    try {
+      previousClassification =
+        (JSON.parse(row.previous_json) as { classification?: string }).classification ?? null;
+      proposedClassification =
+        (JSON.parse(row.proposed_json) as { classification?: string }).classification ?? null;
+    } catch {
+      // Malformed JSON never fails the Inbox read -- summary just falls
+      // back to the generic sentence below.
+    }
+    const summary =
+      previousClassification && proposedClassification
+        ? `A later re-analysis reads this as "${proposedClassification}" (you reviewed it as "${previousClassification}").`
+        : "A later re-analysis disagrees with the classification you reviewed.";
+    return {
+      id: `disagreement:${row.id}`,
+      type: "conflict",
+      project_id: improvement && improvement.project.id ? improvement.project.id : null,
+      project_name: improvement?.project.name ?? null,
+      title: improvement?.title ?? `Re-analysis disagreement #${row.id}`,
+      summary,
+      created_at: row.created_at,
+      link: { page: "inbox" },
+      improvement,
+      run: null,
+      conclusion: null,
+      recommended_action: "review_disagreement",
+    };
+  });
+}
+
+// test_result (a run awaiting a verdict) and action_failed (a failed run,
+// or a run whose copy cleanup failed), both sourced from
+// listTestRunSummaries -- newest first already, so the first run seen per
+// rule_id below is that rule's newest (used to drop a failed run a later
+// run for the same rule already supersedes).
+function buildRunInboxItems(): InboxItem[] {
+  const runs = listTestRunSummaries();
+  const newestRunIdByRule = new Map<number, number>();
+  for (const run of runs)
+    if (!newestRunIdByRule.has(run.rule_id)) newestRunIdByRule.set(run.rule_id, run.id);
+
+  const items: InboxItem[] = [];
+  for (const run of runs) {
+    const title = titleFor(run.rule_text) || run.rule_text;
+    if (run.status === "judging") {
+      items.push({
+        id: `run:${run.id}`,
+        type: "test_result",
+        project_id: run.project_id,
+        project_name: run.project_name,
+        title,
+        summary: "Awaiting your verdict on this replay.",
+        created_at: run.started_at,
+        link: { page: "judge", run_id: run.id },
+        improvement: null,
+        run,
+        conclusion: run.conclusion,
+        recommended_action: "judge_replay",
+      });
+    }
+    if (run.status === "failed" && newestRunIdByRule.get(run.rule_id) === run.id) {
+      items.push({
+        id: `run:${run.id}`,
+        type: "action_failed",
+        project_id: run.project_id,
+        project_name: run.project_name,
+        title,
+        summary: run.error ?? "This test run failed.",
+        created_at: run.finished_at ?? run.started_at,
+        link: { page: "tests", run_id: run.id },
+        improvement: null,
+        run,
+        conclusion: run.conclusion,
+        recommended_action: "retry",
+      });
+    }
+    if (run.copy?.deletion_status === "failed" || run.original_copy?.deletion_status === "failed") {
+      items.push({
+        id: `cleanup:${run.id}`,
+        type: "action_failed",
+        project_id: run.project_id,
+        project_name: run.project_name,
+        title,
+        summary: "Deleting the test copy in Lovable failed.",
+        created_at: run.finished_at ?? run.started_at,
+        link: { page: "tests", run_id: run.id },
+        improvement: null,
+        run,
+        conclusion: run.conclusion,
+        recommended_action: "retry",
+      });
+    }
+  }
+  return items;
+}
+
+// A retire proposal's own one-line reason, in the same plain-sentence style
+// as the rest of this file's Inbox cards -- never "helped"/"harm" (banned
+// UI words this checkpoint), so it's written by hand here rather than
+// reused from anywhere else.
+function inboxRetireSummary(retire: NonNullable<Improvement["retire"]>): string {
+  switch (retire.reason) {
+    case "hurt":
+      return "This rule has recently led to more corrections, not fewer.";
+    case "contradiction":
+      return retire.contradicts_instruction
+        ? `Contradicts another instruction: "${retire.contradicts_instruction}"`
+        : "Contradicts another instruction.";
+    case "unused":
+      return "This rule hasn't applied to any recent work.";
+    case "changed_mind":
+      return "You asked to retire this rule.";
+  }
+}
+
+function inboxReviewReasonSummary(reason: store.RuleHealthReviewReason | null): string {
+  switch (reason) {
+    case "inactive":
+      return "This rule hasn't applied to any recent work.";
+    case "repeated_issue":
+      return "This rule keeps needing the same kind of correction.";
+    case "user_verdict":
+      return "You marked this rule for review.";
+    case "unclear_contradiction":
+      return "This rule may contradict another instruction.";
+    default:
+      return "This rule needs a look.";
+  }
+}
+
+// rule_attention: an open retire proposal (built the same way
+// listImprovements does, via buildRetireItem) plus a live rule whose health
+// status is "review" with no open proposal of its own -- never both for the
+// same rule (the second loop skips any rule the first already covered).
+function buildRuleAttentionInboxItems(): InboxItem[] {
+  const items: InboxItem[] = [];
+  const rates = store.tagAcceptanceRates();
+  for (const proposal of store.listOpenRetireProposals()) {
+    const improvement = buildRetireItem(proposal, rates);
+    if (!improvement || !improvement.retire) continue;
+    items.push({
+      id: `rule:${improvement.retire.rule_id}`,
+      type: "rule_attention",
+      project_id: improvement.project.id || null,
+      project_name: improvement.project.name,
+      title: improvement.title,
+      summary: inboxRetireSummary(improvement.retire),
+      created_at: improvement.created_at,
+      link: { page: "instructions", rule_id: improvement.retire.rule_id },
+      improvement,
+      run: null,
+      conclusion: null,
+      recommended_action: "review_rule",
+    });
+  }
+
+  for (const live of store.listLiveRulesWithTargets()) {
+    const health = store.getRuleHealth(live.id);
+    if (!health || health.status !== "review") continue;
+    if (store.openRetireProposalForRule(live.id)) continue; // already carried above
+    const { project_id, project_name } = inboxTargetProject(live.scope, live.project_id);
+    items.push({
+      id: `rule:${live.id}`,
+      type: "rule_attention",
+      project_id,
+      project_name,
+      title: titleFor(live.instruction) || live.instruction,
+      summary: inboxReviewReasonSummary(health.review_reason),
+      created_at: health.computed_at,
+      link: { page: "instructions", rule_id: live.id },
+      improvement: null,
+      run: null,
+      conclusion: null,
+      recommended_action: "review_rule",
+    });
+  }
+  return items;
+}
+
+// new_instruction / new_skill: every pending suggestion (listImprovements
+// already builds the full Improvement view for each) -- a "both"
+// suggestion is content_destination "skill" only when the user narrowed it
+// that way; the Rule writer's "both" always reads as new_instruction here,
+// same as the contract's "never two items" rule. A run still queued/
+// copying/building for this same suggestion rides along as `run`; a judged
+// run whose suggestion is still pending rides along as both `run` and
+// `conclusion` rather than becoming a second item.
+function buildSuggestionInboxItems(connected: boolean): InboxItem[] {
+  const runs = listTestRunSummaries();
+  const items: InboxItem[] = [];
+  for (const improvement of listImprovements({ connected })) {
+    if (improvement.kind !== "improvement" || improvement.decision.status !== "pending") continue;
+    const destination = improvement.content_destination?.value ?? "knowledge";
+    const type: InboxItemType = destination === "skill" ? "new_skill" : "new_instruction";
+
+    const latestRun = runs.find((r) => r.improvement_id === improvement.id) ?? null;
+    let run: ExperimentRunSummary | null = null;
+    let conclusion: ReplayConclusion | null = null;
+    if (
+      latestRun &&
+      (latestRun.status === "queued" ||
+        latestRun.status === "copying" ||
+        latestRun.status === "building")
+    ) {
+      run = latestRun;
+    } else if (latestRun && latestRun.status === "judged") {
+      run = latestRun;
+      conclusion = latestRun.conclusion;
+    }
+
+    items.push({
+      id: `suggestion:${improvement.id}`,
+      type,
+      project_id: improvement.project.id || null,
+      project_name: improvement.project.name,
+      title: improvement.title,
+      summary: improvement.correction_summary,
+      created_at: improvement.created_at,
+      link: { page: "detail", improvement_id: improvement.id },
+      improvement,
+      run,
+      conclusion,
+      recommended_action: type === "new_skill" ? "review_skill" : "add_instruction",
+    });
+  }
+  return items;
+}
+
+/** The Inbox's single decision queue -- every source above, merged and
+ * sorted. Pure reads only; see the file header's "no Lovable import" test,
+ * which this function keeps true same as everything else in this file. */
+export function listInboxItems(opts: { connected: boolean }): InboxItem[] {
+  const items = [
+    ...buildKnowledgeVersionInboxItems(),
+    ...buildDisagreementInboxItems(),
+    ...buildRunInboxItems(),
+    ...buildRuleAttentionInboxItems(),
+    ...buildSuggestionInboxItems(opts.connected),
+  ];
+  return sortInboxItems(items);
+}
+
+/** === listInboxItems(opts).length -- a plain count for a badge, never
+ * computed a different way (see the structural test that greps for a
+ * second definition of listInboxItems anywhere in this repo). */
+export function inboxCount(opts: { connected: boolean }): number {
+  return listInboxItems(opts).length;
+}
+
+// Used by the "approve_skill_proposal" branch above: a skill-only
+// suggestion's decision is "approve its Skill", so approving it here marks
+// the correction candidate decided/accepted exactly the way the "accept"
+// action's own skill branch does above, minus the skill-proposal creation/
+// approval step (setSkillProposalStatus, just called by that branch,
+// already did it). A no-op once the candidate is already decided, so
+// calling this on an already-accepted suggestion (e.g. re-approving a
+// revision) never re-runs the decision or re-cancels anything.
+function markSkillDecisionIfPending(candidateId: number, actor: string): void {
+  const current = getImprovement(candidateId);
+  if (!current || current.decision.status !== "pending") return;
+  store.recordHumanCorrectionDecision({
+    id: candidateId,
+    final_classification: current.classification as never,
+    reusable: true,
+    proposed_scope: "one_time",
+    reviewer: actor,
+  });
+  store.setCandidateDecidedBy(candidateId, "user");
+  const rule = store.getRuleForCorrection(candidateId) as RuleRow | null;
+  if (rule) {
+    store.updateRule({ id: rule.id, state: "approved", actor });
+    if (!(current.proof?.outcome === "passed"))
+      store.setRuleEvidenceLevel(rule.id, "human_grounded", ACTOR);
+    store.cancelPendingKnowledgeWrites(
+      rule.id,
+      "cancelled: this suggestion goes to a Skill, not Knowledge",
+    );
+  }
+}
+// ---- end Checkpoint 3 I1: Inbox ----

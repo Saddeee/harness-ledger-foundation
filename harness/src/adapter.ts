@@ -177,6 +177,15 @@ export { lineDiff } from "./diff.js";
 // deliberate CLI-only operation (npm run harness:demo -- --add|--remove).
 export { demoLoaded } from "./demo.js";
 
+// ---- Checkpoint 3 I1: Inbox ----
+// The Inbox's single decision queue (see improvements.ts's own "Checkpoint
+// 3 I1: Inbox" block for the sources/contract) -- listInboxItems/inboxCount
+// are the only aggregation of this kind anywhere in the app; see the
+// structural test that greps for a second definition.
+export { listInboxItems, inboxCount, INBOX_TYPE_LABELS } from "./improvements.js";
+export type { InboxItem, InboxItemType } from "./improvements.js";
+// ---- end Checkpoint 3 I1: Inbox ----
+
 const classification = z.enum([
   "defect_correction",
   "constraint_restatement",

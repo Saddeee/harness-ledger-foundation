@@ -161,18 +161,16 @@ test("Detail: editing is in-card now, no 'Edit instruction' link, no 'Change the
   assert.ok(!/Cancel wording change/.test(detail));
 });
 
-test("Inbox: decided-this-visit items become a confirmation row in place, count line counts pending only", () => {
+test("Inbox: decided-this-visit items become a confirmation row, the count line is the server's Inbox count", () => {
+  // Checkpoint 3: the Inbox reads the unified queue (fetchInbox); items
+  // decided this visit stay as confirmation rows with Undo, and the count
+  // line is inboxCountLine(count) from the server, never re-derived.
   const inbox = codeOnly(readApp(INBOX));
   assert.match(inbox, /useState<Map<number, string>>/);
-  // list = pending plus decided-this-visit (confirmed), taken from `all` (original order)
-  assert.match(
-    inbox,
-    /all\.filter\(\(i\) => i\.decision\.status === "pending" \|\| confirmed\.has\(i\.id\)\)/,
-  );
-  // the count line still counts pending only, and only appears when there's something pending
-  assert.match(inbox, /pending\.length > 0/);
-  assert.match(inbox, /"One suggestion is waiting for your decision\."/);
-  assert.match(inbox, /`\$\{pending\.length\} suggestions are waiting for your decision\.`/);
+  assert.match(inbox, /all\.filter\(\(i\) => confirmed\.has\(i\.id\)\)/);
+  assert.match(inbox, /queryFn: fetchInbox/);
+  assert.match(inbox, /inboxCountLine\(count\)/);
+  assert.ok(!/suggestions are waiting for your decision/.test(inbox));
 });
 
 test("harness-ux.ts: LANDING_INTRO and the four HOW_IT_WORKS_STEPS from spec 6.5, verbatim", () => {

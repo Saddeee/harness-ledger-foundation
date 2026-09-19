@@ -17,7 +17,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ManagedBlockText, Timeline } from "@/components/harness/timeline";
-import { formatDate } from "@/lib/harness-ux";
+import {
+  formatDate,
+  HISTORY_FILTER_LABELS,
+  HISTORY_FILTER_ORDER,
+  historyNodeMatchesFilter,
+  type HistoryFilterValue,
+} from "@/lib/harness-ux";
 import {
   executorQueryOptions,
   fetchKnowledge,
@@ -26,7 +32,15 @@ import {
   toastWriteOutcome,
 } from "@/lib/improvements-client";
 
-type HistorySearch = { target?: "project" | "workspace"; id?: string };
+type HistorySearch = {
+  target?: "project" | "workspace";
+  id?: string;
+  filter?: HistoryFilterValue;
+};
+
+function isHistoryFilterValue(v: unknown): v is HistoryFilterValue {
+  return typeof v === "string" && (HISTORY_FILTER_ORDER as string[]).includes(v);
+}
 
 export const Route = createFileRoute("/_authenticated/history")({
   validateSearch: (search: Record<string, unknown>): HistorySearch => {
@@ -34,7 +48,12 @@ export const Route = createFileRoute("/_authenticated/history")({
     const target = rawTarget === "project" || rawTarget === "workspace" ? rawTarget : undefined;
     const rawId = search["id"];
     const id = typeof rawId === "string" && rawId ? rawId : undefined;
-    return target && id ? { target, id } : {};
+    // Checkpoint 3 I2: the filter is independent of target/id -- a bare
+    // ?filter=suggestions (the Inbox's own "View past decisions" link) is
+    // valid with no target selected yet (the default target still applies).
+    const rawFilter = search["filter"];
+    const filter = isHistoryFilterValue(rawFilter) ? rawFilter : undefined;
+    return { ...(target && id ? { target, id } : {}), ...(filter ? { filter } : {}) };
   },
   head: () => ({
     meta: [
@@ -56,13 +75,19 @@ export const Route = createFileRoute("/_authenticated/history")({
 });
 
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
+// Checkpoint 3 I2: skipped suggestions are inspectable right here now --
+// every decision (including a skip) is its own "decision" timeline node,
+// filterable under Suggestions -- so this no longer points at a separate
+// Suggestions page.
 const EMPTY_LINE =
-  "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions about those rules will show up here. Skipped suggestions are under Suggestions.";
+  "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions about those rules will show up here.";
+const EMPTY_FILTERED_LINE = "Nothing matches this filter yet.";
 
 function Page() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const search = Route.useSearch();
+  const filter: HistoryFilterValue = search.filter ?? "all";
 
   const knowledge = useQuery({ queryKey: ["harness-knowledge"], queryFn: fetchKnowledge });
   const executor = useQuery(executorQueryOptions);
@@ -96,6 +121,14 @@ function Page() {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Restore failed"),
   });
+
+  // Checkpoint 3 I2: the selected filter, applied client-side to the
+  // already-fetched timeline -- no new route or query (harness-ux.ts's
+  // historyNodeMatchesFilter is the one place a node's kind is compared
+  // against a filter value).
+  const filteredNodes = (timeline.data?.nodes ?? []).filter((n) =>
+    historyNodeMatchesFilter(n, filter),
+  );
 
   if (knowledge.isLoading) {
     return (
@@ -164,13 +197,49 @@ function Page() {
                   size="sm"
                   aria-pressed={isSelected}
                   onClick={() =>
-                    navigate({ to: "/history", search: { target: t.target, id: t.id } })
+                    navigate({
+                      to: "/history",
+                      search: {
+                        target: t.target,
+                        id: t.id,
+                        ...(search.filter ? { filter: search.filter } : {}),
+                      },
+                    })
                   }
                 >
                   {t.name}
                 </Button>
               );
             })}
+          </div>
+
+          {/* Checkpoint 3 I2: the History kind filter -- All activity /
+              Suggestions / Knowledge / Skills / Tests / Restores, driven by
+              ?filter= (the Inbox's "View past decisions" link opens
+              straight into ?filter=suggestions). Filters the already-fetched
+              timeline client-side (harness-ux.ts's historyNodeMatchesFilter)
+              -- no new route or query. */}
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter">
+            {HISTORY_FILTER_ORDER.map((f) => (
+              <Button
+                key={f}
+                type="button"
+                variant={filter === f ? "default" : "outline"}
+                size="sm"
+                aria-pressed={filter === f}
+                onClick={() =>
+                  navigate({
+                    to: "/history",
+                    search: {
+                      ...(selected ? { target: selected.target, id: selected.id } : {}),
+                      ...(f === "all" ? {} : { filter: f }),
+                    },
+                  })
+                }
+              >
+                {HISTORY_FILTER_LABELS[f]}
+              </Button>
+            ))}
           </div>
 
           {/* Checkpoint 2 2-C: "Current Knowledge" -- the newest written
@@ -206,9 +275,11 @@ function Page() {
             </div>
           ) : (timeline.data?.nodes ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">{EMPTY_LINE}</p>
+          ) : filteredNodes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{EMPTY_FILTERED_LINE}</p>
           ) : (
             <Timeline
-              nodes={timeline.data?.nodes ?? []}
+              nodes={filteredNodes}
               onRestore={(versionId) => restore.mutate(versionId)}
               restoreDisabled={restore.isPending}
             />

@@ -1238,3 +1238,49 @@ test("rule writer: destination 'skill' with no usable skill_draft is rejected, n
   );
 });
 // ---- end Checkpoint 2026-09-18 WP4 ----
+
+// ---- Checkpoint 2026-09-18 WP I3 (exception-aware Rule writer) ----
+// The scenario tests for applicability/exceptions/scope_confidence and the
+// scope-downgrade safeguard live in their own file, test/rule-writer-scope
+// .test.ts (fresh fixtures, easier to read as a set). This section only
+// covers the two structural checks that belong next to the schema/prompt
+// they pin: the schema still round-trips through assertStrictCompatible
+// with the three new fields, and the system prompt contains the
+// minimal-sufficiency principle verbatim.
+
+test("RULE_WRITER_JSON_SCHEMA gained applicability/exceptions/scope_confidence and is still strict-mode compatible", async () => {
+  const { assertStrictCompatible } = await import("../src/llm/schema.js");
+  assert.doesNotThrow(() =>
+    assertStrictCompatible(propose.RULE_WRITER_JSON_SCHEMA, "mined_rule_proposal"),
+  );
+  assert.deepEqual(
+    [...propose.RULE_WRITER_JSON_SCHEMA.required].sort(),
+    Object.keys(propose.RULE_WRITER_JSON_SCHEMA.properties).sort(),
+  );
+  for (const field of ["applicability", "exceptions", "scope_confidence"] as const) {
+    assert.ok(
+      propose.RULE_WRITER_JSON_SCHEMA.required.includes(field),
+      `${field} must be required (strict mode)`,
+    );
+    const prop = propose.RULE_WRITER_JSON_SCHEMA.properties[field] as { type: string[] };
+    assert.ok(prop.type.includes("null"), `${field} must be nullable (logically optional)`);
+  }
+});
+
+test("rule writer system prompt contains the minimal-sufficiency scope principle verbatim", () => {
+  const prompt = propose.ruleWriterSystemPrompt();
+  assert.ok(
+    prompt.includes(
+      "Write the minimally sufficient standing instruction supported by the correction. " +
+        "Preserve explicit exceptions. Do not universalize a project-wide or workspace-wide " +
+        "prohibition unless the evidence clearly requires it. Prefer 'unless the user explicitly " +
+        "requests otherwise' over absolute 'never' wording when exceptions are plausible.",
+    ),
+    "the minimal-sufficiency principle must appear verbatim in the Rule writer's system prompt",
+  );
+  // The true-invariant carve-out (security/data safety/authentication) must
+  // also be present, so the principle above doesn't read as "always soften".
+  assert.match(prompt, /security/i);
+  assert.match(prompt, /invariant/i);
+});
+// ---- end Checkpoint 2026-09-18 WP I3 ----

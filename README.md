@@ -41,7 +41,7 @@ You set it up once:
 4. Pick an AI provider.
 5. Press **Analyse now** after new activity (or let Sync run hourly).
 
-After that you mostly monitor five things: new instruction suggestions, Skill proposals, rules needing attention, completed replays, and blocked or failed actions. The **Overview** page tells you which of those needs you and offers one next action.
+After that, **Inbox contains everything that needs your attention**: new instructions, new Skills, test results waiting for your verdict, rules needing attention, conflicts and failed actions. The **Overview** page tells you whether anything is waiting and offers one next action. Everything else is a record: Instructions holds accepted Knowledge, Skills holds the Skill inventory and proposals, Tests holds replay evidence, History holds completed decisions and changes.
 
 Every suggestion card says what was found, what Harness Ledger recommends, why in one sentence, what to do, and whether Lovable, Lovable credits or AI tokens are affected. Explanations sit on the same page; raw classifications, model metadata, remote ids and full diffs are collapsed under "Technical details".
 
@@ -62,17 +62,16 @@ Every write reads your Knowledge fresh, compares it with what Harness Ledger las
 
 ## 2. What it shows you
 
-| Page             | What it answers                                                                                                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Overview**     | Is Harness Ledger ready? Do I need to do anything? What is the next action?                                                                                                           |
-| **Inbox**        | Suggestions that need a decision: lesson, proposed instruction or Skill, destination, reason, one action                                                                              |
-| **Suggestions**  | One suggestion in depth: what happened (requested, built, your correction, changed afterward), what was learned, what is recommended, why Knowledge or Skill, what the action will do |
-| **Instructions** | Rules needing attention first, then Knowledge per project and workspace, then Skills. "Is this rule still useful?" with Keep / Review / Retire / Not sure                             |
-| **Skills**       | Skills in Lovable, and Skill proposals (not published to Lovable yet)                                                                                                                 |
-| **Tests**        | Every replay: kind, evidence strength, conclusion, cost                                                                                                                               |
-| **History**      | Current Knowledge, then the audit timeline: writes, restores, decisions, Skill changes, replays                                                                                       |
-| **Projects**     | Connect Lovable, choose which projects Harness Ledger may read                                                                                                                        |
-| **Settings**     | Decision mode, evidence sources, budgets, sync schedule, automatic analysis, AI provider and a provider test                                                                          |
+| Page             | What it answers                                                                                                                                                                               |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Overview**     | Is Harness Ledger ready? Do I need to do anything? What is the next action?                                                                                                                   |
+| **Inbox**        | Everything that needs your attention: New instruction, New Skill, Test result, Rule needs attention, Conflict, Action failed. One primary action per item; a suggestion opens its detail page |
+| **Instructions** | Rules needing attention first, then Knowledge per project and workspace, then Skills. "Is this rule still useful?" with Keep / Review / Retire / Not sure                                     |
+| **Skills**       | Skills in Lovable, and Skill proposals (not published to Lovable yet)                                                                                                                         |
+| **Tests**        | Every replay: kind, evidence strength, conclusion, cost                                                                                                                                       |
+| **History**      | Current Knowledge, then the audit timeline filtered by Suggestions, Knowledge, Skills, Tests or Restores; past decisions live here, not in Inbox                                              |
+| **Projects**     | Connect Lovable, choose which projects Harness Ledger may read                                                                                                                                |
+| **Settings**     | Decision mode, evidence sources, budgets, sync schedule, automatic analysis, AI provider and a provider test                                                                                  |
 
 ![A suggestion card in the Inbox](docs/images/inbox-suggestion.png)
 
@@ -151,7 +150,7 @@ In **Settings › AI analysis**, choose **Claude Code (your subscription)**, or 
 The first visit opens a short onboarding that walks through these steps and offers **Use recommended settings** (Ask me first, hourly Sync on, automatic analysis after Sync off).
 
 1. Go to **Inbox** and press **Analyse now**. A progress bar shows each step: reading your new messages, grouping them into tasks, writing suggestions, checking your rules against recent builds.
-2. Each suggestion card shows the correction it came from and the recommended destination (Knowledge, Skill or both). Choose **Add to this project**, **Add to all my projects**, **Skip**, or **Test this rule** first (a historical replay, see [Test a rule](#4-test-a-rule-against-a-previous-correction); it runs one real Lovable build, so it uses credits).
+2. Each Inbox card shows the lesson, the proposed instruction, its destination and reason, and one primary action. Choose **Add to this project**, **Add to all my projects**, **Skip**, or **Test this rule** first (a historical replay, see [Test a rule](#4-test-a-rule-against-a-previous-correction); it runs one real Lovable build, so it uses credits).
 3. An added rule appears in your Lovable Knowledge within seconds, and on **Instructions** and **History** here.
 
 That's the whole loop. From then on: chat with Lovable as usual, and press Analyse now whenever you want new suggestions.
@@ -306,8 +305,9 @@ Two halves that deliberately don't share a runtime:
 
 ```
 src/                          web app (TanStack Start, React, shadcn/ui, Supabase auth)
-  routes/_authenticated/      Inbox, Suggestions, Instructions, History, Tests, Skills,
-                              Projects, Settings, judging screen
+  routes/_authenticated/      Overview, Inbox, Instructions, Skills, Tests, History,
+                              Projects, Settings, onboarding, judging screen and the
+                              suggestion detail (reached from Inbox and History)
   routes/api/public/harness/  the only server routes the pages may call (checked by a test)
   lib/server/harness-runtime.ts  loads harness/dist only when HARNESS_RUNTIME=local
   lib/harness-ux.ts           product copy and presentation logic

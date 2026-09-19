@@ -158,11 +158,10 @@ test("Inbox: no Previous/Next browser of its own -- that only ever lived in the 
 // on-page order: Open, Waiting to be written, Waiting to be tested, Decided
 // earlier.
 test("Improvements: passes the on-page section order (Open, Waiting to be written, Waiting to be tested, Decided earlier) to Previous/Next", () => {
+  // Checkpoint 3: the Suggestions list is gone; the detail route orders
+  // Previous/Next by the API's own order.
   const ledger = codeOnly(readApp(LEDGER));
-  assert.match(
-    ledger,
-    /const order = \[\.\.\.openItems, \.\.\.waitingToBeWritten, \.\.\.waitingToBeTested, \.\.\.decidedEarlier\]\.map\(\s*\(i\) => i\.id,\s*\);/,
-  );
+  assert.match(ledger, /const order = all\.map\(\(i\) => i\.id\);/);
   assert.match(
     ledger,
     /position=\{idx >= 0 \? \{ index: idx \+ 1, total: order\.length \} : undefined\}/,
@@ -180,7 +179,9 @@ test("Improvements: passes the on-page section order (Open, Waiting to be writte
 // nine in source.
 test('role="radio" count: two from AddConfirm, four from SkipConfirm\'s Round 5 Task 5 "Why?" radiogroup, one radiogroup mapped over three options in DestinationChoice (checkpoint 2026-09-18 WP4), two from AddInstructionConfirm\'s project/workspace choice (checkpoint 2 2-B), nine in source', () => {
   const detail = codeOnly(readApp(DETAIL));
-  assert.equal(count(detail, 'role="radio"'), 9);
+  // Checkpoint 3: the Skill card's "Use Knowledge instead" choice adds one
+  // more mapped radiogroup -- ten in source (codeOnly strips the comment).
+  assert.equal(count(detail, 'role="radio"'), 10);
 });
 
 test("cost wording stays honest: 'Lovable credits' <= 2 and 'Harness Ledger analysis' == 1 on improvement.tsx", () => {

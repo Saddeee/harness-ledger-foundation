@@ -117,7 +117,7 @@ test("history.tsx: fetches the timeline, has a target selector and the empty-sta
 
   assert.ok(
     raw.includes(
-      "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions about those rules will show up here. Skipped suggestions are under Suggestions.",
+      "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions about those rules will show up here.",
     ),
   );
 
@@ -207,13 +207,13 @@ test("every History timeline label from spec §3b appears in improvements.ts or 
 
 // ---- 6. Nav + Skills wiring ----
 
-test("route.tsx: NAV includes /history between Instructions and Skills", () => {
+test("route.tsx: NAV includes /history after Tests (checkpoint 3 order: Instructions, Skills, Tests, History)", () => {
   const shell = codeOnly(readApp(SHELL));
   assert.match(shell, /\{ to: "\/history", label: "History" \}/);
   const instructionsAt = shell.indexOf('{ to: "/instructions"');
+  const testsAt = shell.indexOf('{ to: "/tests"');
   const historyAt = shell.indexOf('{ to: "/history"');
-  const skillsAt = shell.indexOf('{ to: "/skills"');
-  assert.ok(instructionsAt < historyAt && historyAt < skillsAt);
+  assert.ok(instructionsAt < testsAt && testsAt < historyAt);
 });
 
 test("skills.tsx: links to the History page for the workspace's Skills", () => {

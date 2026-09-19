@@ -1567,3 +1567,186 @@ export function skillProposalProcedurePreview(content: string | null | undefined
   return steps;
 }
 // ---- end Checkpoint 2 2-C ----
+
+// ---- Checkpoint 3 I2 ----
+// The Inbox becomes the single decision queue (checkpoint 3, WP I2): copy for
+// the queue heading/intro, the secondary "Analysis" section below it, the
+// Knowledge/Skill/Test-result/Rule-attention/Conflict/Action-failed cards,
+// and the History page's new kind filter. Mirrors the InboxItem contract
+// shared with WP I1 (harness/src/improvements.ts's listInboxItems/
+// inboxCount) as a local, dependency-free structural type -- this file never
+// imports from harness/src or src/lib/improvements-client.ts.
+
+export type InboxItemTypeLike =
+  "new_instruction" | "new_skill" | "test_result" | "rule_attention" | "conflict" | "action_failed";
+
+// Mirrors the contract's own INBOX_TYPE_LABELS exactly -- the one place the
+// Inbox card and the History filter both read a type's plain-language name.
+export const INBOX_TYPE_LABELS: Record<InboxItemTypeLike, string> = {
+  new_instruction: "New instruction",
+  new_skill: "New Skill",
+  test_result: "Test result",
+  rule_attention: "Rule needs attention",
+  conflict: "Conflict",
+  action_failed: "Action failed",
+};
+
+export const INBOX_TITLE = "Inbox";
+export const INBOX_INTRO = "Inbox contains everything that needs your attention.";
+export const VIEW_PAST_DECISIONS = "View past decisions";
+
+/** "3 decisions need your attention." / "One decision needs your attention."
+ * / "Nothing needs your attention." -- the Inbox heading's own count line,
+ * always built from the server's own inboxCount, never re-derived. */
+export function inboxCountLine(n: number): string {
+  if (n === 0) return "Nothing needs your attention.";
+  if (n === 1) return "One decision needs your attention.";
+  return `${n} decisions need your attention.`;
+}
+
+// ---- Inbox: secondary "Analysis" section ----
+
+export const NEW_ACTIVITY_TITLE = "New activity is ready";
+// "Everything synced has been analysed." -- the caller appends
+// " Last analysis <time>." itself (formatTime/formatDate already do that
+// formatting; no need for a second date-formatting helper here).
+export const ANALYSED_ALL_LINE = "Everything synced has been analysed.";
+export const REANALYSE_TOKENS_NOTE = "Can use additional AI tokens.";
+
+/** "N new messages can be analysed." / "One new message can be analysed." --
+ * the count is omitted (a plainer "New messages can be analysed.") when it
+ * isn't known. */
+export function newActivityLine(n: number | null | undefined): string {
+  if (n == null) return "New messages can be analysed.";
+  if (n === 1) return "One new message can be analysed.";
+  return `${n} new messages can be analysed.`;
+}
+
+/** "Estimated AI-token use: about T tokens" -- "not estimated" when the
+ * reanalyse-estimate function couldn't be scoped to just the unanalysed
+ * messages (e.g. no prior analysis run to scope from). */
+export function tokenEstimateLine(t: number | null | undefined): string {
+  if (t == null) return "Estimated AI-token use: not estimated";
+  return `Estimated AI-token use: about ${t.toLocaleString()} tokens`;
+}
+
+// ---- Inbox card: shared tertiary/secondary copy ----
+
+export const WHY_RECOMMENDS_TITLE = "Why Harness Ledger recommends this";
+export const TEST_IN_PROGRESS_LINE = "Test in progress";
+export const USE_KNOWLEDGE_INSTEAD = "Use Knowledge instead";
+export const EDIT_LABEL = "Edit";
+export const CHANGE_DESTINATION_LABEL = "Change destination";
+export const VIEW_DETAILS_LABEL = "View details";
+export const VIEW_EVIDENCE_LABEL = "View evidence";
+export const JUDGE_REPLAY_LABEL = "Judge replay";
+export const REVIEW_RULE_LABEL = "Review rule";
+export const REVIEW_LABEL = "Review";
+export const RETRY_LABEL = "Retry";
+export const VIEW_LABEL = "View";
+export const YOUR_VERDICT_NEEDED_LINE = "Your verdict is needed";
+
+/** "Replay judged: Historical support" -- the pending-suggestion card's own
+ * line once a staged test has been judged but the suggestion itself is
+ * still open (InboxItem.conclusion). Null (nothing shown) until judged. */
+export function replayJudgedLine(
+  conclusion: ReplayConclusionLike | null | undefined,
+): string | null {
+  return conclusion ? `Replay judged: ${CONCLUSION_LABELS[conclusion]}` : null;
+}
+
+export const INBOX_RECOMMENDED_ACTION_LABELS: Record<string, string> = {
+  add_instruction: PRIMARY_ACTION_LABELS.add,
+  review_skill: PRIMARY_ACTION_LABELS.review_skill,
+  judge_replay: JUDGE_REPLAY_LABEL,
+  review_rule: REVIEW_RULE_LABEL,
+  resolve_conflict: REVIEW_LABEL,
+  retry: RETRY_LABEL,
+  review_disagreement: REVIEW_LABEL,
+};
+
+/** The recommended-action button's own label, from the closed set the
+ * contract defines -- "View" for a null/unrecognised action rather than an
+ * internal enum name. */
+export function recommendedActionLabel(action: string | null | undefined): string {
+  return (action && INBOX_RECOMMENDED_ACTION_LABELS[action]) || VIEW_LABEL;
+}
+
+// actionConsequence (Checkpoint 2 2-B, above) already covers add/
+// review_skill/test_first/skip -- these three extend the same closed-set
+// convention for the Inbox's other card types, added here rather than
+// widening actionConsequence's own PrimaryActionKind union (that stays the
+// Knowledge-card add-dialog's own type; a shared file, edited additively).
+export type InboxActionKind = "judge_replay" | "review_rule" | "retry";
+
+export function inboxActionConsequence(action: InboxActionKind, retryDoes?: string): string {
+  switch (action) {
+    case "judge_replay":
+      return "Records your verdict. Nothing changes in Lovable. No credits, no AI tokens.";
+    case "review_rule":
+      return "Opens the rule. Nothing changes until you decide.";
+    case "retry":
+      return retryDoes ?? "Retries the action that failed. May write to Lovable.";
+  }
+}
+
+// ---- History: the Inbox-kind filter ----
+
+export type HistoryFilterValue =
+  "all" | "suggestions" | "knowledge" | "skills" | "tests" | "restores";
+
+export const HISTORY_FILTER_LABELS: Record<HistoryFilterValue, string> = {
+  all: "All activity",
+  suggestions: "Suggestions",
+  knowledge: "Knowledge",
+  skills: "Skills",
+  tests: "Tests",
+  restores: "Restores",
+};
+
+export const HISTORY_FILTER_ORDER: HistoryFilterValue[] = [
+  "all",
+  "suggestions",
+  "knowledge",
+  "skills",
+  "tests",
+  "restores",
+];
+
+/** Which History filter bucket a timeline node's own `kind` belongs to.
+ * `restored_from` distinguishes a restore (a version node that undid an
+ * earlier one) from an ordinary Knowledge write -- both are "knowledge" but
+ * a restore is also "restores". */
+export function historyFilterBucketsFor(node: {
+  kind: "version" | "external_change" | "decision" | "skill" | "verdict" | "test";
+  restored_from?: number | null;
+}): HistoryFilterValue[] {
+  switch (node.kind) {
+    case "decision":
+      return ["suggestions"];
+    case "version":
+      return node.restored_from != null ? ["knowledge", "restores"] : ["knowledge"];
+    case "external_change":
+      return ["knowledge"];
+    case "skill":
+      return ["skills"];
+    case "verdict":
+    case "test":
+      return ["tests"];
+  }
+}
+
+/** Whether a timeline node passes the selected History filter -- "all"
+ * always passes; every other value matches only the buckets the node's own
+ * kind belongs to (see historyFilterBucketsFor). */
+export function historyNodeMatchesFilter(
+  node: {
+    kind: "version" | "external_change" | "decision" | "skill" | "verdict" | "test";
+    restored_from?: number | null;
+  },
+  filter: HistoryFilterValue,
+): boolean {
+  if (filter === "all") return true;
+  return historyFilterBucketsFor(node).includes(filter);
+}
+// ---- end Checkpoint 3 I2 ----

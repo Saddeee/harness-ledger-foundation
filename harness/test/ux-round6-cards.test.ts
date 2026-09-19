@@ -50,9 +50,12 @@ test("improvement.tsx: ACTION_BAR_CLASS is the exact spec class, defined once, a
   // RetireCard, DecidedStatus, CompactDecisionCard, and DecisionCard's own
   // pending branch -- one bar per rendered card, never a second one sharing
   // space with anything else.
+  // Checkpoint 3 adds the five Inbox item cards (NewSkillCard,
+  // TestResultCard, RuleAttentionCard, ConflictCard, ActionFailedCard),
+  // each with one bar.
   assert.equal(
     count(code, "className={ACTION_BAR_CLASS}"),
-    4,
+    9,
     "exactly one action-bar container per card-rendering function",
   );
 });
@@ -105,10 +108,12 @@ test("improvement.tsx: CompactDecisionCard's bar has exactly one action-bar cont
   // (unchanged convention from Round 6 Task 6b), which also picks up the
   // collapsed "More" area's own secondary AddInstructionConfirm -- six in
   // total, still every one of them sized, never a hardcoded literal.
+  // Checkpoint 3: the alternative-scope Add moved to the detail page's
+  // Change destination control -- five sized controls remain.
   assert.equal(
     count(bar, "size={size}"),
-    6,
-    "the three primary-action branches, the secondary Test first, Skip, and More's own secondary Add, all sized",
+    5,
+    "the three primary-action branches, the secondary Test first and Skip, all sized",
   );
   assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
 });
@@ -170,7 +175,9 @@ test("improvement.tsx: CompactDecisionCard's header row and body are siblings to
   const fnAt = raw.indexOf("function CompactDecisionCard");
   const endAt = raw.indexOf("export function DecisionCard", fnAt);
   const fn = raw.slice(fnAt, endAt);
-  const headerAt = fn.indexOf("{/* header row: project name left, status badges right */}");
+  const headerAt = fn.indexOf(
+    "{/* header row: project name + type label left, New badge right */}",
+  );
   const bodyAt = fn.indexOf("{/* body: full width, a sibling of the header row above */}");
   assert.ok(headerAt >= 0 && bodyAt > headerAt);
   const between = fn.slice(headerAt, bodyAt);

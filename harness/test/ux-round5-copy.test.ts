@@ -62,7 +62,7 @@ test("harness-ux.ts: LANDING_CREDITS_LINE exists with correct content", () => {
   );
 });
 
-test("nav: Overview, Inbox, Suggestions, Instructions, History, Tests, Skills, Projects, Settings in that order", () => {
+test("nav: Overview, Inbox, Instructions, Skills, Tests, History, Projects, Settings in that order (checkpoint 3: Suggestions removed)", () => {
   // Round 6c part B: Tests joins the sidebar between History and Skills.
   // Checkpoint 2 WP2-A: Overview returns as a real next-action page and
   // leads the sidebar -- both updated here with intent rather than left to
@@ -82,11 +82,10 @@ test("nav: Overview, Inbox, Suggestions, Instructions, History, Tests, Skills, P
   assert.deepEqual(items, [
     { route: "overview", label: "Overview" },
     { route: "inbox", label: "Inbox" },
-    { route: "ledger", label: "Suggestions" },
     { route: "instructions", label: "Instructions" },
-    { route: "history", label: "History" },
-    { route: "tests", label: "Tests" },
     { route: "skills", label: "Skills" },
+    { route: "tests", label: "Tests" },
+    { route: "history", label: "History" },
     { route: "projects", label: "Projects" },
     { route: "settings", label: "Settings" },
   ]);
@@ -140,6 +139,13 @@ test("no user-facing 'improvement' word survives in the guarded pages", () => {
     "{ improvement:",
     "improvement: id",
     "improvement?:",
+    // Checkpoint 3: the Inbox item's own `improvement` field (the suggestion
+    // view an item carries) and the detail route's own query parameter --
+    // identifiers and a URL, never rendered text.
+    "?improvement=",
+    "item.improvement",
+    "it.improvement",
+    "link.improvement_id",
     // Round 6 Task 4 / spec §4: VerdictControl reads the verdict action's
     // own response off `data.improvement?.changed`/`.effect` -- the API's
     // own field name, never rendered to the user.

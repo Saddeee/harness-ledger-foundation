@@ -76,7 +76,8 @@ test("inbox.tsx: ConfirmationRow, confirmed/undo state and the 'New' marker are 
   assert.match(inbox, /useState<Map<number, string>>/);
   assert.match(inbox, /const \[undoing, setUndoing\] = useState<Set<number>>/);
   assert.match(inbox, /const isNew = \(item: Improvement\): boolean =>/);
-  assert.match(inbox, /isNew=\{isNew\(i\)\}/);
+  // Checkpoint 3: cards are rendered from the unified Inbox items.
+  assert.match(inbox, /isNew=\{isNew\(it\.improvement\)\}/);
 });
 
 test("inbox.tsx: mark_seen effect is kept", () => {
@@ -156,11 +157,14 @@ test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title
     "compact mode must never render the group Badge",
   );
   assert.match(compact, /isNew \? <Badge variant="default">New<\/Badge> : null/);
-  // Secondary controls (raw classification, the alternative destination,
-  // the other Add scope) collapsed into "More", never at equal weight.
+  // Checkpoint 3: prediction paragraphs and the alternative destination
+  // collapse under "Why Harness Ledger recommends this"; Edit / Skip /
+  // Change destination / View details are text-weight tertiary actions.
   assert.match(compact, /<details className="rounded-md border">/);
-  assert.match(compact, />\s*More\s*</);
+  assert.match(compact, /\{WHY_RECOMMENDS_TITLE\}/);
   assert.match(compact, /whyFor\(item\.classification\)/);
+  assert.match(compact, /\{EDIT_LABEL\}/);
+  assert.match(compact, /\{VIEW_DETAILS_LABEL\}/);
 });
 
 test('improvement.tsx: CompactDecisionCard renders item.unsure as a muted role="status" line when present', () => {

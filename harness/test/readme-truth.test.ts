@@ -122,3 +122,24 @@ test("README: status section agrees with the capability manifest", async () => {
   assert.match(readme, /Behavioural verification[^\n]*planned/i);
   assert.match(readme, /Hosted authorization is blocked/);
 });
+
+test("README: Inbox is the single decision queue; no separate Suggestions page is offered", () => {
+  assert.match(readme, /Inbox contains everything that needs your attention/);
+  const pagesTable = readme.slice(
+    readme.indexOf("## 2. What it shows you"),
+    readme.indexOf("## 3. Getting started"),
+  );
+  assert.ok(!/\| \*\*Suggestions\*\*/.test(pagesTable), "no Suggestions page row");
+  for (const page of [
+    "**Overview**",
+    "**Inbox**",
+    "**Instructions**",
+    "**Skills**",
+    "**Tests**",
+    "**History**",
+    "**Projects**",
+    "**Settings**",
+  ]) {
+    assert.ok(pagesTable.includes(page), `pages table missing ${page}`);
+  }
+});

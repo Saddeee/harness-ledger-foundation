@@ -1,12 +1,22 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { DecisionCard, type Improvement } from "@/components/harness/improvement";
+import {
+  ActionFailedCard,
+  ConflictCard,
+  DecisionCard,
+  NewSkillCard,
+  RuleAttentionCard,
+  TestResultCard,
+  useRun,
+  type Improvement,
+} from "@/components/harness/improvement";
 import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import {
   executorQueryOptions,
   fetchImprovements,
+  fetchInbox,
   fetchProjects,
   lovableOf,
   postExecutor,
@@ -27,6 +37,15 @@ import {
 } from "@/components/ui/dialog";
 import {
   ANALYSE_NOW_SCOPE_LINE,
+  ANALYSED_ALL_LINE,
+  INBOX_INTRO,
+  INBOX_TITLE,
+  NEW_ACTIVITY_TITLE,
+  REANALYSE_TOKENS_NOTE,
+  VIEW_PAST_DECISIONS,
+  inboxCountLine,
+  newActivityLine,
+  tokenEstimateLine,
   DISAGREEMENT_ACCEPT_BUTTON,
   DISAGREEMENT_DISMISS_BUTTON,
   DISAGREEMENT_TITLE,
@@ -382,7 +401,17 @@ function Page() {
   const [reanalyseOpen, setReanalyseOpen] = useState(false);
 
   const query = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
-  const refresh = () => qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+  // Checkpoint 3: the queue itself -- every unresolved item, from the one
+  // server-side aggregation Overview also counts (listInboxItems).
+  const inbox = useQuery({ queryKey: ["harness-inbox"], queryFn: fetchInbox });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["harness-inbox"] });
+    return qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+  };
+  const { busy: cardBusy, run: cardRun } = useRun((msg) => {
+    toast.success(msg);
+    void refresh();
+  });
   // Round 5 Task 6 / spec §4: same executor query every DecisionCard
   // already reads (react-query dedupes/caches it) -- only decision_mode is
   // needed here, to pick the empty-state copy below.
@@ -489,95 +518,158 @@ function Page() {
   }
 
   const all = query.data?.improvements ?? [];
-  // Still needs a decision, plus anything decided this visit (shown as a
-  // confirmation row instead of a card) -- in their original order, so
-  // nothing jumps around on screen.
-  const pending = all.filter((i) => i.decision.status === "pending");
-  const list = all.filter((i) => i.decision.status === "pending" || confirmed.has(i.id));
-
-  // Round 5 Task 6 / spec §4: automatic mode's own empty state -- only once
-  // it actually did something since the last visit (autoAcceptedSince > 0);
-  // otherwise the plain "everything's decided" line still applies, in
-  // automatic mode exactly as in ask mode.
-  const autoAcceptedSince = query.data?.counts?.auto_accepted_since_seen ?? 0;
-  const nothingPendingLine =
-    executor.data?.settings?.decision_mode === "automatic" && autoAcceptedSince > 0
-      ? `Nothing needs your decision. Harness Ledger accepted ${autoAcceptedSince} suggestion${autoAcceptedSince === 1 ? "" : "s"} automatically since your last visit; see Suggestions.`
-      : "Nothing needs your decision. Everything you've decided on is under Suggestions.";
+  const items = inbox.data && inbox.data.available ? inbox.data.items : [];
+  const count = inbox.data && inbox.data.available ? inbox.data.count : items.length;
+  const inboxUnavailable = inbox.data && inbox.data.available === false;
+  // Items decided this visit stay visible as confirmation rows (with Undo)
+  // until the page is left, in the order they had.
+  const confirmedItems = all.filter((i) => confirmed.has(i.id));
 
   // Checkpoint 2026-09-18 WP5 (D7): open review items where a newer
-  // analysis disagreed with a decision already made -- see the executor
-  // route's GET handler (`analysis.disagreements`), a field this WP added
-  // that isn't (yet) part of improvements-client.ts's own ExecutorAnalysis
-  // type.
+  // analysis disagreed with a decision already made are Inbox "Conflict"
+  // items; the server lists them, the card here is the existing one.
   const disagreements =
     (executor.data?.analysis as unknown as { disagreements?: AnalysisDisagreement[] } | undefined)
       ?.disagreements ?? [];
+  const disagreementById = new Map(disagreements.map((d) => [`disagreement:${d.id}`, d]));
+
+  // Round 5 Task 6 / spec §4: automatic mode's own empty state -- only once
+  // it actually did something since the last visit; otherwise the plain
+  // line applies in both modes.
+  const autoAcceptedSince = query.data?.counts?.auto_accepted_since_seen ?? 0;
+  const nothingPendingLine =
+    executor.data?.settings?.decision_mode === "automatic" && autoAcceptedSince > 0
+      ? `Nothing needs your decision. Harness Ledger accepted ${autoAcceptedSince} suggestion${autoAcceptedSince === 1 ? "" : "s"} automatically since your last visit; see History.`
+      : "Nothing needs your decision. Everything you've decided on is under History.";
+
+  const awaiting = executor.data?.analysis?.awaiting_analysis ?? 0;
+  const lastAnalysis = executor.data?.analysis?.last_run?.finished_at ?? null;
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Inbox</h1>
-      <AnalyseNotice />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">{ANALYSE_NOW_SCOPE_LINE}</p>
-        <Button size="sm" variant="outline" onClick={() => setReanalyseOpen(true)}>
-          {REANALYSE_TRIGGER_BUTTON}
-        </Button>
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold">{INBOX_TITLE}</h1>
+        <p className="text-sm font-medium">
+          {inbox.isLoading ? "Loading…" : inboxCountLine(count)}
+        </p>
+        <p className="text-xs text-muted-foreground">{INBOX_INTRO}</p>
       </div>
-      <ReanalyseDialog open={reanalyseOpen} onOpenChange={setReanalyseOpen} />
-      {list.length === 0 ? (
+
+      {inboxUnavailable ? (
+        <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
+          {(inbox.data as { reason?: string }).reason}
+        </div>
+      ) : null}
+
+      {confirmedItems.length > 0 ? (
+        <ul className="space-y-3">
+          {confirmedItems.map((i) => (
+            <li key={`confirmed:${i.id}`}>
+              <ConfirmationRow
+                item={i}
+                message={confirmed.get(i.id)!}
+                busy={undoing.has(i.id)}
+                onUndo={() => void undo(i.id)}
+                onView={() => onOpen(i.id)}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {items.length === 0 &&
+      confirmedItems.length === 0 &&
+      !inbox.isLoading &&
+      !inboxUnavailable ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {all.length === 0
             ? "Suggestions Harness Ledger finds in your Lovable chats will appear here."
             : nothingPendingLine}
         </div>
-      ) : (
-        <>
-          {pending.length > 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {pending.length === 1
-                ? "One suggestion is waiting for your decision."
-                : `${pending.length} suggestions are waiting for your decision.`}
-            </p>
-          ) : null}
-          <ul className="space-y-3">
-            {list.map((i) => (
-              <li key={i.id}>
-                {confirmed.has(i.id) ? (
-                  <ConfirmationRow
-                    item={i}
-                    message={confirmed.get(i.id)!}
-                    busy={undoing.has(i.id)}
-                    onUndo={() => void undo(i.id)}
-                    onView={() => onOpen(i.id)}
-                  />
-                ) : (
+      ) : null}
+
+      {items.length > 0 ? (
+        <ul className="space-y-3">
+          {items
+            .filter((it) => !(it.improvement && confirmed.has(it.improvement.id)))
+            .map((it) => (
+              <li key={it.id}>
+                {it.type === "new_instruction" && it.improvement ? (
                   <DecisionCard
                     compact
-                    item={i}
-                    onChanged={(msg) => confirmDecision(i.id, msg)}
+                    item={it.improvement}
+                    onChanged={(msg) => confirmDecision(it.improvement!.id, msg)}
                     onOpen={onOpen}
-                    isNew={isNew(i)}
+                    isNew={isNew(it.improvement)}
+                    conclusion={it.conclusion}
                   />
+                ) : it.type === "new_skill" && it.improvement ? (
+                  <NewSkillCard
+                    item={it.improvement}
+                    onOpen={onOpen}
+                    busy={cardBusy}
+                    run={cardRun}
+                  />
+                ) : it.type === "test_result" ? (
+                  <TestResultCard item={it} />
+                ) : it.type === "rule_attention" && it.improvement ? (
+                  <DecisionCard
+                    compact
+                    item={it.improvement}
+                    onChanged={(msg) => confirmDecision(it.improvement!.id, msg)}
+                    onOpen={onOpen}
+                  />
+                ) : it.type === "rule_attention" ? (
+                  <RuleAttentionCard item={it} />
+                ) : it.type === "conflict" && disagreementById.has(it.id) ? (
+                  <DisagreementCard item={disagreementById.get(it.id)!} />
+                ) : it.type === "conflict" ? (
+                  <ConflictCard item={it} />
+                ) : (
+                  <ActionFailedCard item={it} busy={cardBusy} run={cardRun} />
                 )}
               </li>
             ))}
-          </ul>
-        </>
-      )}
-      {/* Checkpoint 2 2-B: disagreement review items are a secondary,
-          occasional concern (a newer analysis disagreeing with a decision
-          you already made) -- moved below the suggestion list so it never
-          competes with what's actually waiting for a decision. */}
-      {disagreements.length > 0 ? (
-        <ul className="space-y-3">
-          {disagreements.map((d) => (
-            <li key={d.id}>
-              <DisagreementCard item={d} />
-            </li>
-          ))}
         </ul>
       ) : null}
+
+      <p className="text-sm">
+        <Link
+          to="/history"
+          search={{ filter: "suggestions" }}
+          className="text-primary underline underline-offset-2"
+        >
+          {VIEW_PAST_DECISIONS}
+        </Link>
+      </p>
+
+      {/* Secondary: analysis status. New activity gets a heading and the
+          Analyse now control; otherwise one compact status line. */}
+      <section aria-label="Analysis" className="space-y-2 rounded-md border p-4">
+        {awaiting > 0 ? (
+          <>
+            <h2 className="text-base font-medium">{NEW_ACTIVITY_TITLE}</h2>
+            <p className="text-sm text-muted-foreground">{newActivityLine(awaiting)}</p>
+            <p className="text-xs text-muted-foreground">{tokenEstimateLine(null)}</p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {ANALYSED_ALL_LINE}
+            {lastAnalysis ? ` Last analysis ${new Date(lastAnalysis).toLocaleString()}.` : ""}
+          </p>
+        )}
+        <AnalyseNotice />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">{ANALYSE_NOW_SCOPE_LINE}</p>
+          <div className="space-y-1 text-right">
+            <Button size="sm" variant="ghost" onClick={() => setReanalyseOpen(true)}>
+              {REANALYSE_TRIGGER_BUTTON}
+            </Button>
+            <p className="text-xs text-muted-foreground">{REANALYSE_TOKENS_NOTE}</p>
+          </div>
+        </div>
+        <ReanalyseDialog open={reanalyseOpen} onOpenChange={setReanalyseOpen} />
+      </section>
     </div>
   );
 }

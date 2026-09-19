@@ -6,11 +6,8 @@
 // status, experiment status, decision values) — that comparison happens
 // once, in buildOverviewState below, and the route files only ever render
 // the plain-language result.
-import type {
-  ExecutorResponse,
-  ImprovementsResponse,
-  TestRunsResponse,
-} from "@/lib/improvements-client";
+import type { ExecutorResponse, InboxItemType, InboxResponse } from "./improvements-client";
+import { INBOX_TYPE_LABELS } from "./harness-ux";
 
 // ---- Shared ----
 
@@ -69,64 +66,83 @@ export const SYNC_NOW_CONSEQUENCE = "Reads Lovable. Changes nothing. No credits,
 export const ANALYSE_NOW_CONSEQUENCE = "Uses AI tokens. Changes nothing in Lovable.";
 
 // ---- Overview (/overview) ----
+// Checkpoint 3 I2: the Inbox is now the single decision queue, so Overview
+// reads the exact same fetchInbox() the Inbox page reads (one read, per the
+// brief) rather than re-deriving its own counts from the raw improvements/
+// test-runs lists -- that guarantees Overview's "N decisions" always equals
+// the Inbox's own count line, by construction, not by two pieces of logic
+// agreeing.
 
 export type OverviewState = {
   connected: boolean;
   hasAllowedProject: boolean;
   providerReady: boolean;
+  // "failed actions" (brief §7): action_failed items, plus conflicts -- both
+  // are things gone wrong that need a decision now, same priority as before.
   blockedOrFailedCount: number;
+  // "suggestions": new_instruction + new_skill Inbox items (a "both"
+  // suggestion is the one new_instruction item the contract already folds
+  // it into -- never counted twice).
   pendingSuggestions: number;
+  // "rules needing attention": rule_attention Inbox items (open retire
+  // proposals and live rules whose health asks for review, already merged
+  // by listInboxItems).
   rulesNeedingAttention: number;
-  skillProposalsPending: number;
+  // "replays to judge": test_result Inbox items.
   replaysAwaitingVerdict: number;
   firstJudgingRunId: number | null;
   newActivity: boolean;
+  // The Inbox's own server-computed count, read once here and shown
+  // verbatim -- never recomputed from the buckets above (their sum can
+  // differ from inboxCount only if listInboxItems ever adds a type this
+  // file doesn't bucket individually; inboxCount is always the ground truth).
+  inboxCount: number;
+  // Monitor rows: one count per Inbox item type, in the contract's own order.
+  inboxTypeCounts: Record<InboxItemType, number>;
 };
 
-/** Turns the three existing reads (improvements list, executor, tests list)
- * plus the allowed-project count (Projects' own read) into the plain
- * booleans/counts overviewNextAction and overviewMonitorRows need. This is
- * the one place any internal enum value (health.status, an experiment's
- * status, a write_status) is compared — src/routes/_authenticated/
- * overview.tsx never does that itself. */
+const INBOX_TYPE_ORDER: InboxItemType[] = [
+  "action_failed",
+  "conflict",
+  "test_result",
+  "rule_attention",
+  "new_instruction",
+  "new_skill",
+];
+
+/** Turns the Inbox read (fetchInbox) plus the executor status and the
+ * allowed-project count (Projects' own read) into the plain booleans/counts
+ * overviewNextAction and overviewMonitorRows need. This is the one place any
+ * Inbox item type is switched on for Overview's purposes --
+ * src/routes/_authenticated/overview.tsx never does that itself. */
 export function buildOverviewState(input: {
-  improvements: ImprovementsResponse | undefined;
+  inbox: InboxResponse | undefined;
   executor: ExecutorResponse | undefined;
-  testRuns: TestRunsResponse | undefined;
   allowedProjectCount: number | undefined;
 }): OverviewState {
-  const items = input.improvements?.improvements ?? [];
-  const counts = input.improvements?.counts;
-  const runs = input.testRuns?.available ? input.testRuns.runs : [];
+  const available = input.inbox != null && input.inbox.available !== false;
+  const items = available ? (input.inbox!.items ?? []) : [];
+  const inboxCount = available ? (input.inbox!.count ?? 0) : 0;
 
-  const blockedWrites = items.filter((item) => {
-    const status = item.lovable?.write_status;
-    return status === "stale" || status === "failed";
-  }).length;
-  const failedRuns = runs.filter((run) => run.status === "failed").length;
+  const inboxTypeCounts = Object.fromEntries(
+    INBOX_TYPE_ORDER.map((t) => [t, items.filter((i) => i.type === t).length]),
+  ) as Record<InboxItemType, number>;
 
-  const rulesReview = items.filter(
-    (item) =>
-      item.kind === "improvement" &&
-      (item.health?.status === "review" || item.health?.status === "retire_suggested"),
-  ).length;
-  const retireProposals = counts?.retire ?? 0;
-
-  const skillsPending = items.filter((item) => item.skill_proposal?.status === "proposed").length;
-
-  const judgingRuns = runs.filter((run) => run.status === "judging");
+  const testResultItems = items.filter((i) => i.type === "test_result");
+  const firstJudgingRunId = testResultItems[0]?.run?.id ?? testResultItems[0]?.link.run_id ?? null;
 
   return {
     connected: Boolean(input.executor?.connection?.connected),
     hasAllowedProject: (input.allowedProjectCount ?? 0) > 0,
     providerReady: Boolean(input.executor?.analysis?.provider_ready?.ok),
-    blockedOrFailedCount: blockedWrites + failedRuns,
-    pendingSuggestions: counts?.pending ?? 0,
-    rulesNeedingAttention: rulesReview + retireProposals,
-    skillProposalsPending: skillsPending,
-    replaysAwaitingVerdict: judgingRuns.length,
-    firstJudgingRunId: judgingRuns[0]?.id ?? null,
+    blockedOrFailedCount: inboxTypeCounts.action_failed + inboxTypeCounts.conflict,
+    pendingSuggestions: inboxTypeCounts.new_instruction + inboxTypeCounts.new_skill,
+    rulesNeedingAttention: inboxTypeCounts.rule_attention,
+    replaysAwaitingVerdict: inboxTypeCounts.test_result,
+    firstJudgingRunId,
     newActivity: (input.executor?.analysis?.awaiting_analysis ?? 0) > 0,
+    inboxCount,
+    inboxTypeCounts,
   };
 }
 
@@ -190,8 +206,8 @@ export function overviewNextAction(state: OverviewState): OverviewNextAction {
       headline: "One action needs attention.",
       actionLabel: "Review",
       kind: "review_blocked",
-      to: "/ledger",
-      consequence: "Opens Suggestions. Nothing changes until you decide there.",
+      to: "/inbox",
+      consequence: "Opens Inbox. Nothing changes until you decide there.",
     };
   }
   if (state.pendingSuggestions > 0) {
@@ -210,17 +226,8 @@ export function overviewNextAction(state: OverviewState): OverviewNextAction {
       headline: "One rule may need attention.",
       actionLabel: "Review rule",
       kind: "review_rules",
-      to: "/instructions",
-      consequence: "Opens Instructions. Nothing changes until you decide there.",
-    };
-  }
-  if (state.skillProposalsPending > 0) {
-    return {
-      headline: "One Skill proposal is waiting.",
-      actionLabel: "Review Skill",
-      kind: "review_skill",
-      to: "/skills",
-      consequence: "Opens Skills. Nothing changes until you decide there.",
+      to: "/inbox",
+      consequence: "Opens Inbox. Nothing changes until you decide there.",
     };
   }
   if (state.replaysAwaitingVerdict > 0) {
@@ -255,15 +262,15 @@ export type OverviewMonitorRow = { label: string; count: number; to: string };
 export const OVERVIEW_MONITOR_TITLE = "Monitor";
 export const OVERVIEW_STATUS_BUDGETS_TITLE = "Status and budgets";
 
-/** The compact counts list under the primary action — same five buckets
- * overviewNextAction checks, always shown regardless of which one is
- * currently primary. */
+/** The compact counts list under the primary action -- one row per Inbox
+ * item type (brief §7 "Monitor rows = counts per Inbox type"), in the same
+ * order listInboxItems sorts them (action_failed/conflict first). Every row
+ * opens the Inbox: it's the single decision queue now, so there is nowhere
+ * else for any of these counts to be worked through. */
 export function overviewMonitorRows(state: OverviewState): OverviewMonitorRow[] {
-  return [
-    { label: "New suggestions", count: state.pendingSuggestions, to: "/inbox" },
-    { label: "Skill proposals", count: state.skillProposalsPending, to: "/skills" },
-    { label: "Rules needing attention", count: state.rulesNeedingAttention, to: "/instructions" },
-    { label: "Completed replays", count: state.replaysAwaitingVerdict, to: "/tests" },
-    { label: "Blocked or failed actions", count: state.blockedOrFailedCount, to: "/ledger" },
-  ];
+  return INBOX_TYPE_ORDER.map((t) => ({
+    label: INBOX_TYPE_LABELS[t],
+    count: state.inboxTypeCounts[t],
+    to: "/inbox",
+  }));
 }

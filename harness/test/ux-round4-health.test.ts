@@ -159,7 +159,7 @@ test("inbox.tsx: posts mark_seen on mount (after reading the previous last_seen_
   const code = codeOnly(raw);
   assert.match(code, /action:\s*"mark_seen"/);
   assert.match(code, /last_seen_at/);
-  assert.match(code, /isNew=\{isNew\(i\)\}/);
+  assert.match(code, /isNew=\{isNew\(it\.improvement\)\}/);
 });
 
 test("improvement.tsx: renders a 'New' badge, driven by the isNew prop", () => {

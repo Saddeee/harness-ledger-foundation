@@ -12,9 +12,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   executorQueryOptions,
-  fetchImprovements,
+  fetchInbox,
   fetchProjects,
-  fetchTestRuns,
   postExecutor,
   syncResultText,
 } from "@/lib/improvements-client";
@@ -44,9 +43,12 @@ export const Route = createFileRoute("/_authenticated/overview")({
 
 function OverviewPage() {
   const qc = useQueryClient();
-  const improvements = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
+  // Checkpoint 3 I2: the same Inbox read the Inbox page itself makes (one
+  // read, shared via react-query's cache) -- so Overview's "N decisions"
+  // count is always exactly the Inbox's own count, never a second
+  // computation of the same thing.
+  const inbox = useQuery({ queryKey: ["harness-inbox"], queryFn: fetchInbox });
   const executor = useQuery(executorQueryOptions);
-  const testRuns = useQuery({ queryKey: ["harness-test-runs"], queryFn: fetchTestRuns });
   const projects = useQuery({ queryKey: ["harness-projects"], queryFn: fetchProjects });
 
   const syncNow = useMutation({
@@ -68,7 +70,7 @@ function OverviewPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not request analysis"),
   });
 
-  if (improvements.isLoading || executor.isLoading || testRuns.isLoading || projects.isLoading) {
+  if (inbox.isLoading || executor.isLoading || projects.isLoading) {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">Overview</h1>
@@ -78,9 +80,8 @@ function OverviewPage() {
   }
 
   const state = buildOverviewState({
-    improvements: improvements.data,
+    inbox: inbox.data,
     executor: executor.data,
-    testRuns: testRuns.data,
     allowedProjectCount: projects.data?.allowed?.length,
   });
   const next = overviewNextAction(state);

@@ -29,14 +29,17 @@ export const Route = createFileRoute("/_authenticated")({
 // The same pages in every runtime. Scoreboard, Versions, Demo and Jobs
 // stay routable (Jobs is linked from Settings › Advanced) but are not in the
 // sidebar until they have content. History links to a page created in Task 4.
+// Checkpoint 3 I2: "Suggestions" (/ledger) is no longer a nav entry -- the
+// Inbox is the single decision queue now (a decided item just isn't in the
+// Inbox any more; /ledger still exists for deep links -- see ledger.tsx's
+// own redirect to /inbox when opened without ?improvement=).
 const NAV = [
   { to: "/overview", label: "Overview" },
   { to: "/inbox", label: "Inbox" },
-  { to: "/ledger", label: "Suggestions" },
   { to: "/instructions", label: "Instructions" },
-  { to: "/history", label: "History" },
-  { to: "/tests", label: "Tests" },
   { to: "/skills", label: "Skills" },
+  { to: "/tests", label: "Tests" },
+  { to: "/history", label: "History" },
   { to: "/projects", label: "Projects" },
   { to: "/settings", label: "Settings" },
 ] as const;
