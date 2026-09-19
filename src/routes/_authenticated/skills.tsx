@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { ConfirmAction, DetailSection } from "@/components/harness/decision-layout";
 import {
   formatDate,
+  formatDay,
+  publishedFromProposalLine,
   REVIEW_SKILL_LABEL,
   skillProposalAppliesWhen,
   skillProposalProcedurePreview,
@@ -180,7 +182,23 @@ function ProposalCard({ proposal }: { proposal: SkillProposalCard }) {
   );
 }
 
-function SkillSection({ skill, workspaceId }: { skill: Skill; workspaceId: string | null }) {
+// Owner review round 7 fix 4: "in skills I see this ... in Lovable and then
+// I see proposed by harness ledger ... so I see it twice, is there a purpose
+// for this." There isn't -- once a proposal is published (lovable_state
+// "created"), Page below drops it from "Proposed by Harness Ledger" and
+// passes it here instead, so the "In Lovable" entry it produced carries one
+// short line saying where it came from and when, with a link to the
+// proposal's own versions (the suggestion detail already shows them; see
+// DestinationChoice in improvement.tsx).
+function SkillSection({
+  skill,
+  workspaceId,
+  publishedProposal,
+}: {
+  skill: Skill;
+  workspaceId: string | null;
+  publishedProposal: SkillProposalCard | null;
+}) {
   const lastChanged = skill.updated_at_remote ?? skill.fetched_at;
   return (
     <section className="space-y-3 rounded-md border p-4">
@@ -192,6 +210,19 @@ function SkillSection({ skill, workspaceId }: { skill: Skill; workspaceId: strin
       </div>
 
       <p className="text-sm text-muted-foreground">Last changed {formatDate(lastChanged)}</p>
+
+      {publishedProposal ? (
+        <p className="text-sm text-muted-foreground">
+          {publishedFromProposalLine(formatDay(publishedProposal.lovable_written_at))}{" "}
+          <Link
+            to="/ledger"
+            search={{ improvement: publishedProposal.correction_candidate_id }}
+            className="text-primary underline underline-offset-2"
+          >
+            {REVIEW_SKILL_LABEL}
+          </Link>
+        </p>
+      ) : null}
 
       <DetailSection title="Content">
         <pre className="whitespace-pre-wrap break-words font-mono text-xs">{skill.content}</pre>
@@ -249,6 +280,15 @@ function Page() {
   const proposals = (query.data?.proposals ?? []) as SkillProposalCard[];
   const workspaceId = query.data?.workspace_id ?? null;
 
+  // Owner review round 7 fix 4: a published proposal (lovable_state
+  // "created") is real in Lovable now -- it belongs under "In Lovable" only,
+  // matched to its skill snapshot by name (the same name publishing used to
+  // create it there). "Proposed by Harness Ledger" keeps everything still
+  // waiting on a decision or a publish attempt (not_created/failed).
+  const publishedProposals = proposals.filter((p) => p.lovable_state === "created");
+  const proposedProposals = proposals.filter((p) => p.lovable_state !== "created");
+  const publishedProposalByName = new Map(publishedProposals.map((p) => [p.name, p]));
+
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Skills</h1>
@@ -264,7 +304,14 @@ function Page() {
             {EMPTY_LINE}
           </div>
         ) : (
-          skills.map((s) => <SkillSection key={s.name} skill={s} workspaceId={workspaceId} />)
+          skills.map((s) => (
+            <SkillSection
+              key={s.name}
+              skill={s}
+              workspaceId={workspaceId}
+              publishedProposal={publishedProposalByName.get(s.name) ?? null}
+            />
+          ))
         )}
       </section>
 
@@ -272,11 +319,15 @@ function Page() {
         <h2 id="proposed-skills" className="text-lg font-semibold">
           {PROPOSED_HEADING}
         </h2>
-        {proposals.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{PROPOSED_EMPTY_LINE}</p>
+        {proposedProposals.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {proposals.length === 0
+              ? PROPOSED_EMPTY_LINE
+              : "Every Skill Harness Ledger has proposed is already published; see it under In Lovable above."}
+          </p>
         ) : (
           <ul className="space-y-3">
-            {proposals.map((p) => (
+            {proposedProposals.map((p) => (
               <ProposalCard key={p.id} proposal={p} />
             ))}
           </ul>

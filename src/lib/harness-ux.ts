@@ -1817,4 +1817,15 @@ export const WORKSPACE_TARGET_LABEL = "Workspace";
 export const SEE_MORE_LABEL = "See more";
 export const SEE_LESS_LABEL = "See less";
 // ---- end Round 7 fix 2 ----
+
+// ---- Round 7 (owner review, 2026-09-19) fix 4 ----
+// "in skills I see this ... in Lovable and then I see proposed by harness
+// ledger ... so I see it twice, is there a purpose for this." Once a
+// proposal is published, the "In Lovable" entry it produced gets this one
+// line instead of the proposal appearing a second time under "Proposed by
+// Harness Ledger".
+export function publishedFromProposalLine(day: string): string {
+  return `Published from a Harness Ledger proposal on ${day}.`;
+}
+// ---- end Round 7 fix 4 ----
 // ---- end Checkpoint 3 UX fixes ----
