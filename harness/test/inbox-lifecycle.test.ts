@@ -633,3 +633,50 @@ test("budget/permission parity: the appended Checkpoint 3 I1 Inbox block contain
   const mutating = block.match(/db\.prepare\(\s*[`"'][^`"']*(INSERT|UPDATE|DELETE)/gi) ?? [];
   assert.deepEqual(mutating, [], "the appended Inbox block must add no db.prepare mutation");
 });
+
+// ---- 13. Checkpoint 3 S1: a failed Skill publish is action_failed, a
+// created one is never an Inbox item ----
+
+test("a Skill proposal whose last publish attempt failed is action_failed, and disappears once it's published", () => {
+  const projectId = freshProject();
+  const { candidateId } = seedSuggestion({
+    projectId,
+    instruction: "Always run the release checklist for inbox lifecycle.",
+    destination: "skill",
+  });
+  const before = imp.getImprovement(candidateId)!;
+  const proposalId = before.skill_proposal!.id;
+  store.setSkillProposalStatus({ id: proposalId, status: "approved", actor: "test" });
+
+  // Nothing attempted yet: no Inbox item from this proposal.
+  assert.ok(!imp.listInboxItems({ connected: false }).some((i) => i.id === `skill:${proposalId}`));
+
+  store.setSkillProposalLovableState({
+    id: proposalId,
+    lovable_state: "failed",
+    error: "Lovable returned a 500",
+    actor: "test",
+    reason: "publish failed: Lovable returned a 500",
+  });
+  const failedItem = imp
+    .listInboxItems({ connected: false })
+    .find((i) => i.id === `skill:${proposalId}`);
+  assert.ok(failedItem, "a failed publish attempt is an Inbox item");
+  assert.equal(failedItem!.type, "action_failed");
+  assert.equal(failedItem!.summary, "Lovable returned a 500");
+  assert.equal(failedItem!.recommended_action, "retry");
+  assert.deepEqual(failedItem!.link, { page: "skills" });
+
+  store.setSkillProposalLovableState({
+    id: proposalId,
+    lovable_state: "created",
+    written_at: new Date().toISOString(),
+    readback_ok: true,
+    actor: "test",
+    reason: "published to Lovable",
+  });
+  assert.ok(
+    !imp.listInboxItems({ connected: false }).some((i) => i.id === `skill:${proposalId}`),
+    "a created Skill is never an Inbox item",
+  );
+});

@@ -88,6 +88,11 @@ function buildProposals(adapter: Adapter) {
       status: p.status,
       ownership: p.ownership,
       lovable_state: p.lovable_state,
+      // ---- Checkpoint 3 S1 ----
+      lovable_written_at: p.lovable_written_at,
+      lovable_readback_ok: p.lovable_readback_ok == null ? null : p.lovable_readback_ok === 1,
+      lovable_error: p.lovable_error,
+      // ---- end Checkpoint 3 S1 ----
       version_count: p.version_count,
       correction_candidate_id: p.correction_candidate_id,
       updated_at: p.updated_at,

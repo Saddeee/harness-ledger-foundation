@@ -350,13 +350,21 @@ export type SkillProposalRevision = {
   actor: string;
   created_at: string;
 };
+// ---- Checkpoint 3 S1 ----
+export type SkillProposalLovableState = "not_created" | "created" | "failed";
+// ---- end Checkpoint 3 S1 ----
 export type SkillProposal = {
   id: number;
   name: string;
   content: string;
   status: SkillProposalStatus;
   ownership: "harness" | "user";
-  lovable_state: "not_created";
+  lovable_state: SkillProposalLovableState;
+  // ---- Checkpoint 3 S1 ----
+  lovable_written_at: string | null;
+  lovable_readback_ok: boolean | null;
+  lovable_error: string | null;
+  // ---- end Checkpoint 3 S1 ----
   revisions: SkillProposalRevision[];
 } | null;
 
@@ -780,15 +788,21 @@ export type Skill = {
 // Checkpoint 2026-09-18 WP4 (D4): the Skills page's "Proposed by Harness
 // Ledger" section -- a local Skill proposal, never a workspace Skill (see
 // Skill above). `correction_candidate_id` links back to the suggestion
-// (/ledger?improvement=<id>); `lovable_state` is always "not_created" --
-// Harness Ledger keeps this Skill locally with its versions, it does not
-// create or update it in Lovable.
+// (/ledger?improvement=<id>). Checkpoint 3 S1 (D4 superseded): `lovable_state`
+// starts "not_created" (kept locally only) and moves to "created" once
+// publish_skill_proposal succeeds, or "failed" if it didn't -- Harness Ledger
+// still never updates or deletes a Skill, including one it published itself.
 export type SkillProposalListItem = {
   id: number;
   name: string;
   status: SkillProposalStatus;
   ownership: "harness" | "user";
-  lovable_state: "not_created";
+  lovable_state: SkillProposalLovableState;
+  // ---- Checkpoint 3 S1 ----
+  lovable_written_at: string | null;
+  lovable_readback_ok: boolean | null;
+  lovable_error: string | null;
+  // ---- end Checkpoint 3 S1 ----
   version_count: number;
   correction_candidate_id: number;
   updated_at: string;

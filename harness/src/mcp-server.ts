@@ -15,9 +15,10 @@
 // ten experiment-plan/verification-plan/resource tools that wrote tables
 // nothing in the live product reads (docs/audit/mcp-security.md). The 13
 // tools here were the full replacement surface; Checkpoint 2 2-F added the
-// 5 Skill-proposal tools below (18 total) -- still every one a thin
-// wrapper over adapter.ts, still no other way to mutate Harness Ledger
-// state through this server. No tool here (old or new) takes a raw Lovable
+// 5 Skill-proposal tools below (18 total), and Checkpoint 3 S1 added
+// publish_skill_proposal (19 total) -- still every one a thin wrapper over
+// adapter.ts, still no other way to mutate Harness Ledger state through
+// this server. No tool here (old or new) takes a raw Lovable
 // project id for deletion, and none has "resource" or "safe" in its name --
 // see harness/test/safe-to-delete.test.ts.
 import { pathToFileURL } from "node:url";
@@ -496,9 +497,10 @@ export function createHarnessMcpServer(): McpServer {
   // Skill-proposal tools (D4/DECISIONS.md): a Skill proposal is a draft kept
   // and versioned locally in Harness Ledger -- ownership ('harness' vs
   // 'user'), every revision, and the audit trail all live here, never in
-  // Lovable. `lovable_state` is always 'not_created': creating or updating a
-  // Skill in Lovable itself is not wired in this checkpoint, and every
-  // description below says so. Every mutating tool goes through
+  // Lovable. `lovable_state` starts 'not_created'; Checkpoint 3 S1 added
+  // publish_skill_proposal (below, its own block) as the one way to move it
+  // to 'created'/'failed' -- still never an update or delete, only a create.
+  // Every mutating tool below goes through
   // adapter.improvementActionAndWrite with the exact WP4 action body the
   // Skills page's own buttons send, so a user-owned proposal refuses with
   // the exact sentence the app shows (SkillProposalOwnershipError, thrown
@@ -508,11 +510,12 @@ export function createHarnessMcpServer(): McpServer {
     server,
     "list_skill_proposals",
     "Harness Ledger's own local Skill proposals -- drafts this app proposed from a suggestion and " +
-      "keeps versioned itself, never published to Lovable (creating or updating a Skill in Lovable " +
-      "is not wired in this checkpoint). The same adapter.listSkillProposalsForSkillsView read the " +
-      "Skills page's own 'Proposed by Harness Ledger' section uses: id, name, status, ownership " +
-      "('harness' or 'user'), lovable_state (always 'not_created'), version_count, and the " +
-      "suggestion each proposal belongs to. Ownership, versioning and audit are all the app's own." +
+      "keeps versioned itself. The same adapter.listSkillProposalsForSkillsView read the Skills " +
+      "page's own 'Proposed by Harness Ledger' section uses: id, name, status, ownership " +
+      "('harness' or 'user'), lovable_state ('not_created' until published, 'created' once a live " +
+      "write and read-back succeed, or 'failed'), version_count, and the suggestion each proposal " +
+      "belongs to. Publishing itself is a separate tool (publish_skill_proposal); ownership, " +
+      "versioning and audit here are all the app's own." +
       READ_ONLY_NOTE,
     {},
     () =>
@@ -532,11 +535,11 @@ export function createHarnessMcpServer(): McpServer {
     server,
     "get_skill_proposal",
     "One suggestion's Skill proposal, addressed by suggestion_id (the same id list_suggestions/ " +
-      "decide_suggestion use) -- its full content, status, ownership, and every revision, i.e. " +
+      "decide_suggestion use) -- its full content, status, ownership, lovable_state and (once " +
+      "published) lovable_written_at/lovable_readback_ok/lovable_error, and every revision, i.e. " +
       "adapter.getImprovement(...).skill_proposal, the same field the Inbox/Improvements card " +
-      "reads. lovable_state is always 'not_created': this Skill exists only in Harness Ledger -- " +
-      "it has never been created or updated in Lovable, and ownership/versioning/audit for it are " +
-      "entirely the app's own, not Lovable's." +
+      "reads. Ownership, versioning and audit for it are entirely the app's own, not Lovable's; " +
+      "publishing itself is the separate publish_skill_proposal tool." +
       READ_ONLY_NOTE,
     { suggestion_id: z.number().int() },
     (input: { suggestion_id: number }) => {
@@ -615,6 +618,27 @@ export function createHarnessMcpServer(): McpServer {
       ),
   );
   // ---- end Checkpoint 2 2-F ----
+
+  // ---- Checkpoint 3 S1 ----
+  registerTool(
+    server,
+    "publish_skill_proposal",
+    "Publish an approved, Harness-owned Skill proposal to Lovable as a new workspace Skill -- " +
+      "adapter.improvementActionAndWrite('publish_skill_proposal'), the exact action the Skills " +
+      "page's own 'Publish to Lovable' button and the Inbox's Retry (on a failed publish) send. " +
+      "Creates only: it never updates or deletes a Skill, in Lovable or one it published itself, " +
+      "and refuses with the app's own exact sentence when the proposal is not approved, is not " +
+      "Harness Ledger's own, is already in Lovable, or a Skill of that name already exists in the " +
+      "workspace. Never runs on its own -- only when explicitly called, same as start_replay." +
+      PARITY_NOTE,
+    { proposal_id: z.number().int() },
+    (input: { proposal_id: number }) =>
+      adapter.improvementActionAndWrite(
+        { action: "publish_skill_proposal", proposal_id: input.proposal_id },
+        MCP_ACTOR,
+      ),
+  );
+  // ---- end Checkpoint 3 S1 ----
 
   return server;
 }

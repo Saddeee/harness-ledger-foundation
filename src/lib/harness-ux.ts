@@ -1246,8 +1246,11 @@ export const SKILL_PROPOSAL_STATUS_LABELS: Record<string, string> = {
   skipped: "Skipped",
 };
 
+// Checkpoint 3 S1: "not wired" is no longer true for creating a Skill (see
+// PUBLISH_SKILL_LABEL below) -- updated with intent, still honest that
+// nothing beyond a first create ever happens.
 export const SKILL_NOT_IN_LOVABLE_LINE =
-  "Not in Lovable yet: Harness Ledger keeps this Skill locally with its versions. Creating and updating Skills in Lovable is not wired in this version.";
+  "Not in Lovable yet: Harness Ledger keeps this Skill locally with its versions until you publish it. Publishing only ever creates a new Skill in Lovable — it is never updated or deleted, including by Harness Ledger itself.";
 
 export const SKILL_OWNED_BY_USER_LINE =
   "This Skill is yours; Harness Ledger does not change user-owned Skills.";
@@ -1261,6 +1264,52 @@ export function skillProposalVersionCountLine(count: number): string {
   return `${count} version${count === 1 ? "" : "s"}`;
 }
 // ---- end Checkpoint 2026-09-18 WP4: destination ----
+
+// ---- Checkpoint 3 S1 ----
+// Publishing an approved, Harness-owned Skill proposal to Lovable as a new
+// workspace Skill -- the "Publish to Lovable" button (Skills page card and
+// the suggestion detail's DestinationChoice, next to Approve/Retire) and the
+// per-state line once lovable_state leaves 'not_created'. Creates only:
+// Harness Ledger never updates or deletes a Skill in Lovable, including one
+// it published itself (see remote_skill_write in capabilities-copy.ts).
+
+export const PUBLISH_SKILL_LABEL = "Publish to Lovable";
+export const PUBLISHING_SKILL_LABEL = "Publishing…";
+export const PUBLISH_SKILL_TITLE = "Publish this Skill to Lovable?";
+
+export function publishSkillConfirmBody(name: string): string {
+  return `This creates a workspace Skill in Lovable named "${name}". Harness Ledger never overwrites an existing Skill.`;
+}
+
+/** The exact line an action_failed publish and the failed state on a
+ * proposal card both show, given the stored (redacted) error text. */
+export function skillPublishFailedLine(error: string | null | undefined): string {
+  return `Publish failed: ${error ?? "unknown error"}`;
+}
+
+export type SkillLovableStateFields = {
+  lovable_state: "not_created" | "created" | "failed";
+  lovable_written_at: string | null;
+  lovable_readback_ok: boolean | null;
+  lovable_error: string | null;
+};
+
+/** The proposal card's own status line once a publish attempt has been
+ * made: 'created' reports when, and whether the read-back matched what was
+ * sent ("read back") or not ("read-back differs", lovable_readback_ok
+ * false); 'failed' is skillPublishFailedLine's own text. `null` for
+ * 'not_created' -- the caller shows SKILL_NOT_PUBLISHED_LINE and, once the
+ * proposal is approved, the Publish button instead. */
+export function skillLovableStatusLine(proposal: SkillLovableStateFields): string | null {
+  if (proposal.lovable_state === "created") {
+    const when = formatDate(proposal.lovable_written_at) || "an unknown date";
+    const readback = proposal.lovable_readback_ok === false ? "read-back differs" : "read back";
+    return `In Lovable since ${when} · ${readback}`;
+  }
+  if (proposal.lovable_state === "failed") return skillPublishFailedLine(proposal.lovable_error);
+  return null;
+}
+// ---- end Checkpoint 3 S1 ----
 
 // ---- Checkpoint 2026-09-18 WP5: analysis ----
 // D7: the automatic-analysis-after-sync setting (default off -- the

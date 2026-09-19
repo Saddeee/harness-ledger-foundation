@@ -79,6 +79,15 @@ class FakeLovable implements LovableClient {
   async listWorkspaceSkills() {
     return { skills: this.skills, complete: this.skillsComplete };
   }
+  createWorkspaceSkillCalls: { workspaceId: string; skillName: string; markdown: string }[] = [];
+  workspaceSkillReadback: { name: string; description: string | null; content: string } | null =
+    null;
+  async getWorkspaceSkill(_workspaceId: string, skillName: string) {
+    return this.workspaceSkillReadback ?? { name: skillName, description: null, content: "" };
+  }
+  async createWorkspaceSkill(workspaceId: string, skillName: string, markdown: string) {
+    this.createWorkspaceSkillCalls.push({ workspaceId, skillName, markdown });
+  }
   async setProjectKnowledge(projectId: string, content: string) {
     if (this.setProjectThrows) throw new Error(this.setProjectThrows);
     this.setCalls.push({ kind: "project", id: projectId, content });

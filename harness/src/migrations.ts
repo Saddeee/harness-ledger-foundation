@@ -1004,4 +1004,80 @@ export const MIGRATIONS: Migration[] = [
       UPDATE experiment_runs SET original_copy_deletion_status = 'requested' WHERE original_copy_deleted = 1;
     `,
   },
+  {
+    version: 23,
+    name: "checkpoint3_skill_publish",
+    sql: `
+      -- Checkpoint 3 S1 (D4 superseded): a Skill proposal can now actually be
+      -- published to Lovable. SQLite cannot alter a CHECK, so skill_proposals
+      -- is rebuilt the same way v7/v21 rebuilt knowledge_versions/
+      -- rule_verdicts/rule_health -- except, unlike those, skill_proposals IS
+      -- referenced by another table's foreign key (skill_proposal_revisions.
+      -- skill_proposal_id). db.ts runs every migration inside a transaction,
+      -- where toggling PRAGMA foreign_keys is a documented no-op (see the v7
+      -- migration's own comment on this), so DROP TABLE skill_proposals
+      -- while skill_proposal_revisions still references it fails with a
+      -- foreign key constraint error -- verified by trying it. The fix:
+      -- remove the child table first (into a plain backup with no
+      -- constraints of its own, so dropping it is never blocked), rebuild
+      -- the parent with nothing left referencing it, then recreate the
+      -- child with its original schema and restore its rows -- by then the
+      -- parent already has the same ids, so the child's foreign key is
+      -- satisfied on insert.
+      CREATE TABLE skill_proposal_revisions_v23_backup AS SELECT * FROM skill_proposal_revisions;
+      DROP TABLE skill_proposal_revisions;
+
+      CREATE TABLE skill_proposals_v23 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        correction_candidate_id INTEGER NOT NULL REFERENCES correction_candidates(id),
+        rule_id INTEGER REFERENCES rules(id),
+        name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'proposed'
+          CHECK (status IN ('proposed','approved','retired','skipped')),
+        ownership TEXT NOT NULL DEFAULT 'harness' CHECK (ownership IN ('harness','user')),
+        lovable_state TEXT NOT NULL DEFAULT 'not_created'
+          CHECK (lovable_state IN ('not_created','created','failed')),
+        lovable_written_at TEXT,
+        lovable_readback_ok INTEGER CHECK (lovable_readback_ok IN (0,1)),
+        lovable_error TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO skill_proposals_v23
+          (id, correction_candidate_id, rule_id, name, content, status, ownership,
+           lovable_state, created_by, created_at, updated_at)
+        SELECT id, correction_candidate_id, rule_id, name, content, status, ownership,
+               lovable_state, created_by, created_at, updated_at
+        FROM skill_proposals;
+      DROP TABLE skill_proposals;
+      ALTER TABLE skill_proposals_v23 RENAME TO skill_proposals;
+      CREATE INDEX IF NOT EXISTS idx_skill_proposals_candidate ON skill_proposals(correction_candidate_id);
+
+      CREATE TABLE skill_proposal_revisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_proposal_id INTEGER NOT NULL REFERENCES skill_proposals(id),
+        previous_name TEXT,
+        previous_content TEXT,
+        previous_status TEXT,
+        new_name TEXT NOT NULL,
+        new_content TEXT NOT NULL,
+        new_status TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO skill_proposal_revisions
+          (id, skill_proposal_id, previous_name, previous_content, previous_status,
+           new_name, new_content, new_status, reason, actor, created_at)
+        SELECT id, skill_proposal_id, previous_name, previous_content, previous_status,
+               new_name, new_content, new_status, reason, actor, created_at
+        FROM skill_proposal_revisions_v23_backup
+        ORDER BY id;
+      DROP TABLE skill_proposal_revisions_v23_backup;
+      CREATE INDEX IF NOT EXISTS idx_skill_proposal_revisions_proposal
+        ON skill_proposal_revisions(skill_proposal_id, id);
+    `,
+  },
 ];

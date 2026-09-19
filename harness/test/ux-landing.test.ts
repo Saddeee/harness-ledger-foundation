@@ -53,8 +53,10 @@ test("landing: the five-step loop, in order", () => {
 test("landing: claims match the capability manifest", () => {
   assert.equal(status("knowledge_write"), "working");
   assert.equal(status("local_skill_proposal"), "working");
-  assert.notEqual(status("remote_skill_write"), "working");
-  assert.match(copy.PRIMITIVES_STATUS, /not wired yet/);
+  // Checkpoint 3 S1: updated with intent -- remote_skill_write moved from
+  // "blocked" to "working" after one approved live write (create only).
+  assert.equal(status("remote_skill_write"), "working");
+  assert.match(copy.PRIMITIVES_STATUS, /never updates or deletes a Skill/);
   assert.equal(status("historical_replay"), "working");
   assert.equal(status("paired_comparison"), "planned");
   assert.deepEqual(

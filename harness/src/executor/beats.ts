@@ -44,6 +44,16 @@ import { kickExperimentRunner } from "./experiments-queue.js";
 // store.ts's SettingKey/SETTING_DEFAULTS this checkpoint) -- see that
 // file's header for why.
 import { getAutomaticAnalysisSetting } from "../analysis/context.js";
+// ---- Checkpoint 3 S1 ----
+// publish_skill_proposal's own dispatch, same reason and same pattern as
+// isTestAction/testAction above: a Lovable-touching action lives in its own
+// module, never in improvements.ts, and is intercepted here before
+// peekActionKind ever sees it.
+import {
+  isPublishSkillProposalAction,
+  publishSkillProposalAction,
+} from "./skill-publish-action.js";
+// ---- end Checkpoint 3 S1 ----
 
 const FETCHED_BY = "executor";
 /** Enough recent ids that a page of history cannot step over the known window. */
@@ -1099,6 +1109,13 @@ export async function improvementActionAndWrite(
   }
   if (isDeleteCopyAction(input)) {
     return deleteCopyAction(input);
+  }
+  // Checkpoint 3 S1: publish_skill_proposal is a Lovable create, never a
+  // Knowledge write -- no `write` field on the result, same as "test" above,
+  // and never reached from the automatic sync loop (see
+  // skill-publish-action.ts's own header comment).
+  if (isPublishSkillProposalAction(input)) {
+    return publishSkillProposalAction(input, actor);
   }
 
   const { kind, testFirst } = peekActionKind(input);

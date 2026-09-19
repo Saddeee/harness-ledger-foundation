@@ -61,7 +61,7 @@ export const PRIMITIVES = [
   },
 ] as const;
 export const PRIMITIVES_STATUS =
-  "Today Harness Ledger writes Knowledge to Lovable. Skills are proposed, edited and versioned locally; publishing a Skill to Lovable is not wired yet.";
+  "Today Harness Ledger writes Knowledge to Lovable, and can publish an approved Skill proposal as a new workspace Skill; it never updates or deletes a Skill, including ones it published.";
 
 // 4. Historical replay evidence.
 export const EVIDENCE_TITLE = "Test a rule against a previous correction";
@@ -114,7 +114,7 @@ export const MCP_TEXT =
 // 9. Current limitations.
 export const LIMITATIONS_TITLE = "Current limitations";
 export const LIMITATIONS = [
-  "Skills cannot yet be published to Lovable; proposals live locally with their versions.",
+  "Publishing a Skill to Lovable only ever creates a new one; Harness Ledger never updates or deletes a Skill, including ones it published.",
   "Paired comparison (two fresh builds, one with and one without the instruction) is planned, not built.",
   "Behavioural checks (for example, that a login route still works) are planned; screenshots show visual results only.",
   "Historical context comes from Harness Ledger's own snapshots; Lovable's project memory, workspace Knowledge and Skills at the time cannot be restored.",

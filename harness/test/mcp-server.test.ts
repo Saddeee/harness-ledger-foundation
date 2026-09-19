@@ -8,7 +8,7 @@
 // same throwaway SQLite file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -138,9 +138,13 @@ const EXPECTED_TOOL_NAMES = [
   "edit_skill_proposal",
   "approve_skill_proposal",
   "restore_skill_proposal_revision",
+  // Checkpoint 3 S1: the one tool that actually publishes a Skill to
+  // Lovable (create only) -- see mcp-server.ts's own "---- Checkpoint 3 S1
+  // ----" block and this file's own tests below.
+  "publish_skill_proposal",
 ];
 
-test("tools/list returns exactly the 18 permitted tool names, no more, no fewer", async () => {
+test("tools/list returns exactly the 19 permitted tool names, no more, no fewer", async () => {
   const { client, server } = await connectedClient();
   try {
     const { tools } = await client.listTools();
@@ -582,6 +586,105 @@ test("restore_skill_proposal_revision via MCP restores content from an earlier r
     const { isError, json } = parse(result as never);
     assert.equal(isError, false);
     assert.equal(json.skill_proposal.name, originalName);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("publish_skill_proposal via MCP refuses with exactly the same sentence adapter.improvementActionAndWrite itself would throw, when not connected", async () => {
+  // The earlier "MCP budget parity" test's markConnected() left a fake auth
+  // file behind for the rest of this file -- force disconnected here
+  // regardless of test order, since publish's own "not connected" check
+  // (checked before ever opening a client) is exactly what this pins.
+  rmSync(process.env.HARNESS_AUTH_PATH!, { force: true });
+  const proposal = adapter.getImprovement(correctionCandidate.id, {
+    connected: false,
+  })!.skill_proposal!;
+  assert.equal(
+    proposal.status,
+    "approved",
+    "the fixture proposal is approved by this point in the file",
+  );
+
+  const { client, server } = await connectedClient();
+  try {
+    const result = await client.callTool({
+      name: "publish_skill_proposal",
+      arguments: { proposal_id: proposal.id },
+    });
+    const { isError, text } = parse(result as never);
+    assert.equal(isError, true);
+    assert.equal(text, "Harness Ledger is not connected — connect on the Projects page.");
+
+    let direct: string | null = null;
+    try {
+      await adapter.improvementActionAndWrite(
+        { action: "publish_skill_proposal", proposal_id: proposal.id },
+        "operator (local UI)",
+      );
+      assert.fail("expected the same not-connected refusal");
+    } catch (err) {
+      assert.ok(err instanceof Error);
+      direct = err.message;
+    }
+    assert.equal(
+      direct,
+      text,
+      "MCP and the direct adapter call refuse with the exact same sentence",
+    );
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+// publish_skill_proposal's ownership/status/lovable_state/name-normalisation
+// preconditions all live inside publishSkillProposal (executor/skill-
+// publish-action.ts), which only ever runs once a real Lovable client is
+// open -- unlike the other Skill-proposal tools above, there is no way to
+// reach them from this end-to-end MCP harness without a live Lovable
+// connection. They are exercised directly, with a stubbed LovableClient,
+// in harness/test/skill-publish.test.ts (every precondition sentence,
+// including this exact ownership one); this file limits itself to the one
+// precondition genuinely reachable without a connection: "not connected",
+// proven above to refuse with the exact same sentence regardless of which
+// proposal id is given -- including a user-owned one, checked next.
+test("publish_skill_proposal via MCP refuses 'not connected' before ever looking at ownership, for a user-owned proposal too", async () => {
+  rmSync(process.env.HARNESS_AUTH_PATH!, { force: true });
+  const asked3 = mk("Always use the metric system.", "m-3-3s", "2026-09-03T10:00:00Z");
+  const episode3 = store.createTaskEpisode({
+    project_id: PROJECT,
+    title: "publish user-owned skill episode",
+    provenance: "llm_derived",
+    evidence_history_item_ids: [asked3.id],
+  }) as { id: number };
+  const candidate3 = store.createCorrectionCandidate({
+    task_episode_id: episode3.id,
+    classification: "constraint_restatement",
+    is_correction: true,
+    reusable: true,
+    proposed_scope: "project",
+    summary: "Always use the metric system.",
+    evidence_history_item_ids: [asked3.id],
+  }) as { id: number };
+  const userProposal = store.createSkillProposal({
+    correction_candidate_id: candidate3.id,
+    name: "another user's own skill",
+    content: "# Another user's own skill\n",
+    ownership: "user",
+    created_by: "user",
+  });
+
+  const { client, server } = await connectedClient();
+  try {
+    const result = await client.callTool({
+      name: "publish_skill_proposal",
+      arguments: { proposal_id: userProposal.id },
+    });
+    const { isError, text } = parse(result as never);
+    assert.equal(isError, true);
+    assert.equal(text, "Harness Ledger is not connected — connect on the Projects page.");
   } finally {
     await client.close();
     await server.close();

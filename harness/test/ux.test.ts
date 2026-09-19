@@ -810,6 +810,8 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
     "change_wording",
     "edit_skill_proposal",
     "keep",
+    // Checkpoint 3 S1: "Publish to Lovable" / Retry on a failed publish.
+    "publish_skill_proposal",
     "readd",
     "retire",
     "retire_skill_proposal",

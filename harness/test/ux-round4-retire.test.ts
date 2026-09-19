@@ -269,6 +269,8 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     "edit_skill_proposal",
     "keep",
     "mark_seen",
+    // Checkpoint 3 S1: "Publish to Lovable" / Retry on a failed publish.
+    "publish_skill_proposal",
     "readd",
     "reanalyse",
     "reanalyse_estimate",

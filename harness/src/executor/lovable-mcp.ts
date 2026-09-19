@@ -55,11 +55,25 @@ export interface LovableReader {
     }[];
     complete: boolean;
   }>;
+  // Checkpoint 3 S1: the read-back half of publishing a Skill --
+  // executor/skill-publish-action.ts's only other Skill read besides
+  // listWorkspaceSkills above. Returns null for a not-found-style error
+  // (the Skill genuinely isn't there, e.g. Lovable hasn't indexed the
+  // create yet) rather than throwing, so a caller can tell "not there" from
+  // a real transport/auth error; any other error rethrows.
+  getWorkspaceSkill(
+    workspaceId: string,
+    skillName: string,
+  ): Promise<{ name: string; description: string | null; content: string } | null>;
 }
 
 export interface LovableWriter {
   setProjectKnowledge(projectId: string, content: string): Promise<void>;
   setWorkspaceKnowledge(workspaceId: string, content: string): Promise<void>;
+  // Checkpoint 3 S1: the one Skill write Harness Ledger makes -- create
+  // only, never update or delete (D4 superseded; see DECISIONS.md D4 and
+  // harness/src/skills/publish.ts for the markdown this sends).
+  createWorkspaceSkill(workspaceId: string, skillName: string, markdown: string): Promise<void>;
 }
 
 export type LovableClient = LovableReader & LovableWriter & { close(): Promise<void> };
@@ -110,6 +124,17 @@ function isUnauthorized(err: unknown): boolean {
   const e = asRecord(err);
   const message = typeof e.message === "string" ? e.message : "";
   return e.code === 401 || /\b401\b|unauthorized/i.test(message);
+}
+
+/** Checkpoint 3 S1: a not-found-style error from get_workspace_skill (the
+ * Skill genuinely isn't there) -- distinct from a real transport/auth
+ * error, which must still surface. Matched on message text the same
+ * defensive way retryAfterSeconds/isUnauthorized above already do, since
+ * MCP tool errors carry no structured error code for this. */
+function isNotFoundError(err: unknown): boolean {
+  const e = asRecord(err);
+  const message = typeof e.message === "string" ? e.message : "";
+  return /\b404\b|not found|no such skill|does not exist/i.test(message);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -264,12 +289,37 @@ export async function openLovableClient(): Promise<LovableClient> {
       );
     },
 
+    async getWorkspaceSkill(workspaceId: string, skillName: string) {
+      try {
+        const o = asRecord(
+          await call("get_workspace_skill", { workspace_id: workspaceId, skill_name: skillName }),
+        );
+        const skill = toSkill(o.skill ?? o);
+        return {
+          name: skill.name || skillName,
+          description: skill.description,
+          content: skill.content,
+        };
+      } catch (err) {
+        if (isNotFoundError(err)) return null;
+        throw err;
+      }
+    },
+
     async setProjectKnowledge(projectId: string, content: string) {
       await call("set_project_knowledge", { project_id: projectId, content });
     },
 
     async setWorkspaceKnowledge(workspaceId: string, content: string) {
       await call("set_workspace_knowledge", { workspace_id: workspaceId, content });
+    },
+
+    async createWorkspaceSkill(workspaceId: string, skillName: string, markdown: string) {
+      await call("create_workspace_skill", {
+        workspace_id: workspaceId,
+        skill_name: skillName,
+        markdown,
+      });
     },
 
     async close() {

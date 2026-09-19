@@ -117,7 +117,10 @@ test("README: status section agrees with the capability manifest", async () => {
       );
     }
   }
-  assert.match(readme, /Remote Skill publishing[^\n]*not yet verified/);
+  // Checkpoint 3 S1: updated with intent -- remote_skill_write moved to
+  // "working" (create only) after one approved live write on 2026-09-19.
+  assert.match(readme, /Publish an approved Skill proposal[^\n]*verified with one live write/);
+  assert.match(readme, /Remote Skill publishing creates a new Skill only[^\n]*not wired/);
   assert.match(readme, /Paired comparison[^\n]*planned/i);
   assert.match(readme, /Behavioural verification[^\n]*planned/i);
   assert.match(readme, /Hosted authorization is blocked/);

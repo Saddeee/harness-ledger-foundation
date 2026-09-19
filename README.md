@@ -8,7 +8,7 @@ Harness Ledger learns from the corrections you give Lovable, turns reusable less
 
 **The loop:** Correct Lovable → Harness Ledger finds the lesson → Review Knowledge or Skill → Test if desired → Add to Lovable → Observe, revise or restore.
 
-**Status:** a local prototype. Knowledge works end to end; Skills are first-class locally (publishing to Lovable is not yet verified); the historical replay works; paired comparison and behavioural checks are planned; hosted authorization is blocked pending an approved hosted path. Nothing spends Lovable credits or AI tokens unless you press a button that says so.
+**Status:** a local prototype. Knowledge works end to end; Skills are first-class locally and can be published to Lovable as new workspace Skills (create only — never updated or deleted); the historical replay works; paired comparison and behavioural checks are planned; hosted authorization is blocked pending an approved hosted path. Nothing spends Lovable credits or AI tokens unless you press a button that says so.
 
 **Start here:** [Getting started](#3-getting-started) (about ten minutes if Node.js and an AI provider are already set up), then open the app, connect Lovable, choose projects, pick Ask me first, pick a provider, and press Analyse now.
 
@@ -67,7 +67,7 @@ Every write reads your Knowledge fresh, compares it with what Harness Ledger las
 | **Overview**     | Is Harness Ledger ready? Do I need to do anything? What is the next action?                                                                                                                   |
 | **Inbox**        | Everything that needs your attention: New instruction, New Skill, Test result, Rule needs attention, Conflict, Action failed. One primary action per item; a suggestion opens its detail page |
 | **Instructions** | Rules needing attention first, then Knowledge per project and workspace, then Skills. "Is this rule still useful?" with Keep / Review / Retire / Not sure                                     |
-| **Skills**       | Skills in Lovable, and Skill proposals (not published to Lovable yet)                                                                                                                         |
+| **Skills**       | Skills in Lovable, and Skill proposals you can publish to Lovable as new Skills                                                                                                               |
 | **Tests**        | Every replay: kind, evidence strength, conclusion, cost                                                                                                                                       |
 | **History**      | Current Knowledge, then the audit timeline filtered by Suggestions, Knowledge, Skills, Tests or Restores; past decisions live here, not in Inbox                                              |
 | **Projects**     | Connect Lovable, choose which projects Harness Ledger may read                                                                                                                                |
@@ -216,11 +216,12 @@ Exact status of Skills today:
 | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Read workspace Skills and keep their history (with deletions)                         | Working                                                                                                               |
 | Propose a Skill from a correction; edit; approve; version; restore a revision; retire | Working, locally                                                                                                      |
-| Create or update a Skill in Lovable                                                   | Not wired                                                                                                             |
+| Publish an approved Skill proposal to Lovable as a new workspace Skill                | Working (create only; verified with one live write on 2026-09-19)                                                     |
+| Update or delete a Skill already in Lovable, including one Harness Ledger published   | Not wired                                                                                                             |
 | Enable or disable a Skill for selected projects                                       | Not wired (workspace Skills apply to every project; Lovable's per-project switch is for Skills inside a project repo) |
 | Test a Skill in a replay; observe whether a Skill was followed                        | Not implemented                                                                                                       |
 
-User-owned Skills are protected: Harness Ledger never edits a Skill it did not create.
+User-owned Skills are protected: Harness Ledger never edits a Skill it did not create, and it never updates or deletes any Skill in Lovable, including ones it published itself.
 
 ---
 
@@ -381,12 +382,13 @@ The source of truth is the capability manifest in `harness/src/capabilities.ts` 
 - Historical replay with the environment record, evidence strength and a derived conclusion.
 - Rule observation: observed repeat corrections and AI review reported separately; Keep / Review / Retire / Not sure.
 - Local Skill proposals: propose, edit, approve, version, restore, retire.
+- Publish an approved Skill proposal to Lovable as a new workspace Skill (create only; verified with one live write on 2026-09-19).
 - Harness Ledger MCP with the same permissions as the app.
 - One-command setup; onboarding; Overview with one next action; OpenAI parameter compatibility with a provider test.
 
 ### Current limitations
 
-- Remote Skill publishing (create, update, enable, disable, restore in Lovable) is not yet verified.
+- Remote Skill publishing creates a new Skill only; updating, enabling, disabling or restoring a Skill in Lovable is not wired.
 - Paired comparison (fresh control and treatment) is planned.
 - Behavioural verification (for example, that a login route still works) is planned; screenshots show visual results only.
 - Historical context is reconstructed from Harness Ledger's own snapshots; a change made in Lovable between two syncs is only visible from the next snapshot, and Lovable's project memory, Workspace Knowledge and Skills at the time cannot be restored.
@@ -396,7 +398,7 @@ The source of truth is the capability manifest in `harness/src/capabilities.ts` 
 
 ### Next
 
-- Remote Skill publishing through Lovable MCP, after one approved real write verifies the path.
+- Updating or deleting a Skill already in Lovable, including one Harness Ledger published itself.
 - Paired comparison: two fresh builds per test, with the same environment record per arm.
 - Behavioural checks against replay copies.
 - Sync of edits and diffs; a packaged local edition with a local-only unlock instead of the hosted sign-in.
@@ -405,7 +407,7 @@ The source of truth is the capability manifest in `harness/src/capabilities.ts` 
 
 ## 14. FAQ
 
-**Does it change my code?** No. It only writes Lovable Knowledge, inside its own block. Skills are drafted locally and not yet written to Lovable.
+**Does it change my code?** No. It only writes Lovable Knowledge, inside its own block, and can publish an approved Skill proposal as a new workspace Skill — it never updates or deletes a Skill, in Lovable or one you wrote yourself.
 
 **Can it break my Knowledge?** Every write is read back and compared exactly, nothing outside the block is touched, a manual edit inside the block stops the write, every version is kept, and History can restore any of them.
 

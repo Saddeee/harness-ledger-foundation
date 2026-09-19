@@ -43,9 +43,11 @@ test("harness-ux.ts: WP4 destination labels exist with the exact required string
     skill: "Skill",
     both: "Knowledge + Skill",
   });
+  // Checkpoint 3 S1: updated with intent -- publishing a Skill is wired now
+  // (create only), so the line no longer says "not wired".
   assert.equal(
     ux.SKILL_NOT_IN_LOVABLE_LINE,
-    "Not in Lovable yet: Harness Ledger keeps this Skill locally with its versions. Creating and updating Skills in Lovable is not wired in this version.",
+    "Not in Lovable yet: Harness Ledger keeps this Skill locally with its versions until you publish it. Publishing only ever creates a new Skill in Lovable — it is never updated or deleted, including by Harness Ledger itself.",
   );
   assert.equal(
     ux.SKILL_OWNED_BY_USER_LINE,
@@ -137,9 +139,12 @@ test("skills.tsx: 'In Lovable' section, above 'Proposed by Harness Ledger'", () 
   const workspaceAt = raw.indexOf("In Lovable");
   const proposedAt = raw.indexOf("Proposed by Harness Ledger");
   assert.ok(workspaceAt >= 0 && proposedAt >= 0 && workspaceAt < proposedAt);
-  // The existing read-only line is untouched.
+  // Checkpoint 3 S1: updated with intent -- Harness Ledger can now publish
+  // an approved proposal, so the line says so (still never an update/delete).
   assert.ok(
-    raw.includes("Harness Ledger reads your workspace Skills; it does not write them yet."),
+    raw.includes(
+      "Harness Ledger reads your workspace Skills, and can publish an approved proposal as a new one; it never updates or deletes a Skill.",
+    ),
   );
   assert.match(code, /proposal\.correction_candidate_id/);
   assert.match(code, /to="\/ledger"/);

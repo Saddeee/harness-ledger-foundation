@@ -59,6 +59,14 @@ import {
   skillProposalPurpose,
   skillProposalStatusLabel,
   skillProposalVersionCountLine,
+  // ---- Checkpoint 3 S1 ----
+  PUBLISH_SKILL_LABEL,
+  PUBLISHING_SKILL_LABEL,
+  PUBLISH_SKILL_TITLE,
+  publishSkillConfirmBody,
+  skillLovableStatusLine,
+  skillPublishFailedLine,
+  // ---- end Checkpoint 3 S1 ----
   START_TEST_LABEL,
   TEST_ONE_AT_A_TIME_LINE,
   TEST_STARTED_TOAST,
@@ -1966,6 +1974,8 @@ function DestinationChoice({ item, busy, run }: { item: Improvement; busy: boole
   const [changingDestination, setChangingDestination] = useState(false);
   const [editingSkill, setEditingSkill] = useState(false);
   const [skillDraft, setSkillDraft] = useState(skill?.content ?? "");
+  // Local "Publishing…" state for the publish button below.
+  const [publishing, setPublishing] = useState(false);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   if (!destination) return null;
@@ -2062,7 +2072,18 @@ function DestinationChoice({ item, busy, run }: { item: Improvement; busy: boole
               {skill.content}
             </pre>
           </details>
-          <p className="text-xs text-muted-foreground">{SKILL_NOT_IN_LOVABLE_LINE}</p>
+          {/* Checkpoint 3 S1: the honesty line depends on lovable_state now
+              -- 'not_created' keeps the original longer sentence, 'created'
+              and 'failed' report the actual outcome instead. */}
+          {skill.lovable_state === "created" ? (
+            <p className="text-xs text-muted-foreground">{skillLovableStatusLine(skill)}</p>
+          ) : skill.lovable_state === "failed" ? (
+            <p className="text-xs text-muted-foreground">
+              {skillPublishFailedLine(skill.lovable_error)}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">{SKILL_NOT_IN_LOVABLE_LINE}</p>
+          )}
           {canEditSkill ? (
             editingSkill ? (
               <div className="space-y-2">
@@ -2146,6 +2167,44 @@ function DestinationChoice({ item, busy, run }: { item: Improvement; busy: boole
                     }
                   >
                     Retire
+                  </Button>
+                ) : null}
+                {/* Checkpoint 3 S1: publishing only ever creates a new
+                    workspace Skill -- never offered once it already is one
+                    (lovable_state 'created'), and never for a proposal that
+                    isn't approved yet. */}
+                {skill.status === "approved" && skill.lovable_state === "not_created" ? (
+                  <ConfirmAction
+                    trigger={publishing ? PUBLISHING_SKILL_LABEL : PUBLISH_SKILL_LABEL}
+                    variant="outline"
+                    size="sm"
+                    title={PUBLISH_SKILL_TITLE}
+                    body={publishSkillConfirmBody(skill.name)}
+                    consequences={[]}
+                    confirmLabel={PUBLISH_SKILL_LABEL}
+                    disabled={busy || publishing}
+                    onConfirm={() => {
+                      setPublishing(true);
+                      void run(
+                        { action: "publish_skill_proposal", proposal_id: skill.id },
+                        "Publishing…",
+                      ).finally(() => setPublishing(false));
+                    }}
+                  />
+                ) : null}
+                {skill.lovable_state === "failed" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(
+                        { action: "publish_skill_proposal", proposal_id: skill.id },
+                        "Retrying…",
+                      )
+                    }
+                  >
+                    {RETRY_LABEL}
                   </Button>
                 ) : null}
               </div>
@@ -2630,6 +2689,12 @@ export function ActionFailedCard({
     (v) => v.status === "failed" || v.status === "stale",
   );
   const canRetryWrite = item.improvement != null && failedVersion != null;
+  // Checkpoint 3 S1: a failed Skill publish is addressed by its own id
+  // shape ("skill:<proposal_id>", never an improvement) -- Retry posts the
+  // exact same publish_skill_proposal action the Skills page's own Retry
+  // button does.
+  const skillProposalId = item.id.startsWith("skill:") ? Number(item.id.slice(6)) : null;
+  const canRetryPublish = skillProposalId != null && Number.isFinite(skillProposalId);
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
@@ -2638,7 +2703,7 @@ export function ActionFailedCard({
       </h2>
       {item.summary ? <p className="text-sm text-muted-foreground">{item.summary}</p> : null}
       <div className={ACTION_BAR_CLASS}>
-        {canRetryWrite ? (
+        {canRetryPublish || canRetryWrite ? (
           <div className="space-y-1">
             <Button
               type="button"
@@ -2646,18 +2711,24 @@ export function ActionFailedCard({
               disabled={busy}
               onClick={() =>
                 void run(
-                  {
-                    action: "retry_write",
-                    id: item.improvement!.id,
-                    version_id: failedVersion!.id,
-                  },
+                  canRetryPublish
+                    ? { action: "publish_skill_proposal", proposal_id: skillProposalId }
+                    : {
+                        action: "retry_write",
+                        id: item.improvement!.id,
+                        version_id: failedVersion!.id,
+                      },
                   "Retrying…",
                 )
               }
             >
               {RETRY_LABEL}
             </Button>
-            <p className="text-xs text-muted-foreground">{inboxActionConsequence("retry")}</p>
+            <p className="text-xs text-muted-foreground">
+              {canRetryPublish
+                ? inboxActionConsequence("retry", "Retries publishing this Skill to Lovable.")
+                : inboxActionConsequence("retry")}
+            </p>
           </div>
         ) : (
           <div className="space-y-1">

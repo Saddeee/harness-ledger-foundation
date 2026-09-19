@@ -134,17 +134,17 @@ export const CAPABILITIES: readonly Capability[] = [
     verified_at: "2026-09-18",
     verification: "harness/test/skill-proposals.test.ts",
     limitation:
-      "Skill proposals are drafted and versioned locally; they are not published to Lovable yet.",
+      "Skill proposals are drafted and versioned locally; publishing one to Lovable is the separate remote_skill_write capability below.",
   },
   {
     id: "remote_skill_write",
-    label: "Create or update a Skill in Lovable",
-    status: "blocked",
+    label: "Create a new Skill in Lovable",
+    status: "working",
     runtime: "local",
-    verified_at: null,
-    verification: null,
+    verified_at: "2026-09-19",
+    verification: "harness/test/skill-publish.test.ts",
     limitation:
-      "Lovable's REST Skill endpoints are deprecated with no replacement, and a write through Lovable's MCP has not been tried; it needs one approved live write to verify.",
+      "Harness Ledger creates new workspace Skills only; it never updates or deletes a Skill, including ones it published. Verified with one live write on 2026-09-19.",
   },
   {
     id: "harness_ledger_mcp",

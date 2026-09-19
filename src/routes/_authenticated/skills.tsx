@@ -1,18 +1,21 @@
 // The Skills page: the workspace Skills Harness has read from Lovable, from
 // the latest snapshots -- name, description, when it last changed, its
-// content, and a per-skill history when more than one snapshot exists. Read
-// only: Harness does not write Skills yet. Checkpoint 2 2-C: two sections,
-// in this order -- "In Lovable" (this same read-only workspace list,
-// unchanged data, just renamed from "In your workspace") and "Proposed by
-// Harness Ledger" (local proposals, redesigned as cards: purpose, when it
-// applies, a short procedure preview, the source correction, current state,
-// and the exact "Not published to Lovable yet." line -- no control here
-// implies a remote create/update/enable/disable of anything). Only talks to
-// the local Harness skills route (fetchSkills via skillsQueryOptions).
+// content, and a per-skill history when more than one snapshot exists.
+// Checkpoint 2 2-C: two sections, in this order -- "In Lovable" (this same
+// read-only workspace list, unchanged data, just renamed from "In your
+// workspace") and "Proposed by Harness Ledger" (local proposals, redesigned
+// as cards: purpose, when it applies, a short procedure preview, the source
+// correction, current state, and -- Checkpoint 3 S1 -- the one control that
+// does change something remote: "Publish to Lovable" on an approved
+// proposal not yet in Lovable, create only, never an update or delete).
+// Only talks to the local Harness skills route (fetchSkills via
+// skillsQueryOptions) and posts the same publish_skill_proposal action the
+// suggestion detail's own Publish button does (postImprovementAction).
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { DetailSection } from "@/components/harness/decision-layout";
+import { ConfirmAction, DetailSection } from "@/components/harness/decision-layout";
 import {
   formatDate,
   REVIEW_SKILL_LABEL,
@@ -22,8 +25,22 @@ import {
   SKILL_NOT_PUBLISHED_LINE,
   skillProposalStatusLabel,
   skillProposalVersionCountLine,
+  // ---- Checkpoint 3 S1 ----
+  PUBLISH_SKILL_LABEL,
+  PUBLISHING_SKILL_LABEL,
+  PUBLISH_SKILL_TITLE,
+  publishSkillConfirmBody,
+  RETRY_LABEL,
+  skillLovableStatusLine,
+  skillPublishFailedLine,
+  // ---- end Checkpoint 3 S1 ----
 } from "@/lib/harness-ux";
-import { skillsQueryOptions, type Skill, type SkillProposalCard } from "@/lib/improvements-client";
+import {
+  postImprovementAction,
+  skillsQueryOptions,
+  type Skill,
+  type SkillProposalCard,
+} from "@/lib/improvements-client";
 
 export const Route = createFileRoute("/_authenticated/skills")({
   head: () => ({
@@ -31,12 +48,14 @@ export const Route = createFileRoute("/_authenticated/skills")({
       { title: "Skills — Harness Ledger" },
       {
         name: "description",
-        content: "The workspace Skills Harness Ledger can currently read from Lovable.",
+        content:
+          "The workspace Skills Harness Ledger can read from Lovable, and the Skill proposals it can publish there.",
       },
       { property: "og:title", content: "Skills — Harness Ledger" },
       {
         property: "og:description",
-        content: "The workspace Skills Harness Ledger can currently read from Lovable.",
+        content:
+          "The workspace Skills Harness Ledger can read from Lovable, and the Skill proposals it can publish there.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -45,7 +64,8 @@ export const Route = createFileRoute("/_authenticated/skills")({
   component: Page,
 });
 
-const READ_ONLY_LINE = "Harness Ledger reads your workspace Skills; it does not write them yet.";
+const READ_ONLY_LINE =
+  "Harness Ledger reads your workspace Skills, and can publish an approved proposal as a new one; it never updates or deletes a Skill.";
 const EMPTY_LINE =
   "Your workspace has no Skills yet. Harness Ledger will show them here as soon as it reads one.";
 
@@ -60,14 +80,29 @@ const PROPOSED_EMPTY_LINE = "Harness Ledger hasn't proposed a Skill from any sug
 
 // Checkpoint 2 2-C: each proposal card shows name, purpose, when it
 // applies, a short procedure preview, the source correction (linking back
-// to /ledger with its own summary text), current state, the exact
-// "Not published to Lovable yet." line, and a single primary action --
-// "Review Skill" -- that only ever navigates to the suggestion detail. No
-// control here implies a remote create/update/enable/disable of anything.
+// to /ledger with its own summary text), current state, and a single
+// primary action -- "Review Skill" -- that only ever navigates to the
+// suggestion detail. Checkpoint 3 S1 adds the one control that does change
+// something remote: while lovable_state is "not_created", the honest
+// "Not published to Lovable yet." line; once the proposal is approved, a
+// "Publish to Lovable" button next to it (create only, refused if a Skill
+// of that name already exists); once published, skillLovableStatusLine's
+// own line instead; if publishing failed, the error and a Retry.
 function ProposalCard({ proposal }: { proposal: SkillProposalCard }) {
   const purpose = skillProposalPurpose(proposal.content, proposal.correction_summary);
   const appliesWhen = skillProposalAppliesWhen(proposal.applies_when, proposal.destination_reason);
   const steps = skillProposalProcedurePreview(proposal.content);
+  const qc = useQueryClient();
+  const publish = useMutation({
+    mutationFn: () =>
+      postImprovementAction({ action: "publish_skill_proposal", proposal_id: proposal.id }),
+    onSuccess: () => {
+      toast.success("Publishing…");
+      void qc.invalidateQueries({ queryKey: ["harness-skills"] });
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Could not publish this Skill to Lovable"),
+  });
 
   return (
     <li className="space-y-2 rounded-md border p-4">
@@ -106,13 +141,41 @@ function ProposalCard({ proposal }: { proposal: SkillProposalCard }) {
         </p>
       ) : null}
 
-      <p className="text-xs text-muted-foreground">{SKILL_NOT_PUBLISHED_LINE}</p>
+      {proposal.lovable_state === "created" ? (
+        <p className="text-xs text-muted-foreground">{skillLovableStatusLine(proposal)}</p>
+      ) : proposal.lovable_state === "failed" ? (
+        <p className="text-xs text-muted-foreground">
+          {skillPublishFailedLine(proposal.lovable_error)}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">{SKILL_NOT_PUBLISHED_LINE}</p>
+      )}
 
-      <Button asChild size="sm" variant="outline">
-        <Link to="/ledger" search={{ improvement: proposal.correction_candidate_id }}>
-          {REVIEW_SKILL_LABEL}
-        </Link>
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm" variant="outline">
+          <Link to="/ledger" search={{ improvement: proposal.correction_candidate_id }}>
+            {REVIEW_SKILL_LABEL}
+          </Link>
+        </Button>
+        {proposal.status === "approved" && proposal.lovable_state === "not_created" ? (
+          <ConfirmAction
+            trigger={publish.isPending ? PUBLISHING_SKILL_LABEL : PUBLISH_SKILL_LABEL}
+            variant="outline"
+            size="sm"
+            title={PUBLISH_SKILL_TITLE}
+            body={publishSkillConfirmBody(proposal.name)}
+            consequences={[]}
+            confirmLabel={PUBLISH_SKILL_LABEL}
+            disabled={publish.isPending}
+            onConfirm={() => publish.mutate()}
+          />
+        ) : null}
+        {proposal.lovable_state === "failed" ? (
+          <Button size="sm" disabled={publish.isPending} onClick={() => publish.mutate()}>
+            {RETRY_LABEL}
+          </Button>
+        ) : null}
+      </div>
     </li>
   );
 }

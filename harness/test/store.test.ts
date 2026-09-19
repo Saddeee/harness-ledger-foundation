@@ -13,13 +13,13 @@ const store = await import("../src/store.js");
 const PROJECT = "test-project-id";
 
 test("schema migration: applies all migrations exactly once, expected tables exist", () => {
-  assert.equal(schemaVersion(), 22);
+  assert.equal(schemaVersion(), 23);
   const rows = db.prepare(`SELECT version FROM schema_migrations ORDER BY version`).all() as {
     version: number;
   }[];
   assert.deepEqual(
     rows.map((r) => r.version),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
   );
   const tableNames = new Set(
     (
@@ -1791,3 +1791,104 @@ test("testCopyProjects labels both copies of a test; setProjectName follows a re
   store.setProjectName("prj_rename", "New name");
   assert.equal(store.getProjectMeta("prj_rename")?.name, "New name");
 });
+
+// ---- Checkpoint 3 S1: migration v23 (checkpoint3_skill_publish) ----
+// Same fixture pattern as the v11 migration test above: build a database up
+// to the previous version, seed a row the old schema could hold, run the one
+// migration under test, and check the data survived plus the widened CHECK.
+
+test("v23 migration (checkpoint3_skill_publish): an existing skill_proposals row survives the rebuild, gains the new columns as NULL, and the widened CHECK accepts 'created'/'failed'", async () => {
+  const { default: Database } = await import("better-sqlite3");
+  const { MIGRATIONS } = await import("../src/migrations.js");
+
+  const tmpDb = new Database(":memory:");
+  tmpDb.pragma("foreign_keys = ON");
+  const upToV22 = [...MIGRATIONS]
+    .filter((m) => m.version <= 22)
+    .sort((a, b) => a.version - b.version);
+  for (const m of upToV22) tmpDb.exec(m.sql);
+
+  tmpDb
+    .prepare(
+      `INSERT INTO allowed_projects (lovable_project_id, label) VALUES ('v23-test-project', 'p')`,
+    )
+    .run();
+  tmpDb
+    .prepare(
+      `INSERT INTO task_episodes (project_id, title, provenance) VALUES ('v23-test-project', 'e', 'manual')`,
+    )
+    .run();
+  const ep = tmpDb.prepare(`SELECT id FROM task_episodes`).get() as { id: number };
+  tmpDb
+    .prepare(
+      `INSERT INTO correction_candidates (task_episode_id, classification, is_correction, summary)
+       VALUES (?, 'other', 1, 'v23 fixture')`,
+    )
+    .run(ep.id);
+  const cc = tmpDb.prepare(`SELECT id FROM correction_candidates`).get() as { id: number };
+  tmpDb
+    .prepare(
+      `INSERT INTO skill_proposals (correction_candidate_id, name, content, created_by)
+       VALUES (?, 'v23-fixture-skill', '# v23 fixture', 'test')`,
+    )
+    .run(cc.id);
+  const before = tmpDb.prepare(`SELECT * FROM skill_proposals`).get() as Record<string, unknown>;
+  // A child row (skill_proposal_revisions), the same shape createSkillProposal
+  // itself always inserts alongside a new proposal -- proves the rebuild's
+  // drop-child/rebuild-parent/recreate-child dance preserves child rows and
+  // the id they reference, not just the parent table.
+  tmpDb
+    .prepare(
+      `INSERT INTO skill_proposal_revisions
+         (skill_proposal_id, previous_name, previous_content, previous_status, new_name, new_content, new_status, reason, actor)
+       VALUES (?, NULL, NULL, NULL, 'v23-fixture-skill', '# v23 fixture', 'proposed', 'proposed', 'test')`,
+    )
+    .run(before.id);
+
+  const v23 = MIGRATIONS.find((m) => m.version === 23)!;
+  tmpDb.exec(v23.sql);
+
+  const after = tmpDb.prepare(`SELECT * FROM skill_proposals WHERE id = ?`).get(before.id) as
+    Record<string, unknown> | undefined;
+  assert.ok(after, "the existing row survives the rebuild");
+  assert.equal(after!.name, "v23-fixture-skill");
+  assert.equal(after!.content, "# v23 fixture");
+  assert.equal(after!.lovable_state, "not_created");
+  assert.equal(after!.lovable_written_at, null);
+  assert.equal(after!.lovable_readback_ok, null);
+  assert.equal(after!.lovable_error, null);
+
+  const cols = (
+    tmpDb.prepare(`PRAGMA table_info(skill_proposals)`).all() as { name: string }[]
+  ).map((c) => c.name);
+  assert.ok(cols.includes("lovable_written_at"));
+  assert.ok(cols.includes("lovable_readback_ok"));
+  assert.ok(cols.includes("lovable_error"));
+
+  assert.doesNotThrow(() =>
+    tmpDb
+      .prepare(`UPDATE skill_proposals SET lovable_state = 'created' WHERE id = ?`)
+      .run(before.id),
+  );
+  assert.doesNotThrow(() =>
+    tmpDb
+      .prepare(`UPDATE skill_proposals SET lovable_state = 'failed' WHERE id = ?`)
+      .run(before.id),
+  );
+  assert.throws(() =>
+    tmpDb.prepare(`UPDATE skill_proposals SET lovable_state = 'bogus' WHERE id = ?`).run(before.id),
+  );
+  assert.throws(() =>
+    tmpDb.prepare(`UPDATE skill_proposals SET lovable_readback_ok = 2 WHERE id = ?`).run(before.id),
+  );
+
+  // The child table (skill_proposal_revisions) still points at the same id
+  // -- the rebuild preserved it rather than renumbering rows.
+  const revisionCount = (
+    tmpDb
+      .prepare(`SELECT COUNT(*) as n FROM skill_proposal_revisions WHERE skill_proposal_id = ?`)
+      .get(before.id) as { n: number }
+  ).n;
+  assert.ok(revisionCount >= 1, "the first-revision row inserted alongside the proposal survives");
+});
+// ---- end Checkpoint 3 S1 ----

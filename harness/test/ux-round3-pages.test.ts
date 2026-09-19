@@ -150,8 +150,12 @@ test("skills.tsx: heading, read-only line, per-skill fields, history, empty stat
   const code = codeOnly(raw);
 
   assert.match(code, /<h1[^>]*>Skills<\/h1>/);
+  // Checkpoint 3 S1: updated with intent -- Harness Ledger can now publish
+  // an approved proposal, so the line says so (still never an update/delete).
   assert.ok(
-    raw.includes("Harness Ledger reads your workspace Skills; it does not write them yet."),
+    raw.includes(
+      "Harness Ledger reads your workspace Skills, and can publish an approved proposal as a new one; it never updates or deletes a Skill.",
+    ),
   );
   assert.ok(
     raw.includes(
@@ -180,14 +184,21 @@ test("skills.tsx: heading, read-only line, per-skill fields, history, empty stat
   // no <details open>
   for (const tag of code.match(/<details[^>]*>/g) ?? []) assert.ok(!/\sopen\b/.test(tag));
 
-  // only the skills client helper, never a raw fetch
+  // only the skills client helper, never a raw fetch -- Checkpoint 3 S1
+  // updates this with intent: postImprovementAction is now legitimately
+  // used for the one new mutating action (publish_skill_proposal, the
+  // same call improvement.tsx's own Publish button makes), everything else
+  // in this ban list still applies unchanged.
   assert.match(code, /skillsQueryOptions/);
   assert.ok(!/\bfetch\(/.test(code), "skills.tsx must not call fetch directly");
   assert.ok(
-    !/fetchImprovements|postImprovementAction|fetchProjects\(|postProjects\(|fetchExecutor\(|fetchKnowledge/.test(
-      code,
-    ),
-    "skills.tsx only uses the skills client helper",
+    !/fetchImprovements|fetchProjects\(|postProjects\(|fetchExecutor\(|fetchKnowledge/.test(code),
+    "skills.tsx only uses the skills client helper (and, since Checkpoint 3 S1, postImprovementAction to publish)",
+  );
+  assert.match(
+    code,
+    /action: "publish_skill_proposal"/,
+    "skills.tsx posts publish_skill_proposal through postImprovementAction",
   );
 });
 

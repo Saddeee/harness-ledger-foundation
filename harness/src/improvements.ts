@@ -223,6 +223,11 @@ export type SkillProposalView = {
   status: store.SkillProposalStatus;
   ownership: store.SkillProposalOwnership;
   lovable_state: store.SkillProposalLovableState;
+  // ---- Checkpoint 3 S1 ----
+  lovable_written_at: string | null;
+  lovable_readback_ok: boolean | null;
+  lovable_error: string | null;
+  // ---- end Checkpoint 3 S1 ----
   revisions: SkillProposalRevisionView[];
 } | null;
 
@@ -252,9 +257,11 @@ export type Improvement = {
   content_destination: ContentDestination | null;
   // Checkpoint 2026-09-18 WP4: the local Skill proposal for this suggestion,
   // if the Rule writer (or a later user choice) put a Skill on the table --
-  // null otherwise, and always null for a "retire" item. `lovable_state` is
-  // always 'not_created': creating or updating a Skill in Lovable is not
-  // wired in this checkpoint (D4).
+  // null otherwise, and always null for a "retire" item. `lovable_state`
+  // (Checkpoint 3 S1, D4 superseded) is 'not_created' until the proposal is
+  // published, 'created' once a live create+read-back succeeds, or 'failed'
+  // when a publish attempt threw -- see executor/skill-publish-action.ts,
+  // the only place that ever calls store.setSkillProposalLovableState.
   skill_proposal: SkillProposalView;
   classification: string;
   // ---- Checkpoint 2 2-B ----
@@ -531,6 +538,10 @@ function buildSkillProposalView(correctionCandidateId: number): SkillProposalVie
     status: proposal.status,
     ownership: proposal.ownership,
     lovable_state: proposal.lovable_state,
+    lovable_written_at: proposal.lovable_written_at,
+    lovable_readback_ok:
+      proposal.lovable_readback_ok == null ? null : proposal.lovable_readback_ok === 1,
+    lovable_error: proposal.lovable_error,
     revisions: revisions.map((r) => ({
       id: r.id,
       new_name: r.new_name,
@@ -3691,6 +3702,34 @@ function buildRunInboxItems(): InboxItem[] {
   return items;
 }
 
+// Checkpoint 3 S1: a Skill proposal whose last publish attempt failed is an
+// action_failed item -- 'not_created' means nothing was attempted yet (not
+// a problem), and 'created' is a success, so neither ever appears here.
+// Skills are workspace-level (no single project), so project_id/project_name
+// are always null, same convention buildKnowledgeVersionInboxItems uses for
+// a workspace-target write.
+function buildSkillPublishFailedInboxItems(): InboxItem[] {
+  const items: InboxItem[] = [];
+  for (const proposal of store.listSkillProposalsForSkillsView()) {
+    if (proposal.lovable_state !== "failed") continue;
+    items.push({
+      id: `skill:${proposal.id}`,
+      type: "action_failed",
+      project_id: null,
+      project_name: null,
+      title: proposal.name,
+      summary: proposal.lovable_error,
+      created_at: proposal.updated_at,
+      link: { page: "skills" },
+      improvement: null,
+      run: null,
+      conclusion: null,
+      recommended_action: "retry",
+    });
+  }
+  return items;
+}
+
 // A retire proposal's own one-line reason, in the same plain-sentence style
 // as the rest of this file's Inbox cards -- never "helped"/"harm" (banned
 // UI words this checkpoint), so it's written by hand here rather than
@@ -3833,6 +3872,7 @@ export function listInboxItems(opts: { connected: boolean }): InboxItem[] {
     ...buildRunInboxItems(),
     ...buildRuleAttentionInboxItems(),
     ...buildSuggestionInboxItems(opts.connected),
+    ...buildSkillPublishFailedInboxItems(),
   ];
   return sortInboxItems(items);
 }

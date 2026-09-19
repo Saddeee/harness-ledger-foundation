@@ -4783,13 +4783,25 @@ export function candidateCorrections(correctionCandidateId: number): string[] {
 // Skills as a first-class destination (D4, migration v19): a suggestion
 // records where its lesson belongs (destination fields on
 // correction_candidates, extended above in createCorrectionCandidate); a
-// Skill proposal is the draft SKILL.md itself -- kept and versioned locally,
-// never written to Lovable (lovable_state stays 'not_created' -- there is no
-// column value other than that one, and no code path here ever changes it).
+// Skill proposal is the draft SKILL.md itself -- kept and versioned locally.
+// Checkpoint 3 S1 (migration v23) supersedes D4's "never written to Lovable":
+// lovable_state can now also be 'created' or 'failed' -- see
+// setSkillProposalLovableState below, called only from
+// executor/skill-publish-action.ts (never from this file directly, which
+// still knows nothing about Lovable).
 
 export type SkillProposalStatus = "proposed" | "approved" | "retired" | "skipped";
 export type SkillProposalOwnership = "harness" | "user";
-export type SkillProposalLovableState = "not_created";
+// ---- Checkpoint 3 S1 ----
+// Widened by migration v23: a proposal can now actually be published (D4's
+// "no Lovable write" is superseded -- see DECISIONS.md D4 and the checkpoint
+// note on this same block below). 'created' means the read-back after
+// create_workspace_skill matched what Harness Ledger sent (lovable_readback_ok
+// records whether it did); 'failed' means the create attempt itself threw
+// (lovable_error carries the redacted message). Never 'updated' or
+// 'deleted': Harness Ledger only ever creates a workspace Skill once.
+export type SkillProposalLovableState = "not_created" | "created" | "failed";
+// ---- end Checkpoint 3 S1 ----
 
 export type SkillProposalRow = {
   id: number;
@@ -4800,6 +4812,11 @@ export type SkillProposalRow = {
   status: SkillProposalStatus;
   ownership: SkillProposalOwnership;
   lovable_state: SkillProposalLovableState;
+  // ---- Checkpoint 3 S1 ----
+  lovable_written_at: string | null;
+  lovable_readback_ok: number | null;
+  lovable_error: string | null;
+  // ---- end Checkpoint 3 S1 ----
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -4999,6 +5016,56 @@ export function setSkillProposalStatus(input: {
   });
   return getSkillProposal(input.id)!;
 }
+
+// ---- Checkpoint 3 S1 ----
+/** Records the outcome of one publish attempt (executor/skill-
+ * publish-action.ts's only write to this table): 'created' with
+ * written_at/readback_ok on success, 'failed' with a redacted error message
+ * on failure. Written as a new revision (name/content/status all carried
+ * forward unchanged -- publishing changes where the Skill lives, not what
+ * it says) plus an event, the same shape every other skill_proposal mutation
+ * here uses. Throws SkillProposalOwnershipError on a user-owned proposal --
+ * publishing is only ever attempted on one Harness Ledger itself proposed. */
+export function setSkillProposalLovableState(input: {
+  id: number;
+  lovable_state: SkillProposalLovableState;
+  written_at?: string | null;
+  readback_ok?: boolean | null;
+  error?: string | null;
+  actor: string;
+  reason: string;
+}): SkillProposalRow {
+  const existing = getSkillProposal(input.id);
+  if (!existing) throw new Error(`skill proposal ${input.id} not found`);
+  requireHarnessOwnedSkillProposal(existing);
+  writeSkillProposalRevision(
+    existing,
+    existing.name,
+    existing.content,
+    existing.status,
+    input.reason,
+    input.actor,
+  );
+  db.prepare(
+    `UPDATE skill_proposals
+       SET lovable_state = ?, lovable_written_at = ?, lovable_readback_ok = ?, lovable_error = ?,
+           updated_at = datetime('now')
+     WHERE id = ?`,
+  ).run(
+    input.lovable_state,
+    input.written_at ?? null,
+    input.readback_ok == null ? null : input.readback_ok ? 1 : 0,
+    input.error ?? null,
+    input.id,
+  );
+  insertEvent("skill_proposal.lovable_state_changed", null, {
+    id: input.id,
+    lovable_state: input.lovable_state,
+    actor: input.actor,
+  });
+  return getSkillProposal(input.id)!;
+}
+// ---- end Checkpoint 3 S1 ----
 
 /** Restores name/content from an earlier revision of this same proposal, as
  * a fresh revision of its own (reason: "restored revision <id>") -- the
