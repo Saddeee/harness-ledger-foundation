@@ -46,6 +46,9 @@ import {
   SKIP_ONBOARDING_LABEL,
   SYNC_NOW_CONSEQUENCE,
 } from "@/lib/onboarding-copy";
+// Round 8 Task 6 (review item 10): reuses Task 3's providerDisplayName so
+// this page never renders a raw provider id ("claude_code") either.
+import { providerDisplayName } from "@/lib/harness-ux";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   head: () => ({
@@ -333,7 +336,7 @@ function ProviderStep({ state }: { state: StepState }) {
   if (state !== "current") {
     return (
       <p className="text-sm text-muted-foreground">
-        {providerReady?.ok ? `Ready (${provider})` : "Not configured yet."}
+        {providerReady?.ok ? `Ready: ${providerDisplayName(provider)}` : "Not configured yet."}
       </p>
     );
   }
@@ -447,8 +450,19 @@ function OnboardingPage() {
   const hasProject = (projects.data?.allowed?.length ?? 0) > 0;
   const providerReady = Boolean(executor.data?.analysis?.provider_ready?.ok);
   const hasAnalysisRun = executor.data?.analysis?.last_run != null;
+  // Round 8 Task 6 (review item 10): step 3 used to show "Not yet"/"Current"
+  // on every reload until the user saved a mode again in this browser
+  // session, even when a mode was already saved on the server (from an
+  // earlier session, or from Settings directly) -- modeSaved reset to false
+  // on every mount. decisionModeOnServer reads the same executor query
+  // ModeStep itself already reads (settings.decision_mode), so a reload
+  // shows "Done" whenever the server has a saved mode; modeSaved stays as
+  // an optimistic flag so the badge flips to "Done" immediately after a
+  // save in this session, without waiting on the query to refetch.
+  const decisionModeOnServer = executor.data?.settings?.decision_mode != null;
+  const modeDone = modeSaved || decisionModeOnServer;
 
-  const doneFlags = [connected, hasProject, modeSaved, providerReady, hasAnalysisRun];
+  const doneFlags = [connected, hasProject, modeDone, providerReady, hasAnalysisRun];
   const currentIndex = doneFlags.findIndex((done) => !done);
 
   const stepState = (i: number): StepState => {

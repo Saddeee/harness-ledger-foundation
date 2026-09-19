@@ -60,6 +60,9 @@ import {
   COPY_CREDITS_LINE,
   TEST_PROVIDER_BUTTON_LABEL,
   TEST_PROVIDER_CONSEQUENCE_LINE,
+  // Round 8 Task 6 (review item 10): reuses Task 3's providerDisplayName
+  // for the Claude Code readiness line, same as onboarding.tsx.
+  providerDisplayName,
   // ---- Round 8 Task 1 fix 1 ----
   REANALYSE_TITLE,
   REANALYSE_BODY,
@@ -331,7 +334,10 @@ function isApiProvider(p: LlmProvider): p is ApiLlmProvider {
 // real API model id the owner may have already typed).
 const CLAUDE_CODE_ALIASES = ["sonnet", "opus", "haiku"];
 const CLAUDE_CODE_DEFAULT_MODEL = "sonnet";
-const CLAUDE_CODE_MODEL_HINT = "Claude Code model alias: sonnet, opus or haiku";
+// Round 8 Task 6 (review item 10): was "Claude Code model alias: sonnet,
+// opus or haiku" -- "Model" reads the same either way this field's own
+// provider is already Claude Code (the only case this hint is shown).
+const CLAUDE_CODE_MODEL_HINT = "Model: sonnet, opus or haiku";
 function nextModelOnProviderChange(currentModel: string, nextProvider: LlmProvider): string {
   if (nextProvider === "claude_code") return CLAUDE_CODE_DEFAULT_MODEL;
   return CLAUDE_CODE_ALIASES.includes(currentModel) ? "" : currentModel;
@@ -344,7 +350,11 @@ function nextModelOnProviderChange(currentModel: string, nextProvider: LlmProvid
 // provider, say) is shown verbatim rather than mislabelled as a Claude Code
 // problem.
 function claudeCodeStatusLine(providerReady: ExecutorProviderReady | undefined): string {
-  if (providerReady?.ok) return "Claude Code found";
+  // Round 8 Task 6 (review item 10): the bare two-word "found" status used
+  // to read here is gone -- every other readiness line in this section
+  // reads "Ready: <provider>", via the same providerDisplayName Task 3
+  // already added.
+  if (providerReady?.ok) return `Ready: ${providerDisplayName("claude_code")}`;
   if (providerReady?.reason && /claude code/i.test(providerReady.reason)) {
     return "Claude Code not found on this machine";
   }
@@ -819,205 +829,12 @@ export function LocalSettings() {
         <Button onClick={() => saveDecisions.mutate()} disabled={saveDecisions.isPending}>
           {saveDecisions.isPending ? "Saving…" : "Save decisions"}
         </Button>
-      </section>
 
-      <section className="space-y-4 rounded-md border p-4">
-        <h2 className="text-lg font-medium">Evidence</h2>
-        <p className="text-sm text-muted-foreground">{EVIDENCE_INTRO}</p>
-
-        <div className="space-y-3">
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="evidence-observed"
-              checked={evidenceSources.observed}
-              onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, observed: v === true }))}
-              className="mt-0.5"
-            />
-            <Label htmlFor="evidence-observed" className="font-normal">
-              Repeat corrections observed in your real builds
-            </Label>
-          </div>
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="evidence-adherence"
-              checked={evidenceSources.adherence}
-              onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, adherence: v === true }))}
-              className="mt-0.5"
-            />
-            <Label htmlFor="evidence-adherence" className="font-normal">
-              AI adherence check (with quotes)
-            </Label>
-          </div>
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="evidence-verdicts"
-              checked={evidenceSources.verdicts}
-              onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, verdicts: v === true }))}
-              className="mt-0.5"
-            />
-            <Label htmlFor="evidence-verdicts" className="font-normal">
-              Your verdicts
-            </Label>
-          </div>
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="evidence-paired"
-              checked={evidenceSources.paired}
-              disabled={!pairedTestsAvailable}
-              onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, paired: v === true }))}
-              className="mt-0.5"
-            />
-            <Label
-              htmlFor="evidence-paired"
-              className={pairedTestsAvailable ? "font-normal" : "font-normal text-muted-foreground"}
-            >
-              Historical replay{pairedTestsAvailable ? "" : " (judge at least one test first)"}
-            </Label>
-          </div>
-        </div>
-
-        <Button onClick={() => saveEvidence.mutate()} disabled={saveEvidence.isPending}>
-          {saveEvidence.isPending ? "Saving…" : "Save evidence"}
-        </Button>
-      </section>
-
-      <section className="space-y-4 rounded-md border p-4">
-        <h2 className="text-lg font-medium">Lovable credits</h2>
-        <p className="text-sm text-muted-foreground">{LOVABLE_CREDITS_INTRO}</p>
-
-        <div className="space-y-2">
-          <Label htmlFor="credit-budget">Monthly budget (0–1000)</Label>
-          <Input
-            id="credit-budget"
-            type="number"
-            min={0}
-            max={1000}
-            value={creditBudget}
-            onChange={(e) => setCreditBudget(Number(e.target.value))}
-            className="w-32"
-          />
-        </div>
-
-        <p className="text-sm text-muted-foreground">{usedThisMonthLine}</p>
-
-        <div className="flex items-center justify-between gap-2">
-          <div className="space-y-1">
-            <Label htmlFor="keep-test-copies">Keep test builds as projects</Label>
-            <p className="text-xs text-muted-foreground">
-              On by default: each test's builds stay in your Lovable workspace so you can open them
-              and keep building on them; delete them from the test when you're done. Turn off to
-              delete them as soon as a test finishes. A failed test's copies are always deleted.
-            </p>
-          </div>
-          <Switch
-            id="keep-test-copies"
-            checked={keepTestCopies}
-            onCheckedChange={setKeepTestCopies}
-          />
-        </div>
-
-        <Button onClick={() => saveCredits.mutate()} disabled={saveCredits.isPending}>
-          {saveCredits.isPending ? "Saving…" : "Save credits"}
-        </Button>
-      </section>
-
-      <section className="space-y-4 rounded-md border p-4">
-        <h2 className="text-lg font-medium">Sync schedule</h2>
-
-        <div className="flex items-center justify-between">
-          <Label htmlFor="sync-enabled">Sync on a schedule</Label>
-          <Switch
-            id="sync-enabled"
-            checked={schedule.enabled}
-            onCheckedChange={(v) => setSchedule((s) => ({ ...s, enabled: v }))}
-          />
-        </div>
-
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <Label htmlFor="automatic-analysis">{AUTOMATIC_ANALYSIS_SETTING_LABEL}</Label>
-            <p className="text-xs text-muted-foreground">
-              Off by default: a scheduled sync only reads Lovable. When on, each successful sync
-              queues one analysis of what is new, within your token budget.
-            </p>
-          </div>
-          <Switch
-            id="automatic-analysis"
-            checked={autoAnalysis}
-            onCheckedChange={setAutoAnalysis}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="interval-minutes">Every N minutes (15–1440)</Label>
-          <Input
-            id="interval-minutes"
-            type="number"
-            min={15}
-            max={1440}
-            value={schedule.interval_minutes}
-            onChange={(e) =>
-              setSchedule((s) => ({ ...s, interval_minutes: Number(e.target.value) }))
-            }
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="window-start">Between hour (0–24)</Label>
-            <Input
-              id="window-start"
-              type="number"
-              min={0}
-              max={24}
-              value={schedule.window_start_hour}
-              onChange={(e) =>
-                setSchedule((s) => ({ ...s, window_start_hour: Number(e.target.value) }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="window-end">and hour (0–24)</Label>
-            <Input
-              id="window-end"
-              type="number"
-              min={0}
-              max={24}
-              value={schedule.window_end_hour}
-              onChange={(e) =>
-                setSchedule((s) => ({ ...s, window_end_hour: Number(e.target.value) }))
-              }
-            />
-          </div>
-        </div>
-
-        <p className="text-sm text-muted-foreground">{SCHEDULE_LINE}</p>
-
-        <Button onClick={() => saveSchedule.mutate()} disabled={saveSchedule.isPending}>
-          {saveSchedule.isPending ? "Saving…" : "Save schedule"}
-        </Button>
-      </section>
-
-      <section className="space-y-4 rounded-md border p-4">
-        <h2 className="text-lg font-medium">Knowledge limit</h2>
-
-        <div className="space-y-2">
-          <Label htmlFor="knowledge-cap">Character cap (1,000–10,000)</Label>
-          <Input
-            id="knowledge-cap"
-            type="number"
-            min={1000}
-            max={10000}
-            value={cap}
-            onChange={(e) => setCap(Number(e.target.value))}
-          />
-        </div>
-
-        <p className="text-sm text-muted-foreground">{CAP_LINE}</p>
-
-        <Button onClick={() => saveCap.mutate()} disabled={saveCap.isPending}>
-          {saveCap.isPending ? "Saving…" : "Save limit"}
-        </Button>
+        {/* Round 8 Task 6 (review item 10): the former one-section
+            "Approval" note folds into Decisions as its own last line -- it
+            never had an action of its own, only a restatement of what
+            "Ask me first" already means. */}
+        <p className="text-sm text-muted-foreground">{APPROVAL_LINE}</p>
       </section>
 
       <section className="space-y-4 rounded-md border p-4">
@@ -1288,55 +1105,264 @@ export function LocalSettings() {
       </section>
 
       <section className="space-y-4 rounded-md border p-4">
-        <h2 className="text-lg font-medium">Defaults for projects</h2>
+        <h2 className="text-lg font-medium">Lovable credits</h2>
+        <p className="text-sm text-muted-foreground">{LOVABLE_CREDITS_INTRO}</p>
 
         <div className="space-y-2">
-          <Label htmlFor="default-max-active-rules">Max active rules per project (1–50)</Label>
+          <Label htmlFor="credit-budget">Monthly budget (0–1000)</Label>
           <Input
-            id="default-max-active-rules"
+            id="credit-budget"
             type="number"
-            min={1}
-            max={50}
-            value={maxActiveRules}
-            onChange={(e) => setMaxActiveRules(Number(e.target.value))}
+            min={0}
+            max={1000}
+            value={creditBudget}
+            onChange={(e) => setCreditBudget(Number(e.target.value))}
+            className="w-32"
           />
         </div>
 
-        <Button onClick={() => saveDefaults.mutate()} disabled={saveDefaults.isPending}>
-          {saveDefaults.isPending ? "Saving…" : "Save defaults"}
-        </Button>
-      </section>
+        <p className="text-sm text-muted-foreground">{usedThisMonthLine}</p>
 
-      <section className="space-y-4 rounded-md border p-4">
-        <h2 className="text-lg font-medium">Notifications</h2>
-
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="space-y-1">
-            <Label htmlFor="notify-enabled">
-              Notify me in this browser when a new proposal arrives
-            </Label>
+            <Label htmlFor="keep-test-copies">Keep test builds as projects</Label>
             <p className="text-xs text-muted-foreground">
-              Only while Harness Ledger is open in a tab. Uses your browser's notification
-              permission.
+              On by default: each test's builds stay in your Lovable workspace so you can open them
+              and keep building on them; delete them from the test when you're done. Turn off to
+              delete them as soon as a test finishes. A failed test's copies are always deleted.
             </p>
           </div>
           <Switch
-            id="notify-enabled"
-            checked={notifyEnabled && !notifyBlocked}
-            disabled={notifyBlocked}
-            onCheckedChange={(checked) => void handleNotifyToggle(checked)}
+            id="keep-test-copies"
+            checked={keepTestCopies}
+            onCheckedChange={setKeepTestCopies}
           />
         </div>
 
-        {notifyBlocked && (
-          <p className="text-xs text-muted-foreground">Your browser blocked notifications.</p>
-        )}
+        <Button onClick={() => saveCredits.mutate()} disabled={saveCredits.isPending}>
+          {saveCredits.isPending ? "Saving…" : "Save credits"}
+        </Button>
       </section>
 
-      <section className="space-y-2 rounded-md border p-4">
-        <h2 className="text-lg font-medium">Approval</h2>
-        <p className="text-sm text-muted-foreground">{APPROVAL_LINE}</p>
-      </section>
+      {/* Round 8 Task 6 (review item 10): five settings sections folded
+          behind one collapsed "Advanced" details -- unchanged content,
+          own Save button and behaviour, just moved out of the always-
+          visible list. */}
+      <details className="rounded-md border">
+        <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Advanced
+        </summary>
+        <div className="space-y-4 border-t p-3">
+          <section className="space-y-4 rounded-md border p-4">
+            <h2 className="text-lg font-medium">Evidence</h2>
+            <p className="text-sm text-muted-foreground">{EVIDENCE_INTRO}</p>
+
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="evidence-observed"
+                  checked={evidenceSources.observed}
+                  onCheckedChange={(v) =>
+                    setEvidenceSources((s) => ({ ...s, observed: v === true }))
+                  }
+                  className="mt-0.5"
+                />
+                <Label htmlFor="evidence-observed" className="font-normal">
+                  Repeat corrections observed in your real builds
+                </Label>
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="evidence-adherence"
+                  checked={evidenceSources.adherence}
+                  onCheckedChange={(v) =>
+                    setEvidenceSources((s) => ({ ...s, adherence: v === true }))
+                  }
+                  className="mt-0.5"
+                />
+                <Label htmlFor="evidence-adherence" className="font-normal">
+                  AI adherence check (with quotes)
+                </Label>
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="evidence-verdicts"
+                  checked={evidenceSources.verdicts}
+                  onCheckedChange={(v) =>
+                    setEvidenceSources((s) => ({ ...s, verdicts: v === true }))
+                  }
+                  className="mt-0.5"
+                />
+                <Label htmlFor="evidence-verdicts" className="font-normal">
+                  Your verdicts
+                </Label>
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="evidence-paired"
+                  checked={evidenceSources.paired}
+                  disabled={!pairedTestsAvailable}
+                  onCheckedChange={(v) => setEvidenceSources((s) => ({ ...s, paired: v === true }))}
+                  className="mt-0.5"
+                />
+                <Label
+                  htmlFor="evidence-paired"
+                  className={
+                    pairedTestsAvailable ? "font-normal" : "font-normal text-muted-foreground"
+                  }
+                >
+                  Historical replay{pairedTestsAvailable ? "" : " (judge at least one test first)"}
+                </Label>
+              </div>
+            </div>
+
+            <Button onClick={() => saveEvidence.mutate()} disabled={saveEvidence.isPending}>
+              {saveEvidence.isPending ? "Saving…" : "Save evidence"}
+            </Button>
+          </section>
+          <section className="space-y-4 rounded-md border p-4">
+            <h2 className="text-lg font-medium">Sync schedule</h2>
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="sync-enabled">Sync on a schedule</Label>
+              <Switch
+                id="sync-enabled"
+                checked={schedule.enabled}
+                onCheckedChange={(v) => setSchedule((s) => ({ ...s, enabled: v }))}
+              />
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="automatic-analysis">{AUTOMATIC_ANALYSIS_SETTING_LABEL}</Label>
+                <p className="text-xs text-muted-foreground">
+                  Off by default: a scheduled sync only reads Lovable. When on, each successful sync
+                  queues one analysis of what is new, within your token budget.
+                </p>
+              </div>
+              <Switch
+                id="automatic-analysis"
+                checked={autoAnalysis}
+                onCheckedChange={setAutoAnalysis}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="interval-minutes">Every N minutes (15–1440)</Label>
+              <Input
+                id="interval-minutes"
+                type="number"
+                min={15}
+                max={1440}
+                value={schedule.interval_minutes}
+                onChange={(e) =>
+                  setSchedule((s) => ({ ...s, interval_minutes: Number(e.target.value) }))
+                }
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="window-start">Between hour (0–24)</Label>
+                <Input
+                  id="window-start"
+                  type="number"
+                  min={0}
+                  max={24}
+                  value={schedule.window_start_hour}
+                  onChange={(e) =>
+                    setSchedule((s) => ({ ...s, window_start_hour: Number(e.target.value) }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="window-end">and hour (0–24)</Label>
+                <Input
+                  id="window-end"
+                  type="number"
+                  min={0}
+                  max={24}
+                  value={schedule.window_end_hour}
+                  onChange={(e) =>
+                    setSchedule((s) => ({ ...s, window_end_hour: Number(e.target.value) }))
+                  }
+                />
+              </div>
+            </div>
+
+            <p className="text-sm text-muted-foreground">{SCHEDULE_LINE}</p>
+
+            <Button onClick={() => saveSchedule.mutate()} disabled={saveSchedule.isPending}>
+              {saveSchedule.isPending ? "Saving…" : "Save schedule"}
+            </Button>
+          </section>
+          <section className="space-y-4 rounded-md border p-4">
+            <h2 className="text-lg font-medium">Knowledge limit</h2>
+
+            <div className="space-y-2">
+              <Label htmlFor="knowledge-cap">Character cap (1,000–10,000)</Label>
+              <Input
+                id="knowledge-cap"
+                type="number"
+                min={1000}
+                max={10000}
+                value={cap}
+                onChange={(e) => setCap(Number(e.target.value))}
+              />
+            </div>
+
+            <p className="text-sm text-muted-foreground">{CAP_LINE}</p>
+
+            <Button onClick={() => saveCap.mutate()} disabled={saveCap.isPending}>
+              {saveCap.isPending ? "Saving…" : "Save limit"}
+            </Button>
+          </section>
+          <section className="space-y-4 rounded-md border p-4">
+            <h2 className="text-lg font-medium">Defaults for projects</h2>
+
+            <div className="space-y-2">
+              <Label htmlFor="default-max-active-rules">Max active rules per project (1–50)</Label>
+              <Input
+                id="default-max-active-rules"
+                type="number"
+                min={1}
+                max={50}
+                value={maxActiveRules}
+                onChange={(e) => setMaxActiveRules(Number(e.target.value))}
+              />
+            </div>
+
+            <Button onClick={() => saveDefaults.mutate()} disabled={saveDefaults.isPending}>
+              {saveDefaults.isPending ? "Saving…" : "Save defaults"}
+            </Button>
+          </section>
+          <section className="space-y-4 rounded-md border p-4">
+            <h2 className="text-lg font-medium">Notifications</h2>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="notify-enabled">
+                  Notify me in this browser when a new proposal arrives
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Only while Harness Ledger is open in a tab. Uses your browser's notification
+                  permission.
+                </p>
+              </div>
+              <Switch
+                id="notify-enabled"
+                checked={notifyEnabled && !notifyBlocked}
+                disabled={notifyBlocked}
+                onCheckedChange={(checked) => void handleNotifyToggle(checked)}
+              />
+            </div>
+
+            {notifyBlocked && (
+              <p className="text-xs text-muted-foreground">Your browser blocked notifications.</p>
+            )}
+          </section>
+        </div>
+      </details>
     </div>
   );
 }

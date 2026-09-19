@@ -112,9 +112,13 @@ test("local-settings.tsx: Claude Code provider, token budget, honest run-only-on
     "local-settings.tsx still has the obsoleted round-3 honest line",
   );
 
-  // Claude Code found/not found, derived from provider_ready -- only shown
-  // in place of the API key field when claude_code is the selected provider.
-  assert.ok(raw.includes("Claude Code found"));
+  // Ready/not-found, derived from provider_ready -- only shown in place of
+  // the API key field when claude_code is the selected provider. Round 8
+  // Task 6 (review item 10): the ready line was the bare "Claude Code
+  // found"; it now reads "Ready: Claude Code" via providerDisplayName, the
+  // same phrasing every other readiness line in this section uses (see
+  // harness/test/ux-round8-task6.test.ts).
+  assert.match(code, /providerDisplayName/);
   assert.ok(raw.includes("Claude Code not found on this machine"));
   assert.match(code, /provider_ready/);
 
@@ -123,7 +127,10 @@ test("local-settings.tsx: Claude Code provider, token budget, honest run-only-on
   // that names Claude Code. Any other not-ready reason (e.g. a different
   // role's missing API key) is shown verbatim instead of being mislabelled.
   assert.match(code, /function claudeCodeStatusLine/);
-  assert.match(code, /providerReady\?\.ok\)\s*return "Claude Code found"/);
+  assert.match(
+    code,
+    /providerReady\?\.ok\)\s*return `Ready: \$\{providerDisplayName\("claude_code"\)\}`/,
+  );
   assert.match(code, /\/claude code\/i\.test\(providerReady\.reason\)/);
   assert.match(code, /return providerReady\?\.reason \?\?/);
 

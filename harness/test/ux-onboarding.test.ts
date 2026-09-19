@@ -66,15 +66,14 @@ test("onboarding: decision-mode explanation and autonomy note, verbatim", () => 
   );
 });
 
+// Round 8 Task 6 (review item 10): the old seven-item list of internal-
+// sounding fragments is replaced with three plain sentences (see
+// harness/test/ux-round8-task6.test.ts for the fuller pin).
 test("onboarding: recommended-settings list, verbatim and in order", () => {
   assert.deepEqual(copy.RECOMMENDED_SETTINGS_LIST, [
-    "Ask me first",
-    "hourly Sync on",
-    "automatic analysis after Sync off",
-    "no automatic credit-spending tests",
-    "only the Harness Ledger block in Knowledge is ever written",
-    "your own Knowledge and Skills are never changed",
-    "replay budget unchanged",
+    "Ask before anything is written to Lovable",
+    "Check for new chats on a schedule; analyse only when you press Analyse now",
+    "Tests run in a copy of your project, never in the project itself",
   ]);
 });
 

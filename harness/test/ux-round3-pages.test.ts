@@ -260,14 +260,18 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
   assert.match(code, /llmModels\[key\]\.provider/);
   assert.match(code, /llmModels\[key\]\.model/);
 
-  // section order: Sync schedule, Knowledge limit, AI analysis,
-  // Defaults for projects, Approval
+  // Round 8 Task 6 (review item 10): AI analysis moved up to the always-
+  // visible top of the page (Decisions, AI analysis, Lovable credits), and
+  // Sync schedule/Knowledge limit/Defaults for projects/Notifications moved
+  // into the collapsed Advanced fold below -- Approval is gone as its own
+  // section (folded into the end of Decisions, see
+  // harness/test/ux-round8-task6.test.ts). Re-pinned in actual source order.
   const order = [
+    "AI analysis",
     "Sync schedule",
     "Knowledge limit",
-    "AI analysis",
     "Defaults for projects",
-    "Approval",
+    "Notifications",
   ];
   let last = -1;
   for (const marker of order) {

@@ -45,16 +45,16 @@ export const MODE_AUTONOMY_NOTE =
 // ---- Recommended settings ----
 
 export const RECOMMENDED_SETTINGS_LABEL = "Use recommended settings";
-// Verbatim, in this order — joined with "; " it reads as one sentence; kept
-// as an array so the onboarding page can render it as a plain list.
+// Round 8 Task 6 (review item 10): three plain sentences, each naming what
+// actually changes and what it protects, replacing the old seven-item list
+// of internal-sounding fragments ("hourly Sync on", "replay budget
+// unchanged") that only made sense already knowing the settings they named.
+// Verbatim, in this order -- kept as an array so the onboarding page can
+// render it as a plain list.
 export const RECOMMENDED_SETTINGS_LIST = [
-  "Ask me first",
-  "hourly Sync on",
-  "automatic analysis after Sync off",
-  "no automatic credit-spending tests",
-  "only the Harness Ledger block in Knowledge is ever written",
-  "your own Knowledge and Skills are never changed",
-  "replay budget unchanged",
+  "Ask before anything is written to Lovable",
+  "Check for new chats on a schedule; analyse only when you press Analyse now",
+  "Tests run in a copy of your project, never in the project itself",
 ] as const;
 export const ADVANCED_PERMISSIONS_LINK_TEXT = "Advanced permissions are in Settings";
 export const SKIP_ONBOARDING_LABEL = "Skip onboarding";

@@ -116,7 +116,10 @@ test("local-settings.tsx: switching a role's provider to Claude Code prefills th
   const code = codeOnly(readApp(SETTINGS));
   assert.match(code, /const CLAUDE_CODE_ALIASES = \["sonnet", "opus", "haiku"\];/);
   assert.match(code, /const CLAUDE_CODE_DEFAULT_MODEL = "sonnet";/);
-  assert.ok(code.includes("Claude Code model alias: sonnet, opus or haiku"));
+  // Round 8 Task 6 (review item 10): was "Claude Code model alias: sonnet,
+  // opus or haiku" -- shortened to "Model: ..." (see
+  // harness/test/ux-round8-task6.test.ts).
+  assert.ok(code.includes("Model: sonnet, opus or haiku"));
   assert.match(
     code,
     /function nextModelOnProviderChange\(currentModel: string, nextProvider: LlmProvider\): string \{/,
