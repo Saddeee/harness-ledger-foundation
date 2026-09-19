@@ -1574,11 +1574,13 @@ function MessageBlock({ m, projectId }: { m: Message; projectId?: string }) {
           </a>
         ) : null}
       </div>
-      {/* Owner review round 7 fix 2: ClampedText's own "See more"/"See less"
-          replaces the old fixed-length slice + a second "Show more"
-          <details> repeating the same text. */}
+      {/* Owner review round 7 fixes 2/3: ClampedText's own "See more"/"See
+          less" replaces the old fixed-length slice + a second "Show more"
+          <details> repeating the same text -- and, for Lovable's own reply,
+          renders it through LightMarkdown so a stray "**" reads as bold
+          instead of literal asterisks. */}
       <div className="mt-1 text-sm">
-        <ClampedText text={readable} />
+        <ClampedText text={readable} markdown={isLovable} />
       </div>
       {isLovable ? (
         <details className="mt-2">
@@ -1706,7 +1708,11 @@ export function ImprovementDetail({
             <div>
               <dt className="font-medium">Built</dt>
               <dd className="text-muted-foreground">
-                {item.story.built ? <ClampedText text={item.story.built} /> : "Not recorded"}
+                {item.story.built ? (
+                  <ClampedText text={item.story.built} markdown />
+                ) : (
+                  "Not recorded"
+                )}
               </dd>
             </div>
             <div>
@@ -1719,7 +1725,7 @@ export function ImprovementDetail({
               <dt className="font-medium">Changed afterward</dt>
               <dd className="text-muted-foreground">
                 {item.story.changed_afterward ? (
-                  <ClampedText text={item.story.changed_afterward} />
+                  <ClampedText text={item.story.changed_afterward} markdown />
                 ) : (
                   "Not recorded"
                 )}

@@ -436,7 +436,7 @@ function Page() {
                 {HISTORICAL_RESULT_TITLE}
               </p>
               {view.original_summary ? (
-                <ClampedText text={view.original_summary} />
+                <ClampedText text={view.original_summary} markdown />
               ) : (
                 <p className="text-sm">No summary recorded.</p>
               )}
@@ -447,7 +447,7 @@ function Page() {
                 {REPLAY_WITH_RULE_TITLE}
               </p>
               {view.copy_summary ? (
-                <ClampedText text={view.copy_summary} />
+                <ClampedText text={view.copy_summary} markdown />
               ) : (
                 <p className="text-sm">No summary recorded.</p>
               )}
@@ -577,7 +577,7 @@ function Page() {
                   </p>
                 ) : null}
                 {view.original_reply ? (
-                  <ClampedText text={view.original_reply} />
+                  <ClampedText text={view.original_reply} markdown />
                 ) : (
                   <p className="text-sm">No reply recorded.</p>
                 )}
@@ -600,7 +600,7 @@ function Page() {
                   </p>
                 ) : null}
                 {view.copy_reply ? (
-                  <ClampedText text={view.copy_reply} />
+                  <ClampedText text={view.copy_reply} markdown />
                 ) : (
                   <p className="text-sm">No reply recorded.</p>
                 )}
@@ -791,7 +791,7 @@ function BuildColumn({
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Lovable's summary of the change
           </p>
-          <ClampedText text={summary} lines={3} />
+          <ClampedText text={summary} markdown lines={3} />
         </div>
       ) : null}
       {footer ? <p className="text-xs text-muted-foreground">{footer}</p> : null}

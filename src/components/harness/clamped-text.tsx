@@ -5,18 +5,25 @@
 // (measured via scrollHeight vs clientHeight, not a character-count guess).
 // No animation -- the owner asked for a way to see the rest, not a reveal
 // effect.
+// Fix 3 ("some text has ** which is hard to read sometimes"): the optional
+// `markdown` prop renders the text through LightMarkdown instead of as
+// plain whitespace-pre-wrap text -- for Lovable's own assistant text, never
+// for what a person typed themselves.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { LightMarkdown } from "@/components/harness/light-markdown";
 import { SEE_LESS_LABEL, SEE_MORE_LABEL } from "@/lib/harness-ux";
 
 export function ClampedText({
   text,
   lines = 6,
   className,
+  markdown = false,
 }: {
   text: string;
   lines?: number;
   className?: string;
+  markdown?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -50,9 +57,9 @@ export function ClampedText({
                 overflow: "hidden",
               }
         }
-        className="whitespace-pre-wrap"
+        className={markdown ? undefined : "whitespace-pre-wrap"}
       >
-        {text}
+        {markdown ? <LightMarkdown text={text} /> : text}
       </div>
       {overflowing ? (
         <Button
