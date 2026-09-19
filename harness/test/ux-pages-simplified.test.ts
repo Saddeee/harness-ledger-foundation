@@ -120,6 +120,52 @@ test("skills.tsx: 'In Lovable' before 'Proposed by Harness Ledger', and every pr
   }
 });
 
+// ---- 3b. Instructions: per-project filter (checkpoint 3 UX fix 2) ----
+
+test("instructions.tsx: validateSearch accepts a project id or 'workspace', drops anything else", () => {
+  const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
+  assert.match(code, /type InstructionsSearch = \{ project\?: string \}/);
+  const start = code.indexOf(
+    "validateSearch: (search: Record<string, unknown>): InstructionsSearch",
+  );
+  assert.ok(start >= 0, "no validateSearch found");
+  const body = code.slice(start, code.indexOf("head: () => (", start));
+  // Accepts any non-empty string (a project id or "workspace") and nothing
+  // else -- same permissive-then-let-the-component-fall-back convention as
+  // history.tsx's own ?target=/?id=.
+  assert.match(body, /typeof raw === "string" && raw \? raw : undefined/);
+});
+
+test("instructions.tsx: a project filter control exists, using harness-ux's own labels rather than a bare 'Workspace' literal", () => {
+  const raw = readApp(INSTRUCTIONS_PAGE);
+  const code = codeOnly(raw);
+  assert.match(code, /aria-label=\{INSTRUCTIONS_PROJECT_FILTER_LABEL\}/);
+  assert.match(code, /\{ALL_PROJECTS_LABEL\}/);
+  assert.match(code, /\{WORKSPACE_TARGET_LABEL\}/);
+  assert.equal(ux.INSTRUCTIONS_PROJECT_FILTER_LABEL, "Show");
+  assert.equal(ux.ALL_PROJECTS_LABEL, "All projects");
+  assert.equal(ux.WORKSPACE_TARGET_LABEL, "Workspace");
+  // Reconfirms the existing round6c-part-a.test.ts pin from this angle too:
+  // the page never spells the word out itself.
+  assert.ok(
+    !code.includes('"Workspace"'),
+    "no bare literal 'Workspace' string in instructions.tsx",
+  );
+});
+
+test("instructions.tsx: Needs your attention, Knowledge and Skills all read the filtered view", () => {
+  const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
+  assert.match(code, /const visibleTargets = selectedTarget/);
+  assert.match(code, /collectAttentionItems\(visibleTargets\)/);
+  assert.match(code, /\{visibleTargets\.map\(/);
+  assert.match(code, /const visibleSkillProposals =/);
+  assert.match(code, /<SkillsSection proposals=\{visibleSkillProposals\} \/>/);
+  // The raw, unfiltered lists are never handed straight to a section once
+  // the filter exists.
+  assert.ok(!/collectAttentionItems\(targets\)/.test(code));
+  assert.ok(!/<SkillsSection proposals=\{skillProposals\} \/>/.test(code));
+});
+
 // ---- 4. History: "Current Knowledge" box ahead of the timeline, diffs
 // collapsed ----
 
@@ -132,6 +178,30 @@ test("history.tsx: 'Current Knowledge' box appears before the Timeline is render
   assert.ok(currentAt < timelineAt, "Current Knowledge must come before the Timeline");
   assert.match(code, /Current Knowledge/);
   assert.match(code, /<ManagedBlockText/);
+});
+
+test("history.tsx: 'Current Knowledge' is a <details> element, collapsed unless this browser remembers it open", () => {
+  const raw = readApp(HISTORY_PAGE);
+  const code = codeOnly(raw);
+  assert.match(raw, /harness-history-current-knowledge-open/);
+  const detailsTags = code.match(/<details\b[^>]*>/g) ?? [];
+  assert.ok(detailsTags.length >= 1, "Current Knowledge is not a <details>");
+  for (const tag of detailsTags) {
+    assert.ok(!/\bopen(?!=)\b/.test(tag), `details tag hardcodes open: ${tag}`);
+  }
+  assert.match(
+    code,
+    /<details[^>]*\bopen=\{knowledgeOpen\}/,
+    "open state is component state, not a literal",
+  );
+  // The only way it starts open is the stored value being exactly "1".
+  assert.match(code, /localStorage\.getItem\(CURRENT_KNOWLEDGE_OPEN_KEY\) === "1"/);
+  // Its own summary still carries the same heading text and now a one-line
+  // hint (target name, character count, rule count when known).
+  const summaryAt = code.indexOf("<summary");
+  const detailsAt = code.indexOf("<details");
+  assert.ok(detailsAt >= 0 && summaryAt > detailsAt);
+  assert.match(code, /currentKnowledgeHint\(/);
 });
 
 test("timeline.tsx: full text/diff is collapsed inside its own closed <details>, version detail rows stay outside it", () => {

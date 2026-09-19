@@ -143,12 +143,23 @@ test("instructions.tsx: each active rule renders observedLine, aiReviewLine and 
   assert.match(code, /attentionBlock\(rule\.health/);
 });
 
-test("route.tsx: the sidebar Inbox badge uses the server's counts (pending + retire), not pendingCount", () => {
+// Rewritten with intent for checkpoint 3 UX fix 1: the owner reported the
+// sidebar badge disagreeing with the Inbox page itself (3 items in the
+// Inbox, 2 on the sidebar) -- counts.pending + counts.retire was its own,
+// second aggregation of "what needs a decision", which could disagree with
+// listInboxItems()'s own count. The badge now reads that same Inbox fetch
+// (fetchInbox / "harness-inbox"), never counts.pending or pendingCount.
+// See harness/test/ux-inbox-queue.test.ts for the fuller pin on this.
+test("route.tsx: the sidebar Inbox badge uses the Inbox's own count, never counts.pending or pendingCount", () => {
   const raw = readApp(ROUTE);
   const code = codeOnly(raw);
-  assert.match(code, /counts\.pending/);
-  assert.match(code, /counts\.retire/);
+  assert.match(code, /fetchInbox/);
+  assert.match(code, /queryKey: \["harness-inbox"\]/);
   assert.ok(!code.includes("pendingCount"), "route.tsx must no longer call pendingCount");
+  assert.ok(
+    !/counts\.pending/.test(code) && !/counts\.retire/.test(code),
+    "route.tsx must no longer re-derive the badge from counts.pending/counts.retire",
+  );
   // The 60s poll and the notification effect stay in place.
   assert.ok(code.includes("refetchInterval: 60_000"));
   assert.ok(code.includes("new Notification("));

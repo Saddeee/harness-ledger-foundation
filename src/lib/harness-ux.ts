@@ -1750,3 +1750,14 @@ export function historyNodeMatchesFilter(
   return historyFilterBucketsFor(node).includes(filter);
 }
 // ---- end Checkpoint 3 I2 ----
+
+// ---- Checkpoint 3 UX fixes ----
+// Three owner-reported fixes: the sidebar badge (route.tsx, no copy of its
+// own), the Instructions page's per-project filter, and the History page's
+// collapsible Current Knowledge box. Labels for the Instructions filter live
+// here so the page itself never spells "Workspace" as a bare literal string.
+
+export const INSTRUCTIONS_PROJECT_FILTER_LABEL = "Show";
+export const ALL_PROJECTS_LABEL = "All projects";
+export const WORKSPACE_TARGET_LABEL = "Workspace";
+// ---- end Checkpoint 3 UX fixes ----

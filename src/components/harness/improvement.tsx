@@ -120,7 +120,6 @@ import {
   type TestInfo,
   type Message,
   type InboxItem,
-  type InboxItemLink,
 } from "@/lib/improvements-client";
 
 export type { Improvement, Message };
@@ -2493,14 +2492,22 @@ export function NewSkillCard({
 /** The page an Inbox item opens, as a plain href -- the pages are all
  * inside the authenticated shell and the ids are numbers, so a string href
  * keeps the typed router out of a dynamic switch. */
-function inboxLinkHref(link: InboxItemLink): string {
+function inboxLinkHref(item: InboxItem): string {
+  const link = item.link;
   switch (link.page) {
     case "detail":
       return link.improvement_id != null ? `/ledger?improvement=${link.improvement_id}` : "/inbox";
     case "judge":
       return link.run_id != null ? `/judge?run=${link.run_id}` : "/tests";
-    case "instructions":
-      return "/instructions";
+    case "instructions": {
+      // Checkpoint 3 UX fix 2: open Instructions already scoped to this
+      // item's own target, using the same ?project= the page's filter
+      // reads -- project_id null with project_name "Workspace" is the
+      // contract's own way of marking a workspace-scoped rule (see
+      // inboxTargetProject in harness/src/improvements.ts).
+      const project = item.project_id ?? (item.project_name === "Workspace" ? "workspace" : null);
+      return project ? `/instructions?project=${encodeURIComponent(project)}` : "/instructions";
+    }
     case "skills":
       return "/skills";
     case "tests":
@@ -2526,7 +2533,7 @@ function InboxCardHeader({ item }: { item: InboxItem }) {
  * tokens or Lovable spend, stated directly underneath. */
 export function TestResultCard({ item }: { item: InboxItem }) {
   const titleId = `inbox-${item.id}`;
-  const href = inboxLinkHref(item.link);
+  const href = inboxLinkHref(item);
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
@@ -2556,7 +2563,7 @@ export function TestResultCard({ item }: { item: InboxItem }) {
  * detail) -- reviewing decides nothing by itself. */
 export function RuleAttentionCard({ item }: { item: InboxItem }) {
   const titleId = `inbox-${item.id}`;
-  const href = inboxLinkHref(item.link);
+  const href = inboxLinkHref(item);
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
@@ -2582,7 +2589,7 @@ export function RuleAttentionCard({ item }: { item: InboxItem }) {
  * opens the Instructions row this conflict is about. */
 export function ConflictCard({ item }: { item: InboxItem }) {
   const titleId = `inbox-${item.id}`;
-  const href = inboxLinkHref(item.link);
+  const href = inboxLinkHref(item);
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
@@ -2618,7 +2625,7 @@ export function ActionFailedCard({
   run: Run;
 }) {
   const titleId = `inbox-${item.id}`;
-  const href = inboxLinkHref(item.link);
+  const href = inboxLinkHref(item);
   const failedVersion = item.improvement?.lovable?.versions.find(
     (v) => v.status === "failed" || v.status === "stale",
   );

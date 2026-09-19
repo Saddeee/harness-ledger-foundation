@@ -11,7 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { SETTINGS_DEFAULTS } from "@/lib/settings-defaults";
 import { Button } from "@/components/ui/button";
-import { executorQueryOptions, fetchImprovements } from "@/lib/improvements-client";
+import { executorQueryOptions, fetchImprovements, fetchInbox } from "@/lib/improvements-client";
 import { formatTime } from "@/lib/harness-ux";
 import { isNotifyEnabled } from "@/lib/browser-prefs";
 import { ONBOARDING_DISMISSED_KEY } from "@/lib/onboarding-copy";
@@ -73,6 +73,19 @@ function AuthedLayout() {
     refetchInterval: 60_000,
   });
 
+  // Checkpoint 3 UX fix 1: the sidebar badge reads the same Inbox the Inbox
+  // page and Overview read ("harness-inbox" -- react-query dedupes this
+  // against their own useQuery calls, so it's one fetch, not a second poll)
+  // -- the owner saw the sidebar disagree with the Inbox because the badge
+  // used to re-derive its own count from the improvements list below. The
+  // "new item" notification effect still watches that list's own pending
+  // ids; only the displayed number changes here.
+  const inboxQuery = useQuery({
+    queryKey: ["harness-inbox"],
+    queryFn: fetchInbox,
+    refetchInterval: 60_000,
+  });
+
   useEffect(() => {
     if (user?.id) void seedSettings(user.id);
   }, [user?.id]);
@@ -112,14 +125,11 @@ function AuthedLayout() {
     previousPendingIds.current = currentPendingIds;
   }, [improvementsQuery.data?.improvements]);
 
-  // Task C3 / spec §4b display: the sidebar badge is the server's own count
-  // (pending improvements + open retirement proposals), not re-derived from
-  // the full items list -- the notification effect above still watches every
-  // item's own decision.status (its id set already includes retire items'
-  // negative ids, so a new retire proposal notifies exactly like a new
-  // improvement, with no extra logic needed here).
-  const counts = improvementsQuery.data?.counts;
-  const badgeCount = counts ? counts.pending + counts.retire : 0;
+  // Checkpoint 3 UX fix 1: never counts.pending + counts.retire here again --
+  // the Inbox's own count (listInboxItems().length via fetchInbox) is the
+  // single source of truth for "how many things need a decision", so the
+  // badge can never show a different number than the Inbox page itself does.
+  const badgeCount = inboxQuery.data && inboxQuery.data.available ? inboxQuery.data.count : 0;
 
   // Round 6 Task 2 / spec §2: connection truth on every page -- one line in
   // the sidebar footer, from the same executor status the pages already

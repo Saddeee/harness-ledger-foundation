@@ -13,6 +13,7 @@
 // fetchTimeline for the selected target's nodes, postKnowledge for "Undo
 // this change" / "Go back to before this change").
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,61 @@ export const Route = createFileRoute("/_authenticated/history")({
 });
 
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
+
+// ---- Checkpoint 3 UX fix 3: "Current Knowledge" collapses by default ----
+// The owner reported this box always taking up space above the timeline
+// even though it's rarely what they came to History to read. Persisted per
+// browser only (localStorage), never sent anywhere; try/catch around every
+// access so a private window or blocked storage never breaks the page.
+const CURRENT_KNOWLEDGE_OPEN_KEY = "harness-history-current-knowledge-open";
+
+function readCurrentKnowledgeOpen(): boolean {
+  try {
+    return window.localStorage.getItem(CURRENT_KNOWLEDGE_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeCurrentKnowledgeOpen(open: boolean): void {
+  try {
+    if (open) window.localStorage.setItem(CURRENT_KNOWLEDGE_OPEN_KEY, "1");
+    else window.localStorage.removeItem(CURRENT_KNOWLEDGE_OPEN_KEY);
+  } catch {
+    // per-browser convenience only -- never block on storage failing
+  }
+}
+
+// Same managed-block markers as timeline.tsx's own (unexported) constants --
+// duplicated locally rather than imported, the same convention timeline.tsx
+// already uses for its own copy of these two strings.
+const CURRENT_KNOWLEDGE_HARNESS_START = "<!-- harness:start -->";
+const CURRENT_KNOWLEDGE_HARNESS_END = "<!-- harness:end -->";
+
+/** How many rules the managed block's own bullet lines carry, or null when
+ * there's no managed block to count (cheap, client-side, no new read). */
+function countManagedRules(content: string, managedBlockPresent: boolean): number | null {
+  if (!managedBlockPresent) return null;
+  const start = content.indexOf(CURRENT_KNOWLEDGE_HARNESS_START);
+  const end = content.indexOf(CURRENT_KNOWLEDGE_HARNESS_END);
+  if (start === -1 || end === -1 || end < start) return null;
+  const managed = content.slice(start + CURRENT_KNOWLEDGE_HARNESS_START.length, end);
+  return managed.split("\n").filter((line) => /^\s*-\s+/.test(line)).length;
+}
+
+/** The collapsed summary's own one-line hint: target name, character count,
+ * and "N rules" when that's cheap to know (omitted otherwise). */
+function currentKnowledgeHint(
+  targetName: string,
+  content: string,
+  managedBlockPresent: boolean,
+): string {
+  const parts = [targetName, `${content.length.toLocaleString()} characters`];
+  const rules = countManagedRules(content, managedBlockPresent);
+  if (rules != null) parts.push(rules === 1 ? "1 rule" : `${rules} rules`);
+  return parts.join(" · ");
+}
+// ---- end Checkpoint 3 UX fix 3 ----
 // Checkpoint 3 I2: skipped suggestions are inspectable right here now --
 // every decision (including a skip) is its own "decision" timeline node,
 // filterable under Suggestions -- so this no longer points at a separate
@@ -88,6 +144,8 @@ function Page() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const filter: HistoryFilterValue = search.filter ?? "all";
+  // Checkpoint 3 UX fix 3: closed unless this browser remembers it open.
+  const [knowledgeOpen, setKnowledgeOpen] = useState<boolean>(readCurrentKnowledgeOpen);
 
   const knowledge = useQuery({ queryKey: ["harness-knowledge"], queryFn: fetchKnowledge });
   const executor = useQuery(executorQueryOptions);
@@ -243,26 +301,53 @@ function Page() {
           </div>
 
           {/* Checkpoint 2 2-C: "Current Knowledge" -- the newest written
-              version or latest snapshot for the selected target, in its own
-              box, visually separate from the event timeline below it. */}
-          <section className="space-y-2 rounded-md border p-4" aria-labelledby="current-knowledge">
-            <h2 id="current-knowledge" className="text-lg font-semibold">
+              version or latest snapshot for the selected target, visually
+              separate from the event timeline below it. Checkpoint 3 UX fix
+              3: collapsed by default (a <details>, not a <section>) -- the
+              summary alone carries the target name, character count and
+              rule count, so collapsed is still informative; expanding shows
+              the same ManagedBlockText as before. Open state is remembered
+              per browser (CURRENT_KNOWLEDGE_OPEN_KEY), not on the server. */}
+          <details
+            className="space-y-2 rounded-md border p-4"
+            open={knowledgeOpen}
+            onToggle={(e) => {
+              const open = e.currentTarget.open;
+              setKnowledgeOpen(open);
+              writeCurrentKnowledgeOpen(open);
+            }}
+          >
+            <summary
+              id="current-knowledge"
+              className="cursor-pointer text-lg font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
               Current Knowledge
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {selected?.current
-                ? `Read from Lovable at ${formatDate(selected.current.fetched_at)}`
-                : "Not read yet — press Sync now on the Instructions page."}
-            </p>
-            {selected?.current?.content ? (
-              <ManagedBlockText
-                content={selected.current.content}
-                managedBlockPresent={selected.managed_block_present}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground">Nothing here yet.</p>
-            )}
-          </section>
+              {selected ? (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  {currentKnowledgeHint(
+                    selected.name,
+                    selected.current?.content ?? "",
+                    selected.managed_block_present,
+                  )}
+                </span>
+              ) : null}
+            </summary>
+            <div className="space-y-2 pt-2">
+              <p className="text-sm text-muted-foreground">
+                {selected?.current
+                  ? `Read from Lovable at ${formatDate(selected.current.fetched_at)}`
+                  : "Not read yet — press Sync now on the Instructions page."}
+              </p>
+              {selected?.current?.content ? (
+                <ManagedBlockText
+                  content={selected.current.content}
+                  managedBlockPresent={selected.managed_block_present}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">Nothing here yet.</p>
+              )}
+            </div>
+          </details>
 
           {timeline.isLoading ? (
             <div className="rounded-md border p-6 text-sm text-muted-foreground">Loading…</div>

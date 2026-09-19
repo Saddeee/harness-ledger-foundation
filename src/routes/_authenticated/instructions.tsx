@@ -50,10 +50,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   aiReviewLine,
+  ALL_PROJECTS_LABEL,
   attentionBlock,
   CANCEL_WRITE_TOAST,
   formatDate,
   formatDay,
+  INSTRUCTIONS_PROJECT_FILTER_LABEL,
   NOTHING_NEEDS_ATTENTION_LINE,
   observedLine,
   REMOVE_FROM_KNOWLEDGE_BODY,
@@ -62,9 +64,11 @@ import {
   replayEvidenceLine,
   ruleActiveLine,
   skillProposalStatusLabel,
+  WORKSPACE_TARGET_LABEL,
 } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
+  fetchImprovements,
   fetchKnowledge,
   postExecutor,
   postImprovementAction,
@@ -76,7 +80,18 @@ import {
   type SkillProposalListItem,
 } from "@/lib/improvements-client";
 
+// Checkpoint 3 UX fix 2: the per-project filter -- ?project=<lovable
+// project id> or ?project=workspace, or omitted for "All projects". Only
+// ever narrows which of the already-fetched targets/proposals are shown;
+// it fetches nothing of its own.
+type InstructionsSearch = { project?: string };
+
 export const Route = createFileRoute("/_authenticated/instructions")({
+  validateSearch: (search: Record<string, unknown>): InstructionsSearch => {
+    const raw = search["project"];
+    const project = typeof raw === "string" && raw ? raw : undefined;
+    return project ? { project } : {};
+  },
   head: () => ({
     meta: [
       { title: "Instructions — Harness Ledger" },
@@ -558,9 +573,19 @@ function SkillsSection({ proposals }: { proposals: SkillProposalListItem[] }) {
 
 function Page() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const search = Route.useSearch();
   const query = useQuery({ queryKey: ["harness-knowledge"], queryFn: fetchKnowledge });
   const executor = useQuery(executorQueryOptions);
   const skills = useQuery(skillsQueryOptions);
+  // Checkpoint 3 UX fix 2: a Skill proposal has no scope of its own, only the
+  // project its correction came from -- read from the same improvements list
+  // the sidebar badge and Overview already poll ("harness-improvements"),
+  // dedupe by react-query, not a fetch of its own.
+  const improvementsQuery = useQuery({
+    queryKey: ["harness-improvements"],
+    queryFn: fetchImprovements,
+  });
 
   const syncNow = useMutation({
     mutationFn: () => postExecutor({ action: "sync_now" }),
@@ -663,8 +688,43 @@ function Page() {
       workspaceTarget.retired_rules.length > 0 ||
       (workspaceTarget.current?.content ?? "").trim().length > 0 ||
       workspaceTarget.pending_write != null);
-  const attentionItems = collectAttentionItems(targets);
+
+  // ---- Checkpoint 3 UX fix 2: per-project filter (?project=) ----
+  const projectOptions = targets
+    .filter((t) => t.target === "project")
+    .map((t) => ({ value: t.id, label: t.name }));
+  const selectedTarget: { target: "project" | "workspace"; id: string } | null =
+    search.project === "workspace"
+      ? workspaceTarget
+        ? { target: "workspace", id: workspaceTarget.id }
+        : null
+      : search.project
+        ? { target: "project", id: search.project }
+        : null;
+  const visibleTargets = selectedTarget
+    ? targets.filter((t) => t.target === selectedTarget.target && t.id === selectedTarget.id)
+    : targets;
+  const showWorkspaceFallbackNote =
+    !workspaceHasContent && (!selectedTarget || selectedTarget.target === "workspace");
+  // A Skill proposal has no scope of its own; it belongs to whichever
+  // project's correction produced it (a Skill is never workspace-scoped the
+  // way a rule can be), so the Workspace filter always shows none.
+  const skillProposalProjectId = (id: number): string | null => {
+    for (const imp of improvementsQuery.data?.improvements ?? []) {
+      if (imp.skill_proposal?.id === id) return imp.project.id;
+    }
+    return null;
+  };
+  // ---- end Checkpoint 3 UX fix 2 ----
+
+  const attentionItems = collectAttentionItems(visibleTargets);
   const skillProposals = skills.data?.proposals ?? [];
+  const visibleSkillProposals =
+    selectedTarget == null
+      ? skillProposals
+      : selectedTarget.target === "workspace"
+        ? []
+        : skillProposals.filter((p) => skillProposalProjectId(p.id) === selectedTarget.id);
 
   return (
     <div className="space-y-8">
@@ -700,37 +760,91 @@ function Page() {
         </div>
       ) : (
         <>
+          {/* Checkpoint 3 UX fix 2: All projects plus one option per
+              allowed project plus the workspace target (only offered once
+              one actually exists) -- narrows Needs your attention,
+              Knowledge and Skills below to the chosen target; changes the
+              URL (?project=) so an Overview/Inbox link can open here already
+              scoped. */}
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label={INSTRUCTIONS_PROJECT_FILTER_LABEL}
+          >
+            <span className="text-sm font-medium text-muted-foreground">
+              {INSTRUCTIONS_PROJECT_FILTER_LABEL}
+            </span>
+            <Button
+              type="button"
+              variant={!search.project ? "default" : "outline"}
+              size="sm"
+              aria-pressed={!search.project}
+              onClick={() => navigate({ to: "/instructions", search: {} })}
+            >
+              {ALL_PROJECTS_LABEL}
+            </Button>
+            {projectOptions.map((o) => (
+              <Button
+                key={o.value}
+                type="button"
+                variant={search.project === o.value ? "default" : "outline"}
+                size="sm"
+                aria-pressed={search.project === o.value}
+                onClick={() => navigate({ to: "/instructions", search: { project: o.value } })}
+              >
+                {o.label}
+              </Button>
+            ))}
+            {workspaceTarget ? (
+              <Button
+                type="button"
+                variant={search.project === "workspace" ? "default" : "outline"}
+                size="sm"
+                aria-pressed={search.project === "workspace"}
+                onClick={() => navigate({ to: "/instructions", search: { project: "workspace" } })}
+              >
+                {WORKSPACE_TARGET_LABEL}
+              </Button>
+            ) : null}
+          </div>
+
           <NeedsAttentionSection items={attentionItems} />
 
           <section aria-labelledby="instructions-knowledge" className="space-y-6">
             <h2 id="instructions-knowledge" className="text-lg font-semibold">
               Knowledge
             </h2>
-            {targets.map((t) =>
-              t.target === "workspace" && !workspaceHasContent ? null : (
-                <TargetSection
-                  key={`${t.target}-${t.id}`}
-                  target={t}
-                  syncing={syncNow.isPending}
-                  onSyncNow={() => syncNow.mutate()}
-                  retireBusy={retireRule.isPending}
-                  onRetire={(ruleId) => retireRule.mutate(ruleId)}
-                  readdBusy={readdRule.isPending}
-                  onReadd={(improvementId) => readdRule.mutate(improvementId)}
-                  cancelWriteBusy={cancelWrite.isPending}
-                  onCancelWrite={(versionId) => cancelWrite.mutate(versionId)}
-                />
-              ),
+            {selectedTarget && visibleTargets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nothing to show for this filter.</p>
+            ) : (
+              <>
+                {visibleTargets.map((t) =>
+                  t.target === "workspace" && !workspaceHasContent ? null : (
+                    <TargetSection
+                      key={`${t.target}-${t.id}`}
+                      target={t}
+                      syncing={syncNow.isPending}
+                      onSyncNow={() => syncNow.mutate()}
+                      retireBusy={retireRule.isPending}
+                      onRetire={(ruleId) => retireRule.mutate(ruleId)}
+                      readdBusy={readdRule.isPending}
+                      onReadd={(improvementId) => readdRule.mutate(improvementId)}
+                      cancelWriteBusy={cancelWrite.isPending}
+                      onCancelWrite={(versionId) => cancelWrite.mutate(versionId)}
+                    />
+                  ),
+                )}
+                {showWorkspaceFallbackNote ? (
+                  <p className="text-sm text-muted-foreground">
+                    No workspace-wide rules yet. Choose "Add to all my projects" on a suggestion to
+                    create one.
+                  </p>
+                ) : null}
+              </>
             )}
-            {!workspaceHasContent ? (
-              <p className="text-sm text-muted-foreground">
-                No workspace-wide rules yet. Choose "Add to all my projects" on a suggestion to
-                create one.
-              </p>
-            ) : null}
           </section>
 
-          <SkillsSection proposals={skillProposals} />
+          <SkillsSection proposals={visibleSkillProposals} />
         </>
       )}
     </div>

@@ -127,6 +127,23 @@ test("one source of truth: exactly one Inbox aggregation, one route branch, Over
   assert.ok(!/fetch\(/.test(INBOX), "inbox.tsx never calls fetch directly");
 });
 
+test("sidebar badge: route.tsx derives it from the Inbox's own count, never from counts.pending", () => {
+  assert.match(
+    SHELL,
+    /fetchInbox/,
+    "route.tsx must read the same Inbox fetch the Inbox page and Overview read",
+  );
+  assert.match(SHELL, /queryKey: \["harness-inbox"\]/, "same query key -- react-query dedupes it");
+  assert.match(
+    SHELL,
+    /const badgeCount =\s+inboxQuery\.data && inboxQuery\.data\.available \? inboxQuery\.data\.count : 0;/,
+  );
+  assert.ok(
+    !/const badgeCount = counts/.test(SHELL) && !/counts\.pending \+ counts\.retire/.test(SHELL),
+    "the badge must never be re-derived from counts.pending/counts.retire again",
+  );
+});
+
 test("History: filter values and their labels", () => {
   assert.match(HISTORY, /filter\?: HistoryFilterValue/);
   for (const v of ["all", "suggestions", "knowledge", "skills", "tests", "restores"]) {
