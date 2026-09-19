@@ -64,6 +64,35 @@ test("harness-ux.ts: testStatusPhrase for a judged run reads the conclusion labe
   assert.equal(ux.testStatusPhrase({ status: "judged", conclusion: undefined }), "Judged");
 });
 
+// ---- 1b. Fix round 1, review item 2: ruleTitle -- a frontend-safe
+// equivalent of harness/src/improvements.ts's own titleFor (72-char
+// word-boundary truncation, cannot be imported client-side). ----
+
+test("harness-ux.ts: ruleTitle leaves a short sentence unchanged", () => {
+  assert.equal(ux.ruleTitle("Use sentence case in headings."), "Use sentence case in headings.");
+  assert.equal(ux.ruleTitle(""), "");
+  assert.equal(ux.ruleTitle(null), "");
+  assert.equal(ux.ruleTitle(undefined), "");
+});
+
+test("harness-ux.ts: ruleTitle leaves a long-but-terminated first sentence untouched -- only a run-on with no terminator gets clipped", () => {
+  const longSentence =
+    "This is a genuinely long first sentence that runs well past seventy two characters on its own before the period lands.";
+  assert.ok(longSentence.length > 72);
+  const withMore = `${longSentence} And then a second sentence follows after it.`;
+  assert.equal(ux.ruleTitle(withMore), longSentence);
+});
+
+test("harness-ux.ts: ruleTitle clips a run-on instruction with no sentence terminator at a word boundary, with a trailing ellipsis", () => {
+  const runOn =
+    "always use sentence case for every heading across the whole project no matter what page or component it lives in and never capitalize every word";
+  assert.ok(runOn.length > 72);
+  assert.equal(
+    ux.ruleTitle(runOn),
+    "always use sentence case for every heading across the whole project no…",
+  );
+});
+
 // ---- 2. tests.tsx: a card list, not a table -- no "Historical replay" ----
 
 test("tests.tsx: is a card list -- no <table, and testStatusPhrase(run) supplies the status line", () => {
@@ -86,12 +115,30 @@ test("tests.tsx: a failed run's raw error is never shown inline -- failedSummary
   );
 });
 
-test("tests.tsx: the card's own rule sentence, Started/cost line, and Open link", () => {
+// Round 8 Task 5 fix 2: re-pinned with intent -- the card title now reads
+// ruleTitle(run.rule_text) (bounded at 72 chars), not the unbounded
+// firstSentence(run.rule_text) the first pass used.
+test("tests.tsx: the card's own rule title, Started/cost line, and Open link", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
-  assert.match(code, /firstSentence\(run\.rule_text\)/);
+  assert.match(code, /ruleTitle\(run\.rule_text\)/);
   assert.match(code, /`Started \$\{formatDate\(run\.started_at\)\}`/);
   assert.match(code, /<Link\s+to="\/judge"\s+search=\{\{\s*run:\s*run\.id\s*\}\}/);
   assert.match(code, />\s*Open\s*</);
+});
+
+// Round 8 Task 5 fix 3: buildLinks' two link labels reuse the shared
+// HISTORICAL_RESULT_TITLE/REPLAY_WITH_RULE_TITLE constants instead of their
+// own separately-worded strings ("Historical result"/"Rebuilt copy").
+test("tests.tsx: buildLinks reuses HISTORICAL_RESULT_TITLE/REPLAY_WITH_RULE_TITLE for its own link labels", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  const buildLinksFn = code.slice(
+    code.indexOf("function buildLinks"),
+    code.indexOf("function costCell"),
+  );
+  assert.match(buildLinksFn, /label:\s*HISTORICAL_RESULT_TITLE/);
+  assert.match(buildLinksFn, /label:\s*REPLAY_WITH_RULE_TITLE/);
+  assert.doesNotMatch(buildLinksFn, /"Historical result"/);
+  assert.doesNotMatch(buildLinksFn, /"Rebuilt copy"/);
 });
 
 // ---- 3. Renamed labels (harness-ux.ts constants), pinned exactly ----
@@ -119,6 +166,20 @@ test("harness-ux.ts: conclusionLine reads 'Result: <label>'", () => {
 
 test("harness-ux.ts: WHY_APPROXIMATION_TITLE is unchanged", () => {
   assert.equal(ux.WHY_APPROXIMATION_TITLE, "Why this is an approximation");
+});
+
+// Fix round 1, review item 4: conclusionDerivationLines' own "Evidence
+// strength: ..." bullet (inside Full technical details' "How the conclusion
+// was derived" list) renamed to match evidenceStrengthTitle's own "How much
+// this shows: ..." prefix.
+test("harness-ux.ts: conclusionDerivationLines' evidence-strength bullet reads 'How much this shows: ...'", () => {
+  const lines = ux.conclusionDerivationLines({
+    verdicts: ["yes", "no"],
+    quality: "historical_approximation",
+    regression_flag: false,
+  });
+  assert.ok(lines.some((l) => l === "How much this shows: An approximation."));
+  assert.ok(!lines.some((l) => l.startsWith("Evidence strength:")));
 });
 
 test("harness-ux.ts: evidenceSourceLines' fourth sentence reworded from 'Historical replay: ...' to 'Test: ...'", () => {

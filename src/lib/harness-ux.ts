@@ -945,8 +945,12 @@ export function evidenceStrengthLine(
   quality: EnvironmentQualityLike | null | undefined,
 ): string | null {
   switch (quality) {
+    // Round 8 Task 5 fix 1: reworded from "Historical approximation: ..."
+    // -- this sentence renders uncollapsed directly under evidenceStrengthTitle's
+    // own "How much this shows: An approximation" title, so it now opens
+    // with the same plain-words label instead of the old technical one.
     case "historical_approximation":
-      return "Historical approximation: the historical result ran in a different Lovable environment; this replay shows whether the correction would appear again, not that the rule alone caused any difference.";
+      return "An approximation: the historical result ran in a different Lovable environment; this replay shows whether the correction would appear again, not that the rule alone caused any difference.";
     case "not_comparable":
       return "Not comparable: the historical code state could not be established.";
     case "partially_controlled":
@@ -1029,7 +1033,9 @@ export function conclusionDerivationLines(input: {
   const total = input.verdicts.length;
   return [
     `Verdicts: ${yes} yes, ${no} no, ${unclear} unclear (${total} correction${total === 1 ? "" : "s"} total).`,
-    `Evidence strength: ${environmentQualityLabel(input.quality)}.`,
+    // Round 8 Task 5 fix 4: reworded from "Evidence strength: ..." to match
+    // evidenceStrengthTitle's own renamed "How much this shows: ..." prefix.
+    `How much this shows: ${environmentQualityLabel(input.quality)}.`,
     input.regression_flag
       ? "You flagged that the replay introduced a new problem you would have to correct."
       : "No regression was flagged for this replay.",
@@ -2110,5 +2116,25 @@ export function testStatusPhrase(run: {
     default:
       return "Cancelled";
   }
+}
+
+const RULE_TITLE_MAX_CHARS = 72;
+
+// Round 8 Task 5 fix 2: a frontend-safe equivalent of
+// harness/src/improvements.ts's own titleFor -- that function cannot be
+// imported client-side (harness/src is the local Node package, not part of
+// the browser bundle), so this reimplements its exact rule using
+// firstSentence (already defined above in this file, dependency-free): the
+// first sentence renders untouched, however long, whenever a real sentence
+// terminator was found (there is more text after it, or it's already
+// short); only a single run-on instruction with no terminator at all --
+// firstSentence's own fallback to the whole trimmed text -- gets clipped at
+// a word boundary and given a trailing "…".
+export function ruleTitle(text: string | null | undefined): string {
+  const sentence = firstSentence(text);
+  if (sentence.length <= RULE_TITLE_MAX_CHARS || sentence !== (text ?? "").trim()) return sentence;
+  const cut = sentence.slice(0, RULE_TITLE_MAX_CHARS);
+  const atWord = cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)).replace(/[\s,;:—–-]+$/, "");
+  return `${atWord}…`;
 }
 // ---- end Round 8 Task 5 ----

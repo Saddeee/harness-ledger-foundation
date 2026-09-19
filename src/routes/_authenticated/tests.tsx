@@ -27,12 +27,14 @@ import {
   // ---- Round 8 Task 2 ----
   failedSummaryParts,
   // ---- end Round 8 Task 2 ----
-  firstSentence,
   formatDate,
   formatDay,
+  HISTORICAL_RESULT_TITLE,
+  REPLAY_WITH_RULE_TITLE,
   TEST_A_RULE_PAGE_TITLE,
   testsPageCreditsLine,
   // ---- Round 8 Task 5 ----
+  ruleTitle,
   testStatusPhrase,
   // ---- end Round 8 Task 5 ----
 } from "@/lib/harness-ux";
@@ -70,16 +72,18 @@ const IN_PROGRESS_STATUSES = new Set(["copying", "building"]);
 const POLL_MS = 10_000;
 
 // Round 7: the test's builds are real Lovable projects -- open them from
-// the list without going through the comparison. Round 8 Task 5: the
-// "Replay with rule" link text renamed to "Rebuilt copy" (the judge page's
-// own REPLAY_WITH_RULE_TITLE reads "Rebuilt with the rule" -- shorter here
-// since this is just a link label, not a section heading).
+// the list without going through the comparison. Round 8 Task 5 fix 3: both
+// link labels now reuse the judge page's own HISTORICAL_RESULT_TITLE/
+// REPLAY_WITH_RULE_TITLE constants instead of a second, separately-worded
+// pair of strings.
 function buildLinks(run: ExperimentRunSummary) {
   const links = [
     run.original_copy && !run.original_copy.deleted
-      ? { label: "Historical result", href: run.original_copy.editor_url }
+      ? { label: HISTORICAL_RESULT_TITLE, href: run.original_copy.editor_url }
       : null,
-    run.copy && !run.copy.deleted ? { label: "Rebuilt copy", href: run.copy.editor_url } : null,
+    run.copy && !run.copy.deleted
+      ? { label: REPLAY_WITH_RULE_TITLE, href: run.copy.editor_url }
+      : null,
   ].filter((l): l is { label: string; href: string } => l !== null);
   if (links.length === 0) return null;
   return (
@@ -162,9 +166,12 @@ function FeedbackCell({
 }
 
 // Round 8 Task 5 (review item 9): one <article> per run -- project name
-// (small), the rule's first sentence (medium weight), the plain-word status
-// phrase, a failed run's own collapsed technical fold, Started/cost, an
-// Open link to the judging screen, and the existing feedback control.
+// (small), the rule's title (medium weight; ruleTitle -- fix 2: the
+// frontend-safe equivalent of harness/src/improvements.ts's own titleFor,
+// bounded at 72 chars instead of an unbounded firstSentence), the
+// plain-word status phrase, a failed run's own collapsed technical fold,
+// Started/cost, an Open link to the judging screen, and the existing
+// feedback control.
 function TestCard({
   run,
   editing,
@@ -188,7 +195,7 @@ function TestCard({
   return (
     <article className="space-y-2 rounded-md border p-4">
       <p className="text-xs font-medium text-muted-foreground">{run.project_name ?? "—"}</p>
-      <p className="text-base font-medium">{firstSentence(run.rule_text)}</p>
+      <p className="text-base font-medium">{ruleTitle(run.rule_text)}</p>
       <p className="text-sm">{testStatusPhrase(run)}</p>
       {failed ? (
         <div className="space-y-1">

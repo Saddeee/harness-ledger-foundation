@@ -501,8 +501,12 @@ test("harness-ux.ts: otherActiveRulesLine names the kept rules, the older-test d
   assert.equal(ux.otherActiveRulesLine(undefined), null);
 });
 
+// Round 8 Task 5 fix 1: re-pinned with intent -- this sentence renders
+// uncollapsed directly under evidenceStrengthTitle's own renamed "How much
+// this shows: An approximation" title, so it now opens with "An
+// approximation: " instead of the old "Historical approximation: ".
 test("harness-ux.ts: evidenceStrengthLine, one sentence per quality, null when there is no quality", () => {
-  assert.match(ux.evidenceStrengthLine("historical_approximation")!, /Historical approximation:/);
+  assert.match(ux.evidenceStrengthLine("historical_approximation")!, /^An approximation:/);
   assert.match(
     ux.evidenceStrengthLine("historical_approximation")!,
     /not that the rule alone caused/,
