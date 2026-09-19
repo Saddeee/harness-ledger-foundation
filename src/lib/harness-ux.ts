@@ -972,11 +972,15 @@ export const TEST_A_RULE_PAGE_TITLE = "Test a rule against a previous correction
 export type ReplayConclusionLike =
   "historical_support" | "not_supported" | "possibly_harmful" | "inconclusive";
 
+// Round 8 Task 1 item 6: plain-words labels, replacing the technical
+// "Historical support"/"Not supported by this replay"/"Possible regression"/
+// "Inconclusive" set -- a non-technical Lovable user reads these without
+// knowing what a "replay" or a "regression" is.
 export const CONCLUSION_LABELS: Record<ReplayConclusionLike, string> = {
-  historical_support: "Historical support",
-  not_supported: "Not supported by this replay",
-  possibly_harmful: "Possible regression",
-  inconclusive: "Inconclusive",
+  historical_support: "Correction not needed in the rebuilt copy",
+  not_supported: "Correction still needed, even with the rule",
+  possibly_harmful: "The rule may have made it worse",
+  inconclusive: "Can't tell from this test",
 };
 
 /** "Conclusion: Historical support" -- shown once a run is judged; null
@@ -1504,16 +1508,26 @@ export function actionConsequence(
 }
 
 /** Which ONE action the Inbox card recommends as primary, from the closed
- * set {add, review_skill, test_first} -- Skip is always available but is
- * never itself the recommendation (Harness Ledger doesn't suggest skipping;
- * a person chooses that). Skill-only destinations have nothing to add to
- * Knowledge, so they recommend reviewing the Skill instead; a Knowledge (or
- * Knowledge + Skill) destination recommends testing first when Harness
- * Ledger already staged a test for it, else recommends adding it. */
-export function recommendedPrimaryAction(item: {
-  content_destination: { value: ContentDestinationValue } | null;
-  decision: { test_first: boolean };
-}): "add" | "review_skill" | "test_first" {
+ * set {add, review_skill, test_first, skip}. Skill-only destinations have
+ * nothing to add to Knowledge, so they recommend reviewing the Skill
+ * instead; a Knowledge (or Knowledge + Skill) destination recommends testing
+ * first when Harness Ledger already staged a test for it, else recommends
+ * adding it.
+ * Round 8 Task 1 item 4: Skip used to be excluded from this set entirely --
+ * always available, never itself the recommendation. The one exception now:
+ * when this card's own staged test has already been judged `not_supported`
+ * (the correction still happened without the rule) or `possibly_harmful`
+ * (the rule may have made it worse), the test already answered the question
+ * this card would otherwise ask -- Skip becomes the recommendation, ahead of
+ * every other branch. */
+export function recommendedPrimaryAction(
+  item: {
+    content_destination: { value: ContentDestinationValue } | null;
+    decision: { test_first: boolean };
+  },
+  conclusion?: ReplayConclusionLike | null,
+): "add" | "review_skill" | "test_first" | "skip" {
+  if (conclusion === "not_supported" || conclusion === "possibly_harmful") return "skip";
   if (item.content_destination?.value === "skill") return "review_skill";
   if (item.decision.test_first) return "test_first";
   return "add";
@@ -1695,13 +1709,15 @@ export const RETRY_LABEL = "Retry";
 export const VIEW_LABEL = "View";
 export const YOUR_VERDICT_NEEDED_LINE = "Your verdict is needed";
 
-/** "Replay judged: Historical support" -- the pending-suggestion card's own
- * line once a staged test has been judged but the suggestion itself is
- * still open (InboxItem.conclusion). Null (nothing shown) until judged. */
+/** "Test result: Correction not needed in the rebuilt copy" -- the pending-
+ * suggestion card's own line once a staged test has been judged but the
+ * suggestion itself is still open (InboxItem.conclusion). Null (nothing
+ * shown) until judged. Round 8 Task 1: prefix was "Replay judged:" -- "Test
+ * result:" reads as plain English to a non-technical Lovable user. */
 export function replayJudgedLine(
   conclusion: ReplayConclusionLike | null | undefined,
 ): string | null {
-  return conclusion ? `Replay judged: ${CONCLUSION_LABELS[conclusion]}` : null;
+  return conclusion ? `Test result: ${CONCLUSION_LABELS[conclusion]}` : null;
 }
 
 export const INBOX_RECOMMENDED_ACTION_LABELS: Record<string, string> = {
@@ -1829,3 +1845,59 @@ export function publishedFromProposalLine(day: string): string {
 }
 // ---- end Round 7 fix 4 ----
 // ---- end Checkpoint 3 UX fixes ----
+
+// ---- Round 8 Task 1 ----
+// UX round 8 (2026-09-19), review items 1/3/4/8: the sidebar's own honest,
+// untruncated sync status (route.tsx); the Inbox's single analysis status
+// line (inbox.tsx, replacing the AnalyseNotice mount and the duplicate "New
+// activity"/"Everything synced" copy, which move to Settings > AI analysis);
+// and the exact consequence line for a card whose own staged test already
+// answered the question (recommendedPrimaryAction above returning "skip").
+
+/** The sidebar's second status line, only ever shown once connected and
+ * only when a sync has actually run -- `null` omits the line entirely
+ * (item 3). `time` is always `lastRun.finished_at`; a run that failed
+ * before ever finishing (no `finished_at`) says so without a bare "at".
+ * Never includes the raw error string -- that stays inside the collapsed
+ * Status fold, not the sidebar. */
+export function sidebarSyncLine(
+  lastRun: { finished_at: string | null; ok: boolean | null } | null,
+  nextRunAt: string | null,
+): string | null {
+  if (!lastRun) return null;
+  if (lastRun.ok === true) return `Last sync ${formatTime(lastRun.finished_at)}`;
+  if (lastRun.ok === false) {
+    const base = lastRun.finished_at
+      ? `Last sync failed at ${formatTime(lastRun.finished_at)}`
+      : "Last sync failed";
+    const next = nextRunAt ? ` · next try ${formatTime(nextRunAt)}` : "";
+    return `${base}${next}`;
+  }
+  // ok === null: a run is currently in flight.
+  return "Syncing now";
+}
+
+/** The Inbox's single analysis status line (item 8) -- replaces the
+ * "New activity is ready"/"Everything synced has been analysed" pair and the
+ * AnalyseNotice mount that used to sit on this page (both moved to Settings
+ * > AI analysis, alongside the token figures and "Reanalyse history"). Never
+ * both "N new messages" and "Up to date" at once; "Nothing analysed yet"
+ * only when neither a pending count nor a previous run exists. */
+export function analysisStatusLine(lastAnalysisAt: string | null, unanalysedCount: number): string {
+  if (unanalysedCount > 0) {
+    return `${unanalysedCount} new message${unanalysedCount === 1 ? "" : "s"} to analyse`;
+  }
+  if (lastAnalysisAt) {
+    return `Up to date · last checked ${formatTime(lastAnalysisAt)}`;
+  }
+  return "Nothing analysed yet";
+}
+
+/** Item 4's exact consequence line under the primary Skip button, shown only
+ * when recommendedPrimaryAction returned "skip" because the card's own
+ * staged test already came back not_supported/possibly_harmful. Never the
+ * generic actionConsequence("skip") line in this one case -- that stays the
+ * tertiary/tell-all-actions wording used everywhere else. */
+export const SKIP_RECOMMENDED_CONSEQUENCE_LINE =
+  "The test suggests this rule would not have helped. Skipping changes nothing in Lovable.";
+// ---- end Round 8 Task 1 ----

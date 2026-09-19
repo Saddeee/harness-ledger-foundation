@@ -19,7 +19,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import { DetailSection, RecommendationCallout } from "@/components/harness/decision-layout";
 import { ManagedBlockText } from "@/components/harness/timeline";
 import { VerdictControl } from "@/components/harness/improvement";
@@ -750,7 +749,10 @@ function Page() {
         </div>
       ) : null}
 
-      <AnalyseNotice />
+      {/* Round 8 Task 1 item 8: the shared AnalyseNotice moved to Settings >
+          AI analysis -- the Inbox's own one-line analysisStatusLine now
+          covers "is there anything new to analyse" wherever a decision
+          about that needs making; this page never repeated it. */}
 
       {targets.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">

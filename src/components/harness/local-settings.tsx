@@ -19,6 +19,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+// Round 8 Task 1 item 8: the shared "Analyse now" notice (progress, last-run
+// summary with its token figures, and "Reanalyse history"'s own trigger
+// stays on the Inbox) moved here from the Inbox/Instructions pages -- see
+// analyse-notice.tsx's own comment.
+import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import {
   Select,
   SelectContent,
@@ -1053,6 +1058,13 @@ export function LocalSettings() {
             </p>
           ) : null}
         </div>
+
+        {/* Round 8 Task 1 item 8: progress while a run is active, the last
+            run's own token figures, and "Analyse now" itself -- moved here
+            from the Inbox/Instructions pages. Unchanged apart from dropping
+            its own "All synced messages have been analysed" sentence (the
+            Inbox's one-line analysisStatusLine already covers that). */}
+        <AnalyseNotice />
       </section>
 
       <section className="space-y-4 rounded-md border p-4">

@@ -110,10 +110,15 @@ test("improvement.tsx: CompactDecisionCard's bar has exactly one action-bar cont
   // total, still every one of them sized, never a hardcoded literal.
   // Checkpoint 3: the alternative-scope Add moved to the detail page's
   // Change destination control -- five sized controls remain.
+  // Round 8 Task 1 item 4: recommendedPrimaryAction gained a fourth outcome,
+  // "skip" (the card's own staged test already came back not_supported/
+  // possibly_harmful) -- its branch renders both SkipConfirm (primary,
+  // sized) and AddInstructionConfirm (secondary, sized), two more than the
+  // five above -- seven in total.
   assert.equal(
     count(bar, "size={size}"),
-    5,
-    "the three primary-action branches, the secondary Test first and Skip, all sized",
+    7,
+    "the four primary-action branches (one of them two controls), the secondary Test first and Skip, all sized",
   );
   assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
 });

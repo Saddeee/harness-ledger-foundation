@@ -12,7 +12,6 @@ import {
   useRun,
   type Improvement,
 } from "@/components/harness/improvement";
-import { AnalyseNotice } from "@/components/harness/analyse-notice";
 import {
   executorQueryOptions,
   fetchImprovements,
@@ -38,17 +37,16 @@ import {
 import {
   ALL_PROJECTS_LABEL,
   ANALYSE_NOW_SCOPE_LINE,
-  ANALYSED_ALL_LINE,
   INBOX_INTRO,
   INBOX_TITLE,
   INSTRUCTIONS_PROJECT_FILTER_LABEL,
-  NEW_ACTIVITY_TITLE,
   REANALYSE_TOKENS_NOTE,
   VIEW_PAST_DECISIONS,
   WORKSPACE_TARGET_LABEL,
   inboxCountLine,
-  newActivityLine,
-  tokenEstimateLine,
+  // ---- Round 8 Task 1 item 8 ----
+  analysisStatusLine,
+  // ---- end Round 8 Task 1 item 8 ----
   DISAGREEMENT_ACCEPT_BUTTON,
   DISAGREEMENT_DISMISS_BUTTON,
   DISAGREEMENT_TITLE,
@@ -433,6 +431,18 @@ function Page() {
   // already reads (react-query dedupes/caches it) -- only decision_mode is
   // needed here, to pick the empty-state copy below.
   const executor = useQuery(executorQueryOptions);
+  // Round 8 Task 1 item 8: the Inbox's own "Analyse now" button -- same
+  // mutation and disabled/pending states AnalyseNotice always had (that
+  // component itself moved to Settings > AI analysis, with its progress
+  // display and per-run token figures; "Reanalyse history" stays here).
+  const analyseNow = useMutation({
+    mutationFn: () => postExecutor({ action: "analyse_now" }),
+    onSuccess: () => {
+      toast.success("Analysis started");
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not request analysis"),
+  });
 
   // Task C3 / spec §5 "new since your last visit": read the *previous*
   // last_seen_at from the first successful load of this visit, before
@@ -582,6 +592,14 @@ function Page() {
 
   const awaiting = executor.data?.analysis?.awaiting_analysis ?? 0;
   const lastAnalysis = executor.data?.analysis?.last_run?.finished_at ?? null;
+  // Round 8 Task 1 item 8: the same executor query above, reused rather than
+  // a fetch of its own (the UI's six /api/public/harness/* routes are a
+  // closed set) -- running/queued and provider_ready feed the "Analyse now"
+  // button's disabled state, same as AnalyseNotice's own logic.
+  const analysisRunning = Boolean(
+    executor.data?.analysis?.running || executor.data?.analysis?.queued,
+  );
+  const providerReady = executor.data?.analysis?.provider_ready;
 
   return (
     <div className="space-y-6">
@@ -732,24 +750,25 @@ function Page() {
         </Link>
       </p>
 
-      {/* Secondary: analysis status. New activity gets a heading and the
-          Analyse now control; otherwise one compact status line. */}
+      {/* Secondary: analysis status. Round 8 Task 1 item 8: one status line
+          (analysisStatusLine) plus its own "Analyse now" button, replacing
+          the "New activity"/"Everything synced" pair and the shared notice
+          this page used to mount -- its progress display, the last run's
+          token figures, and "Reanalyse history"'s own scope/estimate live
+          in Settings > AI analysis now; the trigger for it stays here. */}
       <section aria-label="Analysis" className="space-y-2 rounded-md border p-4">
-        {awaiting > 0 ? (
-          <>
-            <h2 className="text-base font-medium">{NEW_ACTIVITY_TITLE}</h2>
-            <p className="text-sm text-muted-foreground">{newActivityLine(awaiting)}</p>
-            <p className="text-xs text-muted-foreground">{tokenEstimateLine(null)}</p>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {ANALYSED_ALL_LINE}
-            {lastAnalysis ? ` Last analysis ${new Date(lastAnalysis).toLocaleString()}.` : ""}
-          </p>
-        )}
-        <AnalyseNotice />
+        <p className="text-sm text-muted-foreground">
+          {analysisStatusLine(lastAnalysis, awaiting)}
+        </p>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">{ANALYSE_NOW_SCOPE_LINE}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => analyseNow.mutate()}
+            disabled={analysisRunning || !providerReady?.ok || analyseNow.isPending}
+          >
+            {analyseNow.isPending ? "Starting…" : analysisRunning ? "Analysing…" : "Analyse now"}
+          </Button>
           <div className="space-y-1 text-right">
             <Button size="sm" variant="ghost" onClick={() => setReanalyseOpen(true)}>
               {REANALYSE_TRIGGER_BUTTON}
@@ -757,6 +776,15 @@ function Page() {
             <p className="text-xs text-muted-foreground">{REANALYSE_TOKENS_NOTE}</p>
           </div>
         </div>
+        {providerReady && !providerReady.ok ? (
+          <p className="text-xs text-muted-foreground">
+            {providerReady.reason || "Add an API key or install Claude Code in Settings."}{" "}
+            <Link to="/settings" className="underline underline-offset-2 hover:no-underline">
+              Open Settings
+            </Link>
+          </p>
+        ) : null}
+        <p className="text-xs text-muted-foreground">{ANALYSE_NOW_SCOPE_LINE}</p>
         <ReanalyseDialog open={reanalyseOpen} onOpenChange={setReanalyseOpen} />
       </section>
     </div>

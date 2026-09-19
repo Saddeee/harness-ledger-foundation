@@ -67,11 +67,24 @@ test("analyse-notice.tsx: Analyse now, analyse_now, running/last-run/not-ready c
   );
 });
 
-test("instructions.tsx and inbox.tsx render the shared AnalyseNotice", () => {
+// Round 8 Task 1 item 8: AnalyseNotice moved off both these pages to
+// Settings > AI analysis -- the Inbox's own one-line analysisStatusLine (see
+// ux-round8-task1.test.ts) covers what this notice used to say there, and
+// Instructions never repeated it.
+test("instructions.tsx and inbox.tsx no longer render the shared AnalyseNotice; local-settings.tsx does", () => {
   for (const page of [INSTRUCTIONS_PAGE, INBOX_PAGE]) {
     const raw = readApp(page);
-    assert.match(codeOnly(raw), /<AnalyseNotice/, `${page} should render <AnalyseNotice`);
+    assert.ok(
+      !/<AnalyseNotice/.test(codeOnly(raw)),
+      `${page} should no longer render <AnalyseNotice`,
+    );
   }
+  const settings = readApp("components/harness/local-settings.tsx");
+  assert.match(
+    codeOnly(settings),
+    /<AnalyseNotice/,
+    "local-settings.tsx should render <AnalyseNotice",
+  );
 });
 
 test("inbox.tsx: isNew treats a never-visited last_seen_at as nothing New, not everything New", () => {

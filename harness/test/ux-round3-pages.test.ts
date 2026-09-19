@@ -477,15 +477,16 @@ test("instructions.tsx: the page's own title is 'Instructions' in every state, n
   assert.ok(!/<h1[^>]*>Knowledge<\/h1>/.test(code), "no <h1> should still read Knowledge");
 });
 
-test("instructions.tsx: the awaiting-analysis note is now the shared AnalyseNotice (Round 4 Task A4)", () => {
+test("instructions.tsx: the old not-switched-on placeholder note stays gone; the shared AnalyseNotice moved to Settings (Round 8 Task 1 item 8)", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   // Superseded: analysis now genuinely runs when the user presses "Analyse
   // now" (see analyse-notice.tsx / ux-round4.test.ts), so the old
-  // not-switched-on placeholder note is gone from this page, replaced by
-  // the shared notice component.
+  // not-switched-on placeholder note is gone from this page.
   assert.ok(!raw.includes("Analysis is not switched on yet."));
   assert.ok(!raw.includes("Analysis uses Harness Ledger's own AI and runs when you ask for it."));
-  assert.match(codeOnly(raw), /<AnalyseNotice/);
+  // Round 8 Task 1 item 8: the shared notice component itself moved off
+  // this page to Settings > AI analysis.
+  assert.ok(!/<AnalyseNotice/.test(codeOnly(raw)));
 });
 
 test("local-settings.tsx: one AI-analysis save action (settings + key when typed), no separate Save key button", () => {

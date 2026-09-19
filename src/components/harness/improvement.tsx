@@ -114,6 +114,9 @@ import {
   inboxActionConsequence,
   FIELD_LABELS,
   type ReplayConclusionLike,
+  // ---- Round 8 Task 1 ----
+  SKIP_RECOMMENDED_CONSEQUENCE_LINE,
+  // ---- end Round 8 Task 1 ----
 } from "@/lib/harness-ux";
 
 import {
@@ -412,11 +415,16 @@ function SkipConfirm({
   busy,
   run,
   size,
+  variant,
 }: {
   item: Improvement;
   busy: boolean;
   run: Run;
   size?: "default" | "sm" | undefined;
+  // Round 8 Task 1 item 4: every other caller keeps the old tertiary "ghost"
+  // look; CompactDecisionCard's own action bar passes "default" for the one
+  // case Skip is itself the card's primary (dark) recommendation.
+  variant?: "default" | "ghost";
 }) {
   const [reason, setReason] = useState<SkipReasonValue | null>(null);
   // Same roving-tabindex radiogroup pattern as AddConfirm's own above:
@@ -441,7 +449,7 @@ function SkipConfirm({
   return (
     <ConfirmAction
       trigger="Skip"
-      variant="ghost"
+      variant={variant ?? "ghost"}
       size={size}
       title="Skip this suggestion?"
       body="Harness Ledger won't suggest it again."
@@ -1112,17 +1120,24 @@ type EditableState = {
 
 // Round 5 Task 5 / spec §2, rewritten with intent by Checkpoint 2 2-B: the
 // Inbox card now shows exactly the Level 1 fields -- project name, the
-// plain-language lesson, the instruction (or the Skill name for a
-// skill-only destination), the destination in plain words, the one-sentence
-// reason, ONE recommended primary action with its consequence line, and
-// Skip. Everything else (raw classification, the alternative destination,
-// changing scope, the full evidence) is a secondary control, moved into a
-// collapsed "More" area rather than sharing the primary action's visual
-// weight. No group Badge (the "New" badge is the one exception), no
-// DecidedStatus, no editable state -- kept as its own function, never
-// entangled with DecisionCard's own (unchanged) full rendering below, since
-// it always receives a pending item (the Inbox turns a decided one into a
+// proposed instruction as the heading, the instruction blockquote (or the
+// Skill name for a skill-only destination), the destination in plain words,
+// the one-sentence reason, ONE recommended primary action with its
+// consequence line, and Skip. Everything else (raw classification, the
+// classifier's own prediction, the alternative destination, changing scope,
+// the full evidence) is a secondary control, moved into a collapsed "More"
+// area rather than sharing the primary action's visual weight. No group
+// Badge (the "New" badge is the one exception), no DecidedStatus, no
+// editable state -- kept as its own function, never entangled with
+// DecisionCard's own (unchanged) full rendering below, since it always
+// receives a pending item (the Inbox turns a decided one into a
 // ConfirmationRow instead of a card).
+// Round 8 Task 1 item 1: the heading used to be lessonLine(item) -- the
+// classifier's own plain-language prediction of what happened. A
+// non-technical reviewer wants to know what Harness Ledger is proposing to
+// change, not what it inferred, so the heading is item.title (the rule's
+// own first sentence) instead; the prediction moved into the "Why Harness
+// Ledger recommends this" details below, as its first paragraph.
 function CompactDecisionCard({
   item,
   onOpen,
@@ -1155,7 +1170,10 @@ function CompactDecisionCard({
   const reason = item.content_destination
     ? contentDestinationReason(item.content_destination.value, item.content_destination.reason)
     : whyFor(item.classification);
-  const recommended = recommendedPrimaryAction(item);
+  // Round 8 Task 1 item 4: pass this Inbox item's own judged conclusion
+  // (null/undefined for every other card) -- not_supported/possibly_harmful
+  // makes Skip the recommendation instead of Add/Test first.
+  const recommended = recommendedPrimaryAction(item, conclusion);
   const canTest = item.test?.available === true;
   // Checkpoint 3 I2: by the Inbox item contract, this card only ever renders
   // a new_instruction item (content_destination knowledge or both -- a
@@ -1164,13 +1182,17 @@ function CompactDecisionCard({
   // to be true here.
   const runStatus = item.test?.run?.status;
   const testRunning = runStatus === "queued" || runStatus === "copying" || runStatus === "building";
-  // Checkpoint 3 I2: never show the same text twice -- when the plain-
-  // language lesson and the proposed instruction read identically, the
-  // instruction blockquote is dropped and the lesson (already the heading)
-  // stands alone.
+  // Round 8 Task 1 item 1: the heading is now the proposed instruction
+  // itself (item.title -- the rule's own first sentence), not the
+  // classifier's prediction; lessonLine still computed here, but only for
+  // the "Why Harness Ledger recommends this" details below. Never show the
+  // same text twice -- when the full instruction reads identically to the
+  // (already truncated-to-a-sentence) heading, the blockquote is dropped
+  // and the heading stands alone.
   const lesson = lessonLine(item);
+  const heading = item.title;
   const instructionText = item.proposed_instruction?.trim() || null;
-  const showInstruction = instructionText != null && instructionText !== lesson.trim();
+  const showInstruction = instructionText != null && instructionText !== heading.trim();
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       {/* header row: project name + type label left, New badge right */}
@@ -1187,14 +1209,14 @@ function CompactDecisionCard({
           className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => onOpen?.(item.id)}
         >
-          {lesson}
+          {heading}
         </button>
       </h2>
       {/* body: full width, a sibling of the header row above */}
-      {/* Checkpoint 2 2-B / Checkpoint 3 I2: the plain-language lesson is the
-          heading above; the proposed instruction (or, for a skill-only
-          destination, the Skill name) follows, only when it says something
-          the lesson didn't already say. */}
+      {/* Round 8 Task 1 item 1: the proposed instruction is the heading
+          above; the full instruction text (or, for a skill-only
+          destination, the Skill name) follows in a blockquote, only when it
+          says something the heading didn't already say. */}
       {skillOnly ? (
         <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
           {item.skill_proposal?.name ?? NO_INSTRUCTION}
@@ -1230,7 +1252,28 @@ function CompactDecisionCard({
       ) : null}
       <TestStatusLine item={item} />
       <div className={ACTION_BAR_CLASS}>
-        {recommended === "review_skill" ? (
+        {/* Round 8 Task 1 item 4: the card's own staged test already came
+            back not_supported/possibly_harmful -- Skip is the primary (dark)
+            button, with its own exact consequence line, and Add instruction
+            becomes the secondary. */}
+        {recommended === "skip" ? (
+          <>
+            <div className="space-y-1">
+              <SkipConfirm item={item} busy={busy} run={run} size={size} variant="default" />
+              <p className="text-xs text-muted-foreground">{SKIP_RECOMMENDED_CONSEQUENCE_LINE}</p>
+            </div>
+            <div className="space-y-1">
+              <AddInstructionConfirm
+                item={item}
+                busy={busy}
+                run={run}
+                size={size}
+                variant="outline"
+              />
+              <p className="text-xs text-muted-foreground">{actionConsequence("add", scope)}</p>
+            </div>
+          </>
+        ) : recommended === "review_skill" ? (
           <div className="space-y-1">
             <Button type="button" size={size} onClick={() => onOpen?.(item.id)}>
               {PRIMARY_ACTION_LABELS.review_skill}
@@ -1279,7 +1322,9 @@ function CompactDecisionCard({
       </div>
       {/* Checkpoint 3 I2: tertiary text actions -- Edit, Skip, Change
           destination, View details -- ghost/link style, never sharing the
-          primary action bar's visual weight. */}
+          primary action bar's visual weight. Round 8 Task 1 item 4: Skip is
+          already the primary button above when recommended === "skip", so
+          this tertiary copy of it is dropped rather than offering it twice. */}
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -1288,7 +1333,9 @@ function CompactDecisionCard({
         >
           {EDIT_LABEL}
         </button>
-        <SkipConfirm item={item} busy={busy} run={run} size={size} />
+        {recommended !== "skip" ? (
+          <SkipConfirm item={item} busy={busy} run={run} size={size} />
+        ) : null}
         <ChangeDestinationControl item={item} busy={busy} run={run} />
         <button
           type="button"
@@ -1299,12 +1346,15 @@ function CompactDecisionCard({
         </button>
       </div>
       {/* Checkpoint 3 I2: prediction paragraphs collapse here; everything
-          technical stays on the detail page. */}
+          technical stays on the detail page. Round 8 Task 1 item 1: the
+          plain-language prediction (lessonLine, used to be this card's
+          heading) is now this details' first paragraph. */}
       <details className="rounded-md border">
         <summary className="cursor-pointer px-2 py-1 text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {WHY_RECOMMENDS_TITLE}
         </summary>
         <div className="space-y-2 border-t p-2 text-xs text-muted-foreground">
+          <p>{lesson}</p>
           <p>{whyFor(item.classification)}</p>
           {predictedFailureOf(item) ? <p>Without this rule, {predictedFailureOf(item)}.</p> : null}
           {appliesWhenOf(item) ? (

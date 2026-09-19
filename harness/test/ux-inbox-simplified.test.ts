@@ -122,7 +122,12 @@ test("harness-ux.ts: lessonLine prefers correction_summary, falls back to the fi
 
 // ---- 5. recommendedPrimaryAction: the closed, mutually exclusive set ----
 
-test("harness-ux.ts: recommendedPrimaryAction picks Review Skill for a skill-only destination, Test first when already staged, else Add -- Skip is never the recommendation", () => {
+// Round 8 Task 1 item 4: renamed with intent -- recommendedPrimaryAction now
+// takes an optional second argument (the card's own judged conclusion) and
+// does recommend Skip, but only when that conclusion is not_supported/
+// possibly_harmful (see ux-round8-task1.test.ts); every call here omits it,
+// so these four cases are unaffected.
+test("harness-ux.ts: recommendedPrimaryAction picks Review Skill for a skill-only destination, Test first when already staged, else Add -- with no conclusion, Skip is never the recommendation", () => {
   assert.equal(
     ux.recommendedPrimaryAction({
       content_destination: { value: "skill" },
@@ -162,7 +167,10 @@ test("improvement.tsx: CompactDecisionCard shows the project name, lesson, instr
   assert.match(compact, /contentDestinationReason\(/);
   assert.match(compact, /actionConsequence\(/);
   assert.match(compact, /PRIMARY_ACTION_LABELS\./);
-  assert.match(compact, /recommendedPrimaryAction\(item\)/);
+  // Round 8 Task 1 item 4: recommendedPrimaryAction now takes this card's
+  // own judged conclusion as a second argument -- was
+  // `recommendedPrimaryAction(item)`.
+  assert.match(compact, /recommendedPrimaryAction\(item, conclusion\)/);
 });
 
 test("improvement.tsx: the Inbox card never spells out an internal enum name -- only plain-language helpers appear in its JSX", () => {

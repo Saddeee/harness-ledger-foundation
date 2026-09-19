@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { SETTINGS_DEFAULTS } from "@/lib/settings-defaults";
 import { Button } from "@/components/ui/button";
 import { executorQueryOptions, fetchImprovements, fetchInbox } from "@/lib/improvements-client";
-import { formatTime } from "@/lib/harness-ux";
+import { sidebarSyncLine } from "@/lib/harness-ux";
 import { isNotifyEnabled } from "@/lib/browser-prefs";
 import { ONBOARDING_DISMISSED_KEY } from "@/lib/onboarding-copy";
 
@@ -164,9 +164,19 @@ function AuthedLayout() {
 
   const connection = executorQuery.data?.connection;
   const lastRun = executorQuery.data?.last_run;
+  // Round 8 Task 1 item 3: the single truncated line used to fold the sync
+  // status into "Connected to Lovable" and silently drop it altogether once
+  // the text got long (e.g. a failed sync's own error) -- now two short,
+  // untruncated lines. connectionLine never carries sync status any more;
+  // sidebarSyncLine (harness-ux.ts) supplies the second line, or nothing
+  // when there's no run to report yet. The raw error string stays out of
+  // the sidebar entirely (it lives in the collapsed Status fold instead).
   const connectionLine = connection?.connected
-    ? `Connected to Lovable${lastRun?.finished_at ? ` · last sync ${formatTime(lastRun.finished_at)}` : ""}`
+    ? "Connected to Lovable"
     : "Not connected — connect on Projects";
+  const syncLine = connection?.connected
+    ? sidebarSyncLine(lastRun ?? null, executorQuery.data?.next_run_at ?? null)
+    : null;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -192,13 +202,13 @@ function AuthedLayout() {
           ))}
         </nav>
         <div className="mt-6 border-t pt-4">
-          <p className="mb-2 truncate text-xs text-muted-foreground" role="status">
+          <p className={`text-xs text-muted-foreground ${syncLine ? "" : "mb-2"}`} role="status">
             {connectionLine}
           </p>
+          {syncLine ? <p className="mb-2 text-xs text-muted-foreground">{syncLine}</p> : null}
           <Link to="/" className={HOW_IT_WORKS_LINK_CLASS}>
             How Harness Ledger works
           </Link>
-          <p className="mb-2 truncate text-xs text-muted-foreground">{user?.email}</p>
           <Button
             variant="outline"
             size="sm"

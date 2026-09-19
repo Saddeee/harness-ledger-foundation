@@ -513,9 +513,12 @@ test("harness-ux.ts: environmentQualityLabel/EXPERIMENT_KIND_LABEL/evidenceColum
   assert.equal(ux.environmentQualityLabel("historical_approximation"), "Historical approximation");
   assert.equal(ux.environmentQualityLabel(null), "—");
   assert.equal(ux.EXPERIMENT_KIND_LABEL.historical_replay, "Historical replay");
+  // Round 8 Task 1 item 6: CONCLUSION_LABELS.historical_support was
+  // "Historical support" -- now the plain-words "Correction not needed in
+  // the rebuilt copy".
   assert.equal(
     ux.evidenceColumnLabel("historical_approximation", "historical_support"),
-    "Historical support",
+    "Correction not needed in the rebuilt copy",
   );
   assert.equal(
     ux.evidenceColumnLabel("historical_approximation", null),

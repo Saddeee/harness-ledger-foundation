@@ -105,7 +105,7 @@ Classify the message into exactly one of these categories:
 - new_task: a new request, unrelated to fixing something from the immediately preceding exchange.
 - correction: the user is pointing out that the last change was wrong, re-stating a constraint that was missed, adding a requirement that was part of the original ask but wasn't done, or revising a preference about the immediately preceding work.
 - question: the user is asking something, not asking for a change.
-- approval: the user is confirming/accepting the assistant's last change, not requesting anything.
+- approval: the user is confirming/accepting Lovable's last change, not requesting anything.
 - other: none of the above fit.
 
 Separately from the category: if you are shown this project's live rules and the message asks Lovable for the opposite of one of them, list it in contradicts_rule_ids as { rule_id, kind, quote } -- quote is the exact words from the message that show the opposite request. Only list a rule when the message clearly goes against it; otherwise use null. Classify "kind" into exactly one of:

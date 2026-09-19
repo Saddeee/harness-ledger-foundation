@@ -67,8 +67,10 @@ test("Inbox hierarchy: count line, items, past-decisions link, then the secondar
     count < items && items < past && past < analysis,
     "pending decisions come before analysis status",
   );
-  assert.match(INBOX, /\{NEW_ACTIVITY_TITLE\}/);
-  assert.match(INBOX, /newActivityLine\(awaiting\)/);
+  // Round 8 Task 1 item 8: the "New activity is ready"/"Everything synced"
+  // pair (NEW_ACTIVITY_TITLE/newActivityLine) is gone, replaced by one
+  // analysisStatusLine call.
+  assert.match(INBOX, /analysisStatusLine\(lastAnalysis, awaiting\)/);
   assert.match(INBOX, /\{REANALYSE_TOKENS_NOTE\}/);
   assert.match(
     INBOX,

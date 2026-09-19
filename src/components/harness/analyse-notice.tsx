@@ -178,12 +178,17 @@ export function AnalyseNotice() {
   // useful to say yet, so stay out of the way entirely.
   if (awaiting <= 0 && lastRun == null) return null;
 
+  // Round 8 Task 1 item 8: "All synced messages have been analysed." is
+  // dropped -- the Inbox's own analysisStatusLine (harness-ux.ts) already
+  // says this, wherever this notice is mounted (now Settings > AI
+  // analysis). null omits the line the same way `awaiting > 0` already did
+  // for the "inProgress" case below.
   const waitingLine =
     awaiting > 0
       ? awaiting === 1
         ? "1 synced message is waiting for analysis."
         : `${awaiting} synced messages are waiting for analysis.`
-      : "All synced messages have been analysed.";
+      : null;
 
   const lastRunLine = (() => {
     // Only ever describes a *finished* run: while running, the "last run"
@@ -212,7 +217,7 @@ export function AnalyseNotice() {
     <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm">
       {inProgress ? <AnalysisProgress analysis={analysis} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {inProgress ? <span /> : <p>{waitingLine}</p>}
+        {inProgress ? <span /> : waitingLine ? <p>{waitingLine}</p> : <span />}
         <Button
           size="sm"
           variant="outline"

@@ -136,7 +136,11 @@ test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title
   assert.match(compact, /lessonLine\(item\)/);
   assert.match(compact, /item\.proposed_instruction/);
   assert.match(compact, /destinationLabelPlain\(/);
-  assert.match(compact, /recommendedPrimaryAction\(item\)/);
+  // Round 8 Task 1 item 4: recommendedPrimaryAction now takes this card's
+  // own judged conclusion as a second argument (Skip becomes the
+  // recommendation when a staged test already came back not_supported/
+  // possibly_harmful) -- was `recommendedPrimaryAction(item)`.
+  assert.match(compact, /recommendedPrimaryAction\(item, conclusion\)/);
   assert.match(
     compact,
     /<AddInstructionConfirm item=\{item\} busy=\{busy\} run=\{run\} size=\{size\} \/>/,

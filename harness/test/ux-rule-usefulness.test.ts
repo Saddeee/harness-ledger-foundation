@@ -20,7 +20,18 @@ function codeOnly(source: string): string {
 test("usefulness copy never claims a rule helped or harmed", () => {
   const source = codeOnly(readApp("lib/harness-ux.ts"));
   const strings = [...source.matchAll(/"([^"\n]*)"/g)].map((m) => m[1]!);
+  // Round 8 Task 1 item 4: SKIP_RECOMMENDED_CONSEQUENCE_LINE is the brief's
+  // own exact, verbatim required copy for the Inbox card's Skip-recommended
+  // consequence line, and it does say "helped" -- but this ban exists to
+  // stop the general usefulness decision (VERDICT_QUESTION, healthLine, the
+  // rule's own "is it still useful" framing) from asserting unproven
+  // causation. This one line is different in kind: it reports what ONE
+  // specific staged test already showed ("The test suggests..."), hedged,
+  // the same honest evidence-reporting register as CONCLUSION_LABELS itself
+  // -- not a claim that a live rule generally helped or didn't.
+  const exempt = new Set([ux.SKIP_RECOMMENDED_CONSEQUENCE_LINE]);
   for (const s of strings) {
+    if (exempt.has(s)) continue;
     assert.ok(!/\bhelped\b/i.test(s), `copy claims help: ${s}`);
     assert.ok(!/harm than good/i.test(s), `copy claims harm: ${s}`);
   }

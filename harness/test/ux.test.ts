@@ -248,7 +248,11 @@ test("decision card: three buttons for pending items, decision buttons shown inl
     "no per-browser state left",
   );
   assert.match(client, /export function groupOf\(item: Improvement\): ImprovementGroup \| null/);
-  assert.match(detail, /trigger="Skip"\s+variant="ghost"/);
+  // Round 8 Task 1 item 4: SkipConfirm now takes an optional `variant` prop
+  // (CompactDecisionCard's own action bar passes "default" for the one case
+  // Skip is itself the card's primary recommendation) -- every other caller
+  // still gets the old hardcoded "ghost" look, now via this fallback.
+  assert.match(detail, /trigger="Skip"\s+variant=\{variant \?\? "ghost"\}/);
   assert.match(detail, /title="Skip this suggestion\?"/);
 });
 

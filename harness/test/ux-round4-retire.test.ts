@@ -261,6 +261,9 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     // Checkpoint 2026-09-18 WP5: the Inbox's disagreement cards and the
     // Reanalyse history dialog post these to the executor route.
     "accept_disagreement",
+    // Round 8 Task 1 item 8: the Inbox's own "Analyse now" button (its own
+    // mutation, replacing the AnalyseNotice mount that used to live here).
+    "analyse_now",
     // Checkpoint 2026-09-18 WP4: the local Skill proposal lifecycle.
     "approve_skill_proposal",
     // Round 6 Task 3: cancel the Instructions page's own staged write.
