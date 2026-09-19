@@ -245,17 +245,21 @@ test("testCopyConfounderLine: an unknown edit count is never shown as 0", async 
 // with "Why this is an approximation" collapsed underneath it (section 7) --
 // these two pins are updated with that intent, not weakened. ----
 
-test("judge.tsx: sections appear in the required order -- original correction, Historical result / Replay with rule, Relevant visible difference, the verdict question, Evidence strength, Why this is an approximation, Full technical details", () => {
+// Round 8 Task 5 (review item 9): re-pinned with intent -- the verdict
+// block (REPLAY_VERDICT_QUESTION for an unjudged run, testedResultLine for a
+// judged one) now renders first, directly under the heading, before the
+// original correction section. The rest keeps its previous relative order.
+test("judge.tsx: sections appear in the required order -- the verdict block first, then original correction, What Lovable built before / Rebuilt with the rule, Relevant visible difference, How much this shows, Why this is an approximation, Full technical details", () => {
   const full = codeOnly(readApp(JUDGE));
   // Skip the (alphabetized) import block -- order is judged by the JSX
   // returned from Page(), not the order these names happen to be imported.
   const code = full.slice(full.indexOf("function Page()"), full.indexOf("function BuildColumn"));
   const order = [
+    "REPLAY_VERDICT_QUESTION",
     "ORIGINAL_CORRECTION_LABEL",
     "HISTORICAL_RESULT_TITLE",
     "REPLAY_WITH_RULE_TITLE",
     "RELEVANT_DIFFERENCE_TITLE",
-    "REPLAY_VERDICT_QUESTION",
     "evidenceStrengthTitle(",
     "WHY_APPROXIMATION_TITLE",
     "FULL_TECHNICAL_DETAILS_TITLE",
@@ -276,12 +280,16 @@ test("judge.tsx: shows the request and the correction text(s) as read-only conte
   assert.match(code, /view\.corrections\.map/);
 });
 
+// Round 8 Task 5: re-pinned with intent -- REPLAY_VERDICT_QUESTION now sits
+// above RELEVANT_DIFFERENCE_TITLE (the verdict block moved to the top), so
+// the section's own end boundary is the next marker after it,
+// evidenceStrengthTitle(.
 test("judge.tsx: Relevant visible difference shows Lovable's own summary of each side plus a diff toggle each, no invented automatic verdict", () => {
   const full = codeOnly(readApp(JUDGE));
   const body = full.slice(full.indexOf("function Page()"), full.indexOf("function BuildColumn"));
   const section = body.slice(
     body.indexOf("RELEVANT_DIFFERENCE_TITLE"),
-    body.indexOf("REPLAY_VERDICT_QUESTION"),
+    body.indexOf("evidenceStrengthTitle("),
   );
   assert.match(section, /view\.original_summary/);
   assert.match(section, /view\.copy_summary/);
@@ -289,12 +297,15 @@ test("judge.tsx: Relevant visible difference shows Lovable's own summary of each
 });
 
 // Checkpoint 2 2-D: the verdict section's own optional regression checkbox.
+// Round 8 Task 5: re-pinned with intent -- the verdict block now sits before
+// ORIGINAL_CORRECTION_LABEL (moved to the top of the page), so that is its
+// own end boundary now instead of evidenceStrengthTitle(.
 test("judge.tsx: the verdict section offers the regression checkbox and saves it with the verdicts", () => {
   const full = codeOnly(readApp(JUDGE));
   const body = full.slice(full.indexOf("function Page()"), full.indexOf("function BuildColumn"));
   const section = body.slice(
     body.indexOf("REPLAY_VERDICT_QUESTION"),
-    body.indexOf("evidenceStrengthTitle("),
+    body.indexOf("ORIGINAL_CORRECTION_LABEL"),
   );
   assert.match(section, /REGRESSION_CHECKBOX_LABEL/);
   assert.match(section, /<Checkbox\b/);
@@ -505,12 +516,15 @@ test("harness-ux.ts: evidenceStrengthLine, one sentence per quality, null when t
   assert.equal(ux.evidenceStrengthLine(null), null);
 });
 
-// Checkpoint 2 2-D: the Tests page's own Evidence column now reads
-// evidenceColumnLabel (the conclusion once judged, else the bare quality
-// label) rather than environmentQualityLabel directly -- environmentQualityLabel
-// itself is unchanged and still the fallback inside evidenceColumnLabel.
-test("harness-ux.ts: environmentQualityLabel/EXPERIMENT_KIND_LABEL/evidenceColumnLabel cover every enum value, used by tests.tsx's Kind/Evidence columns", () => {
-  assert.equal(ux.environmentQualityLabel("historical_approximation"), "Historical approximation");
+// Checkpoint 2 2-D: environmentQualityLabel/EXPERIMENT_KIND_LABEL/
+// evidenceColumnLabel cover every enum value -- Round 8 Task 5 (review item
+// 9) re-pinned with intent: historical_approximation's own label is now "An
+// approximation" (evidenceStrengthTitle's "How much this shows: ..." on
+// judge.tsx), and tests.tsx's card list no longer renders a Kind/Evidence
+// column at all (see ux-round6-tests-page.test.ts item 8) -- the "used by
+// tests.tsx" half of this test is removed rather than kept failing.
+test("harness-ux.ts: environmentQualityLabel/EXPERIMENT_KIND_LABEL/evidenceColumnLabel cover every enum value", () => {
+  assert.equal(ux.environmentQualityLabel("historical_approximation"), "An approximation");
   assert.equal(ux.environmentQualityLabel(null), "—");
   assert.equal(ux.EXPERIMENT_KIND_LABEL.historical_replay, "Historical replay");
   // Round 8 Task 1 item 6: CONCLUSION_LABELS.historical_support was
@@ -520,16 +534,7 @@ test("harness-ux.ts: environmentQualityLabel/EXPERIMENT_KIND_LABEL/evidenceColum
     ux.evidenceColumnLabel("historical_approximation", "historical_support"),
     "Correction not needed in the rebuilt copy",
   );
-  assert.equal(
-    ux.evidenceColumnLabel("historical_approximation", null),
-    "Historical approximation",
-  );
-
-  const testsCode = codeOnly(readApp(TESTS_PAGE));
-  assert.match(testsCode, />Kind</);
-  assert.match(testsCode, />Evidence</);
-  assert.match(testsCode, /EXPERIMENT_KIND_LABEL\[run\.kind\]/);
-  assert.match(testsCode, /evidenceColumnLabel\(run\.environment_quality, run\.conclusion\)/);
+  assert.equal(ux.evidenceColumnLabel("historical_approximation", null), "An approximation");
 });
 
 test("lib/improvements-client.ts: ExperimentRunView carries kind/environment/conclusion, ExperimentRunSummary carries kind/environment_quality/conclusion", () => {

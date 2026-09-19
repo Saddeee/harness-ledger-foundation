@@ -191,7 +191,7 @@ The available test is a **historical replay**. It answers: "Would the original c
 1. Harness Ledger copies your project as it was **just before** the original request.
 2. It puts the Project Knowledge that was in force at that time (from its own snapshot history) plus the candidate rule into the copy. The rules that were live then stay; the candidate is the only addition.
 3. It sends the copy the same request and records Lovable's summary, reply, diff, a screenshot and the credit cost Lovable reports.
-4. Optionally (on by default) it also copies your project right after the original request, so the **Historical result** can be opened next to the **Replay with rule**.
+4. Optionally (on by default) it also copies your project right after the original request, so **What Lovable built before** can be opened next to **Rebuilt with the rule**.
 
 You judge per correction: **Yes / No / Unclear**. The page also shows the **replay environment**: code state, Project Knowledge and how it was chosen (exact version, nearest earlier version, today's Knowledge, or none on file), Workspace Knowledge, Skills, chat history, the candidate, other active rules, and the uncontrolled context. Every historical replay is labelled a **historical approximation**: the historical result ran in a different Lovable environment, and Lovable's own project memory, workspace Knowledge, Skills and builder version come from today. It is evidence about the correction, not proof that the rule alone caused any difference.
 

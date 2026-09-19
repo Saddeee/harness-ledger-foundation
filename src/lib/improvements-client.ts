@@ -220,8 +220,8 @@ export type EnvironmentQuality =
 
 // Checkpoint 2 2-D: mirrors harness/src/executor/replay-environment.ts's own
 // ReplayConclusion exactly -- the derived one-word conclusion shown on the
-// judging screen (section 6, "Evidence strength") and the Tests page's
-// Evidence column once a run is judged.
+// judging screen (section 6, "How much this shows" -- Round 8 Task 5) and
+// the Tests page's own testStatusPhrase once a run is judged.
 export type ReplayConclusion =
   "historical_support" | "not_supported" | "possibly_harmful" | "inconclusive";
 

@@ -1,37 +1,40 @@
 // The Tests page (Round 6c part B, owner's own ask, 2026-09-13: "It is
 // better if we have a page dedicated for this so you can see status, and
 // actual results, and somewhere we can collect feedback from the user
-// about this"). One row per historical-replay run ever started, any status,
-// newest first -- status in plain words, the measured cost, and a small
-// feedback box per row. Reached from NAV (between History and Skills) and
-// from every card's "See on Tests" link (improvement.tsx) and the judging
+// about this"). One card per test run ever started, any status, newest
+// first -- status in plain words, the measured cost, and a small feedback
+// box per card. Reached from NAV (between History and Skills) and from
+// every card's "See on Tests" link (improvement.tsx) and the judging
 // screen's own "← Tests" link (judge.tsx). Only talks to the local Harness
 // routes: fetchTestRuns (GET .../improvements?runs=1, not a seventh
 // route), executorQueryOptions (credits + undeleted copies, already the
 // same cache key Projects/Settings read from), and postImprovementAction
 // for the "feedback" action.
+//
+// Round 8 Task 5 (review item 9): the 8-column table became a card list --
+// one <article> per run instead of one row, the Kind/Evidence columns are
+// gone (the card's own status phrase already names the outcome once
+// judged), and a failed run's raw Lovable error moves into a collapsed
+// "Technical details" fold instead of showing inline.
 import { useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   COPY_CREDITS_LINE,
-  evidenceColumnLabel,
-  EXPERIMENT_KIND_LABEL,
+  // ---- Round 8 Task 2 ----
+  failedSummaryParts,
+  // ---- end Round 8 Task 2 ----
+  firstSentence,
   formatDate,
   formatDay,
   TEST_A_RULE_PAGE_TITLE,
   testsPageCreditsLine,
+  // ---- Round 8 Task 5 ----
+  testStatusPhrase,
+  // ---- end Round 8 Task 5 ----
 } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
@@ -66,37 +69,17 @@ const UNAVAILABLE_LINE = "Tests are available when Harness Ledger runs on your m
 const IN_PROGRESS_STATUSES = new Set(["copying", "building"]);
 const POLL_MS = 10_000;
 
-/** The Status column's plain words. The whole row opens this test's own
- * screen (the rule text is that link), whatever state the test is in. */
-function statusText(run: ExperimentRunSummary): string {
-  switch (run.status) {
-    case "queued":
-      return "Queued";
-    case "copying":
-      return "Copying";
-    case "building":
-      return "Building";
-    case "judging":
-      return "Your verdict is needed";
-    case "judged": {
-      const no = Math.round((run.score ?? 0) * run.corrections);
-      return `Judged: ${no} of ${run.corrections} correction${run.corrections === 1 ? "" : "s"} no longer needed`;
-    }
-    case "failed":
-      return `Failed: ${run.error ?? "unknown error"}`;
-    default:
-      return "Cancelled";
-  }
-}
-
 // Round 7: the test's builds are real Lovable projects -- open them from
-// the list without going through the comparison.
+// the list without going through the comparison. Round 8 Task 5: the
+// "Replay with rule" link text renamed to "Rebuilt copy" (the judge page's
+// own REPLAY_WITH_RULE_TITLE reads "Rebuilt with the rule" -- shorter here
+// since this is just a link label, not a section heading).
 function buildLinks(run: ExperimentRunSummary) {
   const links = [
     run.original_copy && !run.original_copy.deleted
       ? { label: "Historical result", href: run.original_copy.editor_url }
       : null,
-    run.copy && !run.copy.deleted ? { label: "Replay with rule", href: run.copy.editor_url } : null,
+    run.copy && !run.copy.deleted ? { label: "Rebuilt copy", href: run.copy.editor_url } : null,
   ].filter((l): l is { label: string; href: string } => l !== null);
   if (links.length === 0) return null;
   return (
@@ -178,9 +161,76 @@ function FeedbackCell({
   );
 }
 
+// Round 8 Task 5 (review item 9): one <article> per run -- project name
+// (small), the rule's first sentence (medium weight), the plain-word status
+// phrase, a failed run's own collapsed technical fold, Started/cost, an
+// Open link to the judging screen, and the existing feedback control.
+function TestCard({
+  run,
+  editing,
+  draft,
+  busy,
+  onStartEdit,
+  onChangeDraft,
+  onCancel,
+  onSave,
+}: {
+  run: ExperimentRunSummary;
+  editing: boolean;
+  draft: string;
+  busy: boolean;
+  onStartEdit: () => void;
+  onChangeDraft: (v: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const failed = run.status === "failed" ? failedSummaryParts(run.error) : null;
+  return (
+    <article className="space-y-2 rounded-md border p-4">
+      <p className="text-xs font-medium text-muted-foreground">{run.project_name ?? "—"}</p>
+      <p className="text-base font-medium">{firstSentence(run.rule_text)}</p>
+      <p className="text-sm">{testStatusPhrase(run)}</p>
+      {failed ? (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">{failed.plain}</p>
+          {failed.technical ? (
+            <details className="rounded-md border">
+              <summary className="cursor-pointer px-2 py-1 text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Technical details
+              </summary>
+              <p className="border-t p-2 text-xs text-muted-foreground">{failed.technical}</p>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+      <p className="text-xs text-muted-foreground">{`Started ${formatDate(run.started_at)}`}</p>
+      <p className="text-xs text-muted-foreground">{costCell(run)}</p>
+      {buildLinks(run)}
+      <div>
+        <Link
+          to="/judge"
+          search={{ run: run.id }}
+          className="text-sm text-primary underline underline-offset-2"
+        >
+          Open
+        </Link>
+      </div>
+      <FeedbackCell
+        run={run}
+        editing={editing}
+        draft={draft}
+        busy={busy}
+        onStartEdit={onStartEdit}
+        onChangeDraft={onChangeDraft}
+        onCancel={onCancel}
+        onSave={onSave}
+      />
+    </article>
+  );
+}
+
 function Page() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
 
@@ -256,71 +306,24 @@ function Page() {
           {EMPTY_LINE}
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Project</TableHead>
-              <TableHead>Rule</TableHead>
-              <TableHead>Kind</TableHead>
-              <TableHead>Started</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Cost</TableHead>
-              <TableHead>Evidence</TableHead>
-              <TableHead>Feedback</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runs.map((run) => (
-              <TableRow
-                key={run.id}
-                className="cursor-pointer"
-                onClick={(e) => {
-                  // Feedback buttons and the textarea keep their own clicks.
-                  if ((e.target as HTMLElement).closest("button, textarea, a")) return;
-                  void navigate({ to: "/judge", search: { run: run.id } });
-                }}
-              >
-                <TableCell className="whitespace-nowrap font-medium">
-                  {run.project_name ?? "—"}
-                </TableCell>
-                <TableCell>
-                  <Link
-                    to="/judge"
-                    search={{ run: run.id }}
-                    className="text-primary underline underline-offset-2"
-                  >
-                    {run.rule_text}
-                  </Link>
-                  {buildLinks(run)}
-                </TableCell>
-                <TableCell className="whitespace-nowrap">
-                  {EXPERIMENT_KIND_LABEL[run.kind]}
-                </TableCell>
-                <TableCell className="whitespace-nowrap">{formatDate(run.started_at)}</TableCell>
-                <TableCell>{statusText(run)}</TableCell>
-                <TableCell className="whitespace-nowrap">{costCell(run)}</TableCell>
-                <TableCell className="whitespace-nowrap">
-                  {evidenceColumnLabel(run.environment_quality, run.conclusion)}
-                </TableCell>
-                <TableCell>
-                  <FeedbackCell
-                    run={run}
-                    editing={editingId === run.id}
-                    draft={draft}
-                    busy={saveFeedback.isPending && editingId === run.id}
-                    onStartEdit={() => {
-                      setEditingId(run.id);
-                      setDraft(run.feedback ?? "");
-                    }}
-                    onChangeDraft={setDraft}
-                    onCancel={() => setEditingId(null)}
-                    onSave={() => saveFeedback.mutate({ runId: run.id, text: draft })}
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div className="space-y-3">
+          {runs.map((run) => (
+            <TestCard
+              key={run.id}
+              run={run}
+              editing={editingId === run.id}
+              draft={draft}
+              busy={saveFeedback.isPending && editingId === run.id}
+              onStartEdit={() => {
+                setEditingId(run.id);
+                setDraft(run.feedback ?? "");
+              }}
+              onChangeDraft={setDraft}
+              onCancel={() => setEditingId(null)}
+              onSave={() => saveFeedback.mutate({ runId: run.id, text: draft })}
+            />
+          ))}
+        </div>
       )}
 
       {undeletedCopies.length > 0 ? (

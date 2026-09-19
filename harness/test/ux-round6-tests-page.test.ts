@@ -76,21 +76,21 @@ test("tests.tsx: the credits line comes from harness-ux.ts's own testsPageCredit
   );
 });
 
-test("tests.tsx: the table's own Status column uses the exact plain-word phrases (Queued/Copying/Building/Your verdict is needed/Judged:.../Failed:...)", () => {
+// Round 8 Task 5 (review item 9): the table's own local statusText function
+// is gone -- tests.tsx now calls the shared testStatusPhrase(run) from
+// harness-ux.ts, whose own exact-phrase pins live in
+// ux-round8-task5.test.ts.
+test("tests.tsx: each card's status line reads testStatusPhrase(run), the shared helper from harness-ux.ts", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
-  assert.match(code, /"Queued"/);
-  assert.match(code, /"Copying"/);
-  assert.match(code, /"Building"/);
-  assert.match(code, /"Your verdict is needed"/);
-  assert.match(code, /`Judged: \$\{no\} of \$\{run\.corrections\} correction/);
-  assert.match(code, /`Failed: \$\{run\.error/);
+  assert.match(code, /testStatusPhrase\(run\)/);
 });
 
-test("tests.tsx: every test row opens that test (/judge?run=<id>), never the suggestion -- the owner clicked a test and landed on Suggestions", () => {
+// Round 8 Task 5: the table row's whole-row click-through is gone -- the
+// card list has just its own explicit "Open" link to /judge?run=<id>.
+test("tests.tsx: every test card has an explicit Open link (/judge?run=<id>), never the suggestion -- the owner clicked a test and landed on Suggestions", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
   assert.doesNotMatch(code, /to="\/ledger"/, "the Tests page links to tests, not suggestions");
   assert.match(code, /<Link\s+to="\/judge"\s+search=\{\{\s*run:\s*run\.id\s*\}\}/);
-  assert.match(code, /navigate\(\{\s*to:\s*"\/judge",\s*search:\s*\{\s*run:\s*run\.id\s*\}\s*\}\)/);
 });
 
 test("tests.tsx: the Cost column reads 'N credits · measured' or '—', never a hardcoded number", () => {
@@ -195,11 +195,15 @@ test("tests.tsx and judge.tsx never hardcode a digit next to 'credit'/'credits'"
   }
 });
 
-// ---- 8. Checkpoint 2 2-D: Evidence column shows the derived conclusion once judged ----
+// ---- 8. Round 8 Task 5 (review item 9): the Evidence/Kind columns are gone
+// from the card list -- evidenceColumnLabel still exists (and is still
+// pinned by its own unit tests) but tests.tsx no longer calls it; a judged
+// run's own conclusion is already the card's status phrase instead. ----
 
-test("tests.tsx: the Evidence column reads evidenceColumnLabel(quality, conclusion), not the bare quality label", () => {
+test("tests.tsx: the card list no longer renders a separate Evidence/Kind column -- evidenceColumnLabel/EXPERIMENT_KIND_LABEL stay exported and tested elsewhere but tests.tsx has no import of either", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
-  assert.match(code, /evidenceColumnLabel\(run\.environment_quality, run\.conclusion\)/);
+  assert.doesNotMatch(code, /evidenceColumnLabel\(/);
+  assert.doesNotMatch(code, /EXPERIMENT_KIND_LABEL/);
 
   const uxCode = codeOnly(readApp(HARNESS_UX));
   assert.match(uxCode, /export function evidenceColumnLabel\(/);

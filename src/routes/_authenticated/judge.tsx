@@ -24,6 +24,9 @@ import {
   copyDeletionLine,
   CORRECTIONS_FROM_FOLLOW_UPS_LINE,
   CORRECTIONS_LIST_LABEL,
+  // ---- Round 8 Task 2 ----
+  failedSummaryParts,
+  // ---- end Round 8 Task 2 ----
   evidenceStrengthLine,
   evidenceStrengthTitle,
   formatDay,
@@ -177,6 +180,11 @@ function StageLine({ run }: { run: ExperimentRunView }) {
   );
 }
 
+// Round 8 Task 5 (review item 9): the visible line is never Lovable's raw
+// error text -- failedSummaryParts (Task 2, harness-ux.ts) splits it into a
+// plain sentence shown here and, only when the summary looked like a raw
+// Lovable/REST error, the original string inside the page's own Full
+// technical details fold.
 function FailedLine({
   run,
   busy,
@@ -186,14 +194,20 @@ function FailedLine({
   busy: boolean;
   onTryAgain: () => void;
 }) {
+  const { plain, technical } = failedSummaryParts(run.error);
   return (
     <div className="space-y-3 rounded-md border border-destructive/50 bg-destructive/5 p-6 text-sm">
       <p role="alert" className="text-destructive">
-        {testFailedLine(run.error)}
+        {testFailedLine(plain)}
       </p>
       <Button onClick={onTryAgain} disabled={busy}>
         {busy ? "Starting…" : "Try again"}
       </Button>
+      {technical ? (
+        <AdvancedDetails title={FULL_TECHNICAL_DETAILS_TITLE}>
+          <p className="text-xs text-muted-foreground">{technical}</p>
+        </AdvancedDetails>
+      ) : null}
     </div>
   );
 }
@@ -348,115 +362,11 @@ function Page() {
         />
       ) : (
         <>
-          {/* (1) The original correction(s) the rule came from -- the
-              request and the correction text(s), read-only context for
-              everything below. */}
-          <section className="space-y-3 rounded-md border p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {ORIGINAL_CORRECTION_LABEL}
-            </p>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">You asked Lovable</p>
-              <ClampedText text={view.request_text} />
-            </div>
-            {view.corrections.length > 0 ? (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">
-                  {CORRECTIONS_LIST_LABEL}
-                </p>
-                <ul className="list-disc space-y-1 pl-5 text-sm">
-                  {view.corrections.map((c, i) => (
-                    <li key={i}>{c}</li>
-                  ))}
-                </ul>
-                {view.corrections_source === "follow_ups" ? (
-                  <p className="text-xs text-muted-foreground">
-                    {CORRECTIONS_FROM_FOLLOW_UPS_LINE}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-
-          {/* (2)/(3) Historical result / Replay with rule, side by side. */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <BuildColumn
-              id="historical-result"
-              title={HISTORICAL_RESULT_TITLE}
-              subtitle={HISTORICAL_RESULT_SUBTITLE}
-              copy={view.original_copy}
-              noCopyLine={
-                view.original_copy_error
-                  ? `Harness Ledger could not copy your original build: ${view.original_copy_error}`
-                  : view.show_original
-                    ? null
-                    : "No copy of the historical result was made for this test."
-              }
-              summary={view.original_summary}
-              busy={actionBusy}
-              onDelete={() =>
-                void runAction(
-                  { action: "delete_copy", run_id: view.id, which: "original" },
-                  "Deleted the copy of your historical result.",
-                )
-              }
-            />
-            <BuildColumn
-              id="replay-with-rule"
-              title={REPLAY_WITH_RULE_TITLE}
-              subtitle={REPLAY_WITH_RULE_SUBTITLE}
-              copy={view.copy}
-              noCopyLine={null}
-              summary={view.copy_summary}
-              footer={testCostLine(view.cost_credits)}
-              busy={actionBusy}
-              onDelete={() =>
-                void runAction(
-                  { action: "delete_copy", run_id: view.id, which: "with_rule" },
-                  "Deleted the replay build.",
-                )
-              }
-            />
-          </div>
-
-          <div className="space-y-1 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-            <p>{testCopyConfounderLine(view.edits_since_episode)}</p>
-            <p>{TEST_MEMORY_CONFOUNDER_LINE}</p>
-            <p>{TEST_ONE_BUILD_LINE}</p>
-          </div>
-
-          {/* (4) Relevant visible difference: Lovable's own summary of each
-              side, one under the other, plus the diff toggles -- no invented
-              automatic verdict on the difference. */}
-          <section className="space-y-3 rounded-md border p-4">
-            <h2 className="text-lg font-medium">{RELEVANT_DIFFERENCE_TITLE}</h2>
-            <p className="text-xs text-muted-foreground">{RELEVANT_DIFFERENCE_INTRO}</p>
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {HISTORICAL_RESULT_TITLE}
-              </p>
-              {view.original_summary ? (
-                <ClampedText text={view.original_summary} markdown />
-              ) : (
-                <p className="text-sm">No summary recorded.</p>
-              )}
-              <DiffDetails diff={view.original_diff} />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {REPLAY_WITH_RULE_TITLE}
-              </p>
-              {view.copy_summary ? (
-                <ClampedText text={view.copy_summary} markdown />
-              ) : (
-                <p className="text-sm">No summary recorded.</p>
-              )}
-              <DiffDetails diff={view.copy_diff} />
-            </div>
-          </section>
-
-          {/* (5) User verdict: per-correction "Still needed?", the optional
-              regression checkbox, and Save. */}
+          {/* (1) Round 8 Task 5 (review item 9): the verdict block moves to
+              directly under the heading -- the "Tested: ... judged by you"
+              line with its buttons for a judged run, or the verdict question
+              with its per-correction rows for one still awaiting judgment.
+              Buttons, mutations and copy are unchanged, only the position. */}
           {view.status === "judged" ? (
             <div className="space-y-3 rounded-md border p-4">
               <p className="text-sm font-medium">
@@ -522,6 +432,115 @@ function Page() {
               </Button>
             </div>
           )}
+
+          {/* (2) The original correction(s) the rule came from -- the
+              request and the correction text(s), read-only context for
+              everything below. */}
+          <section className="space-y-3 rounded-md border p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {ORIGINAL_CORRECTION_LABEL}
+            </p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">You asked Lovable</p>
+              <ClampedText text={view.request_text} />
+            </div>
+            {view.corrections.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {CORRECTIONS_LIST_LABEL}
+                </p>
+                <ul className="list-disc space-y-1 pl-5 text-sm">
+                  {view.corrections.map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ul>
+                {view.corrections_source === "follow_ups" ? (
+                  <p className="text-xs text-muted-foreground">
+                    {CORRECTIONS_FROM_FOLLOW_UPS_LINE}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
+          {/* (3)/(4) What Lovable built before / Rebuilt with the rule, side
+              by side (Round 8 Task 5: renamed from Historical result /
+              Replay with rule). */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <BuildColumn
+              id="historical-result"
+              title={HISTORICAL_RESULT_TITLE}
+              subtitle={HISTORICAL_RESULT_SUBTITLE}
+              copy={view.original_copy}
+              noCopyLine={
+                view.original_copy_error
+                  ? `Harness Ledger could not copy your original build: ${view.original_copy_error}`
+                  : view.show_original
+                    ? null
+                    : "No copy of the historical result was made for this test."
+              }
+              summary={view.original_summary}
+              busy={actionBusy}
+              onDelete={() =>
+                void runAction(
+                  { action: "delete_copy", run_id: view.id, which: "original" },
+                  "Deleted the copy of your historical result.",
+                )
+              }
+            />
+            <BuildColumn
+              id="replay-with-rule"
+              title={REPLAY_WITH_RULE_TITLE}
+              subtitle={REPLAY_WITH_RULE_SUBTITLE}
+              copy={view.copy}
+              noCopyLine={null}
+              summary={view.copy_summary}
+              footer={testCostLine(view.cost_credits)}
+              busy={actionBusy}
+              onDelete={() =>
+                void runAction(
+                  { action: "delete_copy", run_id: view.id, which: "with_rule" },
+                  "Deleted the replay build.",
+                )
+              }
+            />
+          </div>
+
+          <div className="space-y-1 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+            <p>{testCopyConfounderLine(view.edits_since_episode)}</p>
+            <p>{TEST_MEMORY_CONFOUNDER_LINE}</p>
+            <p>{TEST_ONE_BUILD_LINE}</p>
+          </div>
+
+          {/* (5) Relevant visible difference: Lovable's own summary of each
+              side, one under the other, plus the diff toggles -- no invented
+              automatic verdict on the difference. */}
+          <section className="space-y-3 rounded-md border p-4">
+            <h2 className="text-lg font-medium">{RELEVANT_DIFFERENCE_TITLE}</h2>
+            <p className="text-xs text-muted-foreground">{RELEVANT_DIFFERENCE_INTRO}</p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {HISTORICAL_RESULT_TITLE}
+              </p>
+              {view.original_summary ? (
+                <ClampedText text={view.original_summary} markdown />
+              ) : (
+                <p className="text-sm">No summary recorded.</p>
+              )}
+              <DiffDetails diff={view.original_diff} />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {REPLAY_WITH_RULE_TITLE}
+              </p>
+              {view.copy_summary ? (
+                <ClampedText text={view.copy_summary} markdown />
+              ) : (
+                <p className="text-sm">No summary recorded.</p>
+              )}
+              <DiffDetails diff={view.copy_diff} />
+            </div>
+          </section>
 
           {/* (6) Evidence strength, and (7) "Why this is an approximation"
               collapsed underneath it -- derived from the run's own

@@ -740,8 +740,10 @@ export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefi
     `AI adherence check: Harness Ledger's AI reads the request and Lovable's reply and says whether the rule was followed, broken, or didn't apply, with a quote. ${ranSuffix(s.adherence)}`,
     // Checkpoint 2026-09-18: renamed away from "paired" -- every run so far
     // is a historical replay (one new build next to the historical result),
-    // not a fresh two-arm comparison. See docs/audit/replay.md.
-    `Historical replay: the original request built again with the rule, next to the historical result. ${ranSuffix(s.paired)}`,
+    // not a fresh two-arm comparison. See docs/audit/replay.md. Round 8 Task
+    // 5 (review item 9): reworded from "Historical replay: ..." -- plain
+    // words, no "replay" jargon, for a non-technical Lovable user.
+    `Test: the original request built again with the rule, next to what Lovable built before. ${ranSuffix(s.paired)}`,
   ];
 }
 
@@ -865,10 +867,13 @@ export function testCostLine(costCredits: number | null): string {
 export const ORIGINAL_CORRECTION_LABEL = "The original correction";
 export const CORRECTIONS_LIST_LABEL = "Then you corrected it";
 
-export const HISTORICAL_RESULT_TITLE = "Historical result";
+// Round 8 Task 5 (review item 9): renamed from "Historical result" -- a
+// non-technical Lovable user reads this as what it is, not a technical term.
+export const HISTORICAL_RESULT_TITLE = "What Lovable built before";
 export const HISTORICAL_RESULT_SUBTITLE =
   "What actually happened, shown through a copy of that commit";
-export const REPLAY_WITH_RULE_TITLE = "Replay with rule";
+// Round 8 Task 5: renamed from "Replay with rule".
+export const REPLAY_WITH_RULE_TITLE = "Rebuilt with the rule";
 export const REPLAY_WITH_RULE_SUBTITLE =
   "One new Lovable build from the same starting point, with this rule added";
 
@@ -913,10 +918,13 @@ export const EXPERIMENT_KIND_LABEL: Record<ExperimentKindLike, string> = {
 export type EnvironmentQualityLike =
   "controlled" | "partially_controlled" | "historical_approximation" | "not_comparable";
 
+// Round 8 Task 5: historical_approximation's own label reads "An
+// approximation" -- plain words for evidenceStrengthTitle's "How much this
+// shows: ..." title (below); the other three quality labels are unchanged.
 export const ENVIRONMENT_QUALITY_LABEL: Record<EnvironmentQualityLike, string> = {
   controlled: "Controlled",
   partially_controlled: "Partially controlled",
-  historical_approximation: "Historical approximation",
+  historical_approximation: "An approximation",
   not_comparable: "Not comparable",
 };
 
@@ -950,12 +958,13 @@ export function evidenceStrengthLine(
   }
 }
 
-// Checkpoint 2 2-D: the judging screen's section 6 title, "Evidence
-// strength: <quality label>" -- e.g. "Evidence strength: Historical
-// approximation". A function, not a constant, because the quality varies
-// per run; evidenceStrengthLine (above) supplies the sentence underneath.
+// Checkpoint 2 2-D: the judging screen's section 6 title, "How much this
+// shows: <quality label>" -- e.g. "How much this shows: An approximation".
+// A function, not a constant, because the quality varies per run;
+// evidenceStrengthLine (above) supplies the sentence underneath. Round 8
+// Task 5 (review item 9): renamed from "Evidence strength: ...".
 export function evidenceStrengthTitle(quality: EnvironmentQualityLike | null | undefined): string {
-  return `Evidence strength: ${environmentQualityLabel(quality)}`;
+  return `How much this shows: ${environmentQualityLabel(quality)}`;
 }
 
 // ---- Checkpoint 2 2-D: derived conclusion ----
@@ -983,11 +992,12 @@ export const CONCLUSION_LABELS: Record<ReplayConclusionLike, string> = {
   inconclusive: "Can't tell from this test",
 };
 
-/** "Conclusion: Historical support" -- shown once a run is judged; null
- * (nothing shown) before that, same convention as evidenceStrengthLine's
- * own null-when-nothing-to-say case. */
+/** "Result: Correction not needed in the rebuilt copy" -- shown once a run
+ * is judged; null (nothing shown) before that, same convention as
+ * evidenceStrengthLine's own null-when-nothing-to-say case. Round 8 Task 5
+ * (review item 9): prefix renamed from "Conclusion: ". */
 export function conclusionLine(conclusion: ReplayConclusionLike | null | undefined): string | null {
-  return conclusion ? `Conclusion: ${CONCLUSION_LABELS[conclusion]}` : null;
+  return conclusion ? `Result: ${CONCLUSION_LABELS[conclusion]}` : null;
 }
 
 /** The Tests page's own Evidence column: the conclusion once judged (it is
@@ -2066,3 +2076,39 @@ export function pendingQueuePosition(
   };
 }
 // ---- end Round 8 Task 4 ----
+
+// ---- Round 8 Task 5 ----
+// UX round 8 (2026-09-19), review item 9: the Tests page becomes a card
+// list (one <article> per run, tests.tsx) and the judging screen leads with
+// the verdict block instead of burying it under the two builds (judge.tsx).
+// testStatusPhrase is the card's own one-line status -- the plain-word
+// phrases the old table's Status column used for queued/copying/building/
+// judging/failed, and Task 1's own CONCLUSION_LABELS for a judged run's
+// outcome (or "Judged" for an old judged run with no derived conclusion on
+// record). A local, structural status union (not imported from
+// improvements-client.ts) keeps this file dependency-free, same convention
+// as ReplayEnvironmentLike/ReplayConclusionLike above.
+
+export type TestStatusLike =
+  "queued" | "copying" | "building" | "judging" | "judged" | "failed" | "cancelled";
+
+export function testStatusPhrase(run: {
+  status: TestStatusLike;
+  conclusion: ReplayConclusionLike | null | undefined;
+}): string {
+  switch (run.status) {
+    case "queued":
+    case "copying":
+    case "building":
+      return "Building";
+    case "judging":
+      return "Waiting for your answer";
+    case "judged":
+      return run.conclusion ? CONCLUSION_LABELS[run.conclusion] : "Judged";
+    case "failed":
+      return "Failed";
+    default:
+      return "Cancelled";
+  }
+}
+// ---- end Round 8 Task 5 ----

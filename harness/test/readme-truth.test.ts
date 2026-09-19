@@ -55,8 +55,12 @@ test("README: every relative link and image exists on disk; no raw HTML anchors 
 test("README: the test feature is a historical replay, never proof or a paired test; copies are not unqualified 'free'", () => {
   assert.ok(!/paired test/i.test(readme), "'paired test' must not appear");
   assert.ok(!/^#+ .*proof/im.test(readme), "no heading may promise proof");
-  assert.match(readme, /Historical result/);
-  assert.match(readme, /Replay with rule/);
+  // Round 8 Task 5 (review item 9): re-pinned with intent -- the judging
+  // screen's own build-column titles renamed from "Historical result"/
+  // "Replay with rule" to "What Lovable built before"/"Rebuilt with the
+  // rule" (harness-ux.ts's HISTORICAL_RESULT_TITLE/REPLAY_WITH_RULE_TITLE).
+  assert.match(readme, /What Lovable built before/);
+  assert.match(readme, /Rebuilt with the rule/);
   assert.match(
     readme,
     /Creating project copies currently uses no Lovable builder credits\. Running a Lovable build in a copy consumes normal builder credits\./,
