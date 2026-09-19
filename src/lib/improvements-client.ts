@@ -913,6 +913,12 @@ export type EvidenceSources = {
 export type ExecutorSettings = {
   knowledge_char_cap: number;
   decision_mode: "ask" | "automatic";
+  // Round 8 Task 6 (review item 10), fix round 1: decision_mode above is
+  // always a real value (the store default is "ask"), so it can never say
+  // whether the user has actually chosen one -- decision_mode_chosen reads
+  // the settings table directly (no default merged in), for onboarding
+  // step 3's "done" state.
+  decision_mode_chosen: boolean;
   decision_auto_confidence: number;
   evidence_sources: EvidenceSources;
   feedback: FeedbackStats;

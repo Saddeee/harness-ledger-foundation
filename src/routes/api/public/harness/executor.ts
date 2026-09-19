@@ -220,6 +220,14 @@ async function handleGet({ request }: { request: Request }) {
         // automatic), all read straight off the settings row and
         // feedbackStats() so the client never has to parse either itself.
         decision_mode: settings.decision_mode as "ask" | "automatic",
+        // Round 8 Task 6 (review item 10), fix round 1: settings.decision_mode
+        // above is always a real value ("ask" by default -- see
+        // SETTING_DEFAULTS in harness/src/store.ts), so it can never tell a
+        // caller whether the user has actually chosen a mode yet.
+        // decision_mode_chosen reads the settings table directly (no
+        // default merged in) so onboarding's step 3 can tell "never set"
+        // from "set to ask".
+        decision_mode_chosen: adapter.hasSettingRow("decision_mode"),
         decision_auto_confidence: Number(settings.decision_auto_confidence),
         evidence_sources: JSON.parse(settings.evidence_sources) as Record<string, boolean>,
         feedback: adapter.feedbackStats(),

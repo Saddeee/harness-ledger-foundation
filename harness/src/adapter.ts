@@ -459,3 +459,13 @@ export type {
 export { testProvider } from "./llm/index.js";
 export type { ProviderTestResult } from "./llm/index.js";
 // ---- end Checkpoint 2 2-E ----
+
+// ---- Round 8 Task 6 ----
+// UX round 8 (2026-09-19), review item 10, fix round 1: getSettings()
+// always merges SETTING_DEFAULTS, so it can never tell the executor route
+// whether decision_mode has actually been chosen (there's always a value,
+// "ask" until set otherwise). hasSettingRow reads the settings table
+// directly, with no default merged in, for the executor route's
+// `decision_mode_chosen` field.
+export { hasSettingRow } from "./store.js";
+// ---- end Round 8 Task 6 ----

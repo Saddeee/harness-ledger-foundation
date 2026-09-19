@@ -454,12 +454,18 @@ function OnboardingPage() {
   // on every reload until the user saved a mode again in this browser
   // session, even when a mode was already saved on the server (from an
   // earlier session, or from Settings directly) -- modeSaved reset to false
-  // on every mount. decisionModeOnServer reads the same executor query
-  // ModeStep itself already reads (settings.decision_mode), so a reload
-  // shows "Done" whenever the server has a saved mode; modeSaved stays as
-  // an optimistic flag so the badge flips to "Done" immediately after a
-  // save in this session, without waiting on the query to refetch.
-  const decisionModeOnServer = executor.data?.settings?.decision_mode != null;
+  // on every mount. Fix round 1: settings.decision_mode is never null/
+  // undefined once the executor query resolves (the store always merges in
+  // a default of "ask"), so `!= null` was always true and step 3 was
+  // "Done" for every user the instant the query loaded -- its radio group
+  // and Save never got a chance to render. decision_mode_chosen is a
+  // separate, genuine boolean the executor route computes by reading the
+  // settings table directly, with no default merged in (see
+  // harness/src/store.ts's hasSettingRow); only that tells us the user
+  // actually saved a mode. modeSaved stays as an optimistic flag so the
+  // badge flips to "Done" immediately after a save in this session,
+  // without waiting on the query to refetch.
+  const decisionModeOnServer = executor.data?.settings?.decision_mode_chosen === true;
   const modeDone = modeSaved || decisionModeOnServer;
 
   const doneFlags = [connected, hasProject, modeDone, providerReady, hasAnalysisRun];

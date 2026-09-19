@@ -5232,3 +5232,18 @@ export function listDismissedInboxItemIds(): Set<string> {
   return new Set(rows.map((r) => r.item_id));
 }
 // ---- end Round 8 Task 2 ----
+
+// ---- Round 8 Task 6 ----
+// UX round 8 (2026-09-19), review item 10, fix round 1: getSetting/
+// getSettings above always merge SETTING_DEFAULTS -- there is no "unset" a
+// caller can observe through them, since every key (decision_mode included)
+// falls back to a real default value the moment the settings table has no
+// row for it. Onboarding's step 3 needed a genuine "has the user chosen a
+// decision mode yet" signal, which getSetting can never give it. This reads
+// the settings table directly, with no default merged in, so it answers
+// exactly that question for any setting key.
+export function hasSettingRow(key: string): boolean {
+  const row = db.prepare(`SELECT 1 FROM settings WHERE key = ?`).get(key);
+  return row !== undefined;
+}
+// ---- end Round 8 Task 6 ----

@@ -1144,11 +1144,10 @@ export function LocalSettings() {
         </Button>
       </section>
 
-      {/* Round 8 Task 6 (review item 10): five settings sections folded
-          behind one collapsed "Advanced" details -- unchanged content,
-          own Save button and behaviour, just moved out of the always-
-          visible list. */}
       <details className="rounded-md border">
+        {/* Round 8 Task 6 (review item 10): five settings sections folded
+            here -- unchanged content, own Save button and behaviour, just
+            moved out of the always-visible list. */}
         <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           Advanced
         </summary>
