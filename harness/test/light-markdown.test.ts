@@ -14,7 +14,7 @@ test("parseLightMarkdown: bold text becomes a bold inline node", () => {
   const inline = (blocks[0] as { inline: unknown[] }).inline;
   assert.deepEqual(inline, [
     { type: "text", text: "This is " },
-    { type: "bold", text: "bold" },
+    { type: "bold", text: "bold", inline: [{ type: "text", text: "bold" }] },
     { type: "text", text: " text." },
   ]);
 });
@@ -88,4 +88,23 @@ test("parseLightMarkdown: no HTML injection -- a literal <script> tag stays lite
 test("parseLightMarkdown: empty/blank input returns no blocks", () => {
   assert.deepEqual(parseLightMarkdown(""), []);
   assert.deepEqual(parseLightMarkdown("\n\n"), []);
+});
+
+test("parseLightMarkdown: code inside bold is parsed, so **`file.ts`** never shows its backticks", () => {
+  const blocks = parseLightMarkdown("1. **`src/lib/bookings.ts`** — Booking types");
+  const list = blocks[0] as { ordered: boolean; items: { type: string; inline?: unknown[] }[][] };
+  assert.equal(list.ordered, true);
+  const first = list.items[0]![0]!;
+  assert.equal(first.type, "bold");
+  assert.deepEqual(first.inline, [{ type: "code", text: "src/lib/bookings.ts" }]);
+});
+
+test("parseLightMarkdown: blank lines between list items keep one list (Lovable numbers every item '1.')", () => {
+  const blocks = parseLightMarkdown("1. **a**\n\n1. **b**\n\n1. **c**\n\nAfterwards.");
+  assert.equal(blocks.length, 2);
+  const list = blocks[0] as { type: string; ordered: boolean; items: unknown[] };
+  assert.equal(list.type, "list");
+  assert.equal(list.ordered, true);
+  assert.equal(list.items.length, 3);
+  assert.equal(blocks[1]!.type, "paragraph");
 });

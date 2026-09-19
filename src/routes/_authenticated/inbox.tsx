@@ -548,7 +548,15 @@ function Page() {
   // rather than disappearing, same honesty rule as Instructions' filter.
   const itemProjectValue = (it: InboxItem): string => it.project_id ?? "workspace";
   const hasWorkspaceItem = items.some((it) => it.project_id === null);
-  const showProjectFilter = allowedProjects.length >= 2 || hasWorkspaceItem;
+  // Only projects that currently have an item get a button: six allowed
+  // projects (test copies included) for three items is noise, and a button
+  // that filters to nothing helps nobody. Items name their own project, so
+  // the buttons need no project the allowed list lacks.
+  const projectsWithItems: AllowedProject[] = allowedProjects.filter((p) =>
+    items.some((it) => it.project_id === p.id),
+  );
+  const showProjectFilter =
+    projectsWithItems.length >= 2 || (projectsWithItems.length >= 1 && hasWorkspaceItem);
   const activeProjectFilter = search.project ? search.project : null;
   const visibleItems = activeProjectFilter
     ? items.filter((it) => itemProjectValue(it) === activeProjectFilter)
@@ -608,7 +616,7 @@ function Page() {
           >
             {ALL_PROJECTS_LABEL}
           </Button>
-          {allowedProjects.map((p) => (
+          {projectsWithItems.map((p) => (
             <Button
               key={p.id}
               type="button"

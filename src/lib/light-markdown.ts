@@ -11,7 +11,12 @@
 // recognised as one of this limited subset stays literal text.
 
 export type LightMarkdownInline =
-  { type: "text"; text: string } | { type: "bold"; text: string } | { type: "code"; text: string };
+  | { type: "text"; text: string }
+  // `text` is the bold span verbatim; `inline` is the same span with any
+  // `code` inside it parsed (Lovable writes **`src/lib/x.ts`** for file
+  // names), so a renderer never shows the backticks literally.
+  | { type: "bold"; text: string; inline: LightMarkdownInline[] }
+  | { type: "code"; text: string };
 
 export type LightMarkdownBlock =
   | { type: "paragraph"; inline: LightMarkdownInline[] }
@@ -22,6 +27,29 @@ export type LightMarkdownBlock =
 // marker with no matching close (e.g. a stray "**" with nothing after it in
 // this line) is never consumed: both characters fall through to plain text,
 // which is what "unmatched ** left literal" means for a caller.
+// Only `` `code` `` spans, for the inside of a bold span.
+function parseCodeOnly(text: string): LightMarkdownInline[] {
+  const nodes: LightMarkdownInline[] = [];
+  let buf = "";
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "`") {
+      const end = text.indexOf("`", i + 1);
+      if (end !== -1) {
+        if (buf) nodes.push({ type: "text", text: buf });
+        buf = "";
+        nodes.push({ type: "code", text: text.slice(i + 1, end) });
+        i = end + 1;
+        continue;
+      }
+    }
+    buf += text[i];
+    i++;
+  }
+  if (buf) nodes.push({ type: "text", text: buf });
+  return nodes;
+}
+
 function parseInline(text: string): LightMarkdownInline[] {
   const nodes: LightMarkdownInline[] = [];
   let buf = "";
@@ -48,7 +76,8 @@ function parseInline(text: string): LightMarkdownInline[] {
       const end = text.indexOf("**", i + 2);
       if (end !== -1) {
         flush();
-        nodes.push({ type: "bold", text: text.slice(i + 2, end) });
+        const inner = text.slice(i + 2, end);
+        nodes.push({ type: "bold", text: inner, inline: parseCodeOnly(inner) });
         i = end + 2;
         continue;
       }
@@ -91,8 +120,10 @@ export function parseLightMarkdown(text: string): LightMarkdownBlock[] {
 
   for (const line of lines) {
     if (line.trim() === "") {
+      // A blank line ends a paragraph but not a list: Lovable separates its
+      // "1. **file**" items with blank lines and numbers every one "1.", so
+      // ending the list here would restart the numbering at 1 for each item.
       flushPara();
-      flushList();
       continue;
     }
 

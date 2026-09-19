@@ -17,7 +17,7 @@ import {
 
 function renderInline(inline: LightMarkdownInline[]): ReactNode[] {
   return inline.map((node, i) => {
-    if (node.type === "bold") return <strong key={i}>{node.text}</strong>;
+    if (node.type === "bold") return <strong key={i}>{renderInline(node.inline)}</strong>;
     if (node.type === "code") return <code key={i}>{node.text}</code>;
     return <Fragment key={i}>{node.text}</Fragment>;
   });

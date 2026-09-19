@@ -79,7 +79,14 @@ test("inbox.tsx: filters by project_id client-side, with a 'Workspace' bucket fo
   assert.match(code, /fetchProjects/);
   assert.match(code, /projectsQuery\.data\?\.allowed/);
   // The control only appears once there is something to filter.
-  assert.match(code, /allowedProjects\.length >= 2 \|\| hasWorkspaceItem/);
+  // Only projects that currently have an item get a button (the owner's
+  // Inbox showed six buttons, test copies included, for three items).
+  assert.match(
+    code,
+    /projectsWithItems\.length >= 2 \|\| \(projectsWithItems\.length >= 1 && hasWorkspaceItem\)/,
+  );
+  assert.match(code, /projectsWithItems\.map\(\(p\) => \(/);
+  assert.doesNotMatch(code, /allowedProjects\.map\(/);
 });
 
 test("inbox.tsx: never touches the local API surface -- still filters an already-fetched list, no new fetch", () => {
