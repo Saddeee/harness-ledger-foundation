@@ -5211,3 +5211,24 @@ export function listOppositeRequestNotes(
     });
 }
 // ---- end Checkpoint 2026-09-18 WP3 ----
+
+// ---- Round 8 Task 2 ----
+// UX round 8 (2026-09-19), review item 2: dismissing a failed action
+// (migration v24's inbox_dismissals table). A dismissal is keyed by the
+// Inbox item's own composite id ("run:7", "write:15", "skill:3") -- never
+// the underlying row id alone, since the same numeric id is reused across
+// different InboxItem sources. INSERT OR REPLACE so re-dismissing the same
+// id (not reachable through the UI, since a dismissed item disappears, but
+// harmless either way) never errors.
+export function dismissInboxItem(itemId: string, at?: string): void {
+  db.prepare(`INSERT OR REPLACE INTO inbox_dismissals (item_id, dismissed_at) VALUES (?, ?)`).run(
+    itemId,
+    at ?? new Date().toISOString(),
+  );
+}
+
+export function listDismissedInboxItemIds(): Set<string> {
+  const rows = db.prepare(`SELECT item_id FROM inbox_dismissals`).all() as { item_id: string }[];
+  return new Set(rows.map((r) => r.item_id));
+}
+// ---- end Round 8 Task 2 ----

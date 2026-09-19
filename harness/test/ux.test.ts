@@ -812,6 +812,9 @@ test("pages only fetch local harness routes: improvements, runtime, knowledge, e
     // Checkpoint 2026-09-18 WP4: the local Skill proposal lifecycle.
     "approve_skill_proposal",
     "change_wording",
+    // Round 8 Task 2 (review item 2): "Dismiss" on a failed action, purely
+    // local -- see improvement.tsx's own ActionFailedCard.
+    "dismiss_inbox_item",
     "edit_skill_proposal",
     "keep",
     // Checkpoint 3 S1: "Publish to Lovable" / Retry on a failed publish.

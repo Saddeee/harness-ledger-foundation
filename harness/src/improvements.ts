@@ -3874,7 +3874,32 @@ export function listInboxItems(opts: { connected: boolean }): InboxItem[] {
     ...buildSuggestionInboxItems(opts.connected),
     ...buildSkillPublishFailedInboxItems(),
   ];
-  return sortInboxItems(items);
+  // Round 8 Task 2 (review item 2): a dismissed action_failed item is
+  // dropped here, after every source above has built it and before sorting
+  // -- a dismissal row for any other id (it can never be written for one,
+  // see dismissInboxItem below, but this stays defensive) is ignored.
+  const dismissed = store.listDismissedInboxItemIds();
+  const visible = items.filter(
+    (item) => !(item.type === "action_failed" && dismissed.has(item.id)),
+  );
+  return sortInboxItems(visible);
+}
+
+/** Dismiss one action_failed Inbox item -- purely local (migration v24's
+ * inbox_dismissals table via store.dismissInboxItem); nothing changes in
+ * Lovable and the underlying record (the run, write or Skill proposal)
+ * stays exactly as it is on its own page. Only a failed action can be
+ * dismissed: the id must currently name an action_failed item in
+ * listInboxItems({ connected: false }) -- connected never matters for
+ * action_failed items, so this check doesn't need the caller's real
+ * connected status. */
+export function dismissInboxItem(itemId: string): { ok: true; item_id: string } {
+  const found = listInboxItems({ connected: false }).find(
+    (item) => item.id === itemId && item.type === "action_failed",
+  );
+  if (!found) throw new Error("Only a failed action can be dismissed");
+  store.dismissInboxItem(itemId);
+  return { ok: true, item_id: itemId };
 }
 
 /** === listInboxItems(opts).length -- a plain count for a badge, never

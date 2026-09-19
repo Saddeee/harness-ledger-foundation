@@ -1080,4 +1080,20 @@ export const MIGRATIONS: Migration[] = [
         ON skill_proposal_revisions(skill_proposal_id, id);
     `,
   },
+  {
+    version: 24,
+    name: "round8_task2_dismiss_failed_actions",
+    sql: `
+      -- UX round 8 Task 2 (review item 2): dismissing a failed action_failed
+      -- Inbox item is purely local -- it never touches Lovable and the
+      -- underlying record (the run, write, or Skill proposal) is untouched
+      -- on its own page. One row per dismissed item, keyed by the item's own
+      -- composite Inbox id ("run:7", "write:15", "skill:3"); improvements.ts
+      -- reads this to drop dismissed action_failed items from listInboxItems.
+      CREATE TABLE IF NOT EXISTS inbox_dismissals (
+        item_id TEXT PRIMARY KEY,
+        dismissed_at TEXT NOT NULL
+      );
+    `,
+  },
 ];

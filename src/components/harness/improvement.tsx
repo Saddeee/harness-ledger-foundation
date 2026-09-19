@@ -117,6 +117,13 @@ import {
   // ---- Round 8 Task 1 ----
   SKIP_RECOMMENDED_CONSEQUENCE_LINE,
   // ---- end Round 8 Task 1 ----
+  // ---- Round 8 Task 2 ----
+  DISMISS_LABEL,
+  DISMISS_CONSEQUENCE_LINE,
+  inboxPrimaryLinkConsequence,
+  inboxLinkPageLabel,
+  failedSummaryParts,
+  // ---- end Round 8 Task 2 ----
 } from "@/lib/harness-ux";
 
 import {
@@ -2730,7 +2737,10 @@ export function ConflictCard({ item }: { item: InboxItem }) {
  * this same suggestion to retry (the existing retry_write action, never a
  * new mutation path); every other case is honestly a "View" link to wherever
  * the contract's own `link` points, since there is nothing this card can
- * retry on its own. */
+ * retry on its own. Round 8 Task 2 (review item 2): every action_failed card
+ * also gets a secondary "Dismiss" button (adapter.dismissInboxItem, purely
+ * local -- see harness-ux.ts's own Round 8 Task 2 block), and the card's own
+ * summary line is never Lovable's raw error text (failedSummaryParts). */
 export function ActionFailedCard({
   item,
   busy,
@@ -2752,13 +2762,22 @@ export function ActionFailedCard({
   // button does.
   const skillProposalId = item.id.startsWith("skill:") ? Number(item.id.slice(6)) : null;
   const canRetryPublish = skillProposalId != null && Number.isFinite(skillProposalId);
+  const { plain, technical } = failedSummaryParts(item.summary);
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
       <h2 id={titleId} className="text-base font-medium">
         {item.title}
       </h2>
-      {item.summary ? <p className="text-sm text-muted-foreground">{item.summary}</p> : null}
+      <p className="text-sm text-muted-foreground">{plain}</p>
+      {technical ? (
+        <details className="rounded-md border">
+          <summary className="cursor-pointer px-2 py-1 text-xs font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Technical details
+          </summary>
+          <p className="border-t p-2 text-xs text-muted-foreground">{technical}</p>
+        </details>
+      ) : null}
       <div className={ACTION_BAR_CLASS}>
         {canRetryPublish || canRetryWrite ? (
           <div className="space-y-1">
@@ -2792,9 +2811,25 @@ export function ActionFailedCard({
             <Button asChild type="button" size="sm" variant="outline">
               <a href={href}>{VIEW_LABEL}</a>
             </Button>
-            <p className="text-xs text-muted-foreground">{inboxActionConsequence("review_rule")}</p>
+            <p className="text-xs text-muted-foreground">
+              {inboxPrimaryLinkConsequence(inboxLinkPageLabel(item.link.page))}
+            </p>
           </div>
         )}
+        <div className="space-y-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              void run({ action: "dismiss_inbox_item", item_id: item.id }, "Dismissed")
+            }
+          >
+            {DISMISS_LABEL}
+          </Button>
+          <p className="text-xs text-muted-foreground">{DISMISS_CONSEQUENCE_LINE}</p>
+        </div>
       </div>
     </article>
   );

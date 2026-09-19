@@ -142,9 +142,12 @@ const EXPECTED_TOOL_NAMES = [
   // Lovable (create only) -- see mcp-server.ts's own "---- Checkpoint 3 S1
   // ----" block and this file's own tests below.
   "publish_skill_proposal",
+  // Round 8 Task 2 (review item 2): dismiss a failed action from the Inbox
+  // -- see mcp-server.ts's own "---- Round 8 Task 2 ----" block.
+  "dismiss_inbox_item",
 ];
 
-test("tools/list returns exactly the 19 permitted tool names, no more, no fewer", async () => {
+test("tools/list returns exactly the 20 permitted tool names, no more, no fewer", async () => {
   const { client, server } = await connectedClient();
   try {
     const { tools } = await client.listTools();

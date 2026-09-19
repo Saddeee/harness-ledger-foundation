@@ -127,6 +127,20 @@ async function handlePost({ request }: { request: Request }) {
     }
   }
 
+  // Round 8 Task 2 (review item 2): "Dismiss" on a failed action -- purely
+  // local (adapter.dismissInboxItem), never an Improvement mutation, so it's
+  // handled here the same way "mark_seen" is, before the discriminated-union
+  // action below.
+  if (body["action"] === "dismiss_inbox_item") {
+    try {
+      const itemId = String(body["item_id"] ?? "");
+      const result = adapter.dismissInboxItem(itemId);
+      return Response.json({ available: true, ok: result.ok, item_id: result.item_id });
+    } catch (e) {
+      return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+    }
+  }
+
   // Round 6 Task 2: "Try again" on a not-written outcome -- re-runs
   // executeVersionNow on the exact version that didn't write (reopening it
   // first if it's stale/failed), addressed by version id alone. Not an

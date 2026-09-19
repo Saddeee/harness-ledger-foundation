@@ -1901,3 +1901,71 @@ export function analysisStatusLine(lastAnalysisAt: string | null, unanalysedCoun
 export const SKIP_RECOMMENDED_CONSEQUENCE_LINE =
   "The test suggests this rule would not have helped. Skipping changes nothing in Lovable.";
 // ---- end Round 8 Task 1 ----
+
+// ---- Round 8 Task 2 ----
+// UX round 8 (2026-09-19), review item 2: dismissing a failed action from
+// the Inbox. ActionFailedCard (src/components/harness/improvement.tsx) gets
+// a secondary "Dismiss" button next to its existing primary link, and never
+// shows a raw Lovable error string as its own summary line.
+
+export const DISMISS_LABEL = "Dismiss";
+
+/** The consequence line under the Dismiss button -- purely local, so it
+ * never mentions Lovable changing (it doesn't). */
+export const DISMISS_CONSEQUENCE_LINE =
+  "Removes this from your Inbox. Nothing changes in Lovable; the record stays on its page.";
+
+/** The consequence line under the card's existing primary link, naming the
+ * page it opens in plain words (never an internal link.page enum value). */
+export function inboxPrimaryLinkConsequence(pageLabel: string): string {
+  return `Opens ${pageLabel}. Nothing changes until you decide.`;
+}
+
+/** The plain-words page name for an InboxItem's own `link.page`, used by
+ * inboxPrimaryLinkConsequence above -- never the raw enum value itself. Only
+ * "tests"/"instructions"/"skills"/"history" are ever reached by an
+ * action_failed item's link today; the rest are covered for exhaustiveness. */
+export function inboxLinkPageLabel(
+  page: "detail" | "judge" | "instructions" | "skills" | "tests" | "history" | "inbox",
+): string {
+  switch (page) {
+    case "tests":
+      return "Tests";
+    case "instructions":
+      return "Instructions";
+    case "skills":
+      return "Skills";
+    case "history":
+      return "History";
+    case "detail":
+      return "Suggestions";
+    case "judge":
+      return "the judging screen";
+    case "inbox":
+      return "the Inbox";
+  }
+}
+
+/** Splits a failed action's `summary` into a plain sentence always safe to
+ * show as the card's main line, plus the raw technical text (only ever
+ * Lovable's own error string) for a collapsed "Technical details" fold.
+ * `summary` "looks raw" -- starts with "Lovable", or contains "REST",
+ * "API error", or a 3-digit HTTP status code -- exactly the shapes a
+ * Lovable REST error can take (see knowledge.ts/skills.ts write paths); a
+ * summary that doesn't match either is already plain English (e.g. "This
+ * test run failed.", "Deleting the test copy in Lovable failed."), so it's
+ * shown as-is with no technical fold at all. */
+export function failedSummaryParts(summary: string | null): {
+  plain: string;
+  technical: string | null;
+} {
+  if (!summary || !summary.trim()) return { plain: "Something failed.", technical: null };
+  const looksRaw =
+    /^Lovable/.test(summary) ||
+    /REST/.test(summary) ||
+    /API error/.test(summary) ||
+    /\b\d{3}\b/.test(summary);
+  if (looksRaw) return { plain: "Something failed in Lovable.", technical: summary };
+  return { plain: summary, technical: null };
+}
+// ---- end Round 8 Task 2 ----

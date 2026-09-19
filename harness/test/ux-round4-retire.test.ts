@@ -271,6 +271,9 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     // Round 6 Task 3: cancel the Instructions page's own staged write.
     "cancel_write",
     "change_wording",
+    // Round 8 Task 2 (review item 2): "Dismiss" on a failed action, purely
+    // local -- see improvement.tsx's own ActionFailedCard.
+    "dismiss_inbox_item",
     "edit_skill_proposal",
     "keep",
     "mark_seen",

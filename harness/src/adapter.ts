@@ -186,6 +186,11 @@ export { listInboxItems, inboxCount, INBOX_TYPE_LABELS } from "./improvements.js
 export type { InboxItem, InboxItemType } from "./improvements.js";
 // ---- end Checkpoint 3 I1: Inbox ----
 
+// Round 8 Task 2 (review item 2): dismiss one failed action_failed Inbox
+// item -- adapter.ts's own re-export of improvements.ts's dismissInboxItem,
+// the same boundary every other Inbox mutation here already crosses.
+export { dismissInboxItem } from "./improvements.js";
+
 const classification = z.enum([
   "defect_correction",
   "constraint_restatement",

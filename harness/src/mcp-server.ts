@@ -640,6 +640,22 @@ export function createHarnessMcpServer(): McpServer {
   );
   // ---- end Checkpoint 3 S1 ----
 
+  // ---- Round 8 Task 2 ----
+  registerTool(
+    server,
+    "dismiss_inbox_item",
+    "Dismiss one failed action from the Inbox (an action_failed item: a failed Knowledge write, " +
+      "test run, or Skill publish) -- adapter.dismissInboxItem, the exact function the Inbox's own " +
+      "'Dismiss' button calls. Purely local: nothing changes in Lovable, and the underlying record " +
+      "(the run, write, or Skill proposal) stays exactly as it is on its own page -- only the " +
+      "Inbox card disappears. Refuses, with the exact sentence the app shows, unless item_id " +
+      "currently names an action_failed item." +
+      PARITY_NOTE,
+    { item_id: z.string() },
+    (input: { item_id: string }) => adapter.dismissInboxItem(input.item_id),
+  );
+  // ---- end Round 8 Task 2 ----
+
   return server;
 }
 
