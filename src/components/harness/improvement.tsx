@@ -18,6 +18,7 @@ import {
   PrimaryAction,
   RecommendationCallout,
 } from "@/components/harness/decision-layout";
+import { ClampedText } from "@/components/harness/clamped-text";
 import {
   ALREADY_RECORDED_TOAST,
   actionConsequence,
@@ -33,7 +34,6 @@ import {
   DESTINATION_WHY,
   destinationLabelPlain,
   evidenceSourceLines,
-  excerpt,
   healthLine,
   attentionBlock,
   KNOWLEDGE_CHAR_LIMIT,
@@ -171,8 +171,6 @@ const READDED_TOAST = "Re-added.";
 // through improvementActionAndWrite, so the response carries `write`).
 // Restore itself moved to the History page only.
 const REMOVED_TOAST = "Removed from Knowledge.";
-
-const LONG_TEXT = 600;
 
 // Round 6 Task 4 / spec §4: one action bar per card, all buttons the same
 // size and gap, wrapping as a row -- the exact class every card's bar uses
@@ -1558,7 +1556,6 @@ export function DecisionCard({
 function MessageBlock({ m, projectId }: { m: Message; projectId?: string }) {
   const isLovable = m.author === "lovable";
   const readable = isLovable ? lovableReplyText(m.text) : m.text;
-  const tooLong = !isLovable && readable.length > LONG_TEXT;
   return (
     <li className="rounded-md border bg-muted/30 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -1577,20 +1574,16 @@ function MessageBlock({ m, projectId }: { m: Message; projectId?: string }) {
           </a>
         ) : null}
       </div>
-      <p className="mt-1 whitespace-pre-wrap text-sm">
-        {tooLong ? `${readable.slice(0, LONG_TEXT)}…` : readable}
-      </p>
+      {/* Owner review round 7 fix 2: ClampedText's own "See more"/"See less"
+          replaces the old fixed-length slice + a second "Show more"
+          <details> repeating the same text. */}
+      <div className="mt-1 text-sm">
+        <ClampedText text={readable} />
+      </div>
       {isLovable ? (
         <details className="mt-2">
           <summary className="cursor-pointer text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Show full response
-          </summary>
-          <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{m.text}</pre>
-        </details>
-      ) : tooLong ? (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Show more
           </summary>
           <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{m.text}</pre>
         </details>
@@ -1699,29 +1692,37 @@ export function ImprovementDetail({
           What happened
         </h2>
         {item.story ? (
-          <dl className="space-y-2 text-sm">
+          <dl className="space-y-3 text-sm">
             <div>
               <dt className="font-medium">Requested</dt>
               <dd className="text-muted-foreground">
-                {excerpt(item.story.requested, 400) || "Not recorded"}
+                {item.story.requested ? (
+                  <ClampedText text={item.story.requested} />
+                ) : (
+                  "Not recorded"
+                )}
               </dd>
             </div>
             <div>
               <dt className="font-medium">Built</dt>
               <dd className="text-muted-foreground">
-                {excerpt(item.story.built, 400) || "Not recorded"}
+                {item.story.built ? <ClampedText text={item.story.built} /> : "Not recorded"}
               </dd>
             </div>
             <div>
               <dt className="font-medium">Your correction</dt>
-              <dd className="text-muted-foreground">{excerpt(item.story.correction, 400)}</dd>
+              <dd className="text-muted-foreground">
+                <ClampedText text={item.story.correction} />
+              </dd>
             </div>
             <div>
               <dt className="font-medium">Changed afterward</dt>
               <dd className="text-muted-foreground">
-                {item.story.changed_afterward
-                  ? excerpt(item.story.changed_afterward, 400)
-                  : "Not recorded"}
+                {item.story.changed_afterward ? (
+                  <ClampedText text={item.story.changed_afterward} />
+                ) : (
+                  "Not recorded"
+                )}
               </dd>
             </div>
           </dl>

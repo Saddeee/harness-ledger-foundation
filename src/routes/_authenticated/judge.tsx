@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { WhatChangedLines } from "@/components/harness/timeline";
 import { ConfirmAction, AdvancedDetails } from "@/components/harness/decision-layout";
 import { AddConfirm, RemoveFromKnowledgeConfirm, useRun } from "@/components/harness/improvement";
+import { ClampedText } from "@/components/harness/clamped-text";
 import {
   conclusionDerivationLines,
   conclusionLine,
@@ -25,7 +26,6 @@ import {
   CORRECTIONS_LIST_LABEL,
   evidenceStrengthLine,
   evidenceStrengthTitle,
-  excerpt,
   formatDay,
   FULL_TECHNICAL_DETAILS_TITLE,
   HISTORICAL_RESULT_SUBTITLE,
@@ -357,7 +357,7 @@ function Page() {
             </p>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">You asked Lovable</p>
-              <p className="whitespace-pre-wrap text-sm">{view.request_text}</p>
+              <ClampedText text={view.request_text} />
             </div>
             {view.corrections.length > 0 ? (
               <div className="space-y-1">
@@ -435,18 +435,22 @@ function Page() {
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {HISTORICAL_RESULT_TITLE}
               </p>
-              <p className="whitespace-pre-wrap text-sm">
-                {view.original_summary || "No summary recorded."}
-              </p>
+              {view.original_summary ? (
+                <ClampedText text={view.original_summary} />
+              ) : (
+                <p className="text-sm">No summary recorded.</p>
+              )}
               <DiffDetails diff={view.original_diff} />
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {REPLAY_WITH_RULE_TITLE}
               </p>
-              <p className="whitespace-pre-wrap text-sm">
-                {view.copy_summary || "No summary recorded."}
-              </p>
+              {view.copy_summary ? (
+                <ClampedText text={view.copy_summary} />
+              ) : (
+                <p className="text-sm">No summary recorded.</p>
+              )}
               <DiffDetails diff={view.copy_diff} />
             </div>
           </section>
@@ -572,7 +576,11 @@ function Page() {
                     }`}
                   </p>
                 ) : null}
-                <p className="whitespace-pre-wrap">{view.original_reply || "No reply recorded."}</p>
+                {view.original_reply ? (
+                  <ClampedText text={view.original_reply} />
+                ) : (
+                  <p className="text-sm">No reply recorded.</p>
+                )}
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -591,7 +599,11 @@ function Page() {
                     }`}
                   </p>
                 ) : null}
-                <p className="whitespace-pre-wrap">{view.copy_reply || "No reply recorded."}</p>
+                {view.copy_reply ? (
+                  <ClampedText text={view.copy_reply} />
+                ) : (
+                  <p className="text-sm">No reply recorded.</p>
+                )}
               </div>
               {view.environment?.code_state.request_message_id ? (
                 <p className="text-xs text-muted-foreground">
@@ -679,10 +691,11 @@ function Page() {
 
 // Round 7 / Checkpoint 2026-09-18: one build, laid out the same way on both
 // sides -- a look at it (screenshot, open in Lovable, open the preview) and
-// a short excerpt of Lovable's own summary. The full summary, the full
-// reply and the diff moved into the shared "Full technical details" and
-// "Key difference" sections below; both sides are real Lovable projects the
-// owner can keep building on, or delete from here.
+// Lovable's own summary, clamped with "See more" (owner review round 7 fix
+// 2) rather than cut off for good. The full reply and the diff still live in
+// the shared "Full technical details" and "Key difference" sections below;
+// both sides are real Lovable projects the owner can keep building on, or
+// delete from here.
 function BuildColumn({
   id,
   title,
@@ -778,7 +791,7 @@ function BuildColumn({
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Lovable's summary of the change
           </p>
-          <p className="whitespace-pre-wrap text-sm">{excerpt(summary, 240)}</p>
+          <ClampedText text={summary} lines={3} />
         </div>
       ) : null}
       {footer ? <p className="text-xs text-muted-foreground">{footer}</p> : null}

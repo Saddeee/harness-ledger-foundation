@@ -312,11 +312,17 @@ test("judge.tsx: Evidence strength shows evidenceStrengthTitle/evidenceStrengthL
   assert.match(code, /<AdvancedDetails title=\{WHY_APPROXIMATION_TITLE\}>/);
 });
 
-test("judge.tsx: BuildColumn shows only a short excerpt of the summary (240 chars); the full summary/reply/diff moved into Full technical details", () => {
+// Owner review round 7 fix 2 ("if there is a lot of text there should be
+// something like see more ... otherwise we take too much place"): BuildColumn
+// no longer cuts the summary off for good at 240 characters with no way back
+// -- it renders the full summary through ClampedText, which clamps it
+// visually and offers "See more" only when it actually overflows. The full
+// reply/diff still live only in Full technical details below.
+test("judge.tsx: BuildColumn shows the summary via ClampedText (owner review round 7 fix 2 -- no more hard 240-char cutoff); the full reply/diff moved into Full technical details", () => {
   const raw = readApp(JUDGE);
   const code = codeOnly(raw);
   const buildColumnFn = code.slice(code.indexOf("function BuildColumn"));
-  assert.match(buildColumnFn, /excerpt\(summary, 240\)/);
+  assert.match(buildColumnFn, /<ClampedText text=\{summary\}/);
   assert.ok(!/reply:/.test(buildColumnFn) || !/reply,\s*\n\s*diff,/.test(buildColumnFn));
   // Full technical details is the one collapsed <details>, closed by default.
   assert.match(code, /<AdvancedDetails title=\{FULL_TECHNICAL_DETAILS_TITLE\}>/);

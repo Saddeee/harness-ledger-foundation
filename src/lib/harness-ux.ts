@@ -1809,4 +1809,12 @@ export function historyNodeMatchesFilter(
 export const INSTRUCTIONS_PROJECT_FILTER_LABEL = "Show";
 export const ALL_PROJECTS_LABEL = "All projects";
 export const WORKSPACE_TARGET_LABEL = "Workspace";
+
+// ---- Round 7 (owner review, 2026-09-19) fix 2 ----
+// "if there is a lot of text there should be something like see more to see
+// the rest otherwise we take too much place." ClampedText's own toggle
+// button (src/components/harness/clamped-text.tsx).
+export const SEE_MORE_LABEL = "See more";
+export const SEE_LESS_LABEL = "See less";
+// ---- end Round 7 fix 2 ----
 // ---- end Checkpoint 3 UX fixes ----
