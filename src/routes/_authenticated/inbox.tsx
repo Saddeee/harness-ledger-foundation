@@ -20,6 +20,7 @@ import {
   lovableOf,
   postExecutor,
   postImprovementAction,
+  syncResultText,
   type AllowedProject,
 } from "@/lib/improvements-client";
 import { Button } from "@/components/ui/button";
@@ -34,12 +35,23 @@ import {
   inboxCountLine,
   // ---- Round 8 Task 1 item 8 ----
   analysisStatusLine,
+  sidebarSyncLine,
   // ---- end Round 8 Task 1 item 8 ----
   DISAGREEMENT_ACCEPT_BUTTON,
   DISAGREEMENT_DISMISS_BUTTON,
   DISAGREEMENT_TITLE,
   disagreementBodyLine,
+  formatDate,
+  // ---- Round 8 Task 3 ----
+  providerDisplayName,
+  scheduleModeLine,
+  // ---- end Round 8 Task 3 ----
 } from "@/lib/harness-ux";
+import {
+  OVERVIEW_STATUS_BUDGETS_TITLE,
+  buildOverviewState,
+  overviewNextAction,
+} from "@/lib/onboarding-copy";
 import type { InboxItem } from "@/lib/improvements-client";
 
 // Checkpoint 2026-09-18 WP5 (D7): the executor route's GET response gained
@@ -253,6 +265,18 @@ function Page() {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not request analysis"),
   });
+  // Round 8 Task 3: Overview's own "Sync now" mutation, reused here verbatim
+  // (same action, same invalidations) now that its next-action block moved
+  // onto the top of this page.
+  const syncNow = useMutation({
+    mutationFn: () => postExecutor({ action: "sync_now" }),
+    onSuccess: (data) => {
+      toast.success(syncResultText(data));
+      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
+      void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Sync failed"),
+  });
 
   // Task C3 / spec §5 "new since your last visit": read the *previous*
   // last_seen_at from the first successful load of this visit, before
@@ -391,14 +415,31 @@ function Page() {
       ?.disagreements ?? [];
   const disagreementById = new Map(disagreements.map((d) => [`disagreement:${d.id}`, d]));
 
-  // Round 5 Task 6 / spec §4: automatic mode's own empty state -- only once
-  // it actually did something since the last visit; otherwise the plain
-  // line applies in both modes.
-  const autoAcceptedSince = query.data?.counts?.auto_accepted_since_seen ?? 0;
-  const nothingPendingLine =
-    executor.data?.settings?.decision_mode === "automatic" && autoAcceptedSince > 0
-      ? `Nothing needs your decision. Harness Ledger accepted ${autoAcceptedSince} suggestion${autoAcceptedSince === 1 ? "" : "s"} automatically since your last visit; see History.`
-      : "Nothing needs your decision. Everything you've decided on is under History.";
+  // Round 8 Task 3 (review item 5): Overview merged into the Inbox -- the
+  // same buildOverviewState/overviewNextAction the old /overview page used,
+  // reading the same Inbox and executor data this page already fetches
+  // (nothing new to read). The plain "Nothing needs your decision. …" empty
+  // state (including the automatic-mode nuance it used to carry) is
+  // replaced below by the single honest "Nothing waiting for you." line --
+  // see the empty-state block further down.
+  const overviewState = buildOverviewState({
+    inbox: inbox.data,
+    executor: executor.data,
+    allowedProjectCount: projectsQuery.data?.allowed?.length,
+  });
+  const nextAction = overviewNextAction(overviewState);
+  // Only these five kinds get the headline + button + consequence block at
+  // the top of the page -- the other four (review_blocked/review_suggestions/
+  // review_rules/judge_replay) mean the Inbox list itself is already the
+  // action, so rendering this block too would just repeat it.
+  const TOP_ACTION_KINDS = new Set([
+    "connect",
+    "choose_projects",
+    "choose_provider",
+    "analyse_now",
+    "sync_now",
+  ]);
+  const showNextAction = TOP_ACTION_KINDS.has(nextAction.kind);
 
   const awaiting = executor.data?.analysis?.awaiting_analysis ?? 0;
   const lastAnalysis = executor.data?.analysis?.last_run?.finished_at ?? null;
@@ -410,6 +451,15 @@ function Page() {
     executor.data?.analysis?.running || executor.data?.analysis?.queued,
   );
   const providerReady = executor.data?.analysis?.provider_ready;
+  // Round 8 Task 3: the "Status and budgets" fold's own reads, moved here
+  // verbatim from the old /overview page (same executor query, nothing new
+  // fetched).
+  const conn = executor.data?.connection;
+  const lastRun = executor.data?.last_run ?? null;
+  const nextRunAt = executor.data?.next_run_at ?? null;
+  const llm = executor.data?.llm;
+  const credits = executor.data?.credits;
+  const scheduleHolder = executor.data?.schedule_holder ?? null;
 
   return (
     <div className="space-y-6">
@@ -420,6 +470,31 @@ function Page() {
         </p>
         <p className="text-xs text-muted-foreground">{INBOX_INTRO}</p>
       </div>
+
+      {/* Round 8 Task 3 (review item 5): Overview's own primary-action
+          block, moved here verbatim (same headline/button/consequence,
+          same mutations) -- shown only for the five kinds that aren't
+          already the Inbox list itself (connect/choose_projects/
+          choose_provider/analyse_now/sync_now). */}
+      {showNextAction ? (
+        <section className="space-y-3 rounded-md border p-6">
+          <p className="text-lg font-medium">{nextAction.headline}</p>
+          {nextAction.kind === "sync_now" ? (
+            <Button onClick={() => syncNow.mutate()} disabled={syncNow.isPending}>
+              {syncNow.isPending ? "Syncing…" : nextAction.actionLabel}
+            </Button>
+          ) : nextAction.kind === "analyse_now" ? (
+            <Button onClick={() => analyseNow.mutate()} disabled={analyseNow.isPending}>
+              {analyseNow.isPending ? "Starting…" : nextAction.actionLabel}
+            </Button>
+          ) : (
+            <Button asChild>
+              <Link to={nextAction.to}>{nextAction.actionLabel}</Link>
+            </Button>
+          )}
+          <p className="text-xs text-muted-foreground">{nextAction.consequence}</p>
+        </section>
+      ) : null}
 
       {/* Owner review round 7 fix 1: same segmented "Show" control as
           Instructions, same copy -- All projects, one button per allowed
@@ -497,11 +572,14 @@ function Page() {
       !inbox.isLoading &&
       !inboxUnavailable ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
+          {/* Round 8 Task 3 (review item 5): one honest empty state,
+              replacing both the "Suggestions Harness Ledger finds…" first-run
+              copy and the automatic-mode-specific "Harness Ledger accepted N
+              suggestions…" wording -- the project-filter mismatch case below
+              is unchanged. */}
           {activeProjectFilter && items.length > 0
             ? "Nothing to show for this filter."
-            : all.length === 0
-              ? "Suggestions Harness Ledger finds in your Lovable chats will appear here."
-              : nothingPendingLine}
+            : "Nothing waiting for you."}
         </div>
       ) : null}
 
@@ -589,6 +667,45 @@ function Page() {
         ) : null}
         <p className="text-xs text-muted-foreground">{ANALYSE_NOW_SCOPE_LINE}</p>
       </section>
+
+      {/* Round 8 Task 3 (review item 5): Overview's own collapsed "Status
+          and budgets" fold, moved here verbatim -- same lines, same executor
+          query, nothing new fetched. Collapsed by default (no `open`). */}
+      <details className="group rounded-md border">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+          {OVERVIEW_STATUS_BUDGETS_TITLE}
+        </summary>
+        <div className="space-y-1 border-t px-4 py-4 text-sm text-muted-foreground">
+          <p>
+            {conn?.connected
+              ? `Connected to Lovable${conn.email ? ` as ${conn.email}` : ""}`
+              : "Not connected to Lovable"}
+          </p>
+          <p>{sidebarSyncLine(lastRun, nextRunAt) ?? "No sync has run yet"}</p>
+          {lastRun && lastRun.ok === false && lastRun.error ? (
+            // The one place outside Technical details this raw text may
+            // appear -- and it's inside a collapsed fold.
+            <p className="text-xs">Lovable said: {lastRun.error}</p>
+          ) : null}
+          <p>{nextRunAt ? `Syncs again at ${formatDate(nextRunAt)}` : "No sync scheduled"}</p>
+          <p>
+            {llm
+              ? `AI: ${providerDisplayName(llm.provider)}${llm.models.rule_writer.model ? ` (${llm.models.rule_writer.model})` : ""}`
+              : "No provider configured"}
+          </p>
+          <p>
+            {credits
+              ? `Credits used: ${credits.used_this_month} of ${credits.budget}`
+              : "Credits: unavailable"}
+          </p>
+          <p>
+            {llm
+              ? `Tokens used: ${llm.tokens_this_month.toLocaleString()} of ${llm.monthly_token_budget.toLocaleString()}`
+              : "Tokens: unavailable"}
+          </p>
+          <p>{scheduleModeLine(scheduleHolder?.owner ?? null)}</p>
+        </div>
+      </details>
     </div>
   );
 }

@@ -1902,6 +1902,35 @@ export const SKIP_RECOMMENDED_CONSEQUENCE_LINE =
   "The test suggests this rule would not have helped. Skipping changes nothing in Lovable.";
 // ---- end Round 8 Task 1 ----
 
+// ---- Round 8 Task 3 ----
+// UX round 8 (2026-09-19), review item 5: Overview merges into the Inbox --
+// the collapsed "Status and budgets" fold that used to sit at the bottom of
+// /overview moves to the bottom of /inbox verbatim. These two lines are new
+// there (the fold's provider and schedule lines used to read the raw
+// internal values directly); Task 6 reuses providerDisplayName for its own
+// copy, so its signature (a plain string in, a plain string out) stays as
+// simple as this.
+
+/** "claude_code" -> "Claude Code", "anthropic" -> "Anthropic API", "openai"
+ * -> "OpenAI"; anything else (a future provider id) falls back to the raw
+ * value with underscores turned into spaces, rather than hiding it. */
+export function providerDisplayName(p: string): string {
+  if (p === "claude_code") return "Claude Code";
+  if (p === "anthropic") return "Anthropic API";
+  if (p === "openai") return "OpenAI";
+  return p.replace(/_/g, " ");
+}
+
+/** The status fold's schedule line -- who currently holds the schedule
+ * lock (Round 6 Task 2's ScheduleHolder), in plain words. `null` covers
+ * both "no schedule_holder at all" and "nobody holds it right now". */
+export function scheduleModeLine(owner: "app" | "cli" | null | undefined): string {
+  if (owner === "app") return "Checks for new chats on a schedule while Harness Ledger is open";
+  if (owner === "cli") return "Checks for new chats on a schedule from the background process";
+  return "Scheduled checks are off";
+}
+// ---- end Round 8 Task 3 ----
+
 // ---- Round 8 Task 2 ----
 // UX round 8 (2026-09-19), review item 2: dismissing a failed action from
 // the Inbox. ActionFailedCard (src/components/harness/improvement.tsx) gets

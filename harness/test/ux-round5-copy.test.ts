@@ -62,11 +62,13 @@ test("harness-ux.ts: LANDING_CREDITS_LINE exists with correct content", () => {
   );
 });
 
-test("nav: Overview, Inbox, Instructions, Skills, Tests, History, Projects, Settings in that order (checkpoint 3: Suggestions removed)", () => {
+test("nav: Inbox, Instructions, Skills, Tests, History, Projects, Settings in that order (checkpoint 3: Suggestions removed; Round 8 Task 3: Overview merged into Inbox)", () => {
   // Round 6c part B: Tests joins the sidebar between History and Skills.
-  // Checkpoint 2 WP2-A: Overview returns as a real next-action page and
-  // leads the sidebar -- both updated here with intent rather than left to
-  // bit-rot against a stale list.
+  // Checkpoint 2 WP2-A: Overview returned as a real next-action page and
+  // led the sidebar. Round 8 Task 3 (review item 5): Overview's next
+  // action and status fold moved onto the Inbox itself, so Overview left
+  // the nav -- updated here with intent rather than left to bit-rot
+  // against a stale list.
   const code = codeOnly(readApp(ROUTE));
   const navMatch = code.match(
     /const NAV = \[[^\]]*\{ to: "\/([^"]+)", label: "([^"]+)" \}[^\]]*\]/s,
@@ -80,7 +82,6 @@ test("nav: Overview, Inbox, Instructions, Skills, Tests, History, Projects, Sett
     return m ? { route: m[1], label: m[2] } : null;
   });
   assert.deepEqual(items, [
-    { route: "overview", label: "Overview" },
     { route: "inbox", label: "Inbox" },
     { route: "instructions", label: "Instructions" },
     { route: "skills", label: "Skills" },

@@ -133,8 +133,11 @@ test("README: Inbox is the single decision queue; no separate Suggestions page i
     readme.indexOf("## 3. Getting started"),
   );
   assert.ok(!/\| \*\*Suggestions\*\*/.test(pagesTable), "no Suggestions page row");
+  // Round 8 Task 3 (review item 5): Overview merged into the Inbox, so it
+  // no longer has a row of its own -- Inbox's row now answers both
+  // questions ("is Harness Ledger ready" and "what needs my attention").
+  assert.ok(!/\| \*\*Overview\*\*/.test(pagesTable), "no separate Overview page row");
   for (const page of [
-    "**Overview**",
     "**Inbox**",
     "**Instructions**",
     "**Skills**",

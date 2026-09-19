@@ -50,13 +50,13 @@ const TOUCHED_PAGES = [
 
 // ---- 1. Nav: six items, in order ----
 
-test("nav: Overview, Inbox, Instructions, Skills, Tests, History, Projects, Settings -- eight items, in order (checkpoint 3: Suggestions removed)", () => {
+test("nav: Inbox, Instructions, Skills, Tests, History, Projects, Settings -- seven items, in order (checkpoint 3: Suggestions removed; Round 8 Task 3: Overview merged into Inbox)", () => {
   // Round 6c part B: Tests joins the sidebar between History and Skills.
-  // Checkpoint 2 WP2-A: Overview returns as a real page and leads the
-  // sidebar -- updated here with intent.
+  // Checkpoint 2 WP2-A: Overview returned as a real page and led the
+  // sidebar. Round 8 Task 3 (review item 5): Overview merged into the
+  // Inbox and left the nav -- updated here with intent.
   const shell = codeOnly(readApp(SHELL));
   const order = [
-    'label: "Overview"',
     'label: "Inbox"',
     'label: "Instructions"',
     'label: "Skills"',
@@ -65,7 +65,7 @@ test("nav: Overview, Inbox, Instructions, Skills, Tests, History, Projects, Sett
     'label: "Projects"',
     'label: "Settings"',
   ];
-  assert.equal(count(shell, 'label: "'), 8, "exactly eight nav items");
+  assert.equal(count(shell, 'label: "'), 7, "exactly seven nav items");
   let last = -1;
   for (const marker of order) {
     const at = shell.indexOf(marker);

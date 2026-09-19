@@ -290,6 +290,10 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     "retry_write",
     "set_content_destination",
     "skip",
+    // Round 8 Task 3 (review item 5): Overview's own "Sync now" mutation,
+    // reused verbatim on the Inbox now that Overview's next-action block
+    // moved there.
+    "sync_now",
     // Round 6 Task 6b / spec §6: "Test this rule"'s own confirm, and the Add
     // dialog's "Add and test it first" choice (accept, then this).
     "test",

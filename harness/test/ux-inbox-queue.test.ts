@@ -19,14 +19,14 @@ const SHELL = codeOnly(read("src/routes/_authenticated/route.tsx"));
 const INBOX = codeOnly(read("src/routes/_authenticated/inbox.tsx"));
 const LEDGER = codeOnly(read("src/routes/_authenticated/ledger.tsx"));
 const HISTORY = codeOnly(read("src/routes/_authenticated/history.tsx"));
-const OVERVIEW = codeOnly(read("src/routes/_authenticated/overview.tsx"));
 const CARDS = codeOnly(read("src/components/harness/improvement.tsx"));
 const UX = codeOnly(read("src/lib/harness-ux.ts"));
 
-test("navigation: Suggestions is absent; eight pages in the demo order", () => {
+// Round 8 Task 3 (review item 5): Overview merged into the Inbox and left
+// the nav -- seven pages now, Inbox first.
+test("navigation: Suggestions is absent; seven pages in the demo order", () => {
   const labels = [...SHELL.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(labels, [
-    "Overview",
     "Inbox",
     "Instructions",
     "Skills",
@@ -112,7 +112,7 @@ test("Inbox item types: six plain labels, every card path renders one primary ac
   }
 });
 
-test("one source of truth: exactly one Inbox aggregation, one route branch, Overview counts read it, no mutation in the detail route", () => {
+test("one source of truth: exactly one Inbox aggregation, one route branch, the Inbox page reads it, no mutation in the detail route", () => {
   const harnessSrc = join(ROOT, "harness/src");
   const files = readdirSync(harnessSrc, {
     withFileTypes: true,
@@ -128,7 +128,10 @@ test("one source of truth: exactly one Inbox aggregation, one route branch, Over
   assert.equal(definitions, 1, "listInboxItems is defined once");
   const route = codeOnly(read("src/routes/api/public/harness/improvements.ts"));
   assert.equal((route.match(/adapter\.listInboxItems\(/g) ?? []).length, 1);
-  assert.match(OVERVIEW, /fetchInbox/);
+  // Round 8 Task 3 (review item 5): Overview merged into the Inbox, so the
+  // "Overview counts read it" leg of this test is now just "the Inbox page
+  // reads it" -- INBOX already covers that assertion below.
+  assert.match(INBOX, /fetchInbox/);
   assert.ok(!/postImprovementAction\(/.test(LEDGER), "the detail route posts nothing of its own");
   // The Inbox posts only the shared actions (no ad-hoc endpoint).
   assert.ok(!/fetch\(/.test(INBOX), "inbox.tsx never calls fetch directly");
@@ -138,7 +141,7 @@ test("sidebar badge: route.tsx derives it from the Inbox's own count, never from
   assert.match(
     SHELL,
     /fetchInbox/,
-    "route.tsx must read the same Inbox fetch the Inbox page and Overview read",
+    "route.tsx must read the same Inbox fetch the Inbox page reads",
   );
   assert.match(SHELL, /queryKey: \["harness-inbox"\]/, "same query key -- react-query dedupes it");
   assert.match(

@@ -116,12 +116,13 @@ test("onboarding page: connect, projects, mode, provider and sync steps each pos
 
 // ---- Nav ----
 
-test("nav: Overview is first, and every one of the eight existing pages is kept", () => {
+// Round 8 Task 3 (review item 5): Overview merged into the Inbox, so it is
+// first now instead of Overview -- seven pages remain.
+test("nav: Inbox is first, and every one of the seven remaining pages is kept", () => {
   const shell = codeOnly(readApp(ROUTE));
   const labels = [...shell.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
   // Checkpoint 3: Suggestions left the navigation; Inbox is the queue.
   assert.deepEqual(labels, [
-    "Overview",
     "Inbox",
     "Instructions",
     "Skills",
@@ -264,30 +265,12 @@ test("overviewNextAction: fully caught up offers Sync now", () => {
   assert.equal(action.consequence, copy.SYNC_NOW_CONSEQUENCE);
 });
 
-test("overviewMonitorRows: one row per Inbox item type, in the Inbox's own order, every row linking to the Inbox", () => {
-  const rows = copy.overviewMonitorRows({
-    ...BASE_STATE,
-    inboxTypeCounts: {
-      new_instruction: 2,
-      new_skill: 1,
-      test_result: 1,
-      rule_attention: 3,
-      conflict: 0,
-      action_failed: 4,
-    },
-  });
-  assert.deepEqual(
-    rows.map((r) => [r.label, r.count, r.to]),
-    [
-      ["Action failed", 4, "/inbox"],
-      ["Conflict", 0, "/inbox"],
-      ["Test result", 1, "/inbox"],
-      ["Rule needs attention", 3, "/inbox"],
-      ["New instruction", 2, "/inbox"],
-      ["New Skill", 1, "/inbox"],
-    ],
-  );
-});
+// Round 8 Task 3 (review item 5): the "overviewMonitorRows: one row per
+// Inbox item type…" test that used to sit here is deleted -- overviewMonitorRows
+// and OVERVIEW_MONITOR_TITLE are gone from src/lib/onboarding-copy.ts. The
+// six-row Monitor list it covered was a second rendering of exactly the
+// counts the Inbox list below it already shows; the Inbox list is the only
+// one now.
 
 // ---- buildOverviewState: counts come from the Inbox read, never re-derived ----
 

@@ -7,7 +7,6 @@
 // once, in buildOverviewState below, and the route files only ever render
 // the plain-language result.
 import type { ExecutorResponse, InboxItemType, InboxResponse } from "./improvements-client";
-import { INBOX_TYPE_LABELS } from "./harness-ux";
 
 // ---- Shared ----
 
@@ -112,9 +111,9 @@ const INBOX_TYPE_ORDER: InboxItemType[] = [
 
 /** Turns the Inbox read (fetchInbox) plus the executor status and the
  * allowed-project count (Projects' own read) into the plain booleans/counts
- * overviewNextAction and overviewMonitorRows need. This is the one place any
- * Inbox item type is switched on for Overview's purposes --
- * src/routes/_authenticated/overview.tsx never does that itself. */
+ * overviewNextAction needs. This is the one place any Inbox item type is
+ * switched on for this purpose -- src/routes/_authenticated/inbox.tsx never
+ * does that itself. */
 export function buildOverviewState(input: {
   inbox: InboxResponse | undefined;
   executor: ExecutorResponse | undefined;
@@ -257,20 +256,11 @@ export function overviewNextAction(state: OverviewState): OverviewNextAction {
   };
 }
 
-export type OverviewMonitorRow = { label: string; count: number; to: string };
-
-export const OVERVIEW_MONITOR_TITLE = "Monitor";
 export const OVERVIEW_STATUS_BUDGETS_TITLE = "Status and budgets";
 
-/** The compact counts list under the primary action -- one row per Inbox
- * item type (brief §7 "Monitor rows = counts per Inbox type"), in the same
- * order listInboxItems sorts them (action_failed/conflict first). Every row
- * opens the Inbox: it's the single decision queue now, so there is nowhere
- * else for any of these counts to be worked through. */
-export function overviewMonitorRows(state: OverviewState): OverviewMonitorRow[] {
-  return INBOX_TYPE_ORDER.map((t) => ({
-    label: INBOX_TYPE_LABELS[t],
-    count: state.inboxTypeCounts[t],
-    to: "/inbox",
-  }));
-}
+// Round 8 Task 3 (review item 5): the six-row "Monitor" list
+// (OverviewMonitorRow / OVERVIEW_MONITOR_TITLE / overviewMonitorRows) is
+// deleted here, along with its tests in harness/test/ux-onboarding.test.ts.
+// Overview merged into the Inbox, and the Inbox list itself is now the only
+// place those per-type counts are worked through -- a second list of the
+// same counts, one page up, was the thing being removed.

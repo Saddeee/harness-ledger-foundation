@@ -41,7 +41,7 @@ You set it up once:
 4. Pick an AI provider.
 5. Press **Analyse now** after new activity (or let Sync run hourly).
 
-After that, **Inbox contains everything that needs your attention**: new instructions, new Skills, test results waiting for your verdict, rules needing attention, conflicts and failed actions. The **Overview** page tells you whether anything is waiting and offers one next action. Everything else is a record: Instructions holds accepted Knowledge, Skills holds the Skill inventory and proposals, Tests holds replay evidence, History holds completed decisions and changes.
+After that, **Inbox contains everything that needs your attention**: new instructions, new Skills, test results waiting for your verdict, rules needing attention, conflicts and failed actions — and when none of that is waiting, the one next action instead (connect, choose projects, choose a provider, analyse, or sync). Everything else is a record: Instructions holds accepted Knowledge, Skills holds the Skill inventory and proposals, Tests holds replay evidence, History holds completed decisions and changes.
 
 Every suggestion card says what was found, what Harness Ledger recommends, why in one sentence, what to do, and whether Lovable, Lovable credits or AI tokens are affected. Explanations sit on the same page; raw classifications, model metadata, remote ids and full diffs are collapsed under "Technical details".
 
@@ -64,8 +64,7 @@ Every write reads your Knowledge fresh, compares it with what Harness Ledger las
 
 | Page             | What it answers                                                                                                                                                                               |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Overview**     | Is Harness Ledger ready? Do I need to do anything? What is the next action?                                                                                                                   |
-| **Inbox**        | Everything that needs your attention: New instruction, New Skill, Test result, Rule needs attention, Conflict, Action failed. One primary action per item; a suggestion opens its detail page |
+| **Inbox**        | Is Harness Ledger ready? Do I need to do anything? Everything that needs your attention: New instruction, New Skill, Test result, Rule needs attention, Conflict, Action failed. One primary action per item, or the one next action when nothing does; a suggestion opens its detail page |
 | **Instructions** | Rules needing attention first, then Knowledge per project and workspace, then Skills. "Is this rule still useful?" with Keep / Review / Retire / Not sure                                     |
 | **Skills**       | Skills in Lovable, and Skill proposals you can publish to Lovable as new Skills                                                                                                               |
 | **Tests**        | Every replay: kind, evidence strength, conclusion, cost                                                                                                                                       |
@@ -306,7 +305,7 @@ Two halves that deliberately don't share a runtime:
 
 ```
 src/                          web app (TanStack Start, React, shadcn/ui, Supabase auth)
-  routes/_authenticated/      Overview, Inbox, Instructions, Skills, Tests, History,
+  routes/_authenticated/      Inbox, Instructions, Skills, Tests, History,
                               Projects, Settings, onboarding, judging screen and the
                               suggestion detail (reached from Inbox and History)
   routes/api/public/harness/  the only server routes the pages may call (checked by a test)
@@ -384,7 +383,7 @@ The source of truth is the capability manifest in `harness/src/capabilities.ts` 
 - Local Skill proposals: propose, edit, approve, version, restore, retire.
 - Publish an approved Skill proposal to Lovable as a new workspace Skill (create only; verified with one live write on 2026-09-19).
 - Harness Ledger MCP with the same permissions as the app.
-- One-command setup; onboarding; Overview with one next action; OpenAI parameter compatibility with a provider test.
+- One-command setup; onboarding; Inbox with one next action; OpenAI parameter compatibility with a provider test.
 
 ### Current limitations
 

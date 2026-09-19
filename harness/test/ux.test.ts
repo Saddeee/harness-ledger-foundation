@@ -574,15 +574,22 @@ test("wording history: reasons only for changes made in this UI; anything else i
   assert.match(codeOnly(readApp(DETAIL)), /\{wordingChangeLine\(w\)\}/);
 });
 
-test("Overview is a real page again (Checkpoint 2 WP2-A): a component, not a redirect, and it is reachable from the nav and onboarding", () => {
+// Round 8 Task 3 (review item 5): Overview merged into the Inbox, so
+// /overview is a pure redirect again -- replaces the Checkpoint 2 WP2-A
+// test above pinning it as a real component reachable from the nav and
+// onboarding (neither is true any more, with intent).
+test("Overview is a redirect to Inbox (Round 8 Task 3): no nav entry, no component, onboarding's Skip link goes to /inbox", () => {
   const overview = codeOnly(readApp("routes/_authenticated/overview.tsx"));
-  assert.ok(!/throw redirect\(/.test(overview), "Overview no longer just redirects");
-  assert.match(overview, /component:\s*OverviewPage/);
-  assert.match(codeOnly(readApp(SHELL)), /["'`]\/overview["'`]/, "the nav links to /overview");
+  assert.match(overview, /throw redirect\(\{ to: "\/inbox", replace: true \}\)/);
+  assert.ok(!/component:/.test(overview), "no component; it is a pure redirect");
+  assert.ok(
+    !/["'`]\/overview["'`]/.test(codeOnly(readApp(SHELL))),
+    "the nav no longer links to /overview",
+  );
   assert.match(
     codeOnly(readApp("routes/_authenticated/onboarding.tsx")),
-    /["'`]\/overview["'`]/,
-    "onboarding's Skip link goes to /overview",
+    /["'`]\/inbox["'`]/,
+    "onboarding's Skip link goes to /inbox",
   );
 });
 
@@ -597,12 +604,13 @@ test("Settings: hosted usage cards live under Advanced, gated to the hosted runt
   assert.ok(!/queryKey: \["overview"\]/.test(settings));
 });
 
-test("nav: Overview, Inbox, Instructions, Skills, Tests, History, Projects, Settings in every runtime (checkpoint 3: no Suggestions); How Harness Ledger works links to the landing page", () => {
-  // Checkpoint 2 WP2-A: Overview is real again (a next-action page, not the
-  // redirect it used to be) and sits first in the sidebar -- updated here
-  // with intent rather than left pinning the old "Overview is gone" state.
+test("nav: Inbox, Instructions, Skills, Tests, History, Projects, Settings in every runtime (checkpoint 3: no Suggestions; Round 8 Task 3: no Overview); How Harness Ledger works links to the landing page", () => {
+  // Checkpoint 2 WP2-A: Overview was real again (a next-action page, not a
+  // redirect) and sat first in the sidebar. Round 8 Task 3 (review item 5):
+  // Overview merged into the Inbox and left the nav -- Inbox is first now.
+  // Updated here with intent rather than left pinning the old state.
   const shell = codeOnly(readApp(SHELL));
-  assert.match(shell, /\{ to: "\/overview", label: "Overview" \}/);
+  assert.ok(!/\{ to: "\/overview", label: "Overview" \}/.test(shell), "Overview left the nav");
   assert.match(shell, /\{ to: "\/inbox", label: "Inbox" \}/);
   assert.ok(!/label: "Suggestions"/.test(shell), "Suggestions left the navigation (checkpoint 3)");
   assert.match(shell, /\{ to: "\/instructions", label: "Instructions" \}/);
@@ -611,9 +619,8 @@ test("nav: Overview, Inbox, Instructions, Skills, Tests, History, Projects, Sett
   assert.match(shell, /\{ to: "\/skills", label: "Skills" \}/);
   assert.match(shell, /\{ to: "\/projects", label: "Projects" \}/);
   assert.match(shell, /\{ to: "\/settings", label: "Settings" \}/);
-  assert.equal(count(shell, 'label: "'), 8, "exactly eight nav items");
+  assert.equal(count(shell, 'label: "'), 7, "exactly seven nav items");
   const navOrder = [
-    'label: "Overview"',
     'label: "Inbox"',
     'label: "Instructions"',
     'label: "Skills"',
@@ -688,9 +695,31 @@ test("cost wording: 'Lovable credits' at most twice on the detail page, 'Harness
       count(codeOnly(readApp(DETAIL)), "lovable_credits_max") +
       2,
   );
-  for (const page of [INBOX, LEDGER, LAYOUT]) {
+  for (const page of [LEDGER, LAYOUT]) {
     assert.equal(count(codeOnly(readApp(page)), "credit"), 0, `${page} mentions credits`);
   }
+  // Round 8 Task 3 (review item 5): Overview's own collapsed "Status and
+  // budgets" fold -- credits and tokens lines unchanged, per the brief --
+  // moved onto the bottom of the Inbox, along with the `credits` local it
+  // reads (`const credits = executor.data?.credits`, invisible to a user).
+  // What must still stay credit-free is the rendered JSX outside that one
+  // collapsed <details>: the suggestion cards and the rest of the page
+  // never spell out a credit cost.
+  const inboxCode = codeOnly(readApp(INBOX));
+  // lastIndexOf, not indexOf: the component has earlier `return (…)` early
+  // exits (loading/error/unavailable states) before its main JSX return.
+  const jsxStart = inboxCode.lastIndexOf("return (");
+  assert.ok(jsxStart >= 0, "inbox.tsx must have a component return");
+  const jsx = inboxCode.slice(jsxStart);
+  const foldStart = jsx.indexOf("<details");
+  const foldEnd = jsx.indexOf("</details>", foldStart) + "</details>".length;
+  assert.ok(foldStart >= 0 && foldEnd > foldStart, "inbox.tsx must have the collapsed status fold");
+  const outsideFold = jsx.slice(0, foldStart) + jsx.slice(foldEnd);
+  assert.equal(
+    count(outsideFold, "credit"),
+    0,
+    "inbox.tsx mentions credits outside the status fold",
+  );
   // the client lib carries the contract field name lovable_credits_max, but no user-facing credit copy
   assert.equal(count(codeOnly(readApp(CLIENT)), "Lovable credits"), 0);
   // harness-ux.ts (Round 5 Task 2): "Lovable credits" appeared once, in

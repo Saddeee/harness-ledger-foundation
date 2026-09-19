@@ -481,7 +481,9 @@ function OnboardingPage() {
     } catch {
       // localStorage may be unavailable (private browsing); skip still works.
     }
-    navigate({ to: "/overview" });
+    // Round 8 Task 3: Overview merged into the Inbox -- it is the landing
+    // page for "onboarding is done" now.
+    navigate({ to: "/inbox" });
   };
 
   return (

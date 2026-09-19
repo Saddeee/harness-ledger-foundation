@@ -269,19 +269,22 @@ test("ledger.tsx and improvement.tsx: a decided item shows an 'Accepted automati
   assert.match(badgeBranch, /Accepted automatically/);
 });
 
-test("inbox.tsx: the empty state names how many Harness Ledger accepted automatically since the last visit, in automatic mode only", () => {
+// Round 8 Task 3 (review item 5): the automatic-mode-specific "Harness
+// Ledger accepted N suggestions automatically since your last visit" empty
+// state this test used to pin is gone -- Overview merging into the Inbox
+// replaced every zero-items empty state (mode-specific or not) with the
+// one honest "Nothing waiting for you." line (see harness/test/ux-round8-task3.test.ts
+// for that pin). This test now pins the removal instead.
+test("inbox.tsx: the empty state no longer varies by decision mode", () => {
   const code = codeOnly(readApp(INBOX));
-  assert.match(code, /executorQueryOptions/);
-  assert.match(code, /executor\.data\?\.settings\?\.decision_mode === "automatic"/);
-  assert.match(code, /auto_accepted_since_seen/);
-  assert.match(
-    code,
-    /Nothing needs your decision\. Harness Ledger accepted \$\{autoAcceptedSince\} suggestion\$\{autoAcceptedSince === 1 \? "" : "s"\} automatically since your last visit; see History\./,
-  );
-  // The plain line still exists for ask mode / nothing auto-accepted yet.
   assert.ok(
-    readApp(INBOX).includes(
-      "Nothing needs your decision. Everything you've decided on is under History.",
-    ),
+    !/executor\.data\?\.settings\?\.decision_mode === "automatic"/.test(code),
+    "the empty state no longer branches on decision_mode",
   );
+  assert.ok(!/auto_accepted_since_seen/.test(code), "auto_accepted_since_seen is no longer read");
+  assert.ok(
+    !/Harness Ledger accepted \$\{autoAcceptedSince\}/.test(code),
+    "the automatic-mode nuance line is gone",
+  );
+  assert.match(code, /Nothing waiting for you\./);
 });

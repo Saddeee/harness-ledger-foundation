@@ -33,8 +33,10 @@ export const Route = createFileRoute("/_authenticated")({
 // Inbox is the single decision queue now (a decided item just isn't in the
 // Inbox any more; /ledger still exists for deep links -- see ledger.tsx's
 // own redirect to /inbox when opened without ?improvement=).
+// Round 8 Task 3 (review item 5): "Overview" left the nav the same way --
+// its next action and status fold moved onto the Inbox itself, which is
+// first in the list below.
 const NAV = [
-  { to: "/overview", label: "Overview" },
   { to: "/inbox", label: "Inbox" },
   { to: "/instructions", label: "Instructions" },
   { to: "/skills", label: "Skills" },
