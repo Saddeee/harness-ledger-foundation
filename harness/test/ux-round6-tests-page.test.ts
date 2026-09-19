@@ -181,7 +181,7 @@ test("judge.tsx: has a feedback box ('Your feedback about this test', Save) and 
   const code = codeOnly(readApp(JUDGE));
   assert.match(code, /Your feedback about this test/);
   assert.match(code, /action: "feedback", run_id: runId/);
-  assert.match(code, /← Suggestion/);
+  assert.match(code, /← Back to the suggestion/);
   assert.match(code, /← Tests/);
   assert.match(code, /to="\/tests"/);
 });

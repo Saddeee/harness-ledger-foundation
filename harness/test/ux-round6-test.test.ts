@@ -58,7 +58,7 @@ test("judge.tsx: exists, is not in NAV, and carries the exact confounder lines, 
   assert.match(code, /TEST_MEMORY_CONFOUNDER_LINE/);
 
   // Back link to the suggestion.
-  assert.match(code, /←\s*Suggestion/);
+  assert.match(code, /← Back to the suggestion/);
   assert.match(code, /to="\/ledger"/);
   assert.match(code, /search=\{\{\s*improvement:\s*view\.improvement_id\s*\}\}/);
 

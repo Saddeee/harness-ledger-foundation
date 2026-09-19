@@ -319,7 +319,7 @@ function Page() {
           search={{ improvement: view.improvement_id }}
           className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          ← Suggestion
+          ← Back to the suggestion
         </Link>
         <Link
           to="/tests"
