@@ -36,13 +36,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  ALL_PROJECTS_LABEL,
   ANALYSE_NOW_SCOPE_LINE,
   ANALYSED_ALL_LINE,
   INBOX_INTRO,
   INBOX_TITLE,
+  INSTRUCTIONS_PROJECT_FILTER_LABEL,
   NEW_ACTIVITY_TITLE,
   REANALYSE_TOKENS_NOTE,
   VIEW_PAST_DECISIONS,
+  WORKSPACE_TARGET_LABEL,
   inboxCountLine,
   newActivityLine,
   tokenEstimateLine,
@@ -63,6 +66,7 @@ import {
   disagreementBodyLine,
   reanalyseEstimateLine,
 } from "@/lib/harness-ux";
+import type { InboxItem } from "@/lib/improvements-client";
 
 // Checkpoint 2026-09-18 WP5 (D7): the executor route's GET response gained
 // `analysis.disagreements` and the POST route gained `reanalyse_estimate` /
@@ -309,12 +313,19 @@ function DisagreementCard({ item }: { item: AnalysisDisagreement }) {
   );
 }
 
+// Owner review round 7 fix 1: "Inbox could reuse the new project filter so
+// the Quick Tip Calculator leftovers stop crowding the demo project." Same
+// shape and copy as Instructions' own ?project=<id|"workspace"> filter
+// (instructions.tsx) -- narrows which already-fetched inbox items are shown,
+// fetches nothing of its own.
+type InboxSearch = { project?: string };
+
 export const Route = createFileRoute("/_authenticated/inbox")({
-  // Round 5 Task 5 / spec §2: the Inbox has no detail view of its own any
-  // more -- clicking an item goes to Suggestions (/ledger), which owns
-  // ImprovementDetail. Kept (returning {}) rather than removed, since
-  // TanStack Router still calls it for every navigation to this route.
-  validateSearch: (): Record<string, never> => ({}),
+  validateSearch: (search: Record<string, unknown>): InboxSearch => {
+    const raw = search["project"];
+    const project = typeof raw === "string" && raw ? raw : undefined;
+    return project ? { project } : {};
+  },
   head: () => ({
     meta: [
       { title: "Inbox — Harness Ledger" },
@@ -392,6 +403,7 @@ function ConfirmationRow({
 function Page() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const search = Route.useSearch();
   // Items decided this visit: id -> the exact toast text, so the
   // confirmation row says the same thing the toast said. Cleared by "Undo"
   // or by leaving the page (component state only -- a reload starts clean).
@@ -404,6 +416,11 @@ function Page() {
   // Checkpoint 3: the queue itself -- every unresolved item, from the one
   // server-side aggregation Overview also counts (listInboxItems).
   const inbox = useQuery({ queryKey: ["harness-inbox"], queryFn: fetchInbox });
+  // Owner review round 7 fix 1: the same allowed-projects list Instructions'
+  // own filter and the Reanalyse dialog above already read -- react-query
+  // dedupes this against theirs, no extra fetch.
+  const projectsQuery = useQuery({ queryKey: ["harness-projects"], queryFn: fetchProjects });
+  const allowedProjects: AllowedProject[] = projectsQuery.data?.allowed ?? [];
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["harness-inbox"] });
     return qc.invalidateQueries({ queryKey: ["harness-improvements"] });
@@ -525,6 +542,19 @@ function Page() {
   // until the page is left, in the order they had.
   const confirmedItems = all.filter((i) => confirmed.has(i.id));
 
+  // ---- Owner review round 7 fix 1: per-project filter (?project=) ----
+  // A null project_id is workspace-level or has no project of its own (see
+  // InboxItem's own doc comment) -- it gets its own "Workspace" bucket
+  // rather than disappearing, same honesty rule as Instructions' filter.
+  const itemProjectValue = (it: InboxItem): string => it.project_id ?? "workspace";
+  const hasWorkspaceItem = items.some((it) => it.project_id === null);
+  const showProjectFilter = allowedProjects.length >= 2 || hasWorkspaceItem;
+  const activeProjectFilter = search.project ? search.project : null;
+  const visibleItems = activeProjectFilter
+    ? items.filter((it) => itemProjectValue(it) === activeProjectFilter)
+    : items;
+  // ---- end fix 1 ----
+
   // Checkpoint 2026-09-18 WP5 (D7): open review items where a newer
   // analysis disagreed with a decision already made are Inbox "Conflict"
   // items; the server lists them, the card here is the existing one.
@@ -555,6 +585,55 @@ function Page() {
         <p className="text-xs text-muted-foreground">{INBOX_INTRO}</p>
       </div>
 
+      {/* Owner review round 7 fix 1: same segmented "Show" control as
+          Instructions, same copy -- All projects, one button per allowed
+          project, and Workspace once an item with no project of its own
+          exists. Only narrows what's shown below; the count line and the
+          sidebar badge above both keep counting every item. */}
+      {showProjectFilter ? (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label={INSTRUCTIONS_PROJECT_FILTER_LABEL}
+        >
+          <span className="text-sm font-medium text-muted-foreground">
+            {INSTRUCTIONS_PROJECT_FILTER_LABEL}
+          </span>
+          <Button
+            type="button"
+            variant={!search.project ? "default" : "outline"}
+            size="sm"
+            aria-pressed={!search.project}
+            onClick={() => navigate({ to: "/inbox", search: {} })}
+          >
+            {ALL_PROJECTS_LABEL}
+          </Button>
+          {allowedProjects.map((p) => (
+            <Button
+              key={p.id}
+              type="button"
+              variant={search.project === p.id ? "default" : "outline"}
+              size="sm"
+              aria-pressed={search.project === p.id}
+              onClick={() => navigate({ to: "/inbox", search: { project: p.id } })}
+            >
+              {p.name}
+            </Button>
+          ))}
+          {hasWorkspaceItem ? (
+            <Button
+              type="button"
+              variant={search.project === "workspace" ? "default" : "outline"}
+              size="sm"
+              aria-pressed={search.project === "workspace"}
+              onClick={() => navigate({ to: "/inbox", search: { project: "workspace" } })}
+            >
+              {WORKSPACE_TARGET_LABEL}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       {inboxUnavailable ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {(inbox.data as { reason?: string }).reason}
@@ -577,20 +656,22 @@ function Page() {
         </ul>
       ) : null}
 
-      {items.length === 0 &&
+      {visibleItems.length === 0 &&
       confirmedItems.length === 0 &&
       !inbox.isLoading &&
       !inboxUnavailable ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
-          {all.length === 0
-            ? "Suggestions Harness Ledger finds in your Lovable chats will appear here."
-            : nothingPendingLine}
+          {activeProjectFilter && items.length > 0
+            ? "Nothing to show for this filter."
+            : all.length === 0
+              ? "Suggestions Harness Ledger finds in your Lovable chats will appear here."
+              : nothingPendingLine}
         </div>
       ) : null}
 
-      {items.length > 0 ? (
+      {visibleItems.length > 0 ? (
         <ul className="space-y-3">
-          {items
+          {visibleItems
             .filter((it) => !(it.improvement && confirmed.has(it.improvement.id)))
             .map((it) => (
               <li key={it.id}>
