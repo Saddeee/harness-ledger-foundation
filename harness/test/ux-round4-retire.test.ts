@@ -258,8 +258,10 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
   );
   assert.deepEqual([...new Set(actions)].sort(), [
     "accept",
-    // Checkpoint 2026-09-18 WP5: the Inbox's disagreement cards and the
-    // Reanalyse history dialog post these to the executor route.
+    // Checkpoint 2026-09-18 WP5: the Inbox's disagreement cards post this to
+    // the executor route. Round 8 Task 1 fix 1: the Reanalyse history
+    // dialog that used to also post here moved to local-settings.tsx (not
+    // scanned by this test) -- see "reanalyse"/"reanalyse_estimate" below.
     "accept_disagreement",
     // Round 8 Task 1 item 8: the Inbox's own "Analyse now" button (its own
     // mutation, replacing the AnalyseNotice mount that used to live here).
@@ -275,8 +277,10 @@ test("the improvements API's action set now includes retire, keep, readd, mark_s
     // Checkpoint 3 S1: "Publish to Lovable" / Retry on a failed publish.
     "publish_skill_proposal",
     "readd",
-    "reanalyse",
-    "reanalyse_estimate",
+    // "reanalyse"/"reanalyse_estimate" are gone from this list: Round 8
+    // Task 1 fix 1 moved the Reanalyse history dialog that posted them off
+    // the Inbox and into local-settings.tsx, outside this scan's three
+    // pages (see the dedicated Settings pins in ux-analysis.test.ts).
     "retire",
     "retire_skill_proposal",
     // Round 6 Task 2: "Try again" on a not-written outcome.

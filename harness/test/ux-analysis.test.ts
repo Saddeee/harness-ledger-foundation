@@ -23,6 +23,7 @@ function readApp(rel: string): string {
 }
 
 const INBOX = "routes/_authenticated/inbox.tsx";
+const LOCAL_SETTINGS = "components/harness/local-settings.tsx";
 
 test("AUTOMATIC_ANALYSIS_SETTING_KEY matches harness/src/analysis/context.ts's own constant exactly", () => {
   assert.equal(ux.AUTOMATIC_ANALYSIS_SETTING_KEY, "automatic_analysis_after_sync");
@@ -82,10 +83,23 @@ test("disagreementBodyLine names both the previous and the newer classification"
   assert.match(line, /"new_task"/);
 });
 
-test("Inbox route renders the Reanalyse trigger, the scope disclosure, and the disagreement card copy from harness-ux.ts (not inline strings)", () => {
+// Round 8 Task 1 fix 1: the Reanalyse trigger/dialog moved off the Inbox and
+// into Settings > AI analysis (see local-settings.tsx); the Inbox keeps only
+// the scope disclosure and the disagreement card copy. Split into two
+// scans, one per page, rather than loosening the original single scan.
+test("Inbox route renders the scope disclosure and the disagreement card copy from harness-ux.ts (not inline strings)", () => {
   const source = readApp(INBOX);
   for (const symbol of [
     "ANALYSE_NOW_SCOPE_LINE",
+    "DISAGREEMENT_TITLE",
+    "DISAGREEMENT_ACCEPT_BUTTON",
+    "DISAGREEMENT_DISMISS_BUTTON",
+    "disagreementBodyLine",
+  ]) {
+    assert.ok(source.includes(symbol), `inbox.tsx should reference ${symbol}`);
+  }
+  assert.match(source, /from "@\/lib\/harness-ux"/);
+  for (const symbol of [
     "REANALYSE_TITLE",
     "REANALYSE_BODY",
     "REANALYSE_TRIGGER_BUTTON",
@@ -95,12 +109,26 @@ test("Inbox route renders the Reanalyse trigger, the scope disclosure, and the d
     "REANALYSE_INCLUDE_REVIEWED_LABEL",
     "REANALYSE_REASON_LABEL",
     "reanalyseEstimateLine",
-    "DISAGREEMENT_TITLE",
-    "DISAGREEMENT_ACCEPT_BUTTON",
-    "DISAGREEMENT_DISMISS_BUTTON",
-    "disagreementBodyLine",
   ]) {
-    assert.ok(source.includes(symbol), `inbox.tsx should reference ${symbol}`);
+    assert.ok(!source.includes(symbol), `inbox.tsx should no longer reference ${symbol}`);
+  }
+});
+
+test("Settings > AI analysis renders the Reanalyse trigger/dialog copy from harness-ux.ts (not inline strings)", () => {
+  const source = readApp(LOCAL_SETTINGS);
+  for (const symbol of [
+    "REANALYSE_TITLE",
+    "REANALYSE_BODY",
+    "REANALYSE_TRIGGER_BUTTON",
+    "REANALYSE_TOKENS_NOTE",
+    "REANALYSE_CONFIRM_BUTTON",
+    "REANALYSE_CANCEL_BUTTON",
+    "REANALYSE_PROJECTS_LABEL",
+    "REANALYSE_INCLUDE_REVIEWED_LABEL",
+    "REANALYSE_REASON_LABEL",
+    "reanalyseEstimateLine",
+  ]) {
+    assert.ok(source.includes(symbol), `local-settings.tsx should reference ${symbol}`);
   }
   assert.match(source, /from "@\/lib\/harness-ux"/);
 });

@@ -92,7 +92,12 @@ test("local-settings.tsx: a Test provider button posts action 'test_provider' an
   assert.match(code, /\{TEST_PROVIDER_CONSEQUENCE_LINE\}/);
 
   // The button lives in the AI analysis section, after Save AI analysis.
-  const aiSectionStart = raw.indexOf(">AI analysis<");
+  // Round 8 Task 1 fix 1: computed from `code` (not `raw`) for all three
+  // positions -- the Reanalyse dialog moved into this file added a large,
+  // heavily-commented block before this section, and mixing a `raw` offset
+  // with `code` (comment-stripped) offsets made this comparison meaningless
+  // once the two strings' relative lengths stopped lining up.
+  const aiSectionStart = code.indexOf(">AI analysis<");
   const saveButtonAt = code.indexOf('"Save AI analysis"');
   // The import line puts TEST_PROVIDER_BUTTON_LABEL near the top of the
   // file; the JSX usage (what actually renders it) is what must come after

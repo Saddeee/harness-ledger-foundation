@@ -194,6 +194,42 @@ test("local-settings.tsx: mounts AnalyseNotice at the end of the AI analysis sec
   );
 });
 
+// Round 8 Task 1 fix 1: "Reanalyse history" (its trigger, dialog and token
+// figures) moved off the Inbox and into Settings > AI analysis, rendered
+// directly under <AnalyseNotice />; the Inbox keeps only the one-line
+// analysisStatusLine + its own plain "Analyse now" button.
+test("inbox.tsx no longer contains REANALYSE_TRIGGER_BUTTON; local-settings.tsx does, after AnalyseNotice", () => {
+  const inboxCode = codeOnly(readApp(INBOX_PAGE));
+  assert.ok(
+    !/REANALYSE_TRIGGER_BUTTON/.test(inboxCode),
+    "inbox.tsx must no longer reference REANALYSE_TRIGGER_BUTTON",
+  );
+  assert.ok(
+    !/REANALYSE_TOKENS_NOTE/.test(inboxCode),
+    "inbox.tsx must no longer reference REANALYSE_TOKENS_NOTE",
+  );
+  assert.ok(
+    !/ReanalyseDialog/.test(inboxCode),
+    "inbox.tsx must no longer reference ReanalyseDialog",
+  );
+
+  const settingsCode = codeOnly(readApp(LOCAL_SETTINGS));
+  const section = slice(
+    settingsCode,
+    '<h2 className="text-lg font-medium">AI analysis</h2>',
+    "</section>",
+  );
+  assert.match(section, /\{REANALYSE_TRIGGER_BUTTON\}/);
+  assert.match(section, /\{REANALYSE_TOKENS_NOTE\}/);
+  assert.match(section, /<ReanalyseDialog/);
+  const noticeAt = section.indexOf("<AnalyseNotice");
+  const triggerAt = section.indexOf("{REANALYSE_TRIGGER_BUTTON}");
+  assert.ok(
+    noticeAt >= 0 && triggerAt > noticeAt,
+    "the Reanalyse trigger must come after <AnalyseNotice />",
+  );
+});
+
 // ---- 8. CompactDecisionCard: item.title is the heading, not lessonLine (item 1) ----
 
 test("improvement.tsx: CompactDecisionCard's heading is item.title; lessonLine's own prediction moved inside the 'Why Harness Ledger recommends this' details", () => {

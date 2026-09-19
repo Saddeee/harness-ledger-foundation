@@ -23,24 +23,12 @@ import {
   type AllowedProject,
 } from "@/lib/improvements-client";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   ALL_PROJECTS_LABEL,
   ANALYSE_NOW_SCOPE_LINE,
   INBOX_INTRO,
   INBOX_TITLE,
   INSTRUCTIONS_PROJECT_FILTER_LABEL,
-  REANALYSE_TOKENS_NOTE,
   VIEW_PAST_DECISIONS,
   WORKSPACE_TARGET_LABEL,
   inboxCountLine,
@@ -50,19 +38,7 @@ import {
   DISAGREEMENT_ACCEPT_BUTTON,
   DISAGREEMENT_DISMISS_BUTTON,
   DISAGREEMENT_TITLE,
-  REANALYSE_BODY,
-  REANALYSE_CANCEL_BUTTON,
-  REANALYSE_CONFIRM_BUTTON,
-  REANALYSE_FROM_LABEL,
-  REANALYSE_INCLUDE_REVIEWED_LABEL,
-  REANALYSE_PROJECTS_LABEL,
-  REANALYSE_REASON_LABEL,
-  REANALYSE_REASON_PLACEHOLDER,
-  REANALYSE_TITLE,
-  REANALYSE_TO_LABEL,
-  REANALYSE_TRIGGER_BUTTON,
   disagreementBodyLine,
-  reanalyseEstimateLine,
 } from "@/lib/harness-ux";
 import type { InboxItem } from "@/lib/improvements-client";
 
@@ -80,179 +56,14 @@ type AnalysisDisagreement = {
   proposed_json: string;
   status: "open" | "accepted" | "dismissed";
 };
-type ReanalysisEstimate = {
-  messages: number;
-  corrections: number;
-  episodes: number;
-  estimated_tokens: number;
-  models: { classifier: { provider: string; model: string } };
-  budget_remaining: number;
-};
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-function daysAgoIso(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
-/** The "Reanalyse history" confirm dialog: scope (projects, date range,
- * whether to include records already decided on), a reason, and the
- * estimate line -- refreshed whenever the scope changes. Confirming posts
- * `reanalyse` to the executor route; it is never coalesced with an ordinary
- * "Analyse now" request. */
-function ReanalyseDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  const qc = useQueryClient();
-  const projects = useQuery({ queryKey: ["harness-projects"], queryFn: fetchProjects });
-  const allowed: AllowedProject[] = projects.data?.allowed ?? [];
-
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [from, setFrom] = useState(() => daysAgoIso(30));
-  const [to, setTo] = useState(() => todayIso());
-  const [includeReviewed, setIncludeReviewed] = useState(false);
-  const [reason, setReason] = useState("");
-  const [estimate, setEstimate] = useState<ReanalysisEstimate | null>(null);
-
-  const scopeBody = () => ({
-    project_ids: [...selected],
-    from,
-    to,
-    include_reviewed: includeReviewed,
-  });
-
-  const estimateMutation = useMutation({
-    mutationFn: () => postExecutor({ action: "reanalyse_estimate", ...scopeBody() }),
-    onSuccess: (res) => setEstimate((res as { estimate?: ReanalysisEstimate }).estimate ?? null),
-  });
-
-  // Re-estimate whenever the scope changes, while the dialog is open.
-  useEffect(() => {
-    if (!open) return;
-    setEstimate(null);
-    void estimateMutation.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, from, to, includeReviewed, selected.size]);
-
-  const reanalyse = useMutation({
-    mutationFn: () => postExecutor({ action: "reanalyse", ...scopeBody(), reason }),
-    onSuccess: () => {
-      toast.success("Reanalyse queued");
-      void qc.invalidateQueries({ queryKey: executorQueryOptions.queryKey });
-      onOpenChange(false);
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not queue reanalyse"),
-  });
-
-  const toggleProject = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{REANALYSE_TITLE}</DialogTitle>
-          <DialogDescription>{REANALYSE_BODY}</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>{REANALYSE_PROJECTS_LABEL}</Label>
-            <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-              {allowed.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No projects yet.</p>
-              ) : (
-                allowed.map((p) => (
-                  <label key={p.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={selected.has(p.id)}
-                      onCheckedChange={() => toggleProject(p.id)}
-                    />
-                    {p.name}
-                  </label>
-                ))
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              None checked means every project you've allowed.
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <div className="flex-1 space-y-1">
-              <Label htmlFor="reanalyse-from">{REANALYSE_FROM_LABEL}</Label>
-              <Input
-                id="reanalyse-from"
-                type="date"
-                value={from}
-                max={to}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-            </div>
-            <div className="flex-1 space-y-1">
-              <Label htmlFor="reanalyse-to">{REANALYSE_TO_LABEL}</Label>
-              <Input
-                id="reanalyse-to"
-                type="date"
-                value={to}
-                min={from}
-                onChange={(e) => setTo(e.target.value)}
-              />
-            </div>
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={includeReviewed}
-              onCheckedChange={(v) => setIncludeReviewed(v === true)}
-            />
-            {REANALYSE_INCLUDE_REVIEWED_LABEL}
-          </label>
-          <div className="space-y-1">
-            <Label htmlFor="reanalyse-reason">{REANALYSE_REASON_LABEL}</Label>
-            <Input
-              id="reanalyse-reason"
-              value={reason}
-              placeholder={REANALYSE_REASON_PLACEHOLDER}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          <p className="text-sm text-muted-foreground" role="status">
-            {estimate
-              ? reanalyseEstimateLine({
-                  messages: estimate.messages,
-                  estimated_tokens: estimate.estimated_tokens,
-                  model: estimate.models.classifier.model,
-                  budget_remaining: estimate.budget_remaining,
-                })
-              : "Estimating…"}
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {REANALYSE_CANCEL_BUTTON}
-          </Button>
-          <Button
-            onClick={() => reanalyse.mutate()}
-            disabled={reanalyse.isPending || !reason.trim()}
-          >
-            {reanalyse.isPending ? "Queuing…" : REANALYSE_CONFIRM_BUTTON}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+// Round 8 Task 1 fix 1: the "Reanalyse history" trigger, its confirm dialog
+// (`ReanalyseDialog`, with its own scope/estimate/reason state and the
+// `reanalyse_estimate`/`reanalyse` mutations) and REANALYSE_TOKENS_NOTE used
+// to live here. They now live in local-settings.tsx, rendered directly
+// under Settings > AI analysis's <AnalyseNotice /> -- disagreement review
+// (DisagreementCard, just below) stays on the Inbox, since a disagreement is
+// a decision, not an analysis-run control.
 
 function DisagreementCard({ item }: { item: AnalysisDisagreement }) {
   const qc = useQueryClient();
@@ -407,16 +218,15 @@ function Page() {
   // or by leaving the page (component state only -- a reload starts clean).
   const [confirmed, setConfirmed] = useState<Map<number, string>>(new Map());
   const [undoing, setUndoing] = useState<Set<number>>(new Set());
-  // Checkpoint 2026-09-18 WP5 (D7): "Reanalyse history" confirm dialog.
-  const [reanalyseOpen, setReanalyseOpen] = useState(false);
 
   const query = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
   // Checkpoint 3: the queue itself -- every unresolved item, from the one
   // server-side aggregation Overview also counts (listInboxItems).
   const inbox = useQuery({ queryKey: ["harness-inbox"], queryFn: fetchInbox });
   // Owner review round 7 fix 1: the same allowed-projects list Instructions'
-  // own filter and the Reanalyse dialog above already read -- react-query
-  // dedupes this against theirs, no extra fetch.
+  // own filter reads -- react-query dedupes this against theirs, no extra
+  // fetch. Round 8 Task 1 fix 1: the Reanalyse dialog that used to also read
+  // this moved to local-settings.tsx, with its own fetchProjects query.
   const projectsQuery = useQuery({ queryKey: ["harness-projects"], queryFn: fetchProjects });
   const allowedProjects: AllowedProject[] = projectsQuery.data?.allowed ?? [];
   const refresh = () => {
@@ -753,29 +563,22 @@ function Page() {
       {/* Secondary: analysis status. Round 8 Task 1 item 8: one status line
           (analysisStatusLine) plus its own "Analyse now" button, replacing
           the "New activity"/"Everything synced" pair and the shared notice
-          this page used to mount -- its progress display, the last run's
-          token figures, and "Reanalyse history"'s own scope/estimate live
-          in Settings > AI analysis now; the trigger for it stays here. */}
+          this page used to mount. Round 8 Task 1 fix 1: "Reanalyse
+          history"'s own trigger, dialog and token figures moved to
+          Settings > AI analysis too -- this section is only ever the one
+          status line and the plain "Analyse now" button now. */}
       <section aria-label="Analysis" className="space-y-2 rounded-md border p-4">
         <p className="text-sm text-muted-foreground">
           {analysisStatusLine(lastAnalysis, awaiting)}
         </p>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => analyseNow.mutate()}
-            disabled={analysisRunning || !providerReady?.ok || analyseNow.isPending}
-          >
-            {analyseNow.isPending ? "Starting…" : analysisRunning ? "Analysing…" : "Analyse now"}
-          </Button>
-          <div className="space-y-1 text-right">
-            <Button size="sm" variant="ghost" onClick={() => setReanalyseOpen(true)}>
-              {REANALYSE_TRIGGER_BUTTON}
-            </Button>
-            <p className="text-xs text-muted-foreground">{REANALYSE_TOKENS_NOTE}</p>
-          </div>
-        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => analyseNow.mutate()}
+          disabled={analysisRunning || !providerReady?.ok || analyseNow.isPending}
+        >
+          {analyseNow.isPending ? "Starting…" : analysisRunning ? "Analysing…" : "Analyse now"}
+        </Button>
         {providerReady && !providerReady.ok ? (
           <p className="text-xs text-muted-foreground">
             {providerReady.reason || "Add an API key or install Claude Code in Settings."}{" "}
@@ -785,7 +588,6 @@ function Page() {
           </p>
         ) : null}
         <p className="text-xs text-muted-foreground">{ANALYSE_NOW_SCOPE_LINE}</p>
-        <ReanalyseDialog open={reanalyseOpen} onOpenChange={setReanalyseOpen} />
       </section>
     </div>
   );

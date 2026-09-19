@@ -204,12 +204,15 @@ test("local-settings.tsx: sections with the exact sentences, schedule and cap po
   // save buttons per section: decisions (Round 5 Task 6), evidence (Round 5
   // Task 7), Lovable credits (Round 6 Task 6b), schedule, cap, one combined
   // AI analysis save (settings + key when typed), key remove, project
-  // defaults (Round 3 §4), and Test provider (Checkpoint 2 2-E)
+  // defaults (Round 3 §4), and Test provider (Checkpoint 2 2-E) -- plus,
+  // Round 8 Task 1 fix 1, the "Reanalyse history" dialog moved here from
+  // inbox.tsx with its own two mutations (the scope/date-range estimate,
+  // and the reanalyse request itself).
   assert.match(code, /useMutation\(/);
   assert.equal(
     count(code, "useMutation("),
-    9,
-    "decisions, evidence, credits, schedule, cap, ai analysis save, llm key remove, defaults, test provider",
+    11,
+    "decisions, evidence, credits, schedule, cap, ai analysis save, llm key remove, defaults, test provider, reanalyse estimate, reanalyse",
   );
 
   // only the local Harness client helpers

@@ -71,7 +71,12 @@ test("Inbox hierarchy: count line, items, past-decisions link, then the secondar
   // pair (NEW_ACTIVITY_TITLE/newActivityLine) is gone, replaced by one
   // analysisStatusLine call.
   assert.match(INBOX, /analysisStatusLine\(lastAnalysis, awaiting\)/);
-  assert.match(INBOX, /\{REANALYSE_TOKENS_NOTE\}/);
+  // Round 8 Task 1 fix 1: REANALYSE_TOKENS_NOTE (and the rest of "Reanalyse
+  // history") moved off the Inbox and into Settings > AI analysis.
+  assert.ok(
+    !/REANALYSE_TOKENS_NOTE/.test(INBOX),
+    "REANALYSE_TOKENS_NOTE must be gone from inbox.tsx",
+  );
   assert.match(
     INBOX,
     /search=\{\{ filter: "suggestions" \}\}/,
