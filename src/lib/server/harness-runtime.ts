@@ -101,6 +101,6 @@ export function hostedPreviewBody(detail?: string) {
     available: false as const,
     reason:
       detail ??
-      "This is the hosted preview. Harness Ledger runs on your own machine for now; start it locally to see your data.",
+      "This is the hosted preview. Harness Ledger runs on your own computer: clone the repository and run it locally to see your data.",
   };
 }

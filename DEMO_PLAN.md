@@ -38,6 +38,7 @@ Nine steps, one project, no surprises.
 - [ ] No demo seed data (`npm run harness:demo -- --status` says none)
 - [ ] Local server restarted after the last build (`npm run harness:start`)
 - [ ] Full demo rehearsed once end to end, including the replay page
+- [ ] The Lovable link opens the landing page with "Start here" first and "Run it on your computer" as the primary button (published from `main`)
 
 ## What was done (2026-09-19, UTC)
 

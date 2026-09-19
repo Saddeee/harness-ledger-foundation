@@ -86,8 +86,12 @@ test("tests.tsx: each card's status line reads testStatusPhrase(run), the shared
 });
 
 // Round 8 Task 5: the table row's whole-row click-through is gone -- the
-// card list has just its own explicit "Open" link to /judge?run=<id>.
-test("tests.tsx: every test card has an explicit Open link (/judge?run=<id>), never the suggestion -- the owner clicked a test and landed on Suggestions", () => {
+// card list links each card to /judge?run=<id>.
+// Fix round 2, 2026-09-19 (owner feedback): the whole card is now the click
+// target and the separate "Open" text link is gone -- but the rule title
+// stays wrapped in this same <Link to="/judge"> for keyboard access, so
+// this assertion still holds.
+test("tests.tsx: every test card's rule title links to /judge?run=<id>, never the suggestion -- the owner clicked a test and landed on Suggestions", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
   assert.doesNotMatch(code, /to="\/ledger"/, "the Tests page links to tests, not suggestions");
   assert.match(code, /<Link\s+to="\/judge"\s+search=\{\{\s*run:\s*run\.id\s*\}\}/);

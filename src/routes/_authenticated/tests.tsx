@@ -16,8 +16,18 @@
 // gone (the card's own status phrase already names the outcome once
 // judged), and a failed run's raw Lovable error moves into a collapsed
 // "Technical details" fold instead of showing inline.
+//
+// Fix round 2, 2026-09-19 (owner feedback, final demo round): "fix tests so
+// it uses cards because I don't like the Open button; also ... text stops
+// in the middle of the screen and continues on the next row." The whole
+// card is now the click target to the judging screen -- same
+// onClick-container/stopPropagation-on-interactive-children pattern as
+// instructions.tsx's RuleRow -- and the small "Open" text link is gone; the
+// rule title is a real Link so the card stays keyboard-reachable. The
+// feedback note is no longer capped to a narrow fixed width -- it spans
+// the card's full width instead of wrapping at ~320px inside a 1000px card.
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -87,7 +97,7 @@ function buildLinks(run: ExperimentRunSummary) {
   ].filter((l): l is { label: string; href: string } => l !== null);
   if (links.length === 0) return null;
   return (
-    <span className="mt-1 flex flex-wrap gap-3 text-xs">
+    <span className="mt-1 flex flex-wrap gap-3 text-xs" onClick={(e) => e.stopPropagation()}>
       {links.map((l) => (
         <a
           key={l.label}
@@ -107,6 +117,15 @@ function costCell(run: ExperimentRunSummary): string {
   return run.cost_credits == null
     ? "—"
     : `${run.cost_credits} credit${run.cost_credits === 1 ? "" : "s"} · measured`;
+}
+
+// Fix round 2, 2026-09-19: Started and the measured cost collapse onto one
+// compact line ("Started <date> · N credits · measured") instead of two --
+// when there's no cost yet, this reads as just the Started half.
+function startedCostLine(run: ExperimentRunSummary): string {
+  const started = `Started ${formatDate(run.started_at)}`;
+  const cost = costCell(run);
+  return cost === "—" ? started : `${started} · ${cost}`;
 }
 
 function FeedbackCell({
@@ -130,7 +149,7 @@ function FeedbackCell({
 }) {
   if (editing) {
     return (
-      <div className="min-w-[220px] space-y-2">
+      <div className="w-full min-w-[220px] space-y-2">
         <Textarea
           aria-label={`Feedback for ${run.rule_text}`}
           value={draft}
@@ -155,7 +174,7 @@ function FeedbackCell({
         {run.feedback ? "Edit" : "Add feedback"}
       </Button>
       {run.feedback ? (
-        <p className="max-w-xs whitespace-pre-wrap text-xs text-muted-foreground">
+        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
           {run.feedback}
           <br />
           {`Your note, ${formatDay(run.feedback_at)}`}
@@ -170,8 +189,17 @@ function FeedbackCell({
 // frontend-safe equivalent of harness/src/improvements.ts's own titleFor,
 // bounded at 72 chars instead of an unbounded firstSentence), the
 // plain-word status phrase, a failed run's own collapsed technical fold,
-// Started/cost, an Open link to the judging screen, and the existing
-// feedback control.
+// a combined Started/cost line, and the existing feedback control.
+//
+// Fix round 2, 2026-09-19: the whole card is the click target to the
+// judging screen -- no more separate "Open" link. Same pattern as
+// instructions.tsx's RuleRow: onClick + cursor-pointer on the container,
+// e.stopPropagation() on each interactive child (build links, the
+// Technical details fold, the feedback control), and the rule title kept
+// as a real Link (RULE_LINK_CLASS) so the card stays keyboard-reachable.
+const RULE_LINK_CLASS =
+  "text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
 function TestCard({
   run,
   editing,
@@ -191,14 +219,22 @@ function TestCard({
   onCancel: () => void;
   onSave: () => void;
 }) {
+  const navigate = useNavigate();
   const failed = run.status === "failed" ? failedSummaryParts(run.error) : null;
   return (
-    <article className="space-y-2 rounded-md border p-4">
+    <article
+      onClick={() => navigate({ to: "/judge", search: { run: run.id } })}
+      className="cursor-pointer space-y-2 rounded-md border p-4 hover:bg-muted/40"
+    >
       <p className="text-xs font-medium text-muted-foreground">{run.project_name ?? "—"}</p>
-      <p className="text-base font-medium">{ruleTitle(run.rule_text)}</p>
+      <p className="text-base font-medium">
+        <Link to="/judge" search={{ run: run.id }} className={RULE_LINK_CLASS}>
+          {ruleTitle(run.rule_text)}
+        </Link>
+      </p>
       <p className="text-sm">{testStatusPhrase(run)}</p>
       {failed ? (
-        <div className="space-y-1">
+        <div className="space-y-1" onClick={(e) => e.stopPropagation()}>
           <p className="text-xs text-muted-foreground">{failed.plain}</p>
           {failed.technical ? (
             <details className="rounded-md border">
@@ -210,28 +246,20 @@ function TestCard({
           ) : null}
         </div>
       ) : null}
-      <p className="text-xs text-muted-foreground">{`Started ${formatDate(run.started_at)}`}</p>
-      <p className="text-xs text-muted-foreground">{costCell(run)}</p>
+      <p className="text-xs text-muted-foreground">{startedCostLine(run)}</p>
       {buildLinks(run)}
-      <div>
-        <Link
-          to="/judge"
-          search={{ run: run.id }}
-          className="text-sm text-primary underline underline-offset-2"
-        >
-          Open
-        </Link>
+      <div onClick={(e) => e.stopPropagation()}>
+        <FeedbackCell
+          run={run}
+          editing={editing}
+          draft={draft}
+          busy={busy}
+          onStartEdit={onStartEdit}
+          onChangeDraft={onChangeDraft}
+          onCancel={onCancel}
+          onSave={onSave}
+        />
       </div>
-      <FeedbackCell
-        run={run}
-        editing={editing}
-        draft={draft}
-        busy={busy}
-        onStartEdit={onStartEdit}
-        onChangeDraft={onChangeDraft}
-        onCancel={onCancel}
-        onSave={onSave}
-      />
     </article>
   );
 }

@@ -39,7 +39,14 @@ test("instructions.tsx: renders a rules table, and the old per-version history v
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
 
-  assert.match(code, /<Table/, "instructions.tsx must render the shadcn Table for rules");
+  // 2026-09-19 demo round (review item 7): the rules table became a card
+  // list -- one <article> per rule, no shadcn Table left on this page.
+  assert.match(code, /<article\b/, "instructions.tsx must render a card per rule");
+  assert.ok(!/<Table\b/.test(code), "instructions.tsx no longer renders the shadcn Table");
+  assert.ok(
+    !code.includes("<TableHead>Observed</TableHead>"),
+    "the Observed column header is gone",
+  );
   assert.ok(!raw.includes("What changed"), 'instructions.tsx must not say "What changed" any more');
   assert.ok(
     !code.includes("versions.map"),
@@ -53,18 +60,12 @@ test("instructions.tsx: renders a rules table, and the old per-version history v
   assert.ok(raw.includes("Full Knowledge text as Lovable sees it"));
   assert.match(code, /\(\$\{content\.length\} characters\)/);
 
-  // rules table columns/status vocabulary (spec §3a)
-  for (const text of [
-    "Rule",
-    "Status",
-    "Since",
-    "Observed",
-    "In Lovable",
-    "Staged",
-    "Write needs attention",
-    "Testing",
-  ]) {
-    assert.ok(raw.includes(text), `instructions.tsx missing rules-table text "${text}"`);
+  // rule-card status vocabulary (spec §3a) -- the old column headers
+  // ("Rule"/"Status"/"Since"/"Observed") are gone with the table itself
+  // (2026-09-19 demo round, review item 7); only the status label copy
+  // constants remain.
+  for (const text of ["In Lovable", "Staged", "Write needs attention", "Testing"]) {
+    assert.ok(raw.includes(text), `instructions.tsx missing rule-card status text "${text}"`);
   }
   assert.ok(raw.includes("No rules yet."));
 

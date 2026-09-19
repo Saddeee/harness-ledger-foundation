@@ -11,7 +11,12 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { SETTINGS_DEFAULTS } from "@/lib/settings-defaults";
 import { Button } from "@/components/ui/button";
-import { executorQueryOptions, fetchImprovements, fetchInbox } from "@/lib/improvements-client";
+import {
+  executorQueryOptions,
+  fetchImprovements,
+  fetchInbox,
+  runtimeQueryOptions,
+} from "@/lib/improvements-client";
 import { sidebarSyncLine } from "@/lib/harness-ux";
 import { isNotifyEnabled } from "@/lib/browser-prefs";
 import { ONBOARDING_DISMISSED_KEY } from "@/lib/onboarding-copy";
@@ -164,6 +169,14 @@ function AuthedLayout() {
     navigate,
   ]);
 
+  // Round: hosted front door -- the same demo build is published to the
+  // Lovable-hosted page, where nothing can reach a visitor's own Lovable
+  // account or local data. Anything other than a confirmed "local" mode is
+  // treated as hosted here too (runtimeQueryOptions' own convention).
+  const runtimeQuery = useQuery(runtimeQueryOptions);
+  // No banner while the answer is still loading: a local run must never flash it.
+  const isHosted = runtimeQuery.isSuccess && runtimeQuery.data.mode !== "local";
+
   const connection = executorQuery.data?.connection;
   const lastRun = executorQuery.data?.last_run;
   // Round 8 Task 1 item 3: the single truncated line used to fold the sync
@@ -225,6 +238,15 @@ function AuthedLayout() {
         </div>
       </aside>
       <main className="flex-1 p-8">
+        {isHosted ? (
+          <div role="note" className="mb-6 rounded-md border bg-muted/30 px-4 py-3 text-sm">
+            You&apos;re looking at the hosted preview. Nothing here can connect to Lovable or show
+            your data. Run Harness Ledger on your computer:{" "}
+            <Link to="/" hash="start-here" className="underline underline-offset-2">
+              How to run it
+            </Link>
+          </div>
+        ) : null}
         <Outlet />
       </main>
     </div>

@@ -101,9 +101,11 @@ test("instructions.tsx: rules table, collapsed Knowledge text, demo notice; the 
   assert.match(code, /<code[^>]*>\s*\{DEMO_REMOVE_COMMAND\}/);
   assert.match(code, /demo_loaded/);
 
-  // Round 5 Task 4 / spec §3a: a shadcn Table for the rules, not the old
-  // underlined-link list.
-  assert.match(code, /<Table/);
+  // 2026-09-19 demo round (review item 7): the rules table became a card
+  // list -- one <article> per rule, not the old underlined-link list or a
+  // shadcn Table.
+  assert.match(code, /<article\b/);
+  assert.ok(!/<Table\b/.test(code));
 
   // the per-version "What changed" diff view, its line-diff rendering, and
   // "Restore this version" all moved to the History page -- none of it

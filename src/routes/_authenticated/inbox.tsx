@@ -372,7 +372,10 @@ function Page() {
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">Inbox</h1>
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
-          {query.data.reason}
+          <p>{query.data.reason}</p>
+          <Link to="/" hash="start-here" className="mt-2 inline-block underline underline-offset-2">
+            How to run it
+          </Link>
         </div>
       </div>
     );

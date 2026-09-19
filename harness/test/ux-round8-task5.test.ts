@@ -118,12 +118,47 @@ test("tests.tsx: a failed run's raw error is never shown inline -- failedSummary
 // Round 8 Task 5 fix 2: re-pinned with intent -- the card title now reads
 // ruleTitle(run.rule_text) (bounded at 72 chars), not the unbounded
 // firstSentence(run.rule_text) the first pass used.
-test("tests.tsx: the card's own rule title, Started/cost line, and Open link", () => {
+//
+// Fix round 2, 2026-09-19 (owner feedback, final demo round): "I don't like
+// the Open button" -- the separate "Open" text link is gone, and the whole
+// card is now the click target (an onClick on the <article> itself). The
+// rule title stays a real <Link to="/judge"> for keyboard access.
+test("tests.tsx: the card's own rule title links to /judge, Started/cost line, no separate Open link", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
   assert.match(code, /ruleTitle\(run\.rule_text\)/);
   assert.match(code, /`Started \$\{formatDate\(run\.started_at\)\}`/);
-  assert.match(code, /<Link\s+to="\/judge"\s+search=\{\{\s*run:\s*run\.id\s*\}\}/);
-  assert.match(code, />\s*Open\s*</);
+  assert.match(
+    code,
+    /<Link\s+to="\/judge"\s+search=\{\{\s*run:\s*run\.id\s*\}\}[^>]*>\s*\{ruleTitle\(run\.rule_text\)\}/,
+    "the rule title itself is wrapped in the Link to the judging screen",
+  );
+  assert.doesNotMatch(code, />\s*Open\s*</, "the separate 'Open' text link is gone");
+});
+
+// Fix round 2, 2026-09-19: the whole card is the click target -- an
+// onClick on the <article> that navigates to /judge, with cursor-pointer,
+// and e.stopPropagation() guarding each interactive child so the card
+// click doesn't fire underneath a build link, the Technical details fold,
+// or the feedback control (same pattern as instructions.tsx's RuleRow).
+test("tests.tsx: the whole card is the click target, with stopPropagation on its interactive children", () => {
+  const code = codeOnly(readApp(TESTS_PAGE));
+  assert.match(
+    code,
+    /<article\s+onClick=\{\(\)\s*=>\s*navigate\(\{\s*to:\s*"\/judge",\s*search:\s*\{\s*run:\s*run\.id\s*\}\s*\}\)\}/,
+  );
+  assert.match(code, /className="cursor-pointer[^"]*"/);
+  const stopPropagationCount = (code.match(/e\.stopPropagation\(\)/g) ?? []).length;
+  assert.ok(
+    stopPropagationCount >= 3,
+    "build links, the Technical details fold, and the feedback control each guard against the card's own click",
+  );
+});
+
+// Fix round 2, 2026-09-19: the feedback note spans the card's full width --
+// no more max-w-xs, which wrapped it at ~320px inside a 1000px card.
+test("tests.tsx: the feedback note is full width -- no max-w-xs anywhere in the file", () => {
+  const raw = readApp(TESTS_PAGE);
+  assert.doesNotMatch(raw, /max-w-xs/, "max-w-xs is gone from tests.tsx");
 });
 
 // Round 8 Task 5 fix 3: buildLinks' two link labels reuse the shared

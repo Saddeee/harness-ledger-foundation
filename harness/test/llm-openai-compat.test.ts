@@ -103,6 +103,26 @@ test("openAiParamsFor: an unknown model family defaults to max_completion_tokens
   assert.equal(s.supportsTemperature, false);
 });
 
+// 2026-09-19 demo hardening: pins gpt-5.5 explicitly (the reported bug --
+// a clone predating this table's gpt-5 prefix got 400s from OpenAI) and
+// case/whitespace-insensitive matching, so a Settings value typed with
+// stray casing or padding still gets the strict contract.
+test("openAiParamsFor: gpt-5.5 (and case/whitespace variants) get max_completion_tokens, no temperature", () => {
+  for (const model of ["gpt-5.5", "GPT-5.5", " gpt-5.5 ", "gpt-5.4-mini", "chatgpt-4o-latest"]) {
+    const s = openAiParamsFor(model);
+    assert.equal(s.tokenParam, "max_completion_tokens", model);
+    assert.equal(s.supportsTemperature, false, model);
+  }
+});
+
+test("openAiParamsFor: classic dated/variant models still get max_tokens + temperature", () => {
+  for (const model of ["gpt-4o-2024-08-06", "gpt-4.1"]) {
+    const s = openAiParamsFor(model);
+    assert.equal(s.tokenParam, "max_tokens", model);
+    assert.equal(s.supportsTemperature, true, model);
+  }
+});
+
 // ---- (a)/(b)/(c): request body per family ----
 
 test("(a) gpt-4o sends max_tokens and temperature", async () => {
@@ -156,7 +176,29 @@ test("(c) an unknown model omits temperature", async () => {
   assert.equal(calls[0]!.body.max_completion_tokens, 500);
 });
 
-// ---- (d)/(e): one-shot retry on a 400 naming an unsupported parameter ----
+// 2026-09-19 demo hardening: pins the reported bug directly against
+// callOpenAi (not just the capabilities table) -- a gpt-5.5 call must send
+// max_completion_tokens and no temperature on its FIRST request, with no
+// retry needed at all.
+test("gpt-5.5 sends max_completion_tokens and no temperature on the first request -- no retry", async () => {
+  const { fetchFn, calls } = makeFakeFetch(() => ({ status: 200, body: successBody() }));
+  const result = await openai.callOpenAi({
+    apiKey: "sk-compat-test-gpt55",
+    model: "gpt-5.5",
+    system: "s",
+    user: "u",
+    maxOutputTokens: 500,
+    jsonSchema: { name: "X", schema: SCHEMA },
+    fetchFn,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.body.max_completion_tokens, 500);
+  assert.equal(calls[0]!.body.max_tokens, undefined);
+  assert.equal("temperature" in (calls[0]!.body as object), false, "no temperature key at all");
+  assert.equal(result.openai?.retried, false);
+});
+
+// ---- (d)/(e): retrying a 400 naming an unsupported parameter ----
 
 test("(d) a 400 'Unsupported parameter: max_tokens' on a max_tokens model retries once with max_completion_tokens -- no third call", async () => {
   const { fetchFn, calls } = makeFakeFetch((_url, _init, i) => {
@@ -228,6 +270,127 @@ test("(e) a 400 naming temperature as unsupported retries once without temperatu
   assert.equal(result.openai?.retry?.resolution, "removed");
 });
 
+// 2026-09-19 demo hardening: a classic-family model can reject max_tokens
+// on the first call and then reject temperature on the corrected retry --
+// two independent unsupported parameters in one request. Both must be
+// fixed before the call succeeds, which now takes two retries (three
+// attempts total) instead of the previous one-shot retry.
+test(
+  "a classic model rejecting max_tokens then temperature succeeds on the third attempt " +
+    "(two retries), reporting the LAST adjustment",
+  async () => {
+    const { fetchFn, calls } = makeFakeFetch((_url, _init, i) => {
+      if (i === 0) {
+        return {
+          status: 400,
+          body: {
+            error: {
+              message:
+                "Unsupported parameter: 'max_tokens' is not supported with this model. " +
+                "Use 'max_completion_tokens' instead.",
+              param: "max_tokens",
+            },
+          },
+        };
+      }
+      if (i === 1) {
+        return {
+          status: 400,
+          body: {
+            error: {
+              message:
+                "Unsupported value: 'temperature' does not support 0 with this model. " +
+                "Only the default (1) value is supported.",
+              param: "temperature",
+            },
+          },
+        };
+      }
+      return { status: 200, body: successBody() };
+    });
+    const result = await openai.callOpenAi({
+      apiKey: "sk-compat-test-two-retry",
+      model: "gpt-4o",
+      system: "s",
+      user: "u",
+      maxOutputTokens: 500,
+      jsonSchema: { name: "X", schema: SCHEMA },
+      fetchFn,
+    });
+    assert.equal(calls.length, 3, "initial attempt + two corrective retries");
+    assert.equal(calls[0]!.body.max_tokens, 500);
+    assert.equal(calls[0]!.body.temperature, 0);
+    assert.equal(calls[1]!.body.max_completion_tokens, 500);
+    assert.equal(calls[1]!.body.temperature, 0);
+    assert.equal(calls[2]!.body.max_completion_tokens, 500);
+    assert.equal(calls[2]!.body.max_tokens, undefined);
+    assert.equal("temperature" in (calls[2]!.body as object), false);
+    assert.notDeepEqual(
+      calls[0]!.body,
+      calls[1]!.body,
+      "retry 1 must differ from the first request",
+    );
+    assert.notDeepEqual(calls[1]!.body, calls[2]!.body, "retry 2 must differ from retry 1");
+    assert.equal(result.openai?.retried, true);
+    assert.equal(result.openai?.retry?.rejectedParam, "temperature", "reports the LAST adjustment");
+    assert.equal(result.openai?.retry?.resolution, "removed");
+  },
+);
+
+test("a third attempt with an unresolvable/identical error is NOT retried a fourth time", async () => {
+  const { fetchFn, calls } = makeFakeFetch((_url, _init, i) => {
+    if (i === 0) {
+      return {
+        status: 400,
+        body: {
+          error: {
+            message: "Unsupported parameter: 'max_tokens' is not supported with this model.",
+            param: "max_tokens",
+          },
+        },
+      };
+    }
+    // Attempts 1 and 2 both report the same unresolved temperature error --
+    // by attempt 2 the two allowed retries are exhausted, so this must
+    // throw rather than try a fourth request.
+    return {
+      status: 400,
+      body: {
+        error: {
+          message: "Unsupported value: 'temperature' does not support 0 with this model.",
+          param: "temperature",
+        },
+      },
+    };
+  });
+  await assert.rejects(
+    () =>
+      openai.callOpenAi({
+        apiKey: "sk-compat-test-no-fourth-call",
+        model: "gpt-4o",
+        system: "s",
+        user: "u",
+        maxOutputTokens: 500,
+        jsonSchema: { name: "X", schema: SCHEMA },
+        fetchFn,
+      }),
+    (err: unknown) => {
+      assert.ok(err instanceof LlmProviderError);
+      assert.equal(err.category, "invalid_parameter");
+      return true;
+    },
+  );
+  assert.equal(calls.length, 3, "initial attempt + two retries -- never a fourth call");
+});
+
+// 2026-09-19 demo hardening: up to two retries are now allowed (see the
+// three-attempt tests above), but this case still stops at one -- the fake
+// fetch always reports the SAME "max_tokens" error regardless of what was
+// actually sent, so once the first retry has already swapped to
+// max_completion_tokens, retryStrategyFor no longer finds anything to
+// adjust for that identical error (strategy.tokenParam is no longer
+// "max_tokens") and returns null, which throws immediately rather than
+// consuming its second allowed retry on a no-op.
 test("a retry that still fails throws, with retry info attached, and never attempts a third call", async () => {
   const { fetchFn, calls } = makeFakeFetch(() => ({
     status: 400,

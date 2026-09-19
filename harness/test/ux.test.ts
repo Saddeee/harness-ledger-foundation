@@ -638,9 +638,20 @@ test("nav: Inbox, Instructions, Skills, Tests, History, Projects, Settings in ev
     assert.ok(at > lastAt, `expected ${marker} after the previous nav item`);
     lastAt = at;
   }
-  assert.ok(
-    !/LOCAL_NAV|runtimeQueryOptions|mode === "local"/.test(shell),
-    "nav never depends on the runtime",
+  // 2026-09-19 demo round: the shell reads the runtime once, only to show
+  // the hosted-preview banner above the page (the demo build is published
+  // to the Lovable-hosted front door). The nav itself still never depends
+  // on it: no LOCAL_NAV, no mode check inside the NAV list.
+  assert.ok(!/LOCAL_NAV|mode === "local"/.test(shell), "nav never depends on the runtime");
+  assert.match(
+    shell,
+    /const isHosted = runtimeQuery\.isSuccess && runtimeQuery\.data\.mode !== "local"/,
+    "no banner flash while the runtime answer is loading",
+  );
+  assert.match(
+    shell,
+    /role="note"[\s\S]*hosted preview[\s\S]*hash="start-here"/,
+    "hosted banner links to Start here",
   );
   assert.ok(!/label: "Ledger"|label: "Knowledge"/.test(shell));
   assert.match(shell, /<Link to="\/"[^>]*>\s*How Harness Ledger works\s*<\/Link>/);

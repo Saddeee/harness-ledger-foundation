@@ -4,20 +4,62 @@
 // harness/test/ux-landing.test.ts and checked against the capability
 // manifest (src/lib/capabilities-copy.ts) by harness/test/capabilities.test.ts.
 // No metrics, no testimonials, no invented results, no images.
+//
+// 2026-09-19 demo round: "Start here" leads the page (the hosted link is a
+// front door only -- see WHY_LOCAL_TEXT); hero gained a status line and a
+// hosted/local action split via isLocalHost().
+
+/** True when the page is being viewed from a machine running the product
+ * itself (the localhost callback server), rather than the Lovable-hosted
+ * front door. Exported so tests can check it without rendering the page. */
+export function isLocalHost(hostname: string): boolean {
+  return /^(127\.0\.0\.1|localhost|\[::1\])$/.test(hostname);
+}
 
 export const HERO_TITLE = "Teach Lovable once. Keep the lesson.";
 export const HERO_TEXT =
   "Harness Ledger learns from the corrections you give Lovable, turns reusable lessons into Knowledge or Skills, and helps you decide whether those instructions should remain.";
+export const HERO_STATUS =
+  "A local prototype. This page is the front door; the product runs on your computer.";
 
 export const HERO_ACTIONS = {
   open: "Open Harness Ledger",
+  run: "Run it on your computer",
   how: "See how it works",
-  run: "Run locally",
   source: "View source",
   mcp: "Use through MCP",
+  already: "Already running it on your machine?",
+  openApp: "Open the app",
 } as const;
 
 export const SOURCE_URL = "https://github.com/Saddeee/harness-ledger-foundation";
+
+// 1. Start here -- the setup steps and the honest "why local" explanation,
+// first thing after the hero.
+export const START_TITLE = "Start here";
+export const START_TEXT =
+  "Harness Ledger runs on your computer. It takes about ten minutes if Node.js 22 and an AI provider are already set up.";
+export const START_STEPS = [
+  {
+    title: "Clone and start",
+    text: "Four commands. The setup script installs both packages, builds the local runtime and checks your setup.",
+  },
+  {
+    title: "Open the app and connect Lovable",
+    text: "Open http://127.0.0.1:8080, create an app account (any email and password; it only unlocks the pages), go to Projects and press Connect Lovable. Switch on the projects Harness Ledger may read and press Sync now.",
+  },
+  {
+    title: "Pick an AI provider and analyse",
+    text: "In Settings › AI analysis choose Claude Code (your subscription) or paste an OpenAI, Anthropic or Google key. Press Analyse now. Everything that needs a decision lands in Inbox; nothing is written to Lovable until you approve it.",
+  },
+] as const;
+export const START_NEEDS =
+  "What you need: Node.js 22.12 or newer, a Lovable account with at least one project you have chatted with, and one AI provider.";
+
+export const WHY_LOCAL_TITLE = "Why this page can't run the product";
+export const WHY_LOCAL_TEXT =
+  'Harness Ledger has to sign in to Lovable on your behalf. Lovable\'s authorization server does not yet accept a hosted app for that (it answered the registration with "Client Not Found"), while a program on your own computer completes the sign-in through a localhost callback. Running locally also keeps your Lovable token, your AI provider keys and your synced chats in files on your machine. This page is built and published with Lovable so you can see the product; the working copy is the repository.';
+export const WHY_LOCAL_NOTE = "Signing in here only shows empty preview pages.";
 
 // 2. The five-step product loop.
 export const LOOP_TITLE = "The loop";
@@ -102,7 +144,7 @@ export const ARCHITECTURE_CHAIN = [
 export const ARCHITECTURE_TEXT =
   "Synced data stays in a local SQLite file. During analysis, selected context goes only to the AI provider you configured. Lovable tokens and provider keys stay in restricted local files.";
 export const HOSTED_TEXT =
-  "The operational prototype currently runs locally because local Lovable clients can complete the supported sign-in flow. The hosted Lovable app presents the product and preserves the hosted adapter for an approved hosted authorization path.";
+  "The workflow runs locally because only a local client can complete Lovable's sign-in flow. The Lovable-hosted page presents the product and keeps the hosted adapter for an approved hosted authorization path.";
 
 // 8. Harness Ledger MCP.
 export const MCP_TITLE = "Use it through MCP";
@@ -121,10 +163,7 @@ export const LIMITATIONS = [
   "Hosted authorization is not available; the workflow runs locally, with a developer-oriented setup.",
 ] as const;
 
-// 10. Run locally.
-export const RUN_LOCALLY_TITLE = "Run it locally";
-export const RUN_LOCALLY_TEXT =
-  "Harness Ledger currently has a developer-oriented local setup. If Node.js and an AI provider are already configured, setup usually takes around ten minutes.";
+// 10. Setup commands, referenced from the Start here section above.
 export const RUN_LOCALLY_COMMANDS = [
   "git clone https://github.com/Saddeee/harness-ledger-foundation.git",
   "cd harness-ledger-foundation",

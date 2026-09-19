@@ -23,14 +23,6 @@ import { DetailSection, RecommendationCallout } from "@/components/harness/decis
 import { ManagedBlockText } from "@/components/harness/timeline";
 import { VerdictControl } from "@/components/harness/improvement";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -164,19 +156,26 @@ function KnowledgeText({
   );
 }
 
-// One row per active rule: the rule text -- a keyboard-focusable Link when
-// there's a Suggestions detail to open, plain text otherwise -- status,
-// since-added date, what's been observed (with the shared VerdictControl),
-// and one "…" menu with the row's trailing actions. spec §4.
-// Fix round 1: the row itself keeps its native table-row semantics (no ARIA
-// role or tab-stop override) -- clicking anywhere in the row still
-// navigates, as a mouse-only convenience, but the rule is reachable by
-// keyboard through the Link/Button in its own cell, not by tabbing to the
-// row.
+// One card per active rule: the rule text -- a keyboard-focusable Link when
+// there's a Suggestions detail to open, plain text otherwise -- a muted
+// status/since line, what's been observed (with the shared VerdictControl),
+// and one "…" menu with the card's trailing actions. spec §4.
+// Fix round 1: the card itself is a mouse-only click convenience -- clicking
+// anywhere on it still navigates, but the rule is reachable by keyboard
+// through the Link/Button inside it, not by tabbing to the card itself.
+//
+// 2026-09-19, demo round: rule rows became cards, review item 7 layout.
+// Owner feedback on the final demo round: pages should use cards, not
+// tables, and the old Observed column (~180px) wrapped its several lines
+// and the inline verdict control awkwardly, while Status wrapped "In
+// Lovable" onto two lines. One <article> per rule now gives every line --
+// the meta line, the attention/active line, observed/aiReview, the verdict
+// control, and the replay line -- the full width of the card instead of a
+// cramped column.
 const RULE_LINK_CLASS =
   "text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-function RuleRow({
+function RuleCard({
   rule,
   retireBusy,
   onRetire,
@@ -194,10 +193,11 @@ function RuleRow({
   const text =
     rule.text || (improvementId != null ? `Suggestion #${improvementId}` : `Rule #${rule.id}`);
   const status = rule.status ? RULE_STATUS_LABEL[rule.status] : "—";
-  const since = rule.since ? formatDay(rule.since) : "—";
+  const since = rule.since ? formatDay(rule.since) : null;
+  const metaLine = since ? `${status} · since ${since}` : status;
 
   // Checkpoint 2 2-C (spec §9): the health status decides which line this
-  // row leads with -- the attention block for 'review'/'retire_suggested',
+  // card leads with -- the attention block for 'review'/'retire_suggested',
   // else the plain "is it live and replay-tested" fact. observedLine/
   // aiReviewLine/the VerdictControl's own verdictLine/replayEvidenceLine
   // each stay their own line below it, never merged into one sentence.
@@ -209,92 +209,99 @@ function RuleRow({
   const replayLine = replayEvidenceLine(rule.judged_run ?? null);
 
   return (
-    <TableRow
-      {...(improvementId != null ? { onClick: goToSuggestion, className: "cursor-pointer" } : {})}
+    <article
+      {...(improvementId != null ? { onClick: goToSuggestion } : {})}
+      className={
+        improvementId != null
+          ? "cursor-pointer space-y-2 rounded-md border p-4 hover:bg-muted/40"
+          : "space-y-2 rounded-md border p-4"
+      }
     >
-      <TableCell>
-        {improvementId != null ? (
-          <Link to="/ledger" search={{ improvement: improvementId }} className={RULE_LINK_CLASS}>
-            {text}
-          </Link>
-        ) : (
-          <span>{text}</span>
-        )}
-      </TableCell>
-      <TableCell>{status}</TableCell>
-      <TableCell>{since}</TableCell>
-      <TableCell>
-        {attention ? (
-          <div className="space-y-0.5">
-            <p className="text-xs font-medium">{attention.title}</p>
-            <p className="text-xs text-muted-foreground">{attention.line}</p>
-            <p className="text-xs text-muted-foreground">{attention.recommendation}</p>
-            {improvementId != null ? (
-              <Link
-                to="/ledger"
-                search={{ improvement: improvementId }}
-                className="text-xs text-primary underline underline-offset-2"
-              >
-                {attention.action}
-              </Link>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">{ruleActiveLine(rule.judged_run != null)}</p>
-        )}
-        {observed ? <p className="text-xs text-muted-foreground">{observed}</p> : null}
-        {aiReview ? <p className="text-xs text-muted-foreground">{aiReview}</p> : null}
-        {/* Round 6 Task 4 / spec §4: the same compact, inline verdict
-            control as the Suggestions card -- one visible control here,
-            instead of a separate row of "Helped/Didn't help/Not sure"
-            buttons plus its own "You said..." line (verdictLine is rendered
-            inside VerdictControl itself once a verdict exists). */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-base font-medium">
+          {improvementId != null ? (
+            <Link to="/ledger" search={{ improvement: improvementId }} className={RULE_LINK_CLASS}>
+              {text}
+            </Link>
+          ) : (
+            <span>{text}</span>
+          )}
+        </div>
+        <div onClick={(e) => e.stopPropagation()}>
+          {/* Round 6 Task 4 / spec §4: the card's trailing actions collapse
+              into one "…" menu -- Remove from Knowledge (the AlertDialog
+              confirm nested inside its own menu item, the standard pattern
+              for a confirm triggered from a menu) and Open suggestion. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="sm" aria-label="Rule actions">
+                …
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                    Remove from Knowledge
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{REMOVE_FROM_KNOWLEDGE_TITLE}</AlertDialogTitle>
+                    <AlertDialogDescription>{REMOVE_FROM_KNOWLEDGE_BODY}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction disabled={retireBusy} onClick={() => onRetire(rule.id)}>
+                      {REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              {improvementId != null ? (
+                <DropdownMenuItem onSelect={goToSuggestion}>Open suggestion</DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">{metaLine}</p>
+      {attention ? (
+        <div className="space-y-0.5">
+          <p className="text-xs font-medium">{attention.title}</p>
+          <p className="text-xs text-muted-foreground">{attention.line}</p>
+          <p className="text-xs text-muted-foreground">{attention.recommendation}</p>
+          {improvementId != null ? (
+            <Link
+              to="/ledger"
+              search={{ improvement: improvementId }}
+              className="text-xs text-primary underline underline-offset-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {attention.action}
+            </Link>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">{ruleActiveLine(rule.judged_run != null)}</p>
+      )}
+      {observed ? <p className="text-xs text-muted-foreground">{observed}</p> : null}
+      {aiReview ? <p className="text-xs text-muted-foreground">{aiReview}</p> : null}
+      {/* Round 6 Task 4 / spec §4: the same compact, inline verdict control
+          as the Suggestions card -- one visible control here, instead of a
+          separate row of "Helped/Didn't help/Not sure" buttons plus its own
+          "You said..." line (verdictLine is rendered inside VerdictControl
+          itself once a verdict exists). */}
+      <div onClick={(e) => e.stopPropagation()}>
         <VerdictControl ruleId={rule.id} verdict={rule.verdict ?? null} />
-        {replayLine ? <p className="text-xs text-muted-foreground">{replayLine}</p> : null}
-        {/* adherence-line */}
-      </TableCell>
-      <TableCell onClick={(e) => e.stopPropagation()}>
-        {/* Round 6 Task 4 / spec §4: the row's trailing actions collapse
-            into one "…" menu -- Remove from Knowledge (the AlertDialog
-            confirm nested inside its own menu item, the standard pattern
-            for a confirm triggered from a menu) and Open suggestion. */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" aria-label="Rule actions">
-              …
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                  Remove from Knowledge
-                </DropdownMenuItem>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>{REMOVE_FROM_KNOWLEDGE_TITLE}</AlertDialogTitle>
-                  <AlertDialogDescription>{REMOVE_FROM_KNOWLEDGE_BODY}</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction disabled={retireBusy} onClick={() => onRetire(rule.id)}>
-                    {REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-            {improvementId != null ? (
-              <DropdownMenuItem onSelect={goToSuggestion}>Open suggestion</DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </TableCell>
-    </TableRow>
+      </div>
+      {replayLine ? <p className="text-xs text-muted-foreground">{replayLine}</p> : null}
+      {/* adherence-line */}
+    </article>
   );
 }
 
-function RulesTable({
+function RulesList({
   rules,
   retireBusy,
   onRetire,
@@ -307,22 +314,11 @@ function RulesTable({
     return <p className="text-sm text-muted-foreground">No rules yet.</p>;
   }
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Rule</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Since</TableHead>
-          <TableHead>Observed</TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rules.map((r) => (
-          <RuleRow key={r.id} rule={r} retireBusy={retireBusy} onRetire={onRetire} />
-        ))}
-      </TableBody>
-    </Table>
+    <div className="space-y-3">
+      {rules.map((r) => (
+        <RuleCard key={r.id} rule={r} retireBusy={retireBusy} onRetire={onRetire} />
+      ))}
+    </div>
   );
 }
 
@@ -413,7 +409,7 @@ function TargetSection({
 
       <div className="space-y-2">
         <h3 className="text-sm font-medium">Rules Harness Ledger added</h3>
-        <RulesTable
+        <RulesList
           rules={target.active_rules as KnowledgeActiveRuleWithJudgedRun[]}
           retireBusy={retireBusy}
           onRetire={onRetire}

@@ -27,9 +27,14 @@ import {
   fetchProjects,
   postExecutor,
   postProjects,
+  runtimeQueryOptions,
   syncResultText,
   type LlmProvider,
 } from "@/lib/improvements-client";
+// 2026-09-19 demo round: the same build is published as the Lovable-hosted
+// front door, where Connect Lovable cannot work (hosted authorization is
+// blocked). A hosted visitor gets the four commands instead of the steps.
+import { RUN_LOCALLY_COMMANDS, START_TITLE } from "@/lib/landing-copy";
 import {
   ADVANCED_PERMISSIONS_LINK_TEXT,
   ANALYSE_NOW_CONSEQUENCE,
@@ -439,12 +444,21 @@ function SyncStep({ state }: { state: StepState }) {
   );
 }
 
+const HOSTED_ONBOARDING_INTRO =
+  "This is the hosted preview. Connect Lovable cannot work here, so there is nothing to set up on this page. Harness Ledger runs on your computer.";
+const HOSTED_ONBOARDING_NEXT =
+  "Then open http://127.0.0.1:8080, and this page will walk you through connecting Lovable, choosing projects and picking an AI provider.";
+const HOSTED_ONBOARDING_LINK = "Why it runs on your computer, and what you need";
+const HOSTED_SKIP_LABEL = "Look around the preview instead";
+
 function OnboardingPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const executor = useQuery(executorQueryOptions);
   const projects = useQuery({ queryKey: PROJECTS_KEY, queryFn: fetchProjects });
+  const runtime = useQuery(runtimeQueryOptions);
   const [modeSaved, setModeSaved] = useState(false);
+  const isHosted = runtime.isSuccess && runtime.data.mode !== "local";
 
   const connected = Boolean(executor.data?.connection?.connected);
   const hasProject = (projects.data?.allowed?.length ?? 0) > 0;
@@ -505,6 +519,34 @@ function OnboardingPage() {
     // page for "onboarding is done" now.
     navigate({ to: "/inbox" });
   };
+
+  if (isHosted) {
+    return (
+      <div className="max-w-2xl space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold">Get started</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{HOSTED_ONBOARDING_INTRO}</p>
+        </div>
+        <div className="space-y-3 rounded-md border bg-muted/30 p-4">
+          <p className="text-sm font-medium">{START_TITLE}</p>
+          <pre className="overflow-x-auto rounded-md border bg-background p-3 font-mono text-xs leading-relaxed">
+            {RUN_LOCALLY_COMMANDS.join("\n")}
+          </pre>
+          <p className="text-sm text-muted-foreground">{HOSTED_ONBOARDING_NEXT}</p>
+          <Link to="/" hash="start-here" className="block text-sm underline underline-offset-2">
+            {HOSTED_ONBOARDING_LINK}
+          </Link>
+        </div>
+        <button
+          type="button"
+          onClick={skip}
+          className="text-sm text-muted-foreground underline underline-offset-2"
+        >
+          {HOSTED_SKIP_LABEL}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-6">

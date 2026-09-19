@@ -8,8 +8,18 @@
 // (it wants `max_completion_tokens`) and reject `temperature` outright. The
 // request body is built from capabilities.ts's openAiParamsFor(model)
 // instead of always sending both; a 400 that still names one of these
-// parameters as unsupported is retried exactly once with that parameter
-// swapped or removed (never a second retry, never an identical request).
+// parameters as unsupported is retried with that parameter swapped or
+// removed.
+//
+// 2026-09-19 demo hardening: up to TWO corrective retries are now allowed
+// (three attempts total) -- a classic-family model can reject `max_tokens`
+// on attempt 1 and then reject `temperature` on attempt 2 (two independent
+// unsupported parameters in the same request), and both need fixing before
+// a call from an older/misconfigured client succeeds. Each retry must
+// change the strategy from the previous attempt (retryStrategyFor never
+// returns an adjustment the current strategy doesn't actually need), so no
+// two attempts ever send an identical body, and a third identical/
+// unresolvable error still throws rather than retrying a fourth time.
 import type { ProviderCallParams, ProviderCallResult } from "./types.js";
 import { LlmProviderError, type OpenAiRetryInfo } from "./types.js";
 import { openAiParamsFor, type OpenAiParamStrategy } from "./capabilities.js";
@@ -84,15 +94,20 @@ function classifyError(
  * the message names nothing recognised), or when the identified parameter
  * doesn't match anything the current strategy actually sent (never retry an
  * identical request). `max_completion_tokens` is checked before
- * `max_tokens` only for readability -- the two substrings never both appear
- * in a real OpenAI error, and neither is a substring of the other.
+ * `max_tokens` -- today the two substrings never both appear in a real
+ * OpenAI error and neither is a substring of the other, but 2026-09-19
+ * demo hardening adds an explicit guard on the `max_tokens` branch anyway:
+ * when the `param` field is present, it is authoritative, so don't treat a
+ * `max_tokens` swap as needed when OpenAI actually named
+ * `max_completion_tokens` as the offending parameter.
  */
 function retryStrategyFor(
   strategy: OpenAiParamStrategy,
   errObj: OpenAiErrorBody["error"],
   message: string,
 ): { strategy: OpenAiParamStrategy; info: OpenAiRetryInfo } | null {
-  const text = `${errObj?.param ?? ""} ${message}`.toLowerCase();
+  const param = (errObj?.param ?? "").toLowerCase();
+  const text = `${param} ${message}`.toLowerCase();
 
   if (strategy.tokenParam === "max_completion_tokens" && text.includes("max_completion_tokens")) {
     return {
@@ -100,7 +115,11 @@ function retryStrategyFor(
       info: { rejectedParam: "max_completion_tokens", resolution: "max_tokens" },
     };
   }
-  if (strategy.tokenParam === "max_tokens" && text.includes("max_tokens")) {
+  if (
+    strategy.tokenParam === "max_tokens" &&
+    text.includes("max_tokens") &&
+    param !== "max_completion_tokens"
+  ) {
     return {
       strategy: { ...strategy, tokenParam: "max_completion_tokens" },
       info: { rejectedParam: "max_tokens", resolution: "max_completion_tokens" },
@@ -139,14 +158,19 @@ function buildBody(
   return body;
 }
 
+// 2026-09-19 demo hardening: at most two corrective retries (three
+// attempts total) -- see the header comment for why one is no longer
+// always enough.
+const MAX_RETRIES = 2;
+
 export async function callOpenAi(params: ProviderCallParams): Promise<ProviderCallResult> {
   const { apiKey, model, system, user, maxOutputTokens, jsonSchema, fetchFn } = params;
   const initialStrategy = openAiParamsFor(model);
 
   async function attempt(
     strategy: OpenAiParamStrategy,
-    isRetry: boolean,
-    retryInfo?: OpenAiRetryInfo,
+    attemptNumber: number,
+    lastRetryInfo?: OpenAiRetryInfo,
   ): Promise<ProviderCallResult> {
     const body = buildBody(model, system, user, maxOutputTokens, jsonSchema, strategy);
 
@@ -181,10 +205,10 @@ export async function callOpenAi(params: ProviderCallParams): Promise<ProviderCa
       const message = redactSecrets(String(rawMessage)).slice(0, 500);
       const category = classifyError(res.status, errObj, message);
 
-      if (category === "invalid_parameter" && !isRetry) {
+      if (category === "invalid_parameter" && attemptNumber < MAX_RETRIES) {
         const adjusted = retryStrategyFor(strategy, errObj, message);
         if (adjusted) {
-          return attempt(adjusted.strategy, true, adjusted.info);
+          return attempt(adjusted.strategy, attemptNumber + 1, adjusted.info);
         }
       }
 
@@ -192,7 +216,7 @@ export async function callOpenAi(params: ProviderCallParams): Promise<ProviderCa
         redactSecrets(`OpenAI request failed: ${res.status} ${message}`).slice(0, 500),
         category,
         res.status,
-        isRetry ? retryInfo : undefined,
+        attemptNumber > 0 ? lastRetryInfo : undefined,
       );
     }
 
@@ -205,11 +229,11 @@ export async function callOpenAi(params: ProviderCallParams): Promise<ProviderCa
       openai: {
         tokenParam: strategy.tokenParam,
         temperatureSent: strategy.supportsTemperature,
-        retried: isRetry,
-        retry: retryInfo,
+        retried: attemptNumber > 0,
+        retry: lastRetryInfo,
       },
     };
   }
 
-  return attempt(initialStrategy, false);
+  return attempt(initialStrategy, 0);
 }

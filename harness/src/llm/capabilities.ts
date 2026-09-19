@@ -7,6 +7,10 @@
 // openAiParamsFor's answer instead of checking model name substrings
 // itself, so there is exactly one table to update when OpenAI ships another
 // model family.
+//
+// 2026-09-19 demo hardening: matching is case-insensitive and
+// whitespace-trimmed (Settings input isn't normalized upstream), and
+// chatgpt- prefixed aliases are treated as the strict/newer contract too.
 export type OpenAiParamStrategy = {
   /** Which token-limit parameter this model's chat-completions call accepts. */
   tokenParam: "max_tokens" | "max_completion_tokens";
@@ -14,10 +18,12 @@ export type OpenAiParamStrategy = {
   supportsTemperature: boolean;
 };
 
-// Newer/"reasoning" families: o1/o3/o4 (all sizes/dates) and gpt-5 (all
-// variants) only accept `max_completion_tokens` and reject any
-// caller-supplied `temperature` (their sampling temperature is fixed).
-const NO_TEMPERATURE_PREFIXES = ["o1", "o3", "o4", "gpt-5"];
+// Newer/"reasoning" families: o1/o3/o4 (all sizes/dates), gpt-5 (all
+// variants -- "gpt-5" as a prefix already covers gpt-5.5, gpt-5.4-mini,
+// gpt-5-mini, etc.), and the chatgpt- aliases only accept
+// `max_completion_tokens` and reject any caller-supplied `temperature`
+// (their sampling temperature is fixed).
+const NO_TEMPERATURE_PREFIXES = ["o1", "o3", "o4", "gpt-5", "chatgpt-"];
 
 // Established chat-completions families: still accept the original
 // `max_tokens` field and a caller-chosen `temperature`.
@@ -42,10 +48,16 @@ const CLASSIC_PREFIXES = ["gpt-4o", "gpt-4.1", "gpt-4", "gpt-3.5"];
  * one-shot retry catches it -- one wasted request every time versus zero.
  */
 export function openAiParamsFor(model: string): OpenAiParamStrategy {
-  if (CLASSIC_PREFIXES.some((prefix) => model.startsWith(prefix))) {
+  // 2026-09-19 demo hardening: a user can type a model name into Settings
+  // with stray casing/whitespace ("GPT-5.5 ") -- normalize before matching
+  // so that still gets the strict contract instead of falling through to
+  // the (also-strict, but coincidentally-correct-for-the-wrong-reason)
+  // unknown-family default.
+  const normalized = model.trim().toLowerCase();
+  if (CLASSIC_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
     return { tokenParam: "max_tokens", supportsTemperature: true };
   }
-  if (NO_TEMPERATURE_PREFIXES.some((prefix) => model.startsWith(prefix))) {
+  if (NO_TEMPERATURE_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
     return { tokenParam: "max_completion_tokens", supportsTemperature: false };
   }
   return { tokenParam: "max_completion_tokens", supportsTemperature: false };

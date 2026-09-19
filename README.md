@@ -10,6 +10,8 @@ Harness Ledger learns from the corrections you give Lovable, turns reusable less
 
 **Status:** a local prototype. Knowledge works end to end; Skills are first-class locally and can be published to Lovable as new workspace Skills (create only — never updated or deleted); the historical replay works; paired comparison and behavioural checks are planned; hosted authorization is blocked pending an approved hosted path. Nothing spends Lovable credits or AI tokens unless you press a button that says so.
 
+**Got here from the Lovable link?** That page is the front door only; the product runs on your computer. Clone this repository and follow [Getting started](#3-getting-started).
+
 **Start here:** [Getting started](#3-getting-started) (about ten minutes if Node.js and an AI provider are already set up), then open the app, connect Lovable, choose projects, pick Ask me first, pick a provider, and press Analyse now.
 
 ## Contents
@@ -181,6 +183,7 @@ npm run harness:executor -- --disconnect   # forget the Lovable login
 | Connect Lovable never finishes                                                                 | The browser must reach `127.0.0.1:8765` on the machine running the app; forward the port if it's remote |
 | Analyse now says Claude Code was not found                                                     | Install the `claude` CLI and sign in once in a terminal, or pick another provider                       |
 | Two copies of the app, but only one syncs                                                      | Only one running app holds the sync schedule at a time (`harness/data/executor.lock`); stop the other   |
+| OpenAI answers 400: `max_tokens` is not supported, use `max_completion_tokens` / `temperature` not supported | Newer OpenAI models (`gpt-5.5`, `gpt-5.4-mini`, o-series) reject those fields; Harness Ledger sends the right ones for the model and retries once per rejected field. If you still see it, your clone is older than 2026-09-18: `git pull`, then `npm run harness:build` |
 
 ---
 
@@ -293,7 +296,7 @@ The Lovable operations Harness needs are available through Lovable's MCP and API
 Local and hosted execution are adapters around shared product logic:
 
 - **Local runtime:** registers with Lovable's authorization server and completes the login through a listener on `127.0.0.1:8765`. Uses **Lovable MCP** (`mcp.lovable.dev`) to read chats, Knowledge and Skills and to write Knowledge, and the **Lovable REST API** (`api.lovable.dev`) for replays: copying a project, sending the request, reading the result, deleting a copy.
-- **Hosted preview:** the same web app deployed by Lovable, showing the product; its pages say the workflow runs on your machine.
+- **Hosted preview:** the same web app deployed by Lovable, showing the product. Its landing page says "Start here" with the four commands, and every signed-in page carries a banner saying the product runs on your machine. The demo link you may have received points there.
 
 Technical detail: Lovable's authorization server answered the hosted OAuth client registration with "Client Not Found". The hosted OAuth routes remain in the repo, unused.
 
@@ -413,6 +416,10 @@ The source of truth is the capability manifest in `harness/src/capabilities.ts` 
 **What does a replay cost?** Creating project copies currently uses no Lovable builder credits. Running a Lovable build in a copy consumes normal builder credits. The cost Lovable reports is recorded, and a monthly budget stops replays before they overspend.
 
 **What if I edit Knowledge in Lovable myself?** Your own text is kept, and changes inside Harness Ledger's block are never overwritten.
+
+**Why can't I just use it on the Lovable page?** Harness Ledger has to sign in to Lovable on your behalf. Lovable's authorization server does not accept a hosted app for that yet (it answered the registration with "Client Not Found"), while a program on your own computer completes the sign-in through a localhost callback. Running locally also keeps your Lovable token, provider keys and synced chats on your machine. See [Why it runs on your machine](#10-why-it-runs-on-your-machine).
+
+**Which OpenAI model should I use?** The defaults are `gpt-5.5` for writing rules and `gpt-5.4-mini` for classifying and judging. Newer OpenAI models take `max_completion_tokens` and no `temperature`; Harness Ledger handles that per model and retries once per rejected field, so a 400 about those parameters means your clone predates 2026-09-18.
 
 **Does it work across projects?** Yes: add a rule to one project or to your whole workspace. Harness Ledger warns you when a rule meant for all projects talks about "this app".
 

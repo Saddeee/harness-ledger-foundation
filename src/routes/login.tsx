@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isLocalHost } from "@/lib/landing-copy";
 
 export const Route = createFileRoute("/login")({
   ssr: false,
@@ -29,12 +30,17 @@ function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isLocal, setIsLocal] = useState<boolean | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/inbox", replace: true });
     });
   }, [navigate]);
+
+  useEffect(() => {
+    setIsLocal(isLocalHost(window.location.hostname));
+  }, []);
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
@@ -67,7 +73,22 @@ function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Harness Ledger</CardTitle>
-          <CardDescription>Sign in to continue.</CardDescription>
+          <CardDescription>
+            {isLocal === false ? (
+              <>
+                This is the hosted preview. Signing in only unlocks empty preview pages; the product
+                runs on your computer.{" "}
+                <Link to="/" hash="start-here" className="underline underline-offset-2">
+                  How to run it
+                </Link>
+              </>
+            ) : (
+              <>
+                Sign in to continue. First time? Use Sign up with any email and password; this
+                account only unlocks the pages, your data stays in the local file.
+              </>
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin">

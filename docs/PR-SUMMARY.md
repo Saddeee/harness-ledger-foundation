@@ -1,4 +1,4 @@
-# PR summary: `local-harness-dev` → `main` (prepared 2026-09-19, not merged)
+# PR summary: `local-harness-dev` → `main` (prepared 2026-09-19; merged for the demo the same evening)
 
 ## Product changes
 
@@ -27,6 +27,16 @@
   unsupported, one corrected retry, redaction) and a "Test provider" action in Settings.
 - **Setup.** `npm run setup`, `npm run harness:start` (local runtime, repo-local SQLite, 127.0.0.1).
 - **One product name** everywhere a person reads it: Harness Ledger (and Harness Ledger MCP).
+- **Demo round (2026-09-19 evening).** The Lovable-hosted page is the front door people receive as a link, so
+  the landing page now leads with "Start here" (four commands, what to do inside the app, what you need) and a
+  boxed "Why this page can't run the product"; the hero's primary action is "Run it on your computer" when the
+  page is not served from localhost, "Open Harness Ledger" when it is. Every signed-in hosted page carries a
+  banner pointing at Start here, the hosted sign-in card says the same, and hosted onboarding shows the commands
+  instead of a Connect Lovable button that cannot work there. Tests cards open the judging screen from the whole
+  card (no Open link) and the feedback note spans the card; Instructions rules are cards instead of a five-column
+  table; landing text fills its column. OpenAI: model matching is case- and whitespace-insensitive, `chatgpt-`
+  models get the strict contract, and a call may correct up to two rejected parameters in sequence
+  (`max_tokens` → `max_completion_tokens`, then `temperature` removed), each retry different from the last.
 
 - **Inbox is the single decision queue (2026-09-19).** Suggestions left the navigation; the list route
   redirects to Inbox and the detail stays reachable from Inbox and History. Inbox items: New instruction, New
@@ -87,6 +97,8 @@ allowed), with the verbatim prompts, the deviations from the plan, the replay ev
 
 ## Verification
 
-1044 harness tests (main checkout), both typechecks, lint (0 errors), production build
+Demo round: 1173 harness tests, both typechecks, lint (0 errors, 7 pre-existing warnings), production build, hosted-mode smoke on a spare port with a non-localhost hostname (landing, sign-in, onboarding, banner) and local-mode screenshots of every page.
+
+Earlier: 1044 harness tests (main checkout), both typechecks, lint (0 errors), production build
 (no better-sqlite3 in `.output`), hosted-mode and local-mode smoke on spare ports (every page 200), MCP
 protocol tests, README link and manifest tests, OpenAI fake tests, migration on a copy of the live DB.

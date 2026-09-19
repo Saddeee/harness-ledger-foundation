@@ -269,14 +269,16 @@ test("harness/src/improvements.ts: recordVerdict returns { changed, effect } and
 // ---- 5. Instructions row: one DropdownMenu, Remove from Knowledge +
 // Open suggestion, and the VerdictControl living in a different cell ----
 
-test("instructions.tsx: exactly one DropdownMenu per row, separate from the Observed cell's VerdictControl", () => {
+test("instructions.tsx: exactly one DropdownMenu per rule card, separate from its own VerdictControl", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  const row = slice(code, "function RuleRow", "function RulesTable");
-  assert.equal(count(row, "<DropdownMenu>"), 1, "exactly one row menu");
+  const row = slice(code, "function RuleCard", "function RulesList");
+  assert.equal(count(row, "<DropdownMenu>"), 1, "exactly one card menu");
   assert.equal(count(row, "<VerdictControl"), 1, "exactly one verdict control");
-  // The verdict control comes before the menu cell in source order (Observed
-  // then the trailing "…" menu), matching the table's own column order.
-  assert.ok(row.indexOf("<VerdictControl") < row.indexOf("<DropdownMenu>"));
+  // 2026-09-19 demo round (review item 7): the rules table became a card --
+  // the "…" menu now sits in the card's own header row (top-right, next to
+  // the rule text), ahead of the body content further down that includes
+  // the VerdictControl, reversing the old table's column order.
+  assert.ok(row.indexOf("<DropdownMenu>") < row.indexOf("<VerdictControl"));
 });
 
 // ---- 6. Addendum: the pending-write banner's own Cancel button reads the
