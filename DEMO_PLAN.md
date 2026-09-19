@@ -24,7 +24,7 @@ Nine steps, one project, no surprises.
    environment record (Project Knowledge: current fallback; Workspace Knowledge, Skills and builder version
    from today).
 8. The one-form suggestion: Change destination → Skill. Edit the draft into the checklist, Approve, then
-   Publish to Lovable. Skills page: "In Lovable since …, read back".
+   Publish to Lovable. Skills page: "In Lovable since …, read back". Open Lovable's workspace Skills to show it.
 9. Say what is next: paired comparison and behavioural checks.
 
 ## Operator checklist (tick every line before the demo)
@@ -54,8 +54,9 @@ Nine steps, one project, no surprises.
 | 9 | 11:25 | One-form suggestion: Change destination → Skill (local draft created) | 0 |
 | 10 | 11:29 | Test this rule (sentence case) → historical replay of the initial build, copy `471cd326-bfe7-4c17-9b90-b80dc6f5a8fb` | 1.5 |
 | 11 | 13:56 | Verdict: the correction would not be needed; no regression; feedback recorded | 0 |
-| 12 | 13:54 | Edit the Skill draft to `modify-booking-forms-consistently` (checklist below) | 0 |
-| | | **Total so far: 10.6 credits of the 20 allowed** | |
+| 12 | 11:29 | Edit the Skill draft to `modify-booking-forms-consistently` (checklist below) | 0 |
+| 13 | 14:39 | Approve the Skill, then Publish to Lovable: created as `modify-booking-forms-consistently`, read back identical | 0 |
+| | | **Total: 10.6 credits of the 20 allowed** | |
 
 Initial prompt (step 1), verbatim:
 

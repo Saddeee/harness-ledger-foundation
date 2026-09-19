@@ -10,7 +10,8 @@
   regression / Inconclusive). Existing runs 1–7 were backfilled.
 - **Skills first-class locally.** Suggestions carry a destination (Project Knowledge / Workspace Knowledge /
   Skill / Knowledge and Skill) with a reason; Skill proposals are drafted, edited, approved, versioned, restored
-  and retired locally. "Not published to Lovable yet." everywhere; remote Skill writes are not wired.
+  and retired locally. An approved proposal can be published to Lovable as a new workspace Skill (create
+  only, never update or delete), read back and versioned; a failed publish is an Inbox item with Retry.
 - **Product surface.** Onboarding (five steps, one primary action, "Use recommended settings"); Overview with
   one next action; Inbox cards with lesson, instruction, destination, reason and one recommended action, each
   action stating whether Lovable, credits or AI tokens are affected; Suggestions detail as a story
@@ -35,6 +36,9 @@
 - **Rule writer** now follows a minimal-sufficiency principle, returns applicability, exceptions and a scope
   confidence, and downgrades a low-confidence workspace scope to project at proposal time. Existing rules are
   untouched.
+- **Product fixes from the owner's review (2026-09-19).** The sidebar badge reads the same Inbox feed as the
+  Inbox page; Instructions filters per project (`?project=`); History's Current Knowledge is collapsed with a
+  one-line hint.
 
 ## Architecture decision
 
@@ -47,37 +51,42 @@ copy reads back before it is called confirmed.
 
 See `harness/src/capabilities.ts` (a test fails when a "working" capability has no verification reference).
 Working: Lovable local connection, Sync, Analysis, Reanalyse history, Knowledge proposal/write/versioning/
-restore, historical replay, rule observation, local Skill proposals, Harness Ledger MCP, setup scripts.
+restore, historical replay, rule observation, local Skill proposals, Skill publishing to Lovable (one live
+write verified 2026-09-19), Harness Ledger MCP, setup scripts.
 Partial: onboarding (needs visual review), OpenAI compatibility (fake-tested). Planned: paired comparison,
-behavioural verification. Blocked: remote Skill write, hosted Lovable execution.
+behavioural verification. Blocked: hosted Lovable execution.
 
 ## Limitations
 
-Remote Skill publishing unverified; paired comparison and behavioural checks planned; historical context
+Skills are created only, never updated or deleted from Harness Ledger; paired comparison and behavioural checks planned; historical context
 reconstructed from Harness Ledger's snapshots only; hosted authorization blocked ("Client Not Found");
 diffs/edits not synced; live model output for the new Rule-writer and classifier fields not yet exercised.
 
 ## Migration notes
 
-Migrations v18–v22 apply on first start (additive, except rule_verdicts / rule_health rebuilt with every row
+Migrations v18–v23 apply on first start (additive, except rule_verdicts / rule_health rebuilt with every row
 kept; verdict values map helped → keep, did_not_help → review; copy_deleted rows become deletion status
 "requested"). Back up `harness/data/harness.db` first (the owner's DB was backed up as
 `harness.db.bak-checkpoint2-202609181948` and migrated to v21 by the 19:36 UTC restart; v22 applies on the next
-start). Restart the dev server after `npm run harness:build`.
+start; v23 rebuilds skill_proposals and its revisions table with every row kept, applied to the owner's DB by the
+14:38 UTC restart on 2026-09-19 after `harness.db.bak-before-v23-20260919-143812`). Restart the dev server after
+`npm run harness:build`.
 
 ## Rollback
 
 `git checkout hosted-foundation-v1` (tag at `3fff0d9`) restores the Lovable-built state; for data, restore
-the timestamped `.bak-` copy of the SQLite file (migrations are forward-only). No Lovable resource was
-changed by this branch's checkpoints, so nothing remote needs rolling back.
+the timestamped `.bak-` copy of the SQLite file (migrations are forward-only). Remote resources created by the
+demo fixture on 2026-09-19: Lovable project `01ed3717-3703-4cbd-9c61-0647100fd5c8` (Simple Bookings) with one
+managed Knowledge block, its replay copy `471cd326-bfe7-4c17-9b90-b80dc6f5a8fb`, and the workspace Skill
+`modify-booking-forms-consistently`. Delete them in Lovable if the fixture is not wanted.
 
 ## Demo plan
 
-`DEMO_PLAN.md`: nine visible steps on Nordic Booking Desk (not yet created; about 8–16 credits for the fixture)
-with an operator checklist.
+`DEMO_PLAN.md`: the fixture was run on 2026-09-19 (Lovable named it Simple Bookings; 10.6 credits of the 20
+allowed), with the verbatim prompts, the deviations from the plan, the replay evidence and nine visible steps.
 
 ## Verification
 
-1014/1013 harness tests (main checkout / fresh clone), both typechecks, lint (0 errors), production build
+1044 harness tests (main checkout), both typechecks, lint (0 errors), production build
 (no better-sqlite3 in `.output`), hosted-mode and local-mode smoke on spare ports (every page 200), MCP
 protocol tests, README link and manifest tests, OpenAI fake tests, migration on a copy of the live DB.
