@@ -2138,3 +2138,18 @@ export function ruleTitle(text: string | null | undefined): string {
   return `${atWord}…`;
 }
 // ---- end Round 8 Task 5 ----
+
+// ---- 2026-09-19 demo round ----
+/** Pathnames served by other route trees (the public landing page, sign-in,
+ * OAuth callbacks, API). The authenticated layout's first-use redirect to
+ * /onboarding must never fire for these: while a link out of the app is
+ * being followed the layout is still mounted for a moment with the new
+ * pathname, and redirecting then bounces the visitor straight back. */
+export function isInsideAuthenticatedArea(pathname: string): boolean {
+  return !(
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname.startsWith("/oauth") ||
+    pathname.startsWith("/api")
+  );
+}

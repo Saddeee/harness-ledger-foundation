@@ -442,7 +442,7 @@ function Page() {
             </p>
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">You asked Lovable</p>
-              <ClampedText text={view.request_text} />
+              <ClampedText text={view.request_text} markdown />
             </div>
             {view.corrections.length > 0 ? (
               <div className="space-y-1">

@@ -49,3 +49,9 @@ harness/tmp/
 
 # Working notes for AI sessions (plans, decisions, audits, handoff); not part of the product
 /.harness-notes/
+
+# Agent tooling and working notes (never part of the product)
+/.claude/
+/.superpowers/
+/DEMO_PLAN.md
+/docs/PR-SUMMARY.md

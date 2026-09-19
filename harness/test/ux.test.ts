@@ -653,6 +653,10 @@ test("nav: Inbox, Instructions, Skills, Tests, History, Projects, Settings in ev
     /role="note"[\s\S]*hosted preview[\s\S]*hash="start-here"/,
     "hosted banner links to Start here",
   );
+  // 2026-09-19 demo round fix: the first-use redirect must not fire for a
+  // pathname outside this layout (the landing page, sign-in), or every
+  // "How to run it" link bounces back to /onboarding mid-navigation.
+  assert.match(shell, /if \(!isInsideAuthenticatedArea\(location\.pathname\)\) return;/);
   assert.ok(!/label: "Ledger"|label: "Knowledge"/.test(shell));
   assert.match(shell, /<Link to="\/"[^>]*>\s*How Harness Ledger works\s*<\/Link>/);
   const client = codeOnly(readApp(CLIENT));
@@ -666,6 +670,16 @@ test("nav: Inbox, Instructions, Skills, Tests, History, Projects, Settings in ev
     /json\.mode === "local" \? "local" : "hosted"/,
     "anything but a confirmed local answer is hosted",
   );
+});
+
+test("harness-ux.ts: isInsideAuthenticatedArea excludes the landing page, sign-in, OAuth and API paths", async () => {
+  const { isInsideAuthenticatedArea } = await import("../../src/lib/harness-ux.ts");
+  for (const p of ["/", "/login", "/oauth/callback", "/api/public/harness/runtime"]) {
+    assert.equal(isInsideAuthenticatedArea(p), false, p);
+  }
+  for (const p of ["/inbox", "/onboarding", "/judge", "/ledger", "/settings"]) {
+    assert.equal(isInsideAuthenticatedArea(p), true, p);
+  }
 });
 
 test("formatDate / formatDay produce '8 Sep, HH:MM' style and pass non-dates through", () => {

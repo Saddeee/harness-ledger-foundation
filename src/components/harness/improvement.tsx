@@ -1627,7 +1627,7 @@ function MessageBlock({ m, projectId }: { m: Message; projectId?: string }) {
           renders it through LightMarkdown so a stray "**" reads as bold
           instead of literal asterisks. */}
       <div className="mt-1 text-sm">
-        <ClampedText text={readable} markdown={isLovable} />
+        <ClampedText text={readable} markdown />
       </div>
       {isLovable ? (
         <details className="mt-2">
@@ -1778,7 +1778,7 @@ export function ImprovementDetail({
               <dt className="font-medium">Requested</dt>
               <dd className="text-muted-foreground">
                 {item.story.requested ? (
-                  <ClampedText text={item.story.requested} />
+                  <ClampedText text={item.story.requested} markdown />
                 ) : (
                   "Not recorded"
                 )}
@@ -1798,7 +1798,7 @@ export function ImprovementDetail({
               <div>
                 <dt className="font-medium">Your correction</dt>
                 <dd className="text-muted-foreground">
-                  <ClampedText text={item.story.correction} />
+                  <ClampedText text={item.story.correction} markdown />
                 </dd>
               </div>
             ) : null}

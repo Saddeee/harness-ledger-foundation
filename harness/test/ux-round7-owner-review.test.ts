@@ -135,24 +135,29 @@ test("improvement.tsx: the 'What happened' story (Requested/Built/Your correctio
     detail.indexOf("What happened"),
     detail.indexOf("{WHY_RECOMMENDS_TITLE}"),
   );
-  assert.match(story, /<ClampedText text=\{item\.story\.requested\}\s*\/>/);
-  assert.match(story, /<ClampedText text=\{item\.story\.correction\}\s*\/>/);
+  // 2026-09-19 demo round (owner: the request text "looks weird" on the
+  // judge page): the user's own request and correction go through the same
+  // light markdown as Lovable's replies -- people write "- item" lists and
+  // **bold** in prompts too, and the renderer emits no raw HTML either way.
+  assert.match(story, /<ClampedText text=\{item\.story\.requested\} markdown \/>/);
+  assert.match(story, /<ClampedText text=\{item\.story\.correction\} markdown \/>/);
   assert.match(story, /<ClampedText text=\{item\.story\.built\} markdown \/>/);
   assert.match(story, /<ClampedText text=\{item\.story\.changed_afterward\} markdown \/>/);
 });
 
-test("improvement.tsx: MessageBlock renders the message text through ClampedText, markdown only for Lovable's own reply", () => {
+test("improvement.tsx: MessageBlock renders the message text through ClampedText with markdown", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const messageBlock = code.slice(
     code.indexOf("function MessageBlock"),
     code.indexOf("export function ImprovementDetail"),
   );
-  assert.match(messageBlock, /<ClampedText text=\{readable\} markdown=\{isLovable\} \/>/);
+  // 2026-09-19 demo round: user text renders through the light markdown too.
+  assert.match(messageBlock, /<ClampedText text=\{readable\} markdown \/>/);
 });
 
 test("judge.tsx: the request text, both summaries, both replies, and BuildColumn's summary all render through ClampedText", () => {
   const code = codeOnly(readApp(JUDGE));
-  assert.match(code, /<ClampedText text=\{view\.request_text\} \/>/);
+  assert.match(code, /<ClampedText text=\{view\.request_text\} markdown \/>/);
   assert.match(code, /<ClampedText text=\{view\.original_summary\} markdown \/>/);
   assert.match(code, /<ClampedText text=\{view\.copy_summary\} markdown \/>/);
   assert.match(code, /<ClampedText text=\{view\.original_reply\} markdown \/>/);

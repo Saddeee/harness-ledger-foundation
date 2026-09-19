@@ -17,7 +17,7 @@ import {
   fetchInbox,
   runtimeQueryOptions,
 } from "@/lib/improvements-client";
-import { sidebarSyncLine } from "@/lib/harness-ux";
+import { isInsideAuthenticatedArea, sidebarSyncLine } from "@/lib/harness-ux";
 import { isNotifyEnabled } from "@/lib/browser-prefs";
 import { ONBOARDING_DISMISSED_KEY } from "@/lib/onboarding-copy";
 
@@ -153,6 +153,11 @@ function AuthedLayout() {
   useEffect(() => {
     if (executorQuery.isLoading) return;
     if (location.pathname === "/onboarding") return;
+    // 2026-09-19 demo round: while a link out of the app (the landing page,
+    // sign-in) is being followed, this layout is still mounted for a moment
+    // with the new pathname -- redirecting then bounced every "How to run it"
+    // link straight back to /onboarding. Only pages inside this layout count.
+    if (!isInsideAuthenticatedArea(location.pathname)) return;
     if (executorQuery.data?.connection?.connected) return;
     let dismissed = false;
     try {
