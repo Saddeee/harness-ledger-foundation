@@ -1860,3 +1860,33 @@ test("testCopyName: copies are named by test number, which build, and project --
   assert.doesNotMatch(odd, /#|\.app|\//);
   assert.match(odd, /Café 1/);
 });
+
+// 2026-09-19: Lovable's newer screenshot URLs carry no commit hash (run 8 of
+// the demo fixture polled for three minutes and recorded none). The check
+// accepts the old hash-bearing shape by commit, and the new shape once the
+// URL differs from the one the copy had before the build.
+test("isPostBuildScreenshot: old URLs by commit hash, new URLs by change since before the build", async () => {
+  const { isPostBuildScreenshot } = await import("../src/executor/experiments.js");
+  const old =
+    "https://screenshot2.lovable.dev/9baa/id-preview-b1cf960a--ee2b99af.lovable.app-1789341807882.png";
+  assert.equal(isPostBuildScreenshot(old, "b1cf960a1234", null), true);
+  assert.equal(isPostBuildScreenshot(old, "deadbeef1234", null), false, "old shape, other commit");
+  assert.equal(isPostBuildScreenshot(old, null, null), true, "old shape, no commit known");
+  const fresh =
+    "https://screenshot2.lovable.dev/lovp_2trt1hjna59389y6wp06f65q4m/83fbc1a93411884e5d7e314646f17f13_1789817466118.png";
+  const stale =
+    "https://screenshot2.lovable.dev/lovp_2trt1hjna59389y6wp06f65q4m/000000000000000000000000000000_1789817000000.png";
+  assert.equal(
+    isPostBuildScreenshot(fresh, "471cd326abcd", null),
+    true,
+    "new shape, nothing before",
+  );
+  assert.equal(isPostBuildScreenshot(fresh, "471cd326abcd", stale), true, "new shape, changed");
+  assert.equal(
+    isPostBuildScreenshot(stale, "471cd326abcd", stale),
+    false,
+    "new shape, unchanged = pre-build",
+  );
+  assert.equal(isPostBuildScreenshot(null, "471cd326abcd", null), false);
+  assert.equal(isPostBuildScreenshot("", "471cd326abcd", null), false);
+});

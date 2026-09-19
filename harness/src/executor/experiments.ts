@@ -487,6 +487,11 @@ export async function runExperiment(
     // requestFullText (resolved above, before remixInit) is the owner's
     // original request in full -- episodeTextForJudge's own `request` is
     // capped at 1500 chars for the judge screen, not what gets replayed.
+    // 2026-09-19: Lovable's newer screenshot URLs carry no commit hash, so
+    // the only way to know a screenshot is post-build is to remember the
+    // one the copy had before the build (usually none) and wait for it to
+    // change. Read it here, right before the request goes out.
+    const copyShotBeforeBuild = await currentScreenshotOf(rest, copyProjectId);
     const { message_id: copyMessageId, thread_id: copyThreadId } = await rest.chat(
       copyProjectId,
       requestFullText,
@@ -617,10 +622,12 @@ export async function runExperiment(
     }
 
     store.updateExperimentRun(runId, { stage_note: "Waiting for screenshots of the builds" });
-    const withRuleShot = await screenshotOf(rest, copyProjectId, sleep);
+    const withRuleShot = await screenshotOf(rest, copyProjectId, sleep, copyShotBeforeBuild);
     const afterShots = store.getExperimentRun(runId)!;
+    // The original-build copy is remixed with the request already applied
+    // and never chatted with, so its first screenshot is the right one.
     const originalShot = afterShots.original_copy_project_id
-      ? await screenshotOf(rest, afterShots.original_copy_project_id, sleep)
+      ? await screenshotOf(rest, afterShots.original_copy_project_id, sleep, null)
       : null;
     store.updateExperimentRun(runId, {
       copy_screenshot_url: withRuleShot,
@@ -753,19 +760,47 @@ export async function cleanupCopy(
   }
 }
 
-/** The screenshot URL of a project's latest commit, once Lovable has taken
- * it (its URL carries the commit's first 8 characters), else null. */
+/** The project's screenshot URL right now (or null), without waiting. */
+async function currentScreenshotOf(rest: LovableRest, projectId: string): Promise<string | null> {
+  try {
+    return (await rest.getProject(projectId)).latest_screenshot_url ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `url` is a screenshot of the build that produced `sha`.
+ *
+ * Lovable has used two URL shapes. The older one embeds the commit's first
+ * eight characters ("...id-preview-<sha8>--<project>.lovable.app-...png"),
+ * so the commit can be checked directly. The newer one (seen 2026-09-19,
+ * "https://screenshot2.lovable.dev/lovp_.../<hash>_<ms>.png") carries no
+ * commit at all; there the only evidence is that the URL differs from the
+ * one the project had before the build (`before`, null when it had none).
+ * Exported for the unit test. */
+export function isPostBuildScreenshot(
+  url: string | null | undefined,
+  sha: string | null | undefined,
+  before: string | null,
+): url is string {
+  if (!url) return false;
+  if (url.includes("id-preview-")) return !sha || url.includes(`-${sha.slice(0, 8)}--`);
+  return url !== before;
+}
+
+/** The screenshot URL of a project's latest build, once Lovable has taken
+ * it (see isPostBuildScreenshot), else null after SCREENSHOT_POLL_ATTEMPTS. */
 async function screenshotOf(
   rest: LovableRest,
   projectId: string,
   sleep: (ms: number) => Promise<void>,
+  before: string | null,
 ): Promise<string | null> {
   for (let attempt = 0; attempt < SCREENSHOT_POLL_ATTEMPTS; attempt += 1) {
     try {
       const project = await rest.getProject(projectId);
       const url = project.latest_screenshot_url;
-      const sha = project.latest_commit_sha;
-      if (url && (!sha || url.includes(`-${sha.slice(0, 8)}--`))) return url;
+      if (isPostBuildScreenshot(url, project.latest_commit_sha, before)) return url;
     } catch {
       return null;
     }
