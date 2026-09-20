@@ -366,7 +366,7 @@ export function createHarnessMcpServer(): McpServer {
     "Start a historical replay for one suggestion -- the same 'Test this rule' action the " +
       "Tests/Improvements pages offer (adapter.improvementActionAndWrite's 'test' " +
       "interception: startExperiment then kickExperimentRunner, queued, not awaited here). " +
-      "show_original also makes a free copy of the original build to compare against. " +
+      "show_original (default true) also makes a free copy of the original build to compare against. " +
       "Refuses -- with the exact same sentence the app shows -- when Harness Ledger is not " +
       "connected, a replay is already running, or this would exceed the monthly Lovable " +
       "credit budget." +

@@ -24,7 +24,8 @@ process.env.HARNESS_DB_PATH = join(tmp, "harness.db");
 process.env.HARNESS_AUTH_PATH = join(tmp, "lovable-auth.json");
 
 const store = await import("../src/store.js");
-const { isTestAction, testAction } = await import("../src/executor/experiments-actions.js");
+const { isTestAction, testAction, testActionInput } =
+  await import("../src/executor/experiments-actions.js");
 
 const SOURCE = "prj_source";
 store.allowProject(SOURCE, "Source project");
@@ -231,4 +232,22 @@ test("testAction: already running -- throws the exact sentence, and no new run i
   } finally {
     store.updateExperimentRun(runningRunId, { status: "cancelled" });
   }
+});
+
+// 2026-09-19: the Retest button (improvement.tsx) and "Try again" on a failed
+// run (judge.tsx) send { action: "test", id } with no show_original at all.
+// The runner used to read a missing flag as false, so those tests made the
+// paid "with the rule" build but never the free copy of the original build --
+// the judging screen's left column had no screenshot (runs 8 and 9 on the
+// owner's DB). A missing flag now means the dialog's own default: on.
+test("testActionInput: a missing show_original defaults to true; an explicit false is kept", () => {
+  assert.equal(testActionInput.parse({ action: "test", id: 1 }).show_original, true);
+  assert.equal(
+    testActionInput.parse({ action: "test", id: 1, show_original: false }).show_original,
+    false,
+  );
+  assert.equal(
+    testActionInput.parse({ action: "test", id: 1, show_original: true }).show_original,
+    true,
+  );
 });

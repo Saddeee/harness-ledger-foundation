@@ -14,11 +14,19 @@ import { deleteTestCopy, startExperiment } from "./experiments.js";
 import { createLovableRest } from "./lovable-rest.js";
 import { kickExperimentRunner } from "./experiments-queue.js";
 
-const testActionInput = z.object({
+/** Exported for its own unit test (experiments-actions.test.ts). */
+export const testActionInput = z.object({
   action: z.literal("test"),
   id: z.number().int(),
   // Round 7: also make a free copy of the original build to look at.
-  show_original: z.boolean().optional(),
+  // 2026-09-19: defaults to ON when the caller leaves it out. The "Test this
+  // rule" dialog sends its checkbox (default on), but the Retest button on a
+  // live rule card and "Try again" on a failed run send no flag at all, and
+  // a missing flag used to mean "no original copy" -- so those tests came
+  // back with an empty left column on the judging screen. Only an explicit
+  // false skips the free copy now. Same default the Harness Ledger MCP tool
+  // documents for itself.
+  show_original: z.boolean().default(true),
 });
 const deleteCopyInput = z.object({
   action: z.literal("delete_copy"),
@@ -54,7 +62,7 @@ export async function testAction(input: unknown): Promise<Improvement> {
   const { id, show_original } = testActionInput.parse(input);
 
   const rest = createLovableRest();
-  const result = await startExperiment(id, { rest }, { showOriginal: show_original === true });
+  const result = await startExperiment(id, { rest }, { showOriginal: show_original });
   if ("refused" in result) {
     throw new Error(result.refused);
   }
