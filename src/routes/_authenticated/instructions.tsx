@@ -1,16 +1,18 @@
 // The Instructions page (formerly Knowledge): what Harness currently sees in
-// each Lovable project's/workspace's Knowledge, and the rules it has added
-// there (Round 3 §2). The write history and its per-version change diff
-// moved to the History page (Round 5 §3b) -- this page shows only current.
-// Checkpoint 2 2-C: the page now leads with "Needs your attention" (only
-// rules whose health status is review/retire_suggested), then two top-level
-// sections -- "Knowledge" (the existing per-target rules table, unchanged)
-// and "Skills" (a one-line-per-proposal summary that only ever links out to
-// /skills or /ledger; no Skill control of any kind lives here). Section
-// headings inside "Knowledge" below keep Lovable's own term (e.g. the
-// per-target heading, "Rules Harness Ledger added"), since that's what the
-// user sees in Lovable itself; only the page's own title, and its name in
-// the nav and URL, say "Instructions".
+// each Lovable project's/workspace's Knowledge, and the instructions it has
+// added there (Round 3 §2). The write history and its per-version change
+// diff moved to the History page (Round 5 §3b) -- this page shows only
+// current.
+// Round 9 Task 5 / spec §5: one heading per project (an <h2>, not a card),
+// one bordered row per instruction underneath -- the shared InstructionActions
+// component at size="row" (Round 9 Task 3), then the collapsed "Full
+// Knowledge text as Lovable sees it" fold. No "Needs your attention"
+// section any more (spec §1 principle 6: the Inbox owns attention -- see
+// RuleAttentionCard in improvement.tsx -- this page never asks the same
+// question twice), no per-row "..." menu, no per-row Keep/Review/Retire/
+// Not-sure VerdictControl. "Skills" stays, a one-line-per-proposal summary
+// that only ever links out to /skills or /ledger; no Skill control of any
+// kind lives here.
 // Only talks to the local Harness routes (fetchKnowledge/fetchSkills/
 // postExecutor/postImprovementAction) -- writing to Lovable itself happens
 // in the executor process, never from this page.
@@ -19,41 +21,27 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { DetailSection, RecommendationCallout } from "@/components/harness/decision-layout";
+import { AdvancedDetails, DetailSection } from "@/components/harness/decision-layout";
 import { ManagedBlockText } from "@/components/harness/timeline";
-import { VerdictControl } from "@/components/harness/improvement";
+import { InstructionActions, useRun, type Run } from "@/components/harness/improvement";
 import { ProjectFilter } from "@/components/harness/project-filter";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  aiReviewLine,
+  aiCheckSentence,
   attentionBlock,
   CANCEL_WRITE_TOAST,
   formatDate,
-  formatDay,
-  NOTHING_NEEDS_ATTENTION_LINE,
-  observedLine,
-  REMOVE_FROM_KNOWLEDGE_BODY,
-  REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL,
-  REMOVE_FROM_KNOWLEDGE_TITLE,
-  replayEvidenceLine,
-  ruleActiveLine,
+  instructionFallbackText,
+  instructionState,
+  instructionStateLine,
+  INSTRUCTIONS_ADDED_HEADING,
+  isTestCopyProject,
+  NO_INSTRUCTIONS_YET_LINE,
+  NO_WORKSPACE_INSTRUCTIONS_LINE,
+  observedSentence,
+  retiredInstructionsFoldLabel,
   skillProposalStatusLabel,
+  WORKSPACE_TARGET_EXPLANATION,
+  WORKSPACE_TARGET_LABEL,
 } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
@@ -63,8 +51,7 @@ import {
   postImprovementAction,
   skillsQueryOptions,
   syncResultText,
-  toastWriteOutcome,
-  type KnowledgeActiveRuleWithJudgedRun,
+  type KnowledgeActiveRule,
   type KnowledgeTargetView,
   type SkillProposalListItem,
 } from "@/lib/improvements-client";
@@ -103,14 +90,13 @@ export const Route = createFileRoute("/_authenticated/instructions")({
 const COLLAPSE_LINES = 12;
 const DEMO_REMOVE_COMMAND = "npm run harness:demo -- --remove";
 
-// Round 5 Task 3/4 / spec §3a: the rules table's Status column.
-const RULE_STATUS_LABEL: Record<NonNullable<KnowledgeActiveRuleWithJudgedRun["status"]>, string> = {
-  written: "In Lovable",
-  pending: "Staged",
-  stale: "Write needs attention",
-  failed: "Write needs attention",
-  testing: "Testing",
-};
+// Round 9 Task 5 / spec §2: RULE_STATUS_LABEL (In Lovable/Staged/Write
+// needs attention/Testing) is gone -- a row's own state line is now the
+// same instructionStateLine every page shows (Round 9 Task 1), passed
+// write_status: "written" below (see RuleRow), so it only ever distinguishes
+// In Lovable/Retired, never the in-flight write lifecycle. That lifecycle
+// stays visible where it's actionable -- the target-level pending-write
+// banner further down -- never duplicated per row.
 
 // The Harness-managed block, when present, gets its own visually marked
 // area; everything the user wrote stays plain text either side of it.
@@ -154,228 +140,113 @@ function KnowledgeText({
   );
 }
 
-// One card per active rule: the rule text -- a keyboard-focusable Link when
-// there's a Suggestions detail to open, plain text otherwise -- a muted
-// status/since line, what's been observed (with the shared VerdictControl),
-// and one "…" menu with the card's trailing actions. spec §4.
-// Fix round 1: the card itself is a mouse-only click convenience -- clicking
-// anywhere on it still navigates, but the rule is reachable by keyboard
-// through the Link/Button inside it, not by tabbing to the card itself.
-//
-// 2026-09-19, demo round: rule rows became cards, review item 7 layout.
-// Owner feedback on the final demo round: pages should use cards, not
-// tables, and the old Observed column (~180px) wrapped its several lines
-// and the inline verdict control awkwardly, while Status wrapped "In
-// Lovable" onto two lines. One <article> per rule now gives every line --
-// the meta line, the attention/active line, observed/aiReview, the verdict
-// control, and the replay line -- the full width of the card instead of a
-// cramped column.
-const RULE_LINK_CLASS =
-  "text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-function RuleCard({
+// Round 9 Task 5 / spec §1 principle 1, §5: one object, one shape -- a row
+// is the shared InstructionActions component at size="row", the same
+// text/state-line/evidence/actions shape Inbox and the detail page render
+// at their own sizes, never a bespoke layout of its own. `retired` decides
+// the state (instructionState's own precedence already treats a retired
+// decision as terminal, ahead of health) -- the same component renders
+// both an active row and a row inside the collapsed Retired fold below.
+function RuleRow({
   rule,
-  retireBusy,
-  onRetire,
+  retired,
+  busy,
+  run,
 }: {
-  rule: KnowledgeActiveRuleWithJudgedRun;
-  retireBusy: boolean;
-  onRetire: (ruleId: number) => void;
+  rule: KnowledgeActiveRule;
+  retired: boolean;
+  busy: boolean;
+  run: Run;
 }) {
-  const navigate = useNavigate();
   const improvementId = rule.improvement_id;
-  const goToSuggestion = () => {
-    if (improvementId != null) navigate({ to: "/ledger", search: { improvement: improvementId } });
-  };
-
-  const text =
-    rule.text || (improvementId != null ? `Suggestion #${improvementId}` : `Rule #${rule.id}`);
-  const status = rule.status ? RULE_STATUS_LABEL[rule.status] : "—";
-  const since = rule.since ? formatDay(rule.since) : null;
-  const metaLine = since ? `${status} · since ${since}` : status;
-
-  // Checkpoint 2 2-C (spec §9): the health status decides which line this
-  // card leads with -- the attention block for 'review'/'retire_suggested',
-  // else the plain "is it live and replay-tested" fact. observedLine/
-  // aiReviewLine/the VerdictControl's own verdictLine/replayEvidenceLine
-  // each stay their own line below it, never merged into one sentence.
-  const healthStatus = rule.health?.status ?? null;
-  const needsAttention = healthStatus === "review" || healthStatus === "retire_suggested";
-  const attention = needsAttention ? attentionBlock(rule.health ?? null) : null;
-  const observed = observedLine(rule.health ?? null);
-  const aiReview = aiReviewLine(rule.health ?? null);
-  const replayLine = replayEvidenceLine(rule.judged_run ?? null);
+  const text = rule.text || instructionFallbackText(rule.id);
+  const state = instructionState({
+    decision: { status: "accepted", retired },
+    health: rule.health ?? null,
+  });
+  // The row's own "since" (added, or -- once the knowledge route reports
+  // one -- last changed for a retired row) drives whichever of
+  // written_at/decided_at instructionStateLine's own state actually reads;
+  // write_status is always "written" here -- a row is either live (in
+  // Lovable) or retired, never a staged/failed/testing write of its own
+  // (that in-flight lifecycle stays on the target's pending-write banner,
+  // never duplicated per row).
+  const stateLine = instructionStateLine({
+    state,
+    decided_at: rule.since ?? null,
+    written_at: rule.since ?? null,
+    write_status: "written",
+  });
+  const attention = state === "live_attention" ? attentionBlock(rule.health ?? null) : null;
+  const observed = retired ? null : observedSentence(rule.health ?? null);
+  const aiCheck = retired ? null : aiCheckSentence(rule.health ?? null);
+  const openHref =
+    improvementId != null ? `/ledger?improvement=${improvementId}&from=instructions` : undefined;
 
   return (
-    <article
-      {...(improvementId != null ? { onClick: goToSuggestion } : {})}
-      className={
-        improvementId != null
-          ? "cursor-pointer space-y-2 rounded-md border p-4 hover:bg-muted/40"
-          : "space-y-2 rounded-md border p-4"
-      }
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-base font-medium">
-          {improvementId != null ? (
-            <Link to="/ledger" search={{ improvement: improvementId }} className={RULE_LINK_CLASS}>
-              {text}
-            </Link>
-          ) : (
-            <span>{text}</span>
-          )}
-        </div>
-        <div onClick={(e) => e.stopPropagation()}>
-          {/* Round 6 Task 4 / spec §4: the card's trailing actions collapse
-              into one "…" menu -- Remove from Knowledge (the AlertDialog
-              confirm nested inside its own menu item, the standard pattern
-              for a confirm triggered from a menu) and Open suggestion. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" size="sm" aria-label="Rule actions">
-                …
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                    Remove from Knowledge
-                  </DropdownMenuItem>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>{REMOVE_FROM_KNOWLEDGE_TITLE}</AlertDialogTitle>
-                    <AlertDialogDescription>{REMOVE_FROM_KNOWLEDGE_BODY}</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction disabled={retireBusy} onClick={() => onRetire(rule.id)}>
-                      {REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              {improvementId != null ? (
-                <DropdownMenuItem onSelect={goToSuggestion}>Open suggestion</DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground">{metaLine}</p>
-      {attention ? (
-        <div className="space-y-0.5">
-          <p className="text-xs font-medium">{attention.title}</p>
-          <p className="text-xs text-muted-foreground">{attention.line}</p>
-          <p className="text-xs text-muted-foreground">{attention.recommendation}</p>
-          {improvementId != null ? (
-            <Link
-              to="/ledger"
-              search={{ improvement: improvementId }}
-              className="text-xs text-primary underline underline-offset-2"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {attention.action}
-            </Link>
-          ) : null}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">{ruleActiveLine(rule.judged_run != null)}</p>
-      )}
+    <article className="space-y-2 rounded-md border p-4">
+      <p className="text-base font-medium">{text}</p>
+      <p className="text-xs text-muted-foreground">{stateLine}</p>
+      {/* spec §3: an attention row says why in one line, above the actions -- never a different action set from an ordinary live row's own. */}
+      {attention ? <p className="text-xs text-muted-foreground">{attention.line}</p> : null}
       {observed ? <p className="text-xs text-muted-foreground">{observed}</p> : null}
-      {aiReview ? <p className="text-xs text-muted-foreground">{aiReview}</p> : null}
-      {/* Round 6 Task 4 / spec §4: the same compact, inline verdict control
-          as the Suggestions card -- one visible control here, instead of a
-          separate row of "Helped/Didn't help/Not sure" buttons plus its own
-          "You said..." line (verdictLine is rendered inside VerdictControl
-          itself once a verdict exists). */}
-      <div onClick={(e) => e.stopPropagation()}>
-        <VerdictControl ruleId={rule.id} verdict={rule.verdict ?? null} />
-      </div>
-      {replayLine ? <p className="text-xs text-muted-foreground">{replayLine}</p> : null}
-      {/* adherence-line */}
+      {aiCheck ? <p className="text-xs text-muted-foreground">{aiCheck}</p> : null}
+      <InstructionActions
+        rule={{ rule_id: rule.id, improvement_id: improvementId }}
+        state={state}
+        size="row"
+        busy={busy}
+        run={run}
+        {...(openHref ? { openHref } : {})}
+      />
     </article>
   );
 }
 
-function RulesList({
+// Collapsed by default -- a project with no retired instructions never
+// shows this at all. Reuses AdvancedDetails (its own "rounded-md border"
+// fold, defined once in decision-layout.tsx) rather than a second,
+// hand-rolled bordered wrapper of its own -- rows are the only bordered
+// boxes this page defines directly (spec §5).
+function RetiredInstructionsFold({
   rules,
-  retireBusy,
-  onRetire,
+  busy,
+  run,
 }: {
-  rules: KnowledgeActiveRuleWithJudgedRun[];
-  retireBusy: boolean;
-  onRetire: (ruleId: number) => void;
-}) {
-  if (rules.length === 0) {
-    return <p className="text-sm text-muted-foreground">No rules yet.</p>;
-  }
-  return (
-    <div className="space-y-3">
-      {rules.map((r) => (
-        <RuleCard key={r.id} rule={r} retireBusy={retireBusy} onRetire={onRetire} />
-      ))}
-    </div>
-  );
-}
-
-// Collapsed by default -- a project with no retired rules never shows this
-// at all, and one that does keeps the rules table the focus.
-function RetiredRulesList({
-  rules,
-  readdBusy,
-  onReadd,
-}: {
-  rules: KnowledgeActiveRuleWithJudgedRun[];
-  readdBusy: boolean;
-  onReadd: (improvementId: number) => void;
+  rules: KnowledgeActiveRule[];
+  busy: boolean;
+  run: Run;
 }) {
   if (rules.length === 0) return null;
   return (
-    <details className="rounded-md border">
-      <summary className="cursor-pointer px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        Retired rules ({rules.length})
-      </summary>
-      <ul className="space-y-2 border-t px-3 py-3">
+    <AdvancedDetails title={retiredInstructionsFoldLabel(rules.length)}>
+      <div className="space-y-3">
         {rules.map((r) => (
-          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="text-muted-foreground">{r.text || `Rule #${r.id}`}</span>
-            {r.improvement_id != null ? (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={readdBusy}
-                onClick={() => onReadd(r.improvement_id!)}
-              >
-                Re-add
-              </Button>
-            ) : null}
-          </li>
+          <RuleRow key={r.id} rule={r} retired busy={busy} run={run} />
         ))}
-      </ul>
-    </details>
+      </div>
+    </AdvancedDetails>
   );
 }
 
+// Round 9 Task 5 / spec §5: the target heading is an <h2>, not a card --
+// this function's own root renders no "rounded-md border" of its own at
+// all (rows, and the AdvancedDetails/DetailSection folds they and the
+// Knowledge text sit inside, are the only bordered boxes on this page).
 function TargetSection({
   target,
   syncing,
   onSyncNow,
-  retireBusy,
-  onRetire,
-  readdBusy,
-  onReadd,
+  busy,
+  run,
   cancelWriteBusy,
   onCancelWrite,
 }: {
   target: KnowledgeTargetView;
   syncing: boolean;
   onSyncNow: () => void;
-  retireBusy: boolean;
-  onRetire: (ruleId: number) => void;
-  readdBusy: boolean;
-  onReadd: (improvementId: number) => void;
+  busy: boolean;
+  run: Run;
   cancelWriteBusy: boolean;
   onCancelWrite: (versionId: number) => void;
 }) {
@@ -387,37 +258,39 @@ function TargetSection({
   // Round 6c part A / item 2: the workspace target's heading gets a plain-
   // language retitle and a one-line explanation of what it actually is --
   // the owner asked "what is Workspace?" and "Workspace" alone (Lovable's
-  // own name for the target) didn't answer that.
+  // own name for the target) didn't answer that. Round 9 Task 2 renamed the
+  // label itself to WORKSPACE_TARGET_LABEL ("All my projects"); Round 9
+  // Task 5 keeps the same explanatory sub-line, reworded to say
+  // "instructions" (spec §2 vocabulary).
   const isWorkspace = target.target === "workspace";
 
   return (
-    <section className="space-y-4 rounded-md border p-4">
+    <section className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold">
-          {isWorkspace ? "All your projects (workspace Knowledge)" : target.name}
+          {isWorkspace ? WORKSPACE_TARGET_LABEL : target.name}
         </h2>
         {isWorkspace ? (
-          <p className="text-sm text-muted-foreground">
-            Rules you add to all your projects live here; Lovable applies them to every project in
-            this workspace.
-          </p>
+          <p className="text-sm text-muted-foreground">{WORKSPACE_TARGET_EXPLANATION}</p>
         ) : null}
         <p className="text-sm text-muted-foreground">{statusLine}</p>
       </div>
 
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">Rules Harness Ledger added</h3>
-        <RulesList
-          rules={target.active_rules as KnowledgeActiveRuleWithJudgedRun[]}
-          retireBusy={retireBusy}
-          onRetire={onRetire}
-        />
-        <RetiredRulesList
-          rules={target.retired_rules as KnowledgeActiveRuleWithJudgedRun[]}
-          readdBusy={readdBusy}
-          onReadd={onReadd}
-        />
-      </div>
+      {/* Round 9 Task 5 / spec §5: a project with no instructions renders
+          just the heading above, this one line, and the Knowledge fold
+          below -- no card, no empty "Instructions Harness Ledger added"
+          heading over nothing. */}
+      {target.active_rules.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{NO_INSTRUCTIONS_YET_LINE}</p>
+      ) : (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">{INSTRUCTIONS_ADDED_HEADING}</h3>
+          {target.active_rules.map((r) => (
+            <RuleRow key={r.id} rule={r} retired={false} busy={busy} run={run} />
+          ))}
+        </div>
+      )}
+      <RetiredInstructionsFold rules={target.retired_rules} busy={busy} run={run} />
 
       <DetailSection
         title={`Full Knowledge text as Lovable sees it (${content.length} characters)`}
@@ -426,7 +299,13 @@ function TargetSection({
       </DetailSection>
 
       {target.pending_write ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+        // Round 9 Task 5 / spec §5: this banner's own "Sync now" is kept
+        // (it's the only way to retry a write that failed or never went
+        // out, not a duplicate of the page header's own button, which
+        // re-reads every target's Knowledge instead) -- but it's no longer
+        // a bordered box of its own; a tinted background is enough to mark
+        // it as a notice, and rows stay the only bordered boxes here.
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/30 p-3 text-sm">
           {/* Round 6 Tasks 2-3 / spec §§2-3: pressing a decision writes
               immediately when Harness is connected -- reaching this staged
               state at all now means the write failed or Harness was
@@ -453,76 +332,13 @@ function TargetSection({
   );
 }
 
-// ---- Checkpoint 2 2-C: "Needs your attention" -- across every target, only
-// the rules whose health status is 'review' or 'retire_suggested' (never
-// 'snoozed': a snoozed rule was already reviewed and asked not to resurface
-// for a while). Each item repeats the same attentionBlock() a rule's own
-// row shows inline (spec §9) so the two never disagree, plus which
-// project/workspace it's in and a "Review rule" link to its Suggestions
-// detail. ----
-type AttentionItem = {
-  key: string;
-  targetName: string;
-  ruleText: string;
-  improvementId: number | null;
-  block: NonNullable<ReturnType<typeof attentionBlock>>;
-};
-
-function collectAttentionItems(targets: KnowledgeTargetView[]): AttentionItem[] {
-  const items: AttentionItem[] = [];
-  for (const t of targets) {
-    for (const r of t.active_rules as KnowledgeActiveRuleWithJudgedRun[]) {
-      const status = r.health?.status ?? null;
-      if (status !== "review" && status !== "retire_suggested") continue;
-      const block = attentionBlock(r.health ?? null);
-      if (!block) continue;
-      items.push({
-        key: `${t.target}-${t.id}-${r.id}`,
-        targetName: t.name,
-        ruleText: r.text || `Rule #${r.id}`,
-        improvementId: r.improvement_id,
-        block,
-      });
-    }
-  }
-  return items;
-}
-
-function NeedsAttentionSection({ items }: { items: AttentionItem[] }) {
-  return (
-    <section aria-labelledby="needs-attention" className="space-y-3">
-      <h2 id="needs-attention" className="text-lg font-semibold">
-        Needs your attention
-      </h2>
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{NOTHING_NEEDS_ATTENTION_LINE}</p>
-      ) : (
-        <ul className="space-y-3">
-          {items.map((it) => (
-            <li key={it.key} className="space-y-2 rounded-md border p-4">
-              <p className="text-xs text-muted-foreground">{it.targetName}</p>
-              <RecommendationCallout
-                title={it.block.title}
-                recommendation={it.block.recommendation}
-                why={it.block.line}
-              />
-              <p className="text-sm font-medium">{it.ruleText}</p>
-              {it.improvementId != null ? (
-                <Link
-                  to="/ledger"
-                  search={{ improvement: it.improvementId }}
-                  className="text-sm text-primary underline underline-offset-2"
-                >
-                  {it.block.action}
-                </Link>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
+// Round 9 Task 5 / spec §1 principle 6, §5: "Needs your attention" is gone
+// from this page outright -- every decision it asked for is decidable on
+// the Inbox's own attention card (RuleAttentionCard, improvement.tsx),
+// which already reuses this same attentionBlock() helper for its "why"
+// line; this page repeats the same fact on each live row instead of asking
+// it again in a second section above (spec principle 4: no contradictions,
+// never two places disagreeing about whether attention is needed).
 
 // ---- Checkpoint 2 2-C: the "Skills" section -- links out to /skills and
 // lists Harness Ledger's own Skill proposals in one line each; nothing
@@ -590,28 +406,16 @@ function Page() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Sync failed"),
   });
 
-  // Task C2 / spec §4b-§5: manual Retire and Re-add, the same action path
-  // the Inbox's retirement proposal card uses -- both invalidate the
-  // Improvements list too, since a rule's own card there changes group.
-  const retireRule = useMutation({
-    mutationFn: (ruleId: number) => postImprovementAction({ action: "retire", rule_id: ruleId }),
-    onSuccess: (data) => {
-      toastWriteOutcome(data.write, "Retired.");
-      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
-      void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Retire failed"),
-  });
-
-  const readdRule = useMutation({
-    mutationFn: (improvementId: number) =>
-      postImprovementAction({ action: "readd", id: improvementId }),
-    onSuccess: (data) => {
-      toastWriteOutcome(data.write, "Re-added.");
-      void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
-      void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Re-add failed"),
+  // Round 9 Task 5 / spec §3: every row's Keep/Retire/Test/Re-add now goes
+  // through the one shared InstructionActions component (Round 9 Task 3),
+  // which needs the same busy/run pair useRun already gives every other
+  // caller (Inbox, the detail page) -- replaces this page's own hand-rolled
+  // retire/readd useMutations (Task C2's original manual-Retire/Re-add
+  // path), both of which invalidated the same two queries this does.
+  const { busy: rowBusy, run: rowRun } = useRun((msg) => {
+    toast.success(msg);
+    void qc.invalidateQueries({ queryKey: ["harness-knowledge"] });
+    void qc.invalidateQueries({ queryKey: ["harness-improvements"] });
   });
 
   // Round 6 Task 3 / spec §3: Cancel on the pending-write banner -- only
@@ -668,7 +472,13 @@ function Page() {
   }
 
   const data = query.data;
-  const targets = data?.targets ?? [];
+  // Round 9 Task 5: a Lovable test copy (a throwaway project Harness Ledger
+  // itself made for a historical replay) never earns its own section here
+  // -- ProjectFilter already hides it from the filter chips (Round 9 Task
+  // 2), this drops it from the section list itself too.
+  const targets = (data?.targets ?? []).filter(
+    (t) => t.target !== "project" || !isTestCopyProject(t.name),
+  );
   // Round 6c part A / item 2: the workspace target only earns its own
   // section once there's something in it -- otherwise it's a confusing
   // empty card. "Content" here is the same thing the section itself would
@@ -710,7 +520,6 @@ function Page() {
   };
   // ---- end Checkpoint 3 UX fix 2 ----
 
-  const attentionItems = collectAttentionItems(visibleTargets);
   const skillProposals = skills.data?.proposals ?? [];
   const visibleSkillProposals =
     selectedTarget == null
@@ -758,10 +567,10 @@ function Page() {
         <>
           {/* Round 9 Task 2: the shared ProjectFilter -- All projects plus
               one chip per allowed project plus the workspace target (only
-              offered once one actually exists) -- narrows Needs your
-              attention, Knowledge and Skills below to the chosen target;
-              changes the URL (?project=) so an Overview/Inbox link can open
-              here already scoped. */}
+              offered once one actually exists) -- narrows Knowledge and
+              Skills below to the chosen target; changes the URL
+              (?project=) so an Overview/Inbox link can open here already
+              scoped. */}
           <ProjectFilter
             options={projectOptions}
             value={search.project ?? "all"}
@@ -770,8 +579,6 @@ function Page() {
             }
             includeWorkspace={workspaceTarget != null}
           />
-
-          <NeedsAttentionSection items={attentionItems} />
 
           <section aria-labelledby="instructions-knowledge" className="space-y-6">
             <h2 id="instructions-knowledge" className="text-lg font-semibold">
@@ -788,20 +595,15 @@ function Page() {
                       target={t}
                       syncing={syncNow.isPending}
                       onSyncNow={() => syncNow.mutate()}
-                      retireBusy={retireRule.isPending}
-                      onRetire={(ruleId) => retireRule.mutate(ruleId)}
-                      readdBusy={readdRule.isPending}
-                      onReadd={(improvementId) => readdRule.mutate(improvementId)}
+                      busy={rowBusy}
+                      run={rowRun}
                       cancelWriteBusy={cancelWrite.isPending}
                       onCancelWrite={(versionId) => cancelWrite.mutate(versionId)}
                     />
                   ),
                 )}
                 {showWorkspaceFallbackNote ? (
-                  <p className="text-sm text-muted-foreground">
-                    No workspace-wide rules yet. Choose "Add to all my projects" on a suggestion to
-                    create one.
-                  </p>
+                  <p className="text-sm text-muted-foreground">{NO_WORKSPACE_INSTRUCTIONS_LINE}</p>
                 ) : null}
               </>
             )}

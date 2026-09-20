@@ -197,11 +197,22 @@ test("improvement.tsx: DecidedStatus has no 'Try again'/retryableVersion of its 
 
 // ---- instructions.tsx / history.tsx also read the write outcome ----
 
-test("instructions.tsx: retire/readd/sync toasts read the write outcome and the sync result", () => {
+// Round 9 Task 5 / spec §3: instructions.tsx no longer stages its own
+// retire/readd useMutations (and so no longer spells out
+// `toastWriteOutcome(data.write, "Retired."/"Re-added.")` itself) -- every
+// row's Retire/Keep/Test/Re-add now goes through the one shared
+// InstructionActions component via useRun (same as Inbox and the detail
+// page), which already reads the write outcome through toastWriteOutcome
+// internally (RetireConfirm's own RETIRED_TOAST, the readd case's
+// "Re-added." message) -- see ux-round9-task5.test.ts's own pin on that.
+// Sync now is unaffected and still reads syncResultText directly.
+test("instructions.tsx: sync toasts read the sync result; retire/readd toasts now come from the shared InstructionActions/useRun path", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(code, /toastWriteOutcome\(data\.write, "Retired\."\)/);
-  assert.match(code, /toastWriteOutcome\(data\.write, "Re-added\."\)/);
   assert.match(code, /syncResultText\(data\)/);
+  assert.match(code, /const \{ busy: rowBusy, run: rowRun \} = useRun\(/);
+  const improvementCode = codeOnly(readApp(DETAIL));
+  assert.match(improvementCode, /RETIRED_TOAST\s*=\s*"Retired\."/);
+  assert.match(improvementCode, /run\(\{ action: "readd", id: improvementId \}, "Re-added\."\)/);
 });
 
 test("history.tsx: restore's toast reads the write outcome", () => {

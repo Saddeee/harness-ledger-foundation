@@ -37,34 +37,34 @@ const HISTORY_PAGE = "routes/_authenticated/history.tsx";
 const PROJECT_FILTER = "components/harness/project-filter.tsx";
 const TIMELINE = "components/harness/timeline.tsx";
 
-// ---- 1. Instructions: section order -- Needs your attention, Knowledge,
-// Skills ----
+// ---- 1. Instructions: section order -- Knowledge, Skills ----
+// Round 9 Task 5 / spec §1 principle 6, §5: "Needs your attention" is gone
+// from this page outright -- every decision it asked for is decidable on
+// the Inbox's own attention card (RuleAttentionCard, improvement.tsx)
+// instead, so there is no longer a first section to order ahead of
+// Knowledge here. Round 8's open item 7 ("Instructions asks a question on
+// every row while a section above says nothing needs attention") is closed
+// by removing both halves of that contradiction at once.
 
-test("instructions.tsx: 'Needs your attention' comes before 'Knowledge', which comes before 'Skills'", () => {
+test("instructions.tsx: 'Knowledge' comes before 'Skills'; there is no 'Needs your attention' section any more", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
-  // NeedsAttentionSection and SkillsSection are their own components,
-  // defined (and so textually present) above Page() -- what actually
-  // proves render order is where Page()'s own JSX invokes/inlines each
-  // section, so scope the search to Page()'s body.
   const pageAt = code.indexOf("function Page()");
   assert.ok(pageAt >= 0, "function Page() not found");
   const page = code.slice(pageAt);
-  const attentionAt = page.indexOf("<NeedsAttentionSection");
+  assert.ok(!/NeedsAttentionSection/.test(page), "the attention section is gone");
   const knowledgeAt = page.indexOf('id="instructions-knowledge"');
   const skillsAt = page.indexOf("<SkillsSection");
-  assert.ok(attentionAt >= 0, "Page() does not render <NeedsAttentionSection>");
   assert.ok(knowledgeAt >= 0, "Page() has no Knowledge section");
   assert.ok(skillsAt >= 0, "Page() does not render <SkillsSection>");
-  assert.ok(attentionAt < knowledgeAt, "Needs your attention must come before Knowledge");
   assert.ok(knowledgeAt < skillsAt, "Knowledge must come before Skills");
 });
 
-test("instructions.tsx: only rules whose health status is 'review' or 'retire_suggested' are collected for Needs your attention", () => {
+test("instructions.tsx: no attention-collection code left -- collectAttentionItems/NOTHING_NEEDS_ATTENTION_LINE moved out with the section", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(code, /status !== "review" && status !== "retire_suggested"/);
-  assert.ok(ux.NOTHING_NEEDS_ATTENTION_LINE === "Nothing needs your attention.");
-  assert.match(code, /NOTHING_NEEDS_ATTENTION_LINE/);
+  assert.ok(!/collectAttentionItems/.test(code));
+  assert.ok(!/NOTHING_NEEDS_ATTENTION_LINE/.test(code));
+  assert.equal(ux.NOTHING_NEEDS_ATTENTION_LINE, "Nothing needs your attention.");
 });
 
 // ---- 2. Instructions: the exact per-rule status lines ----
@@ -82,14 +82,22 @@ test("harness-ux.ts: ruleActiveLine and replayEvidenceLine read exactly as speci
   );
 });
 
-test("instructions.tsx: renders ruleActiveLine/observedLine/aiReviewLine/replayEvidenceLine as separate lines, and the attention block takes their place when a rule needs review", () => {
+// Round 9 Task 5 / spec §4-§5: a row's evidence is now the two plain,
+// never-merged sentences observedSentence/aiCheckSentence (Round 9 Task 1),
+// same convention as Inbox/the detail page -- ruleActiveLine/observedLine/
+// aiReviewLine/replayEvidenceLine (the old merged/duplicated wiring) are
+// gone from this page; the attention "why" line still takes attentionBlock,
+// same as the Inbox's own attention card.
+test("instructions.tsx: a row's evidence is observedSentence(rule.health)/aiCheckSentence(rule.health), and the attention block still supplies the 'why' line", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(code, /ruleActiveLine\(rule\.judged_run != null\)/);
-  assert.match(code, /observedLine\(rule\.health/);
-  assert.match(code, /aiReviewLine\(rule\.health/);
-  assert.match(code, /replayEvidenceLine\(rule\.judged_run/);
+  assert.match(code, /observedSentence\(rule\.health/);
+  assert.match(code, /aiCheckSentence\(rule\.health/);
   assert.match(code, /attentionBlock\(rule\.health/);
-  assert.match(code, /<VerdictControl ruleId=\{rule\.id\}/);
+  assert.ok(!/ruleActiveLine/.test(code));
+  assert.ok(!/observedLine\(/.test(code));
+  assert.ok(!/aiReviewLine/.test(code));
+  assert.ok(!/replayEvidenceLine/.test(code));
+  assert.ok(!/VerdictControl/.test(code));
 });
 
 // ---- 3. Skills: section order and card fields ----
@@ -162,16 +170,17 @@ test("instructions.tsx: a project filter control exists, using harness-ux's own 
   );
 });
 
-test("instructions.tsx: Needs your attention, Knowledge and Skills all read the filtered view", () => {
+// Round 9 Task 5: "Needs your attention" (and collectAttentionItems with
+// it) is gone from this page -- Knowledge and Skills still read the
+// filtered view exactly as before.
+test("instructions.tsx: Knowledge and Skills both read the filtered view", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
   assert.match(code, /const visibleTargets = selectedTarget/);
-  assert.match(code, /collectAttentionItems\(visibleTargets\)/);
   assert.match(code, /\{visibleTargets\.map\(/);
   assert.match(code, /const visibleSkillProposals =/);
   assert.match(code, /<SkillsSection proposals=\{visibleSkillProposals\} \/>/);
-  // The raw, unfiltered lists are never handed straight to a section once
-  // the filter exists.
-  assert.ok(!/collectAttentionItems\(targets\)/.test(code));
+  // The raw, unfiltered list is never handed straight to a section once the
+  // filter exists.
   assert.ok(!/<SkillsSection proposals=\{skillProposals\} \/>/.test(code));
 });
 

@@ -91,7 +91,8 @@ test("instructions.tsx: rules table, collapsed Knowledge text, demo notice; the 
   for (const text of [
     "Demo data is loaded so you can see how history looks.",
     "harness:demo -- --remove",
-    "Rules Harness Ledger added",
+    // Round 9 Task 5 / spec §2 vocabulary: "instruction", never "rule".
+    "Instructions Harness Ledger added",
     "Show all",
     "Full Knowledge text as Lovable sees it",
   ]) {

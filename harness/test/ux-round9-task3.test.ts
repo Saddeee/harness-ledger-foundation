@@ -110,7 +110,10 @@ test("improvement.tsx: InstructionActions wires add/skip/judge/keep/retire/test/
   assert.match(fn, /action: "verdict" as const, rule_id: ruleId, verdict: "keep" as const/);
   assert.match(fn, /<RetireConfirm[\s\S]{0,200}trigger=\{INSTRUCTION_ACTION_LABELS\.retire\}/);
   assert.match(fn, /<TestButton[\s\S]{0,200}trigger=\{INSTRUCTION_ACTION_LABELS\.test\}/);
-  assert.match(fn, /action: "readd", id: item\.id/);
+  // Round 9 Task 5: readd now posts the derived `improvementId` (item?.id
+  // ?? rule?.improvement_id), not item.id directly -- see
+  // ux-round9-task5.test.ts for the fuller pin on this.
+  assert.match(fn, /action: "readd", id: improvementId/);
   assert.match(fn, /onClick=\{onEdit\}/);
   assert.match(fn, /href=\{openHref\}/);
 });
@@ -127,9 +130,11 @@ test('improvement.tsx: InstructionActions\' retire action posts { action: "retir
 test('improvement.tsx: the ordinary Suggested state\'s own Add button gets actionConsequence("add", ...) as its consequence line', () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const fn = slice(code, "export function InstructionActions", "function DecidedStatus");
+  // Round 9 Task 5: `item` is now optional on InstructionActions (a row can
+  // supply just `rule` instead) -- this read is optional-chained now.
   assert.match(
     fn,
-    /actionConsequence\("add", item\.destination === "workspace" \? "workspace" : "project"\)/,
+    /actionConsequence\("add", item\?\.destination === "workspace" \? "workspace" : "project"\)/,
   );
 });
 

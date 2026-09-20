@@ -173,7 +173,10 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
   // (= "Re-add") rather than a literal "Re-add" string of its own; Round 9
   // Task 4 removed DecidedStatus's own separate (literal-text) Re-add
   // button, which used to be this test's only literal match.
-  assert.match(code, /action: "readd", id: item\.id/);
+  // Round 9 Task 5: readd now posts the derived `improvementId` (item?.id
+  // ?? rule?.improvement_id -- a row from instructions.tsx supplies the
+  // latter, with no full Improvement of its own), not item.id directly.
+  assert.match(code, /action: "readd", id: improvementId/);
   assert.match(code, /trigger=\{INSTRUCTION_ACTION_LABELS\.readd\}/);
   assert.equal(ux.INSTRUCTION_ACTION_LABELS.readd, "Re-add");
 });
@@ -186,61 +189,46 @@ test("lib/improvements-client.ts: Improvement carries kind, decision.retired, an
   assert.match(code, /retired: item\.decision\.retired/);
 });
 
-// Round 6 Task 4 / spec §4: rewritten with intent -- the row's own Retire
-// button is gone. Its exact action (retire, addressed by rule_id -- the
-// same "immediately retire this live rule and rewrite Knowledge" request
-// the card's own "Remove from Knowledge" already made in Round 6 Task 3)
-// now lives behind the row's "…" menu, worded the same way as the card:
-// "Remove from Knowledge" with the REMOVE_FROM_KNOWLEDGE_* copy, not
-// "Retire this rule?". Retired rules collapsed under "Retired rules (N)"
-// with Re-add is unchanged.
-test("instructions.tsx: 'Remove from Knowledge' under each live rule's '…' menu, and retired rules collapsed under 'Retired rules (N)' with Re-add", () => {
+// Round 9 Task 5 / spec §1-§3, §5: rewritten with intent -- the row's own
+// "…" menu (Remove from Knowledge + Open suggestion) is gone outright.
+// Retire/Keep/Re-add/Test/Open now come from the one shared
+// InstructionActions component, addressed via the row's own `rule` prop
+// (rule_id/improvement_id) instead of a bespoke retire-confirm dialog and
+// literal Re-add button; the collapsed retired fold is renamed "Retired
+// instructions (N)" (spec §2 vocabulary: "instruction", never "rule").
+// See ux-round9-task5.test.ts for the fuller structural pins.
+test("instructions.tsx: no 'Remove from Knowledge' menu; Retire/Re-add come from InstructionActions via the row's `rule` prop", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
 
   assert.ok(!raw.includes("Retire this rule?"), "the row no longer uses the proposal-style copy");
-  assert.ok(raw.includes("REMOVE_FROM_KNOWLEDGE_TITLE"));
-  assert.ok(raw.includes("REMOVE_FROM_KNOWLEDGE_BODY"));
-  assert.ok(raw.includes("REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL"));
-  assert.ok(raw.includes("Remove from Knowledge"));
-  assert.match(code, /Retired rules \(\{rules\.length\}\)/);
-  assert.match(code, /action: "retire", rule_id: ruleId/);
-  assert.match(code, /action: "readd", id: improvementId/);
-  assert.match(code, />\s*Re-add\s*</);
+  assert.ok(!raw.includes("Remove from Knowledge"));
+  assert.ok(!raw.includes("REMOVE_FROM_KNOWLEDGE_TITLE"));
+  assert.match(code, /retiredInstructionsFoldLabel\(/);
+  assert.match(code, /<InstructionActions/);
+  assert.match(code, /rule=\{\{ rule_id: rule\.id, improvement_id: improvementId \}\}/);
 
   // Still uses the client wrapper, never a raw fetch, same as the rest of
   // this page.
   assert.match(code, /postImprovementAction/);
   assert.ok(!/\bfetch\(/.test(code), "instructions.tsx must not call fetch directly");
 
-  // No <details open> anywhere on the page (the collapsed "Retired rules"
-  // section included).
+  // No <details open> anywhere on the page (the collapsed retired-fold
+  // included).
   for (const tag of code.match(/<details[^>]*>/g) ?? []) {
     assert.ok(!/\sopen\b/.test(tag), `details tag must not be open: ${tag}`);
   }
 });
 
-test("instructions.tsx: the row's trailing actions collapse into one DropdownMenu -- Remove from Knowledge and Open suggestion", () => {
+test("instructions.tsx: no DropdownMenu, no per-row '…' menu, no hand-rolled AlertDialog -- InstructionActions owns its own confirms", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
 
-  assert.match(
-    code,
-    /import\s*\{[^}]*\bDropdownMenu\b[^}]*\}\s*from\s*"@\/components\/ui\/dropdown-menu"/s,
-  );
-  assert.equal(
-    (code.match(/<DropdownMenu>/g) ?? []).length,
-    1,
-    "exactly one DropdownMenu on the row",
-  );
-  assert.ok(raw.includes('aria-label="Rule actions"'));
-  assert.match(code, />\s*…\s*</, 'the trigger reads "…"');
-  assert.match(code, />\s*Open suggestion\s*</);
-  // The confirm is an AlertDialog nested inside the menu item (the standard
-  // pattern for a confirm triggered from a menu, since AlertDialogTrigger
-  // can't be the DropdownMenu's own trigger) -- never the old ConfirmAction.
-  assert.ok(!/ConfirmAction/.test(code), "the row no longer uses the shared ConfirmAction");
-  assert.match(code, /<AlertDialogTrigger asChild>[\s\S]{0,120}<DropdownMenuItem/);
+  assert.ok(!/dropdown-menu/.test(code), "no DropdownMenu import left");
+  assert.ok(!raw.includes('aria-label="Rule actions"'));
+  assert.ok(!/>\s*…\s*</.test(code), 'no "…" trigger left');
+  assert.ok(!/Open suggestion/.test(code), '"Open suggestion" -> InstructionActions\' own "Open"');
+  assert.ok(!/AlertDialog/.test(code), "no hand-rolled AlertDialog left on this page");
 });
 
 test("inbox.tsx: Undo is not offered for a retirement confirmation, nor once the item is already written (still shows the message and Open) -- Round 6 Task 3 fix 1", () => {

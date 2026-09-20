@@ -60,37 +60,26 @@ test("instructions.tsx: renders a rules table, and the old per-version history v
   assert.ok(raw.includes("Full Knowledge text as Lovable sees it"));
   assert.match(code, /\(\$\{content\.length\} characters\)/);
 
-  // rule-card status vocabulary (spec §3a) -- the old column headers
-  // ("Rule"/"Status"/"Since"/"Observed") are gone with the table itself
-  // (2026-09-19 demo round, review item 7); only the status label copy
-  // constants remain.
-  for (const text of ["In Lovable", "Staged", "Write needs attention", "Testing"]) {
-    assert.ok(raw.includes(text), `instructions.tsx missing rule-card status text "${text}"`);
-  }
-  assert.ok(raw.includes("No rules yet."));
+  // Round 9 Task 5 / spec §2: the old rule-card status vocabulary ("In
+  // Lovable"/"Staged"/"Write needs attention"/"Testing") is gone -- a row's
+  // state line is the same instructionStateLine every page shows now
+  // ("In Lovable since <date>"/"Retired <date>"), and "No rules yet." is
+  // "No instructions yet." (spec §2 vocabulary: "instruction", never
+  // "rule").
+  assert.ok(!raw.includes("No rules yet."));
+  assert.match(code, /NO_INSTRUCTIONS_YET_LINE/);
 
-  // Round 6 Task 4 / spec §4: the row's trailing cell no longer keeps a
-  // bare Retire button (it's now a "…" menu with Remove from Knowledge and
-  // Open suggestion) and the Observed cell's own verdict-buttons marker was
-  // replaced by an actual <VerdictControl> -- the still-live "adherence-line"
-  // marker (a JSX comment, stripped out of `code` by codeOnly -- check the
-  // raw source instead) is the one part of this row Task 4 didn't touch.
-  assert.ok(raw.includes("{/* adherence-line */}"));
-  assert.ok(!raw.includes("{/* verdict-buttons */}"), "replaced by a real <VerdictControl>");
-
-  // Fix round 1: the row itself keeps native <tr> semantics -- clicking
-  // anywhere in the row is a mouse-only convenience navigating to the
-  // rule's Suggestions detail, but the row must not claim role="link" or
-  // steal a tab stop from the table; the rule text is reachable by keyboard
-  // through its own focusable Link/Button in the first cell instead.
-  assert.ok(!raw.includes('role="link"'), "the <tr> must not override its role to link");
-  assert.ok(!code.includes('role: "link"'), "the <tr> must not override its role to link");
-  assert.match(
-    code,
-    /<Link to="\/ledger" search=\{\{ improvement: improvementId \}\}/,
-    "the rule cell must render a focusable Link when there's a Suggestions detail to open",
-  );
-  assert.match(code, /to: "\/ledger", search: \{ improvement: improvementId \}/);
+  // Round 9 Task 5 / spec §1 principle 3, §5: navigating anywhere is "Open
+  // ..." -- the row's title is plain text, not a second, unlabeled way to
+  // reach the same place; the one link off a row is InstructionActions' own
+  // small "Open" action, a plain <a href> (never a DropdownMenu's "Open
+  // suggestion", and never the old bare Retire button either -- both are
+  // gone with the "…" menu entirely).
+  assert.ok(!raw.includes('role="link"'), 'a row must not claim role="link"');
+  assert.ok(!/DropdownMenu/.test(code), "the old '...' menu is gone");
+  assert.ok(!/Open suggestion/.test(code));
+  assert.match(code, /<InstructionActions/);
+  assert.match(code, /from=instructions/, "the row's Open link carries from=instructions");
 });
 
 // ---- 2. Restore (postKnowledge) moved off Instructions; only the client

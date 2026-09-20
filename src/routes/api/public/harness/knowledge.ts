@@ -248,6 +248,13 @@ async function buildKnowledgeResponse(adapter: Adapter) {
         id: r.id,
         text: r.instruction,
         improvement_id: adapter.getCorrectionIdForRule(r.id),
+        // Round 9 Task 5 / spec §2: the row's own "Retired <date>" state
+        // line (instructionStateLine) needs a date -- allVersions is
+        // already id-descending (store.listKnowledgeVersions' own order),
+        // so the first match is this rule's most recent knowledge_version,
+        // a fair stand-in for "when this last changed" (retiring a rule
+        // writes one).
+        since: allVersions.find((v) => v.rule_id === r.id)?.created_at ?? null,
       })),
       pending_write: pendingForTarget
         ? { version_id: pendingForTarget.id, created_at: pendingForTarget.created_at }

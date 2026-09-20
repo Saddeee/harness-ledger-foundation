@@ -150,13 +150,18 @@ test("improvement.tsx: the detail page's Evidence section reads item.health thro
 // "never merged"), plus the plain ruleActiveLine ("Active in Lovable" /
 // "Active, not replay-tested") in place of a healthy rule's old fallback,
 // or the shared attentionBlock() when the rule needs review.
-test("instructions.tsx: each active rule renders observedLine, aiReviewLine and ruleActiveLine as separate lines", () => {
+// Round 9 Task 5 / spec §4-§5: observedLine/aiReviewLine/ruleActiveLine (the
+// old merged-per-rule wiring) are gone from this page -- a row's evidence
+// is now observedSentence/aiCheckSentence directly (Round 9 Task 1's plain
+// sentences), same convention Inbox and the detail page already use;
+// attentionBlock still supplies the one "why" line for an attention row.
+test("instructions.tsx: each active row renders observedSentence and aiCheckSentence as separate lines", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
-  assert.match(code, /observedLine\(rule\.health/);
-  assert.match(code, /aiReviewLine\(rule\.health/);
-  assert.match(code, /ruleActiveLine\(/);
+  assert.match(code, /observedSentence\(rule\.health/);
+  assert.match(code, /aiCheckSentence\(rule\.health/);
   assert.match(code, /attentionBlock\(rule\.health/);
+  assert.ok(!/ruleActiveLine/.test(code));
 });
 
 // Rewritten with intent for checkpoint 3 UX fix 1: the owner reported the

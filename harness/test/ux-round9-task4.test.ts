@@ -138,13 +138,17 @@ test("improvement.tsx: RemoveFromKnowledgeConfirm stays exported, renamed to Ret
   assert.match(fn, /action: "retire", rule_id: ruleId/);
 });
 
-// ---- 5. decision-layout.tsx: CurrentStatus/PrimaryAction gone, RecommendationCallout stays ----
+// ---- 5. decision-layout.tsx: CurrentStatus/PrimaryAction gone ----
+// Round 9 Task 5 / spec §1 principle 6, §5: RecommendationCallout is gone
+// too now -- its only caller, instructions.tsx's "Needs your attention"
+// section, was removed this task (the Inbox owns attention). See
+// ux-round9-task5.test.ts for the fuller pin on its removal.
 
-test("decision-layout.tsx: CurrentStatus and PrimaryAction are gone; RecommendationCallout stays (instructions.tsx still uses it)", () => {
+test("decision-layout.tsx: CurrentStatus, PrimaryAction and RecommendationCallout are all gone", () => {
   const code = readApp(DECISION_LAYOUT);
   assert.ok(!/export function CurrentStatus/.test(code));
   assert.ok(!/export function PrimaryAction/.test(code));
-  assert.match(code, /export function RecommendationCallout/);
+  assert.ok(!/export function RecommendationCallout/.test(code));
 });
 
 // ---- 6. "What happened": Changed afterward compared to Built ----

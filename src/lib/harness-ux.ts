@@ -2536,3 +2536,33 @@ export function mostRecentBrokeQuote(
   );
 }
 // ---- end Round 9 Task 4 ----
+
+// ---- Round 9 Task 5 ----
+// Instructions (spec §5): one heading per project, one bordered row per
+// instruction -- InstructionActions size="row" (Round 9 Task 3) is now the
+// one place Keep/Retire/Test/Open live on this page; the old "..." row
+// menu, the per-row Keep/Review/Retire/Not-sure VerdictControl and the
+// "Needs your attention" section are gone (spec §1 principle 6: the Inbox
+// owns attention, this page only reads it, never asks it again). Every
+// sentence the page or a row renders is a constant/helper here, and says
+// "instruction", never "rule" (spec §2 vocabulary).
+export const INSTRUCTIONS_ADDED_HEADING = "Instructions Harness Ledger added";
+export const NO_INSTRUCTIONS_YET_LINE = "No instructions yet.";
+export const WORKSPACE_TARGET_EXPLANATION =
+  "Instructions you add to all your projects live here; Lovable applies them to every project in this workspace.";
+export const NO_WORKSPACE_INSTRUCTIONS_LINE =
+  'No workspace-wide instructions yet. Choose "Add to all my projects" on a suggestion to create one.';
+
+/** The collapsed fold's own summary label -- "Retired instructions (N)",
+ * never "Retired rules" (spec §2 vocabulary). */
+export function retiredInstructionsFoldLabel(n: number): string {
+  return `Retired instructions (${n})`;
+}
+
+/** The row's own fallback heading when Harness has no stored instruction
+ * text for this rule id (should be rare -- every row still needs a
+ * heading). Never "Rule #N". */
+export function instructionFallbackText(ruleId: number): string {
+  return `Instruction #${ruleId}`;
+}
+// ---- end Round 9 Task 5 ----

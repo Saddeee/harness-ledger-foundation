@@ -987,6 +987,7 @@ export function VerdictControl({
 // offers more than one of these three kinds at once).
 export function InstructionActions({
   item,
+  rule,
   state,
   size,
   busy,
@@ -995,7 +996,23 @@ export function InstructionActions({
   openHref,
   keepAction,
 }: {
-  item: Improvement;
+  // Round 9 Task 5 / spec §5 Instructions: `item` is now optional. An
+  // Instructions row comes from the Knowledge endpoint's KnowledgeActiveRule
+  // shape, not a full Improvement -- see `rule` below.
+  item?: Improvement;
+  // A row supplies just the two ids this component actually reads when
+  // there's no Improvement to hand over: the rule id (Keep/Retire) and the
+  // improvement/candidate id (Re-add). Building a fake Improvement instead
+  // would mean inventing every other field (title, decision, story, ...);
+  // this is the smaller, honest alternative. The one action a row-only
+  // caller can't get is Test -- TestButton needs TestInfo (available,
+  // credits, the latest run), which the Knowledge endpoint doesn't carry
+  // and computing it would mean exporting harness/src's own
+  // computeTestInfo (out of scope, and off-limits this task) -- so
+  // renderSmall("test") below renders nothing unless a real `item` is
+  // given. Every other caller (Inbox, the detail page, RetireCard) keeps
+  // passing `item` and is unaffected.
+  rule?: { rule_id: number; improvement_id: number | null };
   state: InstructionState;
   size: "card" | "full" | "row";
   busy: boolean;
@@ -1011,7 +1028,8 @@ export function InstructionActions({
   const btnSize: "default" | "sm" = size === "full" ? "default" : "sm";
   const linkClass = SMALL_ACTION_LINK_CLASS;
   const { primary, secondary, small, emphasis, note } = actionsForState(state);
-  const ruleId = item.rule_id;
+  const ruleId = item?.rule_id ?? rule?.rule_id ?? null;
+  const improvementId = item?.id ?? rule?.improvement_id ?? null;
 
   // The one consequence line a slot may carry -- tied to the action kind
   // itself, not to which slot is emphasised (spec §3: Retire always
@@ -1027,7 +1045,7 @@ export function InstructionActions({
     // repeats once opened, shown here too so the consequence is visible
     // before the click, same as every other state's own line.
     if (kind === "add" && !note) {
-      return actionConsequence("add", item.destination === "workspace" ? "workspace" : "project");
+      return actionConsequence("add", item?.destination === "workspace" ? "workspace" : "project");
     }
     return null;
   }
@@ -1037,6 +1055,11 @@ export function InstructionActions({
     const variant: "default" | "outline" = emphasis === slot ? "default" : "outline";
     switch (kind) {
       case "add":
+        // "add"/"skip"/"judge" only ever appear for the suggested/
+        // suggested_not_helped/waiting_judge states (actionsForState) --
+        // states no row-only (`rule`-prop) caller ever passes -- but the
+        // guard keeps this function honest for the type checker too.
+        if (!item) return null;
         return (
           <AddInstructionConfirm
             item={item}
@@ -1048,8 +1071,10 @@ export function InstructionActions({
           />
         );
       case "skip":
+        if (!item) return null;
         return <SkipConfirm item={item} busy={busy} run={run} size={btnSize} variant={variant} />;
       case "judge": {
+        if (!item) return null;
         const runId = item.test?.run?.id;
         if (runId == null) return null;
         return (
@@ -1092,6 +1117,7 @@ export function InstructionActions({
           />
         );
       case "readd":
+        if (improvementId == null) return null;
         return (
           <ConfirmAction
             trigger={INSTRUCTION_ACTION_LABELS.readd}
@@ -1102,7 +1128,7 @@ export function InstructionActions({
             consequences={READD_CONSEQUENCES}
             confirmLabel={INSTRUCTION_ACTION_LABELS.readd}
             disabled={busy}
-            onConfirm={() => void run({ action: "readd", id: item.id }, "Re-added.")}
+            onConfirm={() => void run({ action: "readd", id: improvementId }, "Re-added.")}
           />
         );
       default:
@@ -1113,7 +1139,9 @@ export function InstructionActions({
   function renderSmall(kind: InstructionActionKind) {
     switch (kind) {
       case "test":
-        return (
+        // Round 9 Task 5: no TestInfo without a real `item` -- see this
+        // component's own `rule` prop doc comment above.
+        return item ? (
           <TestButton
             key="test"
             item={item}
@@ -1122,7 +1150,7 @@ export function InstructionActions({
             size={btnSize}
             trigger={INSTRUCTION_ACTION_LABELS.test}
           />
-        );
+        ) : null;
       case "edit":
         return onEdit ? (
           <button key="edit" type="button" className={linkClass} onClick={onEdit}>

@@ -194,12 +194,14 @@ test("improvement.tsx: posts action: verdict from the shared VerdictControl, ask
 // DecidedStatus, replaced by InstructionActions' own fixed Keep/Retire for
 // a live instruction (spec §3's action table has no "Review"/"Not sure"
 // button any more; an existing row on record still renders correctly via
-// VERDICT_TEXT/verdictLine, it just never comes back as a choice). The
-// component itself stays exported -- instructions.tsx (unchanged by this
-// task) is still its one real caller.
-test("instructions.tsx still renders the shared VerdictControl; improvement.tsx exports it but no longer calls it (spec §3: Keep/Retire only, via InstructionActions)", () => {
-  const instructionsCode = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(instructionsCode, /<VerdictControl\b/, "instructions.tsx missing <VerdictControl");
+// VERDICT_TEXT/verdictLine, it just never comes back as a choice).
+// Round 9 Task 5 / spec §1 principle 1, §5: instructions.tsx dropped its
+// own call too -- a row's Keep/Retire now comes from the same
+// InstructionActions every other size already uses (never a separate
+// Keep/Review/Retire/Not-sure control per row, closing Round 8's open item
+// 7). VerdictControl stays exported (a version on record still renders its
+// own verdictLine wherever health is shown), just uncalled anywhere now.
+test("VerdictControl stays exported from improvement.tsx, called nowhere in that file (instructions.tsx no longer calls it either, spec §3)", () => {
   const improvementCode = codeOnly(readApp(IMPROVEMENT));
   assert.match(improvementCode, /export function VerdictControl/);
   assert.ok(
@@ -208,25 +210,20 @@ test("instructions.tsx still renders the shared VerdictControl; improvement.tsx 
   );
 });
 
-test("instructions.tsx: imports VerdictControl from improvement.tsx rather than re-declaring it", () => {
+test("instructions.tsx: no longer imports or renders VerdictControl at all (a row's Keep/Retire is InstructionActions' own now)", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(
-    code,
-    /import\s*\{\s*VerdictControl\s*\}\s*from\s*"@\/components\/harness\/improvement"/,
-  );
-  // The "You said.../Change" toggle and its own network call now live only
-  // in the shared component -- instructions.tsx no longer keeps a second
-  // copy of this state.
+  assert.ok(!/VerdictControl/.test(code), "no import, and no <VerdictControl call, left");
+  // The "You said.../Change" toggle and its own network call lived only in
+  // the shared component even before this task; nothing of the kind was
+  // ever duplicated here.
   assert.ok(!/setShowVerdictButtons/.test(code));
   assert.ok(!/VerdictButtons/.test(code), "the old, renamed component must not linger");
 });
 
-test("instructions.tsx: passes this row's rule id and current verdict to the shared control", () => {
+test("instructions.tsx: a row's Keep/Retire come from InstructionActions, addressed by rule_id/improvement_id via the row's `rule` prop", () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(
-    code,
-    /<VerdictControl\s+ruleId=\{rule\.id\}\s+verdict=\{rule\.verdict\s*\?\?\s*null\}\s*\/>/,
-  );
+  assert.match(code, /<InstructionActions/);
+  assert.match(code, /rule=\{\{ rule_id: rule\.id, improvement_id: improvementId \}\}/);
 });
 
 // Round 9 Task 4 / spec §3-§4: DecidedStatus no longer shows verdict buttons

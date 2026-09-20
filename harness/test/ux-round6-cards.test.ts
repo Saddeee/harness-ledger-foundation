@@ -227,13 +227,15 @@ test("improvement.tsx: VerdictControl is role=\"group\", labelled 'Is this rule 
 
 // Round 9 Task 4 / spec §3: improvement.tsx no longer calls VerdictControl
 // at all (the old Keep/Review/Retire/Not-sure row is gone from
-// DecidedStatus, replaced by InstructionActions' fixed Keep/Retire) -- it
-// only still exports the component, for instructions.tsx's own row.
-test("instructions.tsx still renders the shared VerdictControl, one per row; improvement.tsx exports it but calls it nowhere", () => {
+// DecidedStatus, replaced by InstructionActions' fixed Keep/Retire).
+// Round 9 Task 5 / spec §1 principle 1, §5: instructions.tsx dropped its
+// own call too -- a row's Keep/Retire is InstructionActions' own now
+// (never a second, separate verdict control per row); VerdictControl stays
+// exported (a version on record still renders correctly via
+// VERDICT_TEXT/verdictLine elsewhere), just called nowhere at all now.
+test("VerdictControl is called nowhere any more -- neither improvement.tsx nor instructions.tsx -- but stays exported", () => {
   const instructions = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  assert.match(instructions, /<VerdictControl\b/, "instructions.tsx missing <VerdictControl");
-  // Exactly one per row -- the Observed cell's own control, nothing else.
-  assert.equal(count(instructions, "<VerdictControl"), 1);
+  assert.equal(count(instructions, "<VerdictControl"), 0, "no row renders it any more");
   const improvement = codeOnly(readApp(IMPROVEMENT));
   assert.match(improvement, /export function VerdictControl/);
   assert.equal(count(improvement, "<VerdictControl"), 0);
@@ -285,19 +287,16 @@ test("harness/src/improvements.ts: recordVerdict returns { changed, effect } and
   assert.match(code, /verdict_effect: null,/);
 });
 
-// ---- 5. Instructions row: one DropdownMenu, Remove from Knowledge +
-// Open suggestion, and the VerdictControl living in a different cell ----
+// ---- 5. Instructions row: no more DropdownMenu, no more VerdictControl --
+// InstructionActions size="row" is the one action bar now (Round 9 Task 5) ----
 
-test("instructions.tsx: exactly one DropdownMenu per rule card, separate from its own VerdictControl", () => {
+test('instructions.tsx: no DropdownMenu and no VerdictControl on a row -- InstructionActions size="row" is the one action bar', () => {
   const code = codeOnly(readApp(INSTRUCTIONS_PAGE));
-  const row = slice(code, "function RuleCard", "function RulesList");
-  assert.equal(count(row, "<DropdownMenu>"), 1, "exactly one card menu");
-  assert.equal(count(row, "<VerdictControl"), 1, "exactly one verdict control");
-  // 2026-09-19 demo round (review item 7): the rules table became a card --
-  // the "…" menu now sits in the card's own header row (top-right, next to
-  // the rule text), ahead of the body content further down that includes
-  // the VerdictControl, reversing the old table's column order.
-  assert.ok(row.indexOf("<DropdownMenu>") < row.indexOf("<VerdictControl"));
+  const row = slice(code, "function RuleRow", "function RetiredInstructionsFold");
+  assert.equal(count(row, "<DropdownMenu>"), 0, "no card menu left");
+  assert.equal(count(row, "<VerdictControl"), 0, "no separate verdict control left");
+  assert.equal(count(row, "<InstructionActions"), 1, "exactly one action bar per row");
+  assert.match(row, /size="row"/);
 });
 
 // ---- 6. Addendum: the pending-write banner's own Cancel button reads the

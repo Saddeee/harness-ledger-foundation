@@ -15,6 +15,7 @@ import { join } from "node:path";
 // Isolated temp DB for this file only -- never harness/data/harness.db.
 process.env.HARNESS_DB_PATH = join(mkdtempSync(join(tmpdir(), "harness-test-")), "harness.db");
 const store = await import("../src/store.ts");
+const ux = await import("../../src/lib/harness-ux.ts");
 
 function readApp(rel: string): string {
   return readFileSync(new URL(`../../src/${rel}`, import.meta.url), "utf8");
@@ -37,22 +38,29 @@ const ANALYSE_NOTICE = "components/harness/analyse-notice.tsx";
 
 // ---- item 2: "What is Workspace?" ----
 
+// Round 9 Task 5 / spec §2: the retitled heading and its explanation moved
+// into harness-ux.ts constants (WORKSPACE_TARGET_LABEL/
+// WORKSPACE_TARGET_EXPLANATION, Round 9 Task 2 and Task 5) and the
+// explanation itself now says "instructions", never "rules" -- this test
+// pins the constants/usage instead of the old literal strings, which are
+// gone.
 test("instructions.tsx: the workspace target is retitled with a muted explanation, shown only when it has content", () => {
   const raw = readApp(INSTRUCTIONS);
   const code = codeOnly(raw);
 
   assert.match(code, /const isWorkspace = target\.target === "workspace";/);
-  assert.ok(raw.includes("All your projects (workspace Knowledge)"), "the retitled heading text");
-  assert.ok(
-    raw.includes(
-      "Rules you add to all your projects live here; Lovable applies them to every project in",
-    ),
-    "the muted explanation line",
-  );
+  assert.match(code, /WORKSPACE_TARGET_LABEL/, "the retitled heading uses the shared label");
+  assert.equal(ux.WORKSPACE_TARGET_LABEL, "All my projects");
+  assert.match(code, /WORKSPACE_TARGET_EXPLANATION/, "the muted explanation line");
+  assert.match(ux.WORKSPACE_TARGET_EXPLANATION, /instructions/i);
   assert.match(
     code,
-    /No workspace-wide rules yet\. Choose "Add to all my projects" on a suggestion to\s+create\s+one\./,
-    "the bottom fallback note",
+    /NO_WORKSPACE_INSTRUCTIONS_LINE/,
+    "the bottom fallback note is the shared constant",
+  );
+  assert.match(
+    ux.NO_WORKSPACE_INSTRUCTIONS_LINE,
+    /No workspace-wide instructions yet\. Choose "Add to all my projects" on a suggestion to create one\./,
   );
   assert.match(
     code,

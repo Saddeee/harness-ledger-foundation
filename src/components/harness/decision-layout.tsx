@@ -3,7 +3,6 @@
 // existing shadcn primitives -- no new visual system.
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,33 +15,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-export function RecommendationCallout({
-  title,
-  recommendation,
-  why,
-}: {
-  title: string;
-  recommendation: string;
-  why: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="space-y-3 pt-6">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {title}
-          </p>
-          <p className="mt-1 text-base font-medium">{recommendation}</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Why?</p>
-          <p className="mt-1 text-sm">{why}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
+// Round 9 Task 5 / spec §5: RecommendationCallout (the old "Needs your
+// attention" section's own callout card) is gone -- instructions.tsx no
+// longer has that section at all (the Inbox owns attention, spec §1
+// principle 6), and it was this component's only caller.
 export function WhatHappensNext({
   heading = "What happens next",
   lines,
