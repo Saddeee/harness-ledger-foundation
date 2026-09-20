@@ -52,6 +52,26 @@ test("state: retired and skipped", () => {
   assert.equal(instructionState({ decision: { status: "accepted", retired: true } }), "retired");
   assert.equal(instructionState({ decision: { status: "skipped", retired: false } }), "skipped");
 });
+// Fix round 1 (controller ruling): an accepted, non-retired decision is
+// "live" no matter what lovable.write_status says -- re-offering Add/Skip
+// on an already-decided item would re-ask a decision already made.
+test("state: accepted is live regardless of write_status -- pending, stale, failed, reverted, or absent", () => {
+  const accepted = { decision: { status: "accepted" as const, retired: false } };
+  assert.equal(instructionState({ ...accepted, lovable: { write_status: "pending" } }), "live");
+  assert.equal(instructionState({ ...accepted, lovable: { write_status: "stale" } }), "live");
+  assert.equal(instructionState({ ...accepted, lovable: { write_status: "failed" } }), "live");
+  assert.equal(instructionState({ ...accepted, lovable: { write_status: "reverted" } }), "live");
+  assert.equal(instructionState(accepted), "live", "no lovable field at all is still live");
+  assert.equal(
+    instructionState({
+      ...accepted,
+      lovable: { write_status: "pending" },
+      health: { review_reason: "repeated_issue", status: "review" },
+    }),
+    "live_attention",
+    "live_attention does not require a written state either",
+  );
+});
 test("actions: fixed order, emphasis only changes", () => {
   assert.deepEqual(actionsForState("suggested"), {
     primary: "add",
@@ -114,6 +134,25 @@ test("state line", () => {
     /^Skipped 14 Sep$/,
   );
   assert.equal(instructionStateLine({ state: "waiting_judge" }), "Waiting for your answer");
+  // Fix round 1: write_status !== "written" reads as the user's own
+  // decision ("Accepted <day>"), never a claim about Lovable's own state.
+  assert.match(
+    instructionStateLine({
+      state: "live",
+      write_status: "pending",
+      decided_at: "2026-09-13T11:20:00Z",
+    }),
+    /^Accepted 13 Sep$/,
+  );
+  assert.match(
+    instructionStateLine({
+      state: "live",
+      write_status: "failed",
+      decided_at: "2026-09-13T11:20:00Z",
+      decided_by: "automatic",
+    }),
+    /^Accepted 13 Sep · accepted automatically$/,
+  );
 });
 test("evidence sentences", () => {
   assert.equal(
@@ -186,6 +225,20 @@ test("attention: snoozed never asks; repeated_issue uses the plain sentence", ()
     "Lovable's replies show the instruction was not followed in 3 of 3 later builds.",
   );
   assert.doesNotMatch(b?.line ?? "", /AI review marked/);
+});
+// Fix round 1: a legacy-only health row (no observed_repeat/observed_clear,
+// only the older applicable_tasks/hurt pair) must still read the repeat it
+// actually has, via observedLine's own legacy conversion -- not read as an
+// all-zero "No later build has needed this yet." under "Needs attention".
+test("attention: a legacy-only health row (no observed_repeat/observed_clear) still reports its repeat", () => {
+  const legacy = attentionBlock({
+    review_reason: "repeated_issue",
+    applicable_tasks: 4,
+    hurt: 2,
+    last_applicable_at: null,
+  } as never);
+  assert.equal(legacy?.title, "Needs attention");
+  assert.equal(legacy?.line, "You corrected this again in 2 of 4 later builds.");
 });
 test("verdict choices shown are Keep and Retire only", () => {
   assert.deepEqual(VERDICT_CHOICES_SHOWN, ["keep", "retire"]);

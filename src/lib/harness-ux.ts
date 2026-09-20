@@ -645,12 +645,17 @@ export function attentionBlock(health: HealthLike | null | undefined): {
   }
   const n = health.observed_repeat ?? health.hurt;
   // Round 9 Task 1 / spec §4: the plain evidence sentences replace "The
-  // same issue appeared..."/"AI review marked..." -- observedSentence when
-  // a repeat was actually observed, aiCheckSentence otherwise, never a
-  // bespoke rewording of either.
+  // same issue appeared..."/"AI review marked..." -- observedLine (not
+  // observedSentence directly: observedLine converts a legacy-only health
+  // row's applicable_tasks/hurt pair into observed_repeat/observed_clear
+  // first, exactly like healthLine does; observedSentence alone would read
+  // a legacy row's missing observed_repeat/observed_clear as an all-zero
+  // "No later build has needed this yet." under a "Needs attention" title,
+  // which is exactly backwards) when a repeat was actually observed,
+  // aiCheckSentence otherwise, never a bespoke rewording of either.
   const line =
     n > 0
-      ? (observedSentence(health) ?? "You asked for a review of this rule.")
+      ? (observedLine(health) ?? "You asked for a review of this rule.")
       : (aiCheckSentence(health) ?? "You asked for a review of this rule.");
   return {
     title: "Needs attention",
@@ -2186,7 +2191,7 @@ export type InstructionState =
   | "suggested" // decision.status === "pending", no judged test that said not helped
   | "suggested_not_helped" // pending AND test conclusion is "not_supported" | "possibly_harmful"
   | "waiting_judge" // test.run exists with status "judging" (judged_at null)
-  | "live" // accepted AND lovable.write_status === "written" AND !decision.retired
+  | "live" // accepted AND !decision.retired, regardless of lovable.write_status
   | "live_attention" // live AND health.review_reason != null AND health.status !== "snoozed"
   | "retired" // decision.retired === true
   | "skipped"; // decision.status === "skipped"
@@ -2195,12 +2200,18 @@ export type InstructionState =
  * already has. Precedence: retired and skipped are terminal and win over
  * everything else; a judging test wins over the suggested/not-helped split
  * (the user is being asked something more specific); a live rule needing
- * attention is still live in every other respect, just flagged. An
- * accepted decision whose write to Lovable has not landed yet (write_status
- * other than "written") has nothing else it could honestly be called, so
- * it reads as "suggested" until the write lands -- this is not exercised by
- * real data today (accept writes synchronously) but keeps the function
- * total. */
+ * attention is still live in every other respect, just flagged.
+ *
+ * Round 9 Task 1 fix round 1 (controller ruling, overriding this file's own
+ * earlier draft comment): an accepted, non-retired decision is "live" no
+ * matter what lovable.write_status says -- pending/stale/failed/reverted
+ * included. Re-offering Add/Skip on an already-decided item would re-ask a
+ * decision the user already made; whether the write itself is still in
+ * flight or needs attention is instructionStateLine's/lovableStatusLine's
+ * job to say, never a reason to change the action set back to Suggested's.
+ * `lovable` stays part of this function's input type for parity with the
+ * real payload (every other caller still needs it), even though this
+ * function itself no longer reads it. */
 export function instructionState(item: {
   decision: { status: "pending" | "accepted" | "skipped"; retired: boolean };
   lovable?: { write_status: string } | null;
@@ -2211,13 +2222,10 @@ export function instructionState(item: {
   if (item.decision.retired) return "retired";
   if (item.decision.status === "skipped") return "skipped";
   if (item.decision.status === "accepted") {
-    if (item.lovable?.write_status === "written") {
-      if (item.health?.review_reason != null && item.health.status !== "snoozed") {
-        return "live_attention";
-      }
-      return "live";
+    if (item.health?.review_reason != null && item.health.status !== "snoozed") {
+      return "live_attention";
     }
-    return "suggested";
+    return "live";
   }
   // decision.status === "pending"
   const run = item.test?.run ?? null;
@@ -2228,12 +2236,21 @@ export function instructionState(item: {
 }
 
 /** The one-line state line shown next to every instruction, in every size
- * (spec §2 vocabulary, verbatim). */
+ * (spec §2 vocabulary, verbatim).
+ *
+ * Round 9 Task 1 fix round 1: `write_status` is optional so every existing
+ * caller (none of which know about the write lifecycle) keeps reading "In
+ * Lovable since <day>" unchanged. Only a caller that explicitly passes a
+ * write_status other than "written" (pending/stale/failed/reverted) gets
+ * the "Accepted <day>" wording instead -- a plain statement of the user's
+ * own decision, never a claim about Lovable's own state (that claim stays
+ * lovableStatusLine's alone). */
 export function instructionStateLine(item: {
   state: InstructionState;
   decided_at?: string | null;
   written_at?: string | null;
   decided_by?: "user" | "automatic" | null;
+  write_status?: string | null;
 }): string {
   switch (item.state) {
     case "suggested":
@@ -2243,8 +2260,12 @@ export function instructionStateLine(item: {
       return "Waiting for your answer";
     case "live":
     case "live_attention": {
-      const base = `In Lovable since ${formatDay(item.written_at)}`;
-      return item.decided_by === "automatic" ? `${base} · accepted automatically` : base;
+      const suffix = item.decided_by === "automatic" ? " · accepted automatically" : "";
+      const notWritten = item.write_status != null && item.write_status !== "written";
+      const base = notWritten
+        ? `Accepted ${formatDay(item.decided_at)}`
+        : `In Lovable since ${formatDay(item.written_at)}`;
+      return `${base}${suffix}`;
     }
     case "retired":
       return `Retired ${formatDay(item.decided_at)}`;
