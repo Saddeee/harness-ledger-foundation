@@ -142,10 +142,14 @@ test("improvement.tsx: TestStatusLine links to /judge?run=<id> for judging, judg
   // the three TestStatusLine links (judging/judged/failed) are unchanged.
   // Round 9 Task 4: the detail page's new Evidence section adds a fifth, its
   // own "Open Compare builds" link (testRun.id, not TestStatusLine's run.id).
+  // Round 9 final wave item 5: CompactDecisionCard's own inline judged-run
+  // line (a `conclusion` prop is set) now renders a sixth "Open Compare
+  // builds" link directly (item.test.run.id) instead of always delegating
+  // to TestStatusLine, so the same run is never described twice.
   assert.equal(
     judgeLinks.length,
-    5,
-    "judging, judged, and failed link to /judge, plus InstructionActions' own and Evidence's own",
+    6,
+    "judging, judged, and failed link to /judge, plus InstructionActions', Evidence's, and CompactDecisionCard's own",
   );
   const runSearch = code.match(/search=\{\{\s*run:\s*run\.id\s*\}\}/g) ?? [];
   assert.equal(runSearch.length, 3);

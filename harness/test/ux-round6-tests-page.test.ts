@@ -190,11 +190,15 @@ test("improvement.tsx: the judged/failed status lines carry an 'Open Tests' link
   // the three TestStatusLine links (judging/judged/failed) are unchanged.
   // Round 9 Task 4: the detail page's new Evidence section adds a fifth link
   // of its own ("Open Compare builds", testRun.id).
+  // Round 9 final wave item 5: CompactDecisionCard's own inline judged-run
+  // line adds a sixth "Open Compare builds" link (item.test.run.id) instead
+  // of always delegating to TestStatusLine, so a judged suggestion's result
+  // is never described twice on the Inbox card.
   const judgeLinks = code.match(/to="\/judge"/g) ?? [];
   assert.equal(
     judgeLinks.length,
-    5,
-    "judging, judged, and failed link to /judge, plus InstructionActions' own and Evidence's own",
+    6,
+    "judging, judged, and failed link to /judge, plus InstructionActions', Evidence's, and CompactDecisionCard's own",
   );
 });
 

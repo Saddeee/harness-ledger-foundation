@@ -98,10 +98,11 @@ test("improvements.ts (server): every spec §3b timeline label string appears ve
     "Harness Ledger suggested retiring",
     "You kept it",
     "Skill ",
-    "You said to keep this rule",
-    "You said this rule needs a review",
-    "You said to retire this rule",
-    "You said you're not sure this rule is still useful",
+    // Round 9 final wave item 9: VERDICT_LABEL says "instruction", not "rule".
+    "You said to keep this instruction",
+    "You said this instruction needs a review",
+    "You said to retire this instruction",
+    "You said you're not sure this instruction is still useful",
   ];
   for (const label of LABELS) {
     assert.ok(source.includes(label), `missing timeline label: "${label}"`);

@@ -417,8 +417,10 @@ export function proveCostLine(): string {
 
 // ---- Onboarding: the only place the product explains itself ----
 
+// Round 9 final wave item 1: "rule" -> "instruction" (leak detector hit --
+// spec §2 vocabulary applies here too, not just the states/actions copy).
 export const LANDING_INTRO =
-  "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into a rule you approve. Harness Ledger writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.";
+  "Harness Ledger keeps your Lovable agent improving. It syncs your project chats on a schedule, finds where you had to correct Lovable, and turns each correction into an instruction you approve. Harness Ledger writes it into your Lovable Knowledge, keeps every version, and can roll any of them back.";
 
 export const HOW_IT_WORKS_STEPS = [
   {
@@ -427,7 +429,8 @@ export const HOW_IT_WORKS_STEPS = [
   },
   {
     title: "Proposed",
-    text: "Where you corrected Lovable, Harness Ledger's AI analysis proposes one rule, with the exact messages as evidence.",
+    // Round 9 final wave item 1: "rule" -> "instruction" (leak detector hit).
+    text: "Where you corrected Lovable, Harness Ledger's AI analysis proposes one instruction, with the exact messages as evidence.",
   },
   {
     title: "Approved by you",
@@ -439,8 +442,9 @@ export const HOW_IT_WORKS_STEPS = [
   },
 ] as const;
 
+// Round 9 final wave item 1: "rule" -> "instruction" (leak detector hit).
 export const LANDING_CREDITS_LINE =
-  "Credits left this month? Spend them on making Lovable better at your project. Syncing chats and writing Knowledge costs nothing. Testing a rule in a temporary copy is a normal Lovable build and uses credits like one; Harness Ledger records what each test cost.";
+  "Credits left this month? Spend them on making Lovable better at your project. Syncing chats and writing Knowledge costs nothing. Testing an instruction in a temporary copy is a normal Lovable build and uses credits like one; Harness Ledger records what each test cost.";
 
 // Wording-history attribution: a stored reason is shown only when it was
 // typed in this UI; anything else is attributed to Harness without its
@@ -497,21 +501,24 @@ export type RetireLike = {
   contradicts_instruction?: string | null;
 };
 
-// "Harness suggests retiring this rule because ..." -- the fixed sentence
-// per reason (spec §4b), never invents specifics beyond the other rule's own
-// wording for a contradiction. Fix round 1 item 2: the "hurt" case no longer
-// says "helped" -- same honest vocabulary as healthLine below (an applicable
-// build without a repeat correction is not proof the rule helped).
+// "Harness suggests retiring this instruction because ..." -- the fixed
+// sentence per reason (spec §4b), never invents specifics beyond the other
+// instruction's own wording for a contradiction. Fix round 1 item 2: the
+// "hurt" case no longer says "helped" -- same honest vocabulary as
+// healthLine below (an applicable build without a repeat correction is not
+// proof the instruction helped).
+// Round 9 final wave item 2: "rule" -> "instruction" throughout (spec §2
+// vocabulary -- "rule" never appears in UI copy).
 export function retireReasonSentence(input: RetireLike): string {
   if (input.reason === "changed_mind") {
-    return "Harness Ledger suggests retiring this rule because you asked Lovable for the opposite.";
+    return "Harness Ledger suggests retiring this instruction because you asked Lovable for the opposite.";
   }
   if (input.reason === "contradiction") {
-    const other = (input.contradicts_instruction ?? "another rule").replace(/\.+$/, "");
-    return `Harness Ledger suggests retiring this rule because it contradicts ${other}.`;
+    const other = (input.contradicts_instruction ?? "another instruction").replace(/\.+$/, "");
+    return `Harness Ledger suggests retiring this instruction because it contradicts ${other}.`;
   }
   if (input.reason === "unused") {
-    return "This rule has not applied to any task in 60 days. Review whether it is still relevant.";
+    return "This instruction has not applied to any task in 60 days. Review whether it is still relevant.";
   }
   return (
     observedLine(input.health) ?? "Harness Ledger found the same issue in the relevant builds."
@@ -524,17 +531,18 @@ export function retireReasonSentence(input: RetireLike): string {
 // as evidence of anything. Fix round 1 item 2: the "hurt" stats line now
 // reuses healthLine itself (defined below) rather than its own copy of the
 // same counts, so the two can never say different things about the same
-// rule -- and, by construction, "helped" never appears here either.
+// instruction -- and, by construction, "helped" never appears here either.
+// Round 9 final wave item 2: "rule" -> "instruction" throughout.
 export function retireSinceLine(input: RetireLike): string {
   if (input.reason === "changed_mind") {
-    return "This rule is still in your Lovable Knowledge, so Lovable keeps being told the old way.";
+    return "This instruction is still in your Lovable Knowledge, so Lovable keeps being told the old way.";
   }
   if (input.reason === "contradiction") {
-    return "This rule is still live, but a newer rule now says the opposite.";
+    return "This instruction is still live, but a newer instruction now says the opposite.";
   }
   if (input.reason === "unused") {
     const since = input.since ? `, ${formatDay(input.since)}` : "";
-    return `Since it was added${since}, this rule has not applied to any task in over 60 days.`;
+    return `Since it was added${since}, this instruction has not applied to any task in over 60 days.`;
   }
   return aiReviewLine(input.health) ?? healthLine(input.health) ?? "No builds in this area yet";
 }

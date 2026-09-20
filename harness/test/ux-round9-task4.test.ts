@@ -153,9 +153,23 @@ test("decision-layout.tsx: CurrentStatus, PrimaryAction and RecommendationCallou
 
 // ---- 6. "What happened": Changed afterward compared to Built ----
 
-test("improvement.tsx: 'Changed afterward' is compared to 'Built' (trimmed), omitted only when identical", () => {
+// Round 9 final wave item 4: rewritten with intent -- the old condition only
+// omitted the row when changed_afterward exactly equalled Built (trimmed),
+// but rendered "Not recorded" whenever changed_afterward was null, which
+// spec principle 5 ("nothing twice") never intended as a real row. The row
+// is now omitted outright when changed_afterward is null/empty/whitespace,
+// and when Built (trimmed) already starts with it (prefix or equal) -- shown
+// only when it adds text Built does not have. "Not recorded" never renders
+// for this field.
+test("improvement.tsx: 'Changed afterward' row is omitted when empty/whitespace or already a prefix of Built -- never 'Not recorded'", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
-  assert.match(code, /changed_afterward[^;]*!==?[^;]*built|built[^;]*!==?[^;]*changed_afterward/);
+  const section = slice(code, "What happened", "{WHY_RECOMMENDS_TITLE}");
+  assert.match(section, /changedAfterwardText\.length > 0/);
+  assert.match(section, /!builtText\.startsWith\(changedAfterwardText\)/);
+  assert.ok(
+    !/"Not recorded"/.test(section.slice(section.indexOf("Changed afterward"))),
+    "no 'Not recorded' fallback for Changed afterward",
+  );
 });
 
 // ---- 7. ledger.tsx: `from` search param, back link ----

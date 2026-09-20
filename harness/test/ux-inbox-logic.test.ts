@@ -122,7 +122,13 @@ test("Detail view for a just-decided item still renders its status: instructionS
   assert.ok(!/<Badge/.test(card), "no Badge left in DecisionCard's non-compact body");
   assert.match(card, /instructionStateLine\(\{/);
   assert.match(card, /<InstructionActions/);
-  assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
+  // Round 9 final wave item 3: the call site now passes hideSentence (once
+  // write_status === "written", the state line above already says "In
+  // Lovable since …" -- decisionSentence must not say it again).
+  assert.match(
+    card,
+    /<DecidedStatus\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+ctx=\{ctx\}\s+hideSentence=\{/,
+  );
   const decided = detail.slice(
     detail.indexOf("function DecidedStatus"),
     detail.indexOf("export function DecisionCard"),

@@ -70,25 +70,87 @@ const TARGET_FILES: string[] = [...tsxFiles("src"), ...libTsFiles("src/lib")].fi
   (rel) => rel !== CAPABILITIES_COPY,
 );
 
-// Strip block comments ({/* */} and /* */) to blank (preserving newlines,
-// so line numbers stay accurate) and blank out // line-comment lines --
-// same approach as ux-naming.test.ts, extended to keep line numbers exact.
+// Strip // line-comment lines FIRST, then block comments ({/* */} and
+// /* */) to blank (preserving newlines, so line numbers stay accurate).
+//
+// Round 9 final wave item 1: the original order (block comments first, then
+// line comments) had a bug -- a `//` comment whose text happens to contain
+// an unbalanced `/*` (e.g. "harness/src/*." at src/lib/harness-ux.ts:273)
+// opened a phantom block comment that the greedy-but-lazy `[\s\S]*?\*/`
+// regex then closed on the NEXT literal `*/` anywhere later in the file,
+// silently blanking every line (and every retired-word literal on them) in
+// between. Blanking `//`-only lines before the block-comment regex ever
+// runs means a `/*` inside a line comment can no longer be mistaken for the
+// start of a real block comment.
 function codeOnly(source: string): string {
-  let s = source.replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/[^\n]/g, " "));
-  s = s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
-  return s
+  const lineStripped = source
     .split("\n")
     .map((l) => (l.trim().startsWith("//") ? "" : l))
     .join("\n");
+  let s = lineStripped.replace(/\{\/\*[\s\S]*?\*\/\}/g, (m) => m.replace(/[^\n]/g, " "));
+  s = s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  return s;
 }
 
-// Every string/template/single-quote literal on a line, with a template
-// literal's ${...} interpolation expressions blanked out first -- those are
+// Blank every ${...} interpolation expression to spaces (preserving
+// newlines and length, so positions/line numbers stay exact) -- those are
 // code (identifiers, property access), never copy, and must never be
 // matched (e.g. `${ranSuffix(s.paired)}` is not the word "paired" as text).
-function literalsOnLine(line: string): string[] {
-  const withoutInterpolation = line.replace(/\$\{[^}]*\}/g, "");
-  return withoutInterpolation.match(/"[^"\n]*"|`[^`\n]*`|'[^'\n]*'/g) ?? [];
+//
+// Round 9 final wave item 1: a naive `/\$\{[^}]*\}/g` regex (the original
+// approach) breaks on a NESTED interpolation -- e.g. harness-ux.ts:459's
+// `` `You changed the wording on ${day}${entry.reason ? ` — ${entry.reason}` : ""}.` ``
+// has an inner `${entry.reason}` template literal inside the outer
+// `${entry.reason ? ... : ""}` expression. `[^}]*` stops at the FIRST `}`
+// (the inner one), leaving a stray, unblanked closing "` : ""}" on the line
+// that throws off the file's backtick balance for every literal scanned
+// after it. A brace-depth counter blanks the whole balanced `${...}` span
+// regardless of nesting.
+function blankInterpolation(code: string): string {
+  let out = "";
+  let i = 0;
+  while (i < code.length) {
+    if (code[i] === "$" && code[i + 1] === "{") {
+      let depth = 1;
+      let j = i + 2;
+      while (j < code.length && depth > 0) {
+        if (code[j] === "{") depth++;
+        else if (code[j] === "}") depth--;
+        j++;
+      }
+      for (let k = i; k < j; k++) out += code[k] === "\n" ? "\n" : " ";
+      i = j;
+    } else {
+      out += code[i];
+      i++;
+    }
+  }
+  return out;
+}
+
+// Every string/template/single-quote literal in the (comment-stripped) file.
+//
+// Round 9 final wave item 1: this scans the whole file's text at once (not
+// line by line) so a template literal that opens on one line and closes on
+// a later one is matched correctly -- `` `[^`]*` `` already spans newlines
+// with no special flag needed, since a character class excluding only the
+// backtick still matches "\n". A per-line, stateful version of this
+// (tracking "am I inside an unterminated template literal") was tried and
+// discarded: a single misdetected boundary made the state stick and
+// swallowed the rest of the file as fake string content, which is exactly
+// the class of bug item 1 exists to fix, not repeat under a new mechanism.
+// Each match's line number is recovered by counting newlines before it.
+function allLiterals(code: string): { line: number; text: string }[] {
+  const withoutInterpolation = blankInterpolation(code);
+  const re = /"[^"\n]*"|'[^'\n]*'|`[^`]*`/g;
+  const results: { line: number; text: string }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(withoutInterpolation)) !== null) {
+    const before = withoutInterpolation.slice(0, m.index);
+    const line = before.split("\n").length;
+    results.push({ line, text: m[0] });
+  }
+  return results;
 }
 
 const PHRASE_BANS = [
@@ -189,61 +251,57 @@ test("vocabulary sweep: no retired-word string literal in src/**/*.tsx or src/li
       scanCode = code.slice(0, vclStart) + blankedSlice + code.slice(vclEnd + 2);
     }
 
-    const lines = scanCode.split("\n");
-    lines.forEach((line, i) => {
-      const literals = literalsOnLine(line);
-      for (const lit of literals) {
-        const inner = lit.slice(1, -1);
+    for (const { line: lineNo, text: lit } of allLiterals(scanCode)) {
+      const inner = lit.slice(1, -1);
 
-        // landing-copy.ts (controller ruling): only the narrower phrase
-        // list applies -- no "Not sure"/"Workspace" contextual checks, no
-        // rule/replay/paired word+substring bans. Everything else gets the
-        // full set below.
-        if (rel === LANDING_COPY) {
-          for (const phrase of LANDING_PHRASE_BANS) {
-            if (inner.includes(phrase)) {
-              offenders.push(`${rel}:${i + 1}: [landing phrase "${phrase}"] ${lit}`);
-            }
-          }
-          continue;
-        }
-
-        // Phrase bans: exact substrings, case-sensitive (these are all
-        // fixed-case button/label copy).
-        for (const phrase of PHRASE_BANS) {
+      // landing-copy.ts (controller ruling): only the narrower phrase
+      // list applies -- no "Not sure"/"Workspace" contextual checks, no
+      // rule/replay/paired word+substring bans. Everything else gets the
+      // full set below.
+      if (rel === LANDING_COPY) {
+        for (const phrase of LANDING_PHRASE_BANS) {
           if (inner.includes(phrase)) {
-            offenders.push(`${rel}:${i + 1}: [phrase "${phrase}"] ${lit}`);
+            offenders.push(`${rel}:${lineNo}: [landing phrase "${phrase}"] ${lit}`);
           }
         }
+        continue;
+      }
 
-        // "Not sure" as a button label (outside VERDICT_CHOICE_LABELS,
-        // already blanked above).
-        if (inner.includes("Not sure")) {
-          offenders.push(`${rel}:${i + 1}: [phrase "Not sure"] ${lit}`);
-        }
-
-        // "Workspace" as a bare chip/label word -- allowed inside the
-        // explanatory sub-line "...workspace Knowledge..." (lowercase
-        // "workspace" there, so a bare-word/exact match on "Workspace"
-        // never fires for it), and at the one allowlisted file+literal
-        // above.
-        if (inner === "Workspace" && !isAllowedRuleOrReplayLiteral(rel, inner)) {
-          offenders.push(`${rel}:${i + 1}: [bare "Workspace" chip/label] ${lit}`);
-        }
-
-        if (isAllowedRuleOrReplayLiteral(rel, inner)) continue;
-
-        if (/\brules?\b/i.test(inner)) {
-          offenders.push(`${rel}:${i + 1}: [rule/rules] ${lit}`);
-        }
-        if (/replay/i.test(inner)) {
-          offenders.push(`${rel}:${i + 1}: [replay] ${lit}`);
-        }
-        if (/paired/i.test(inner)) {
-          offenders.push(`${rel}:${i + 1}: [paired] ${lit}`);
+      // Phrase bans: exact substrings, case-sensitive (these are all
+      // fixed-case button/label copy).
+      for (const phrase of PHRASE_BANS) {
+        if (inner.includes(phrase)) {
+          offenders.push(`${rel}:${lineNo}: [phrase "${phrase}"] ${lit}`);
         }
       }
-    });
+
+      // "Not sure" as a button label (outside VERDICT_CHOICE_LABELS,
+      // already blanked above).
+      if (inner.includes("Not sure")) {
+        offenders.push(`${rel}:${lineNo}: [phrase "Not sure"] ${lit}`);
+      }
+
+      // "Workspace" as a bare chip/label word -- allowed inside the
+      // explanatory sub-line "...workspace Knowledge..." (lowercase
+      // "workspace" there, so a bare-word/exact match on "Workspace"
+      // never fires for it), and at the one allowlisted file+literal
+      // above.
+      if (inner === "Workspace" && !isAllowedRuleOrReplayLiteral(rel, inner)) {
+        offenders.push(`${rel}:${lineNo}: [bare "Workspace" chip/label] ${lit}`);
+      }
+
+      if (isAllowedRuleOrReplayLiteral(rel, inner)) continue;
+
+      if (/\brules?\b/i.test(inner)) {
+        offenders.push(`${rel}:${lineNo}: [rule/rules] ${lit}`);
+      }
+      if (/replay/i.test(inner)) {
+        offenders.push(`${rel}:${lineNo}: [replay] ${lit}`);
+      }
+      if (/paired/i.test(inner)) {
+        offenders.push(`${rel}:${lineNo}: [paired] ${lit}`);
+      }
+    }
   }
 
   assert.deepEqual(offenders, [], `retired words in copy:\n${offenders.join("\n")}`);

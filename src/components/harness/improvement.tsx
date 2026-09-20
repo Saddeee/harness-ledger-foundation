@@ -136,6 +136,10 @@ import {
   testStatusPhrase,
   mostRecentBrokeQuote,
   // ---- end Round 9 Task 4 ----
+  // ---- Round 9 final wave ----
+  CONCLUSION_LABELS,
+  WORKSPACE_TARGET_LABEL,
+  // ---- end Round 9 final wave ----
 } from "@/lib/harness-ux";
 
 import {
@@ -1031,7 +1035,17 @@ export function InstructionActions({
 }) {
   const btnSize: "default" | "sm" = size === "full" ? "default" : "sm";
   const linkClass = SMALL_ACTION_LINK_CLASS;
-  const { primary, secondary, small, emphasis, note } = actionsForState(state);
+  const { primary, secondary, small: smallFromState, emphasis, note } = actionsForState(state);
+  // Round 9 final wave item 6 (controller ruling): actionsForState's own
+  // table is unchanged -- cards and rows still show exactly what it says for
+  // live/live_attention (Test · Open, no Edit). The detail page ("full"
+  // size) is the one place a live instruction also gets a small Edit link,
+  // when the caller supplies onEdit -- editing the wording of a live
+  // instruction is a detail-page-only action.
+  const small: InstructionActionKind[] =
+    size === "full" && (state === "live" || state === "live_attention") && onEdit
+      ? ["edit", ...smallFromState]
+      : smallFromState;
   const ruleId = item?.rule_id ?? rule?.rule_id ?? null;
   const improvementId = item?.id ?? rule?.improvement_id ?? null;
 
@@ -1174,32 +1188,31 @@ export function InstructionActions({
 
   const primaryEl = renderMain(primary, "primary");
   const secondaryEl = renderMain(secondary, "secondary");
-  const primaryLine = consequenceFor(primary);
-  const secondaryLine = consequenceFor(secondary);
+  // Round 9 final wave item 7: actionsForState guarantees at most one of
+  // primary/secondary ever carries a consequence line for any given state
+  // (Keep/readd/judge-with-no-note never do; Retire/Skip-with-note/Add-with-
+  // no-note each own the line for their own state), so there is always at
+  // most one line to show -- it now renders once, below the whole row, not
+  // nested under whichever single button happened to own it.
+  const consequenceLine = consequenceFor(primary) ?? consequenceFor(secondary);
 
   return (
-    <div className={ACTION_BAR_CLASS}>
-      {primaryEl ? (
-        primaryLine ? (
-          <div className="space-y-1">
-            {primaryEl}
-            <p className="text-xs text-muted-foreground">{primaryLine}</p>
-          </div>
-        ) : (
-          primaryEl
-        )
+    <div className="space-y-1">
+      {/* Round 9 final wave item 7: one left-aligned row -- primary,
+          secondary, then the small text links -- never split into per-
+          button columns and never a right-floated group (no
+          justify-between). */}
+      <div className={ACTION_BAR_CLASS}>
+        {primaryEl}
+        {secondaryEl}
+        {small.map((kind) => renderSmall(kind))}
+      </div>
+      {/* Round 9 final wave item 7: at size === "row" (the Instructions
+          page's own compact rows) the confirm dialogs already spell out the
+          consequence, so no line renders there at all. */}
+      {size !== "row" && consequenceLine ? (
+        <p className="text-xs text-muted-foreground">{consequenceLine}</p>
       ) : null}
-      {secondaryEl ? (
-        secondaryLine ? (
-          <div className="space-y-1">
-            {secondaryEl}
-            <p className="text-xs text-muted-foreground">{secondaryLine}</p>
-          </div>
-        ) : (
-          secondaryEl
-        )
-      ) : null}
-      {small.map((kind) => renderSmall(kind))}
     </div>
   );
 }
@@ -1221,11 +1234,19 @@ function DecidedStatus({
   busy,
   run,
   ctx,
+  hideSentence,
 }: {
   item: Improvement;
   busy: boolean;
   run: Run;
   ctx?: StatusCtx | undefined;
+  // Round 9 final wave item 3: a written item's state line (instructionStateLine,
+  // above) already says "In Lovable since ⟨date⟩" -- decisionSentence below
+  // says the same thing again ("You chose: … Added to Lovable, ⟨date⟩."), so
+  // the caller suppresses it once write_status === "written" (spec §1.5
+  // "Nothing twice"). The Undo link stays reachable regardless: it renders
+  // off canUndo alone, never off hideSentence.
+  hideSentence?: boolean;
 }) {
   const lovable = lovableOf(item);
   // Round 6 Task 3 fix 1 / spec §3: server-computed (harness/src/
@@ -1236,16 +1257,20 @@ function DecidedStatus({
   // client-side check let Undo wrongly demote.
   const canUndo = lovable.can_undo;
 
+  if (hideSentence && !canUndo) return null;
+
   return (
     <div className="space-y-2">
-      <p className="text-sm">
-        {decisionSentence({
-          decision: item.decision,
-          destination: item.destination,
-          lovable,
-          ctx,
-        })}
-      </p>
+      {hideSentence ? null : (
+        <p className="text-sm">
+          {decisionSentence({
+            decision: item.decision,
+            destination: item.destination,
+            lovable,
+            ctx,
+          })}
+        </p>
+      )}
       {canUndo ? (
         <button
           type="button"
@@ -1378,14 +1403,30 @@ function CompactDecisionCard({
       {/* An attention card says why in one line, above the actions -- never
           a different action set from live's own. */}
       {attention ? <p className="text-xs text-muted-foreground">{attention.line}</p> : null}
-      {/* Checkpoint 3 I2: a staged test judged while the suggestion itself
-          is still pending -- shown alongside TestStatusLine's own judged-run
-          line (that one is a link to Compare builds; this one names the
-          conclusion directly). */}
-      {replayJudgedLine(conclusion) ? (
-        <p className="text-xs font-medium">{replayJudgedLine(conclusion)}</p>
-      ) : null}
-      <TestStatusLine item={item} />
+      {/* Round 9 final wave item 5 (spec principle 5, "nothing twice"): a
+          staged test judged while the suggestion itself is still pending
+          used to render TWICE -- this line (replayJudgedLine, "Test
+          result: …") AND TestStatusLine's own separate judged-run line
+          (testedResultLine + "Open Compare builds" + "Open Tests"), both
+          describing the same run. Exactly one line now: the result label,
+          one "Open Compare builds" link, no "Open Tests". TestStatusLine
+          still owns every other status (running/failed/waiting) unchanged. */}
+      {conclusion ? (
+        <p className="text-xs font-medium">
+          {CONCLUSION_LABELS[conclusion]}{" "}
+          {item.test?.run ? (
+            <Link
+              to="/judge"
+              search={{ run: item.test.run.id }}
+              className="font-normal text-primary underline underline-offset-2"
+            >
+              {OPEN_COMPARE_BUILDS_LABEL}
+            </Link>
+          ) : null}
+        </p>
+      ) : (
+        <TestStatusLine item={item} />
+      )}
       <InstructionActions
         item={item}
         state={state}
@@ -1627,7 +1668,18 @@ export function DecisionCard({
         run={run}
         {...(editable ? { onEdit: editable.onStart } : {})}
       />
-      {!pending ? <DecidedStatus item={item} busy={busy} run={run} ctx={ctx} /> : null}
+      {/* Round 9 final wave item 3: hideSentence once write_status is
+          "written" -- the state line above already says "In Lovable
+          since …"; DecidedStatus's own decisionSentence would say it again. */}
+      {!pending ? (
+        <DecidedStatus
+          item={item}
+          busy={busy}
+          run={run}
+          ctx={ctx}
+          hideSentence={lovableOf(item).write_status === "written"}
+        />
+      ) : null}
     </article>
   );
 }
@@ -1841,19 +1893,25 @@ export function ImprovementDetail({
                 </dd>
               </div>
             ) : null}
-            {item.story.changed_afterward == null ||
-            item.story.changed_afterward.trim() !== (item.story.built ?? "").trim() ? (
-              <div>
-                <dt className="font-medium">Changed afterward</dt>
-                <dd className="text-muted-foreground">
-                  {item.story.changed_afterward ? (
-                    <ClampedText text={item.story.changed_afterward} markdown />
-                  ) : (
-                    "Not recorded"
-                  )}
-                </dd>
-              </div>
-            ) : null}
+            {/* Round 9 final wave item 4: omit the row entirely when
+                changed_afterward is null/empty/whitespace (never render
+                "Not recorded" for it), and when Built already contains it
+                (as a prefix, or exactly) -- shown only when it adds text
+                Built does not have. */}
+            {(() => {
+              const changedAfterwardText = (item.story?.changed_afterward ?? "").trim();
+              const builtText = (item.story?.built ?? "").trim();
+              const showChangedAfterward =
+                changedAfterwardText.length > 0 && !builtText.startsWith(changedAfterwardText);
+              return showChangedAfterward ? (
+                <div>
+                  <dt className="font-medium">Changed afterward</dt>
+                  <dd className="text-muted-foreground">
+                    <ClampedText text={item.story?.changed_afterward ?? ""} markdown />
+                  </dd>
+                </div>
+              ) : null;
+            })()}
           </dl>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -2391,7 +2449,9 @@ export function NewSkillCard({
   const titleId = `improvement-${item.id}`;
   // Round 9 Task 7 / spec §2 vocabulary: "Where it is saved" is "This
   // project" / "All my projects", never "workspace"/"Project" alone.
-  const scopeLabel = item.destination === "workspace" ? "All my projects" : "This project";
+  // Round 9 final wave item 8: reads WORKSPACE_TARGET_LABEL, not a second
+  // hardcoded "All my projects" literal.
+  const scopeLabel = item.destination === "workspace" ? WORKSPACE_TARGET_LABEL : "This project";
   const purpose = skillProposalPurpose(
     item.skill_proposal?.content ?? null,
     item.proposed_instruction,
@@ -2502,10 +2562,12 @@ function InboxCardHeader({ item }: { item: InboxItem }) {
           to "All my projects", never showing "Workspace" itself. The
           routing check below still compares against the raw contract
           value. */}
+      {/* Round 9 final wave item 8: reads WORKSPACE_TARGET_LABEL, not two
+          more hardcoded "All my projects" literals. */}
       <p className="text-sm font-semibold">
         {item.project_name === "Workspace"
-          ? "All my projects"
-          : (item.project_name ?? "All my projects")}
+          ? WORKSPACE_TARGET_LABEL
+          : (item.project_name ?? WORKSPACE_TARGET_LABEL)}
       </p>
       <span className="text-xs text-muted-foreground">{INBOX_TYPE_LABELS[item.type]}</span>
     </div>

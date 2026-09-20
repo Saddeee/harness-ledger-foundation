@@ -79,6 +79,8 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   // wording.
   assert.equal(hurt, "You corrected this again in 3 of 4 later builds.");
 
+  // Round 9 final wave item 2: retireReasonSentence's contradiction/unused
+  // sentences now say "instruction", not "rule" (spec §2 vocabulary).
   const contradiction = ux.retireReasonSentence({
     reason: "contradiction",
     health: { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null },
@@ -87,7 +89,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   assert.equal(
     contradiction,
-    "Harness Ledger suggests retiring this rule because it contradicts Always use dark mode by default.",
+    "Harness Ledger suggests retiring this instruction because it contradicts Always use dark mode by default.",
   );
 
   const unused = ux.retireReasonSentence({
@@ -97,7 +99,7 @@ test("harness-ux.ts: retireReasonSentence and retireSinceLine cover all three re
   });
   assert.equal(
     unused,
-    "This rule has not applied to any task in 60 days. Review whether it is still relevant.",
+    "This instruction has not applied to any task in 60 days. Review whether it is still relevant.",
   );
 
   const sinceLine = ux.retireSinceLine({
@@ -324,9 +326,10 @@ test("harness-ux.ts: a 'changed_mind' retirement says you asked for the opposite
     health: { applicable_tasks: 0, helped: 0, hurt: 0, last_applicable_at: null },
     since: null,
   };
+  // Round 9 final wave item 2: "instruction", not "rule" (spec §2 vocabulary).
   assert.equal(
     ux.retireReasonSentence({ ...base, reason: "changed_mind" }),
-    "Harness Ledger suggests retiring this rule because you asked Lovable for the opposite.",
+    "Harness Ledger suggests retiring this instruction because you asked Lovable for the opposite.",
   );
   assert.doesNotMatch(ux.retireSinceLine({ ...base, reason: "changed_mind" }), /below/);
   const card = readFileSync(

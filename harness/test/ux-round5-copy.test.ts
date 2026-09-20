@@ -44,8 +44,14 @@ test("harness-ux.ts: HOW_IT_WORKS_STEPS[1].text mentions 'AI analysis'", () => {
   );
 });
 
-test("harness-ux.ts: LANDING_INTRO says 'rule you approve'", () => {
-  assert.match(ux.LANDING_INTRO, /rule you approve/, "LANDING_INTRO should reference 'rule'");
+// Round 9 final wave item 1: leak detector hit -- "instruction", not "rule"
+// (spec §2 vocabulary).
+test("harness-ux.ts: LANDING_INTRO says 'instruction you approve'", () => {
+  assert.match(
+    ux.LANDING_INTRO,
+    /instruction you approve/,
+    "LANDING_INTRO should reference 'instruction'",
+  );
 });
 
 test("harness-ux.ts: LANDING_CREDITS_LINE exists with correct content", () => {

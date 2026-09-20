@@ -203,7 +203,12 @@ test("decision card: every state (pending or decided) renders through the one sh
     !/>\s*Details\s*<\/button>/.test(card),
     "no separate Details link; the card opens the item",
   );
-  assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
+  // Round 9 final wave item 3: hideSentence suppresses decisionSentence once
+  // write_status === "written" (the state line above already says it).
+  assert.match(
+    card,
+    /<DecidedStatus\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+ctx=\{ctx\}\s+hideSentence=\{/,
+  );
   const decided = detail.slice(
     detail.indexOf("function DecidedStatus"),
     detail.indexOf("export function DecisionCard"),

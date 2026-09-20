@@ -1177,7 +1177,8 @@ test("buildTimeline: a target with 3 versions (one a restore) + 1 external chang
 
   const [nVerdict, nV3, nExternal, nV2, nV1, nSkip, nAccept] = nodes;
 
-  assert.equal(nVerdict!.label, "You said to keep this rule");
+  // Round 9 final wave item 9: VERDICT_LABEL says "instruction", not "rule".
+  assert.equal(nVerdict!.label, "You said to keep this instruction");
   assert.equal(nVerdict!.actor, "you");
   assert.equal(nVerdict!.content, "Never run migrations automatically.");
   assert.equal(nVerdict!.summary, "Never run migrations automatically.");
@@ -3671,7 +3672,11 @@ test("buildTimeline: a judged run renders a `test` node with the exact label, ac
   const judgedNode = nodes.find((n) => n.id === `test:${judgedRunId}`);
   assert.ok(judgedNode);
   assert.equal(judgedNode!.kind, "test");
-  assert.equal(judgedNode!.label, "Tested with the rule: 1 of 2 corrections no longer needed");
+  // Round 9 final wave item 9: testedLabel says "instruction", not "rule".
+  assert.equal(
+    judgedNode!.label,
+    "Tested with the instruction: 1 of 2 corrections no longer needed",
+  );
   assert.equal(judgedNode!.actor, "harness");
   assert.equal(judgedNode!.at, "2026-09-03T00:00:00Z");
   assert.equal(judgedNode!.improvement_id, cc.id);

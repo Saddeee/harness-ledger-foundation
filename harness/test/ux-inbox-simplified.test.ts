@@ -224,7 +224,11 @@ test("improvement.tsx: ImprovementDetail's 'What happened' section shows Request
   assert.match(story, /item\.story\.requested/);
   assert.match(story, /item\.story\.built/);
   assert.match(story, /item\.story\.correction/);
-  assert.match(story, /item\.story\.changed_afterward/);
+  // Round 9 final wave item 4: changed_afterward is read through optional
+  // chaining now (item.story?.changed_afterward) -- the row is omitted
+  // entirely (never "Not recorded") when it's null/empty/whitespace, or
+  // when Built already contains it as a prefix or exactly.
+  assert.match(story, /item\.story\?\.changed_afterward/);
   assert.match(story, /"Not recorded"/);
 });
 

@@ -153,7 +153,13 @@ test("improvement.tsx: the 'What happened' story (Requested/Built/Your correctio
   assert.match(story, /<ClampedText text=\{item\.story\.requested\} markdown \/>/);
   assert.match(story, /<ClampedText text=\{item\.story\.correction\} markdown \/>/);
   assert.match(story, /<ClampedText text=\{item\.story\.built\} markdown \/>/);
-  assert.match(story, /<ClampedText text=\{item\.story\.changed_afterward\} markdown \/>/);
+  // Round 9 final wave item 4: changed_afterward's ClampedText call now
+  // reads through the guarded `item.story?.changed_afterward ?? ""` (the
+  // row only renders once a non-empty showChangedAfterward check passes).
+  assert.match(
+    story,
+    /<ClampedText text=\{item\.story\?\.changed_afterward \?\? ""\} markdown \/>/,
+  );
 });
 
 test("improvement.tsx: MessageBlock renders the message text through ClampedText with markdown", () => {

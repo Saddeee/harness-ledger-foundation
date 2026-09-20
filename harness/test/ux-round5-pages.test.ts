@@ -190,8 +190,9 @@ test("every History timeline label from spec §3b appears in improvements.ts or 
     "Re-added",
     "Harness Ledger suggested retiring",
     "You kept it",
-    "You said to keep this rule",
-    "You said this rule needs a review",
+    // Round 9 final wave item 9: VERDICT_LABEL says "instruction", not "rule".
+    "You said to keep this instruction",
+    "You said this instruction needs a review",
   ]) {
     assert.ok(combined.includes(label), `missing timeline label "${label}"`);
   }
