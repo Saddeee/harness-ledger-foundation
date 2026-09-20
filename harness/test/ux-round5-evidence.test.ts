@@ -43,14 +43,16 @@ test("healthLine: never says 'helped', for a scripted range of health inputs", (
     const line = ux.healthLine(health);
     if (line != null) assert.ok(!/helped/i.test(line), `healthLine leaked "helped": ${line}`);
   }
-  // The spec's own example line, verbatim.
+  // Round 9 Task 1 / spec §4: healthLine now delegates to observedSentence's
+  // plain wording -- the "spec's own example line" is the round-5 spec's;
+  // this round's spec (§4) replaces it.
   assert.equal(
     ux.healthLine({ applicable_tasks: 6, hurt: 1, last_applicable_at: "2026-09-03T00:00:00Z" }),
-    "Harness Ledger found the same issue in 1 of 6 relevant builds. Last relevant build 3 Sep.",
+    "You corrected this again in 1 of 6 later builds. Last relevant build 3 Sep.",
   );
   assert.equal(
     ux.healthLine({ applicable_tasks: 0, hurt: 0, last_applicable_at: null }),
-    "No relevant builds since this rule was added.",
+    "No later build has needed this yet.",
   );
 });
 
@@ -112,7 +114,8 @@ test("verdictLine: 'You said: <verdict>, <day>', mapping keep/review/retire/not_
     ux.verdictLine({ verdict: "retire", created_at: "2026-09-05T00:00:00Z" }),
     "You said: retire it, 5 Sep",
   );
-  assert.equal(ux.VERDICT_QUESTION, "Is this rule still useful?");
+  // Round 9 Task 1 / spec §2: "instruction", never "rule", in UI copy.
+  assert.equal(ux.VERDICT_QUESTION, "Is this instruction still useful?");
   for (const v of ["keep", "review", "retire", "not_sure"] as const) {
     assert.ok(!/help/i.test(ux.VERDICT_TEXT[v]), `verdict text must not claim help: ${v}`);
   }
@@ -122,12 +125,15 @@ test("verdictLine: 'You said: <verdict>, <day>', mapping keep/review/retire/not_
   );
 });
 
-test("adherenceLine: 'AI review marked the rule as not followed in N of M relevant builds.'; null until followed+broke > 0", () => {
+// Round 9 Task 1 / spec §4: adherenceLine reuses aiReviewLine, which now
+// delegates to aiCheckSentence's plain wording -- never "AI review
+// marked...".
+test("adherenceLine: 'Lovable's replies show the instruction was not followed in N of M later builds.'; null until followed+broke > 0", () => {
   assert.equal(ux.adherenceLine(null), null);
   assert.equal(ux.adherenceLine({ followed: 0, broke: 0, not_applicable: 3 }), null);
   assert.equal(
     ux.adherenceLine({ followed: 5, broke: 1, not_applicable: 2 }),
-    "AI review marked the rule as not followed in 1 of 6 relevant builds. Quotes from Lovable's replies are in Details.",
+    "Lovable's replies show the instruction was not followed in 1 of 6 later builds. Quotes from Lovable's replies are in Details.",
   );
 });
 

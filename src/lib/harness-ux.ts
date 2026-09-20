@@ -557,11 +557,20 @@ export type HealthLike = {
   ai_not_followed?: number;
   ai_followed?: number;
   review_reason?: "inactive" | "repeated_issue" | "user_verdict" | "unclear_contradiction" | null;
+  // Round 9 Task 1 / spec §4: the rule's own current health status (see
+  // ImprovementHealth in harness/src/improvements.ts) -- "snoozed" (the user
+  // recently chose keep/not sure) means attentionBlock must say nothing at
+  // all, even when review_reason is still set from before the snooze.
+  status?: "healthy" | "watch" | "review" | "retire_suggested" | "snoozed" | null;
 };
 
-/** What Harness observed in later relevant builds, and nothing more:
- * "Harness found the same issue in 2 of 3 relevant builds." -- no claim
- * about cause. Null when the rule has no observed counts at all. */
+/** What Harness observed in later relevant builds, and nothing more.
+ * Round 9 Task 1 / spec §4: now a thin wrapper over observedSentence (the
+ * legacy applicable_tasks/hurt pair is converted to observed_repeat/
+ * observed_clear first, exactly as before) -- kept exported because
+ * retireReasonSentence/retireSinceLine and other callers still use this
+ * name; the wording itself is observedSentence's, not this function's own
+ * copy of it. Null when the rule has no observed counts at all. */
 export function observedLine(health: HealthLike | null | undefined): string | null {
   if (!health) return null;
   const repeat = health.observed_repeat ?? health.hurt;
@@ -569,17 +578,15 @@ export function observedLine(health: HealthLike | null | undefined): string | nu
     health.observed_repeat != null && health.observed_clear != null
       ? health.observed_repeat + health.observed_clear
       : health.applicable_tasks;
-  if (total === 0) return "No relevant builds since this rule was added.";
-  if (repeat === 0)
-    return `Harness Ledger found no repeat of the issue in ${total} relevant build${total === 1 ? "" : "s"}.`;
-  if (repeat === total)
-    return `Harness Ledger found the same issue in all ${total} relevant build${total === 1 ? "" : "s"}.`;
-  return `Harness Ledger found the same issue in ${repeat} of ${total} relevant builds.`;
+  return observedSentence({ observed_repeat: repeat, observed_clear: total - repeat });
 }
 
 /** What the AI review (the Judge reading Lovable's replies) marked, shown
- * separately from what was observed: "AI review marked the rule as not
- * followed in 3 of 3 relevant builds." Null until the Judge has judged. */
+ * separately from what was observed. Round 9 Task 1 / spec §4: now a thin
+ * wrapper over aiCheckSentence -- never the old "AI review marked..."
+ * wording. Still accepts adherenceLine's own {followed, broke} shape
+ * alongside {ai_not_followed, ai_followed}, converting to the latter
+ * first. Null until the Judge has judged. */
 export function aiReviewLine(
   health:
     | { ai_not_followed?: number; ai_followed?: number }
@@ -596,9 +603,7 @@ export function aiReviewLine(
   };
   const notFollowed = h.broke ?? h.ai_not_followed ?? 0;
   const followed = h.followed ?? h.ai_followed ?? 0;
-  const total = notFollowed + followed;
-  if (total === 0) return null;
-  return `AI review marked the rule as not followed in ${notFollowed} of ${total} relevant build${total === 1 ? "" : "s"}.`;
+  return aiCheckSentence({ ai_not_followed: notFollowed, ai_followed: followed });
 }
 
 /** The observed line followed by when the rule last applied. */
@@ -613,7 +618,10 @@ export function healthLine(health: HealthLike | null | undefined): string | null
 
 /** The "Needs attention" block for a rule under review because the same
  * issue keeps appearing, or the "Review for relevance" block for a rule
- * with no relevant task in 60 days. Null when neither applies. */
+ * with no relevant task in 60 days. Null when neither applies, and --
+ * Round 9 Task 1 / spec §4, principle 4 -- null whenever status is
+ * "snoozed": a snoozed rule never asks for attention, no matter what
+ * review_reason still says from before the snooze. */
 export function attentionBlock(health: HealthLike | null | undefined): {
   title: string;
   line: string;
@@ -622,6 +630,7 @@ export function attentionBlock(health: HealthLike | null | undefined): {
   options?: string[];
 } | null {
   if (!health || !health.review_reason) return null;
+  if (health.status === "snoozed") return null;
   if (health.review_reason === "inactive") {
     return {
       title: "Review for relevance",
@@ -635,13 +644,14 @@ export function attentionBlock(health: HealthLike | null | undefined): {
     };
   }
   const n = health.observed_repeat ?? health.hurt;
-  const ai = health.ai_not_followed ?? 0;
+  // Round 9 Task 1 / spec §4: the plain evidence sentences replace "The
+  // same issue appeared..."/"AI review marked..." -- observedSentence when
+  // a repeat was actually observed, aiCheckSentence otherwise, never a
+  // bespoke rewording of either.
   const line =
     n > 0
-      ? `The same issue appeared in ${n} relevant build${n === 1 ? "" : "s"}.`
-      : ai > 0
-        ? `AI review marked the rule as not followed in ${ai} relevant build${ai === 1 ? "" : "s"}.`
-        : "You asked for a review of this rule.";
+      ? (observedSentence(health) ?? "You asked for a review of this rule.")
+      : (aiCheckSentence(health) ?? "You asked for a review of this rule.");
   return {
     title: "Needs attention",
     line,
@@ -664,13 +674,20 @@ export const VERDICT_TEXT: Record<RuleVerdictValue, string> = {
   retire: "retire it",
   not_sure: "not sure",
 };
-export const VERDICT_QUESTION = "Is this rule still useful?";
+// Round 9 Task 1 / spec §2, §3: "instruction", never "rule", in UI copy.
+export const VERDICT_QUESTION = "Is this instruction still useful?";
 export const VERDICT_CHOICE_LABELS: Record<RuleVerdictValue, string> = {
   keep: "Keep",
   review: "Review",
   retire: "Retire",
   not_sure: "Not sure",
 };
+// Round 9 Task 1 / spec §3: only Keep and Retire are offered as buttons now
+// (existing "review"/"not_sure" verdict rows keep their stored value and
+// label above -- VERDICT_CHOICE_LABELS is unchanged -- they just render as
+// history text, "You asked for a review"/"You were not sure", never as a
+// live choice).
+export const VERDICT_CHOICES_SHOWN: RuleVerdictValue[] = ["keep", "retire"];
 
 export type VerdictLike = { verdict: RuleVerdictValue; created_at: string };
 
@@ -2153,3 +2170,239 @@ export function isInsideAuthenticatedArea(pathname: string): boolean {
     pathname.startsWith("/api")
   );
 }
+
+// ---- Round 9 Task 1 ----
+// Spec 2026-09-20-round-9-one-instruction-one-action-set.md §2-§4: one
+// state model for an instruction (a rule), one fixed action set per state,
+// and plain evidence sentences addressed to the user -- shared by Inbox,
+// the detail page and Instructions (later tasks this round), never
+// recomputed per page. Nothing here is UI: no React, just the mapping from
+// server shape to state, actions and copy.
+
+// The seven states an instruction can be in. Order here is enumeration
+// order only, not precedence -- see instructionState below for the actual
+// precedence (retired/skipped are terminal and checked first).
+export type InstructionState =
+  | "suggested" // decision.status === "pending", no judged test that said not helped
+  | "suggested_not_helped" // pending AND test conclusion is "not_supported" | "possibly_harmful"
+  | "waiting_judge" // test.run exists with status "judging" (judged_at null)
+  | "live" // accepted AND lovable.write_status === "written" AND !decision.retired
+  | "live_attention" // live AND health.review_reason != null AND health.status !== "snoozed"
+  | "retired" // decision.retired === true
+  | "skipped"; // decision.status === "skipped"
+
+/** One state for one instruction, from the same few fields every page
+ * already has. Precedence: retired and skipped are terminal and win over
+ * everything else; a judging test wins over the suggested/not-helped split
+ * (the user is being asked something more specific); a live rule needing
+ * attention is still live in every other respect, just flagged. An
+ * accepted decision whose write to Lovable has not landed yet (write_status
+ * other than "written") has nothing else it could honestly be called, so
+ * it reads as "suggested" until the write lands -- this is not exercised by
+ * real data today (accept writes synchronously) but keeps the function
+ * total. */
+export function instructionState(item: {
+  decision: { status: "pending" | "accepted" | "skipped"; retired: boolean };
+  lovable?: { write_status: string } | null;
+  test?: { run: null | { status: string; judged_at: string | null } } | null;
+  conclusion?: { kind: string } | null; // the judged replay conclusion when present
+  health?: { review_reason?: string | null; status?: string | null } | null;
+}): InstructionState {
+  if (item.decision.retired) return "retired";
+  if (item.decision.status === "skipped") return "skipped";
+  if (item.decision.status === "accepted") {
+    if (item.lovable?.write_status === "written") {
+      if (item.health?.review_reason != null && item.health.status !== "snoozed") {
+        return "live_attention";
+      }
+      return "live";
+    }
+    return "suggested";
+  }
+  // decision.status === "pending"
+  const run = item.test?.run ?? null;
+  if (run && run.status === "judging" && run.judged_at === null) return "waiting_judge";
+  const kind = item.conclusion?.kind;
+  if (kind === "not_supported" || kind === "possibly_harmful") return "suggested_not_helped";
+  return "suggested";
+}
+
+/** The one-line state line shown next to every instruction, in every size
+ * (spec §2 vocabulary, verbatim). */
+export function instructionStateLine(item: {
+  state: InstructionState;
+  decided_at?: string | null;
+  written_at?: string | null;
+  decided_by?: "user" | "automatic" | null;
+}): string {
+  switch (item.state) {
+    case "suggested":
+    case "suggested_not_helped":
+      return "Suggested";
+    case "waiting_judge":
+      return "Waiting for your answer";
+    case "live":
+    case "live_attention": {
+      const base = `In Lovable since ${formatDay(item.written_at)}`;
+      return item.decided_by === "automatic" ? `${base} · accepted automatically` : base;
+    }
+    case "retired":
+      return `Retired ${formatDay(item.decided_at)}`;
+    case "skipped":
+      return `Skipped ${formatDay(item.decided_at)}`;
+  }
+}
+
+// ---- One action set per state (spec §3) ----
+
+export type InstructionActionKind =
+  "add" | "skip" | "judge" | "keep" | "retire" | "test" | "readd" | "edit" | "open";
+
+export const INSTRUCTION_ACTION_LABELS: Record<InstructionActionKind, string> = {
+  add: "Add",
+  skip: "Skip",
+  judge: "Judge",
+  keep: "Keep",
+  retire: "Retire",
+  test: "Test",
+  readd: "Re-add",
+  edit: "Edit",
+  open: "Open",
+};
+
+/** "Open ⟨place⟩" -- the one verb for navigating anywhere (spec §2). */
+export function openLabel(
+  place: "Inbox" | "Instructions" | "Tests" | "History" | "Compare builds" | "Lovable",
+): string {
+  return `Open ${place}`;
+}
+
+// The suggested-but-tested-not-helped note (spec §3 row 2), shown under the
+// swapped-emphasis Add/Skip pair.
+export const NOT_HELPED_NOTE = "The test suggests this instruction would not have helped.";
+
+/** The fixed action set for one state (spec §3 table). Buttons keep the
+ * same order across every state that offers them; only `emphasis` (which of
+ * primary/secondary is the dark button) ever changes. `live_attention` is
+ * deliberately identical to `live` -- the attention is said in the card's
+ * own "why" line (evidenceDisagreementLine/attentionBlock), never by
+ * offering a different action set. */
+export function actionsForState(state: InstructionState): {
+  primary: InstructionActionKind | null;
+  secondary: InstructionActionKind | null;
+  small: InstructionActionKind[];
+  emphasis: "primary" | "secondary";
+  note: string | null;
+} {
+  switch (state) {
+    case "suggested":
+      return {
+        primary: "add",
+        secondary: "skip",
+        small: ["edit", "open"],
+        emphasis: "primary",
+        note: null,
+      };
+    case "suggested_not_helped":
+      return {
+        primary: "add",
+        secondary: "skip",
+        small: ["edit", "open"],
+        emphasis: "secondary",
+        note: NOT_HELPED_NOTE,
+      };
+    case "waiting_judge":
+      return {
+        primary: "judge",
+        secondary: null,
+        small: ["open"],
+        emphasis: "primary",
+        note: null,
+      };
+    case "live":
+    case "live_attention":
+      return {
+        primary: "keep",
+        secondary: "retire",
+        small: ["test", "open"],
+        emphasis: "primary",
+        note: null,
+      };
+    case "retired":
+    case "skipped":
+      return {
+        primary: "readd",
+        secondary: null,
+        small: ["open"],
+        emphasis: "primary",
+        note: null,
+      };
+  }
+}
+
+// ---- Plain evidence sentences (spec §4) ----
+
+export const LOVABLE_SAID_PREFIX = "Lovable said:";
+
+/** What the user themselves observed in later builds -- Harness Ledger's
+ * own free scan, never mixed with the AI check below. Null only when there
+ * is nothing to report at all (no health row); a zero total still gets its
+ * own sentence, not null. */
+export function observedSentence(
+  h: { observed_repeat?: number | null; observed_clear?: number | null } | null | undefined,
+): string | null {
+  if (!h) return null;
+  const repeat = h.observed_repeat ?? 0;
+  const clear = h.observed_clear ?? 0;
+  const total = repeat + clear;
+  if (total === 0) return "No later build has needed this yet.";
+  if (repeat === 0) {
+    return `You have not had to correct this again in ${total} later build${total === 1 ? "" : "s"}.`;
+  }
+  return `You corrected this again in ${repeat} of ${total} later builds.`;
+}
+
+/** What the AI check of Lovable's replies (the Judge role) found -- the
+ * other, separate evidence source, never merged into observedSentence's own
+ * line. Null until the Judge has looked at anything at all. */
+export function aiCheckSentence(
+  h: { ai_not_followed?: number | null; ai_followed?: number | null } | null | undefined,
+): string | null {
+  if (!h) return null;
+  const notFollowed = h.ai_not_followed ?? 0;
+  const followed = h.ai_followed ?? 0;
+  const total = notFollowed + followed;
+  if (total === 0) return null;
+  if (notFollowed === 0) {
+    return `Lovable's replies show the instruction was followed in all ${total} later build${total === 1 ? "" : "s"}.`;
+  }
+  return `Lovable's replies show the instruction was not followed in ${notFollowed} of ${total} later builds.`;
+}
+
+/** The one line that names a disagreement between the two evidence sources
+ * (spec §4, principle 4: "no contradictions on one screen without the
+ * screen saying why") -- shown only when the user saw no repeat but the AI
+ * check says the instruction was not followed. Null otherwise, including
+ * when there is nothing to disagree about (no later builds at all). */
+export function evidenceDisagreementLine(
+  h:
+    | {
+        observed_repeat?: number | null;
+        observed_clear?: number | null;
+        ai_not_followed?: number | null;
+        ai_followed?: number | null;
+      }
+    | null
+    | undefined,
+): string | null {
+  if (!h) return null;
+  const repeat = h.observed_repeat ?? 0;
+  const clear = h.observed_clear ?? 0;
+  const total = repeat + clear;
+  const notFollowed = h.ai_not_followed ?? 0;
+  if (repeat === 0 && total > 0 && notFollowed > 0) {
+    return "You did not correct it, but Lovable's replies say it was not followed. Read the quote and decide.";
+  }
+  return null;
+}
+// ---- end Round 9 Task 1 ----

@@ -48,13 +48,16 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
   // Checkpoint 2026-09-18 WP3 (spec §9): the line says what was observed,
   // never what it caused. Legacy rows (no observed_* fields) use
   // applicable_tasks/hurt with the same wording.
+  // Round 9 Task 1 / spec §4: observedLine/healthLine now delegate to
+  // observedSentence's plain wording ("You corrected this again...", "No
+  // later build has needed this yet.") -- never "Harness Ledger found...".
   assert.equal(
     ux.healthLine({ applicable_tasks: 0, hurt: 0, last_applicable_at: null }),
-    "No relevant builds since this rule was added.",
+    "No later build has needed this yet.",
   );
   assert.equal(
     ux.healthLine({ applicable_tasks: 4, hurt: 2, last_applicable_at: null }),
-    "Harness Ledger found the same issue in 2 of 4 relevant builds.",
+    "You corrected this again in 2 of 4 later builds.",
     "omits the last-build sentence when null",
   );
   assert.equal(
@@ -63,11 +66,11 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
       hurt: 1,
       last_applicable_at: "2026-09-01T00:00:00Z",
     }),
-    "Harness Ledger found the same issue in 1 of 4 relevant builds. Last relevant build 1 Sep.",
+    "You corrected this again in 1 of 4 later builds. Last relevant build 1 Sep.",
   );
   assert.equal(
     ux.healthLine({ applicable_tasks: 1, hurt: 0, last_applicable_at: null }),
-    "Harness Ledger found no repeat of the issue in 1 relevant build.",
+    "You have not had to correct this again in 1 later build.",
     "singular 'build' when there is one",
   );
   assert.equal(
@@ -78,13 +81,17 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
       observed_repeat: 3,
       observed_clear: 0,
     }),
-    "Harness Ledger found the same issue in all 3 relevant builds.",
+    "You corrected this again in 3 of 3 later builds.",
     "the separately tracked observed counts win over the legacy pair",
   );
+  // Round 9 Task 1 / spec §4: aiReviewLine now delegates to aiCheckSentence
+  // -- never "AI review marked...".
   assert.equal(
     ux.aiReviewLine({ ai_not_followed: 3, ai_followed: 0 }),
-    "AI review marked the rule as not followed in 3 of 3 relevant builds.",
+    "Lovable's replies show the instruction was not followed in 3 of 3 later builds.",
   );
+  // Round 9 Task 1 / spec §4: attentionBlock's line is now the plain
+  // observedSentence, not the old bespoke "The same issue appeared...".
   assert.deepEqual(
     ux.attentionBlock({
       applicable_tasks: 3,
@@ -96,7 +103,7 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
     }),
     {
       title: "Needs attention",
-      line: "The same issue appeared in 3 relevant builds.",
+      line: "You corrected this again in 3 of 3 later builds.",
       recommendation: "Rewrite this rule or turn it into a Skill.",
       action: "Review rule",
     },

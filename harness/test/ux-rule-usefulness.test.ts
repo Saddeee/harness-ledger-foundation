@@ -29,15 +29,23 @@ test("usefulness copy never claims a rule helped or harmed", () => {
   // specific staged test already showed ("The test suggests..."), hedged,
   // the same honest evidence-reporting register as CONCLUSION_LABELS itself
   // -- not a claim that a live rule generally helped or didn't.
-  const exempt = new Set([ux.SKIP_RECOMMENDED_CONSEQUENCE_LINE]);
+  // Round 9 Task 1: NOT_HELPED_NOTE is the same kind of exemption as
+  // SKIP_RECOMMENDED_CONSEQUENCE_LINE above -- it reports what one specific
+  // staged test already showed ("The test suggests..."), hedged, not a
+  // claim that a live instruction generally helped or didn't.
+  const exempt = new Set([ux.SKIP_RECOMMENDED_CONSEQUENCE_LINE, ux.NOT_HELPED_NOTE]);
   for (const s of strings) {
     if (exempt.has(s)) continue;
     assert.ok(!/\bhelped\b/i.test(s), `copy claims help: ${s}`);
     assert.ok(!/harm than good/i.test(s), `copy claims harm: ${s}`);
   }
-  assert.equal(ux.VERDICT_QUESTION, "Is this rule still useful?");
+  // Round 9 Task 1 / spec §2: "instruction", never "rule", in UI copy.
+  assert.equal(ux.VERDICT_QUESTION, "Is this instruction still useful?");
 });
 
+// Round 9 Task 1 / spec §4: observedLine/aiReviewLine now delegate to
+// observedSentence/aiCheckSentence's plain wording -- never "Harness Ledger
+// found..."/"AI review marked...".
 test("observed and AI review are two separate lines with the spec's wording", () => {
   assert.equal(
     ux.observedLine({
@@ -47,11 +55,11 @@ test("observed and AI review are two separate lines with the spec's wording", ()
       observed_repeat: 3,
       observed_clear: 0,
     }),
-    "Harness Ledger found the same issue in all 3 relevant builds.",
+    "You corrected this again in 3 of 3 later builds.",
   );
   assert.equal(
     ux.aiReviewLine({ ai_not_followed: 3, ai_followed: 0 }),
-    "AI review marked the rule as not followed in 3 of 3 relevant builds.",
+    "Lovable's replies show the instruction was not followed in 3 of 3 later builds.",
   );
   assert.equal(ux.aiReviewLine({ ai_not_followed: 0, ai_followed: 0 }), null);
 });
