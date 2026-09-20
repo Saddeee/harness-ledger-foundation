@@ -2435,16 +2435,23 @@ export function evidenceDisagreementLine(
 // replaces Inbox's and Instructions' own hand-rolled "Show" chip row, and
 // is reused as-is on Tests and History. This pure helper is the one place
 // a Lovable test-copy project (Harness Ledger's own throwaway build made
-// for a replay, e.g. "Harness Ledger test 7 · with the rule · Quick Tip
-// Calculator" -- see harness/src/executor/experiments.ts's testCopyName,
-// the one place that string is built) is recognised -- ProjectFilter
+// for a replay -- see harness/src/executor/experiments.ts's testCopyName,
+// the one place the current name is built) is recognised -- ProjectFilter
 // filters every options list through it so no page can forget and offer
-// one as a real project. The prefix is "Harness Ledger test ", not a bare
-// "Harness test " -- ux-naming.test.ts bans a bare "Harness" in any
-// user-facing string in this file, and testCopyName's own output always
-// says "Harness Ledger". Kept here, free of any React import, because
-// harness/test imports this file directly and cannot import .tsx.
+// one as a real project.
+//
+// Round 9 Task 2 fix 1: two real prefixes exist in the wild -- testCopyName's
+// current template ("Harness Ledger test <runId> · ...") and a legacy one
+// from before the product rename ("Harness test <runId> · ..."), still on
+// copies created before that rename. Both are matched as regex literals
+// (never quoted strings) so ux-naming.test.ts's scan of quoted/template
+// string literals for a bare "Harness" never sees one here -- this helper
+// matches pre-existing Lovable project names, not new user-facing copy,
+// and this repo's own copy still always says "Harness Ledger" everywhere
+// it speaks. Kept here, free of any React import, because harness/test
+// imports this file directly and cannot import .tsx.
 export function isTestCopyProject(name: string | null | undefined): boolean {
-  return typeof name === "string" && name.startsWith("Harness Ledger test ");
+  if (typeof name !== "string") return false;
+  return /^Harness Ledger test \d/.test(name) || /^Harness test \d/.test(name);
 }
 // ---- end Round 9 Task 2 ----

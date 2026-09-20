@@ -12,15 +12,17 @@ import { isTestCopyProject } from "../../src/lib/harness-ux";
 function readApp(rel: string): string {
   return readFileSync(new URL(`../../src/${rel}`, import.meta.url), "utf8");
 }
+// Stricter than a naive line-prefix codeOnly (which misses a continuation
+// line of a multi-line {/* ... */} JSX comment): strips whole block
+// comments first, JSX or plain, then line comments -- same pattern as
+// ux-pages-simplified.test.ts's own codeOnly. Needed here because fix 3's
+// own pin below reads structure right after a multi-line JSX comment.
 function codeOnly(source: string): string {
   return source
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n")
-    .filter((l) => {
-      const t = l.trim();
-      return (
-        !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*")
-      );
-    })
+    .filter((l) => !l.trim().startsWith("//"))
     .join("\n");
 }
 function count(haystack: string, needle: string): number {
@@ -35,25 +37,32 @@ const HISTORY = "routes/_authenticated/history.tsx";
 
 // ---- 1. isTestCopyProject: pure, no React ----
 
-// The brief's own example test case reads "Harness test 7 · with the rule ·
-// Quick Tip Calculator" (no "Ledger") -- that matches an outdated doc
-// comment on harness/src/executor/experiments.ts's testCopyName, not what
-// that function actually returns today ("Harness Ledger test ${runId} ·
-// ${which} · ${project}"). A bare "Harness test " prefix would also trip
-// the pre-existing ux-naming.test.ts ban on a bare "Harness" in any
-// user-facing string in src/lib. Matching the real generator (and staying
-// inside the naming rule) means the prefix is "Harness Ledger test ".
-test("isTestCopyProject: true only for a name starting with 'Harness Ledger test ' (testCopyName's own prefix)", () => {
+// Round 9 Task 2 fix 1 (coordinator ruling): both prefixes are real --
+// testCopyName's current template ("Harness Ledger test <runId> · ...")
+// AND a legacy one from before the product rename ("Harness test <runId>
+// · ..."), still on copies created before that rename. The brief's own
+// example case ("Harness test 7 · with the rule · Quick Tip Calculator")
+// is exactly this legacy shape, now a real, intended `true`.
+test("isTestCopyProject: true for both the current 'Harness Ledger test <n>' prefix and the legacy 'Harness test <n>' one", () => {
+  // Current template (testCopyName's own output today).
   assert.equal(
-    isTestCopyProject("Harness Ledger test 7 · with the rule · Quick Tip Calculator"),
+    isTestCopyProject("Harness Ledger test 42 · with the rule · Quick Tip Calculator"),
     true,
   );
+  // Legacy template (pre-rename copies still on record) -- the brief's own
+  // example case.
+  assert.equal(isTestCopyProject("Harness test 7 · with the rule · Quick Tip Calculator"), true);
   assert.equal(isTestCopyProject("Quick Tip Calculator"), false);
   assert.equal(isTestCopyProject(""), false);
   assert.equal(isTestCopyProject(null), false);
   assert.equal(isTestCopyProject(undefined), false);
   // Prefix only -- the phrase appearing later in the name doesn't count.
   assert.equal(isTestCopyProject("My Harness Ledger test project"), false);
+  assert.equal(isTestCopyProject("My Harness test project"), false);
+  // A run id (digits) must follow "test " -- "test " alone, with no
+  // number, is not a real test-copy name under either template.
+  assert.equal(isTestCopyProject("Harness Ledger test alpha project"), false);
+  assert.equal(isTestCopyProject("Harness test project"), false);
 });
 
 // ---- 2. project-filter.tsx exists and exports the right shape ----
@@ -124,4 +133,22 @@ test("history.tsx: uses <ProjectFilter> for its project/workspace target selecto
 test("harness-ux.ts: WORKSPACE_TARGET_LABEL no longer spells the banned word 'workspace'", async () => {
   const ux = await import("../../src/lib/harness-ux.ts");
   assert.equal(ux.WORKSPACE_TARGET_LABEL, "All my projects");
+});
+
+// ---- 6. History: the "Current Knowledge" fold belongs to one target ----
+// Round 9 Task 2 fix 3 (coordinator ruling): it must not render at all when
+// "All projects" is selected, rather than showing some arbitrary target's
+// text next to the merged timeline.
+
+test("history.tsx: the Current Knowledge <details> fold is gated behind !isAllProjects", () => {
+  const code = codeOnly(readApp(HISTORY));
+  assert.match(code, /const isAllProjects = /);
+  const detailsAt = code.indexOf("<details");
+  assert.ok(detailsAt >= 0, "no <details> fold found");
+  const before = code.slice(Math.max(0, detailsAt - 200), detailsAt);
+  assert.match(
+    before,
+    /isAllProjects\s*\?\s*null\s*:\s*\($/m,
+    "the Current Knowledge <details> must be gated behind isAllProjects, not always rendered",
+  );
 });

@@ -335,47 +335,54 @@ function Page() {
               summary alone carries the target name, character count and
               rule count, so collapsed is still informative; expanding shows
               the same ManagedBlockText as before. Open state is remembered
-              per browser (CURRENT_KNOWLEDGE_OPEN_KEY), not on the server. */}
-          <details
-            className="space-y-2 rounded-md border p-4"
-            open={knowledgeOpen}
-            onToggle={(e) => {
-              const open = e.currentTarget.open;
-              setKnowledgeOpen(open);
-              writeCurrentKnowledgeOpen(open);
-            }}
-          >
-            <summary
-              id="current-knowledge"
-              className="cursor-pointer text-lg font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              per browser (CURRENT_KNOWLEDGE_OPEN_KEY), not on the server.
+              Round 9 Task 2 fix 3: this box belongs to exactly one target --
+              when "All projects" is selected there is no single Knowledge
+              text to show, so the fold is not rendered at all rather than
+              showing some arbitrary target's text next to a merged
+              timeline. */}
+          {isAllProjects ? null : (
+            <details
+              className="space-y-2 rounded-md border p-4"
+              open={knowledgeOpen}
+              onToggle={(e) => {
+                const open = e.currentTarget.open;
+                setKnowledgeOpen(open);
+                writeCurrentKnowledgeOpen(open);
+              }}
             >
-              Current Knowledge
-              {selected ? (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  {currentKnowledgeHint(
-                    selected.name,
-                    selected.current?.content ?? "",
-                    selected.managed_block_present,
-                  )}
-                </span>
-              ) : null}
-            </summary>
-            <div className="space-y-2 pt-2">
-              <p className="text-sm text-muted-foreground">
-                {selected?.current
-                  ? `Read from Lovable at ${formatDate(selected.current.fetched_at)}`
-                  : "Not read yet — press Sync now on the Instructions page."}
-              </p>
-              {selected?.current?.content ? (
-                <ManagedBlockText
-                  content={selected.current.content}
-                  managedBlockPresent={selected.managed_block_present}
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">Nothing here yet.</p>
-              )}
-            </div>
-          </details>
+              <summary
+                id="current-knowledge"
+                className="cursor-pointer text-lg font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Current Knowledge
+                {selected ? (
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    {currentKnowledgeHint(
+                      selected.name,
+                      selected.current?.content ?? "",
+                      selected.managed_block_present,
+                    )}
+                  </span>
+                ) : null}
+              </summary>
+              <div className="space-y-2 pt-2">
+                <p className="text-sm text-muted-foreground">
+                  {selected?.current
+                    ? `Read from Lovable at ${formatDate(selected.current.fetched_at)}`
+                    : "Not read yet — press Sync now on the Instructions page."}
+                </p>
+                {selected?.current?.content ? (
+                  <ManagedBlockText
+                    content={selected.current.content}
+                    managedBlockPresent={selected.managed_block_present}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">Nothing here yet.</p>
+                )}
+              </div>
+            </details>
+          )}
 
           {timelineIsLoading ? (
             <div className="rounded-md border p-6 text-sm text-muted-foreground">Loading…</div>
