@@ -1863,7 +1863,9 @@ export function historyNodeMatchesFilter(
 
 export const INSTRUCTIONS_PROJECT_FILTER_LABEL = "Show";
 export const ALL_PROJECTS_LABEL = "All projects";
-export const WORKSPACE_TARGET_LABEL = "Workspace";
+// Round 9 Task 2: "workspace" is banned as a chip label (spec's vocabulary
+// rule) -- was "Workspace"; the value changed, the constant name did not.
+export const WORKSPACE_TARGET_LABEL = "All my projects";
 
 // ---- Round 7 (owner review, 2026-09-19) fix 2 ----
 // "if there is a lot of text there should be something like see more to see
@@ -2427,3 +2429,22 @@ export function evidenceDisagreementLine(
   return null;
 }
 // ---- end Round 9 Task 1 ----
+
+// ---- Round 9 Task 2 ----
+// One ProjectFilter component (src/components/harness/project-filter.tsx)
+// replaces Inbox's and Instructions' own hand-rolled "Show" chip row, and
+// is reused as-is on Tests and History. This pure helper is the one place
+// a Lovable test-copy project (Harness Ledger's own throwaway build made
+// for a replay, e.g. "Harness Ledger test 7 · with the rule · Quick Tip
+// Calculator" -- see harness/src/executor/experiments.ts's testCopyName,
+// the one place that string is built) is recognised -- ProjectFilter
+// filters every options list through it so no page can forget and offer
+// one as a real project. The prefix is "Harness Ledger test ", not a bare
+// "Harness test " -- ux-naming.test.ts bans a bare "Harness" in any
+// user-facing string in this file, and testCopyName's own output always
+// says "Harness Ledger". Kept here, free of any React import, because
+// harness/test imports this file directly and cannot import .tsx.
+export function isTestCopyProject(name: string | null | undefined): boolean {
+  return typeof name === "string" && name.startsWith("Harness Ledger test ");
+}
+// ---- end Round 9 Task 2 ----

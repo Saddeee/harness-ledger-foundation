@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { DetailSection, RecommendationCallout } from "@/components/harness/decision-layout";
 import { ManagedBlockText } from "@/components/harness/timeline";
 import { VerdictControl } from "@/components/harness/improvement";
+import { ProjectFilter } from "@/components/harness/project-filter";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,12 +42,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   aiReviewLine,
-  ALL_PROJECTS_LABEL,
   attentionBlock,
   CANCEL_WRITE_TOAST,
   formatDate,
   formatDay,
-  INSTRUCTIONS_PROJECT_FILTER_LABEL,
   NOTHING_NEEDS_ATTENTION_LINE,
   observedLine,
   REMOVE_FROM_KNOWLEDGE_BODY,
@@ -55,7 +54,6 @@ import {
   replayEvidenceLine,
   ruleActiveLine,
   skillProposalStatusLabel,
-  WORKSPACE_TARGET_LABEL,
 } from "@/lib/harness-ux";
 import {
   executorQueryOptions,
@@ -687,7 +685,7 @@ function Page() {
   // ---- Checkpoint 3 UX fix 2: per-project filter (?project=) ----
   const projectOptions = targets
     .filter((t) => t.target === "project")
-    .map((t) => ({ value: t.id, label: t.name }));
+    .map((t) => ({ id: t.id, name: t.name }));
   const selectedTarget: { target: "project" | "workspace"; id: string } | null =
     search.project === "workspace"
       ? workspaceTarget
@@ -758,53 +756,20 @@ function Page() {
         </div>
       ) : (
         <>
-          {/* Checkpoint 3 UX fix 2: All projects plus one option per
-              allowed project plus the workspace target (only offered once
-              one actually exists) -- narrows Needs your attention,
-              Knowledge and Skills below to the chosen target; changes the
-              URL (?project=) so an Overview/Inbox link can open here already
-              scoped. */}
-          <div
-            className="flex flex-wrap items-center gap-2"
-            role="group"
-            aria-label={INSTRUCTIONS_PROJECT_FILTER_LABEL}
-          >
-            <span className="text-sm font-medium text-muted-foreground">
-              {INSTRUCTIONS_PROJECT_FILTER_LABEL}
-            </span>
-            <Button
-              type="button"
-              variant={!search.project ? "default" : "outline"}
-              size="sm"
-              aria-pressed={!search.project}
-              onClick={() => navigate({ to: "/instructions", search: {} })}
-            >
-              {ALL_PROJECTS_LABEL}
-            </Button>
-            {projectOptions.map((o) => (
-              <Button
-                key={o.value}
-                type="button"
-                variant={search.project === o.value ? "default" : "outline"}
-                size="sm"
-                aria-pressed={search.project === o.value}
-                onClick={() => navigate({ to: "/instructions", search: { project: o.value } })}
-              >
-                {o.label}
-              </Button>
-            ))}
-            {workspaceTarget ? (
-              <Button
-                type="button"
-                variant={search.project === "workspace" ? "default" : "outline"}
-                size="sm"
-                aria-pressed={search.project === "workspace"}
-                onClick={() => navigate({ to: "/instructions", search: { project: "workspace" } })}
-              >
-                {WORKSPACE_TARGET_LABEL}
-              </Button>
-            ) : null}
-          </div>
+          {/* Round 9 Task 2: the shared ProjectFilter -- All projects plus
+              one chip per allowed project plus the workspace target (only
+              offered once one actually exists) -- narrows Needs your
+              attention, Knowledge and Skills below to the chosen target;
+              changes the URL (?project=) so an Overview/Inbox link can open
+              here already scoped. */}
+          <ProjectFilter
+            options={projectOptions}
+            value={search.project ?? "all"}
+            onChange={(v) =>
+              navigate({ to: "/instructions", search: v === "all" ? {} : { project: v } })
+            }
+            includeWorkspace={workspaceTarget != null}
+          />
 
           <NeedsAttentionSection items={attentionItems} />
 

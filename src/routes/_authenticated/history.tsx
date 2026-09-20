@@ -14,15 +14,17 @@
 // this change" / "Go back to before this change").
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ManagedBlockText, Timeline } from "@/components/harness/timeline";
+import { ProjectFilter } from "@/components/harness/project-filter";
 import {
   formatDate,
   HISTORY_FILTER_LABELS,
   HISTORY_FILTER_ORDER,
   historyNodeMatchesFilter,
+  isTestCopyProject,
   type HistoryFilterValue,
 } from "@/lib/harness-ux";
 import {
@@ -31,6 +33,7 @@ import {
   fetchTimeline,
   postKnowledge,
   toastWriteOutcome,
+  type TimelineNode,
 } from "@/lib/improvements-client";
 
 type HistorySearch = {
@@ -162,11 +165,42 @@ function Page() {
 
   const target = selected?.target;
   const id = selected?.id;
+  // Round 9 Task 2: ProjectFilter's own "All projects" chip -- no explicit
+  // ?target=/?id= means every allowed project's timeline, merged. Test-copy
+  // projects (isTestCopyProject) are never fetched for this -- they are
+  // never real projects to show history for.
+  const isAllProjects = !(search.target && search.id);
+  const projectTargets = targets.filter(
+    (t) => t.target === "project" && !isTestCopyProject(t.name),
+  );
+  const workspaceTarget = targets.find((t) => t.target === "workspace");
+
   const timeline = useQuery({
     queryKey: ["harness-timeline", target, id],
     queryFn: () => fetchTimeline(target!, id!),
-    enabled: !!target && !!id,
+    enabled: !isAllProjects && !!target && !!id,
   });
+  const allProjectTimelines = useQueries({
+    queries: isAllProjects
+      ? projectTargets.map((t) => ({
+          queryKey: ["harness-timeline", "project", t.id],
+          queryFn: () => fetchTimeline("project", t.id),
+        }))
+      : [],
+  });
+  const allProjectsLoading = isAllProjects && allProjectTimelines.some((q) => q.isLoading);
+  const allProjectsError = isAllProjects
+    ? allProjectTimelines.find((q) => q.isError)?.error
+    : undefined;
+  const allProjectsNodes: TimelineNode[] = isAllProjects
+    ? allProjectTimelines
+        .flatMap((q) => q.data?.nodes ?? [])
+        .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+    : [];
+  const rawNodes = isAllProjects ? allProjectsNodes : (timeline.data?.nodes ?? []);
+  const timelineIsLoading = isAllProjects ? allProjectsLoading : timeline.isLoading;
+  const timelineIsError = isAllProjects ? allProjectsError != null : timeline.isError;
+  const timelineErrorValue = isAllProjects ? allProjectsError : timeline.error;
 
   const restore = useMutation({
     mutationFn: (versionId: number) => postKnowledge({ action: "restore", version_id: versionId }),
@@ -184,9 +218,7 @@ function Page() {
   // already-fetched timeline -- no new route or query (harness-ux.ts's
   // historyNodeMatchesFilter is the one place a node's kind is compared
   // against a filter value).
-  const filteredNodes = (timeline.data?.nodes ?? []).filter((n) =>
-    historyNodeMatchesFilter(n, filter),
-  );
+  const filteredNodes = rawNodes.filter((n) => historyNodeMatchesFilter(n, filter));
 
   if (knowledge.isLoading) {
     return (
@@ -244,32 +276,28 @@ function Page() {
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Target">
-            {targets.map((t) => {
-              const isSelected = selected?.target === t.target && selected.id === t.id;
-              return (
-                <Button
-                  key={`${t.target}-${t.id}`}
-                  type="button"
-                  variant={isSelected ? "default" : "outline"}
-                  size="sm"
-                  aria-pressed={isSelected}
-                  onClick={() =>
-                    navigate({
-                      to: "/history",
-                      search: {
-                        target: t.target,
-                        id: t.id,
-                        ...(search.filter ? { filter: search.filter } : {}),
-                      },
-                    })
-                  }
-                >
-                  {t.name}
-                </Button>
-              );
-            })}
-          </div>
+          {/* Round 9 Task 2: the shared ProjectFilter -- "All projects"
+              merges every allowed project's timeline (below) by date; a
+              specific project or the workspace target narrows to that one,
+              same as before. */}
+          <ProjectFilter
+            options={projectTargets.map((t) => ({ id: t.id, name: t.name }))}
+            value={isAllProjects ? "all" : search.target === "workspace" ? "workspace" : id!}
+            onChange={(v) =>
+              navigate({
+                to: "/history",
+                search: {
+                  ...(v === "all"
+                    ? {}
+                    : v === "workspace"
+                      ? { target: "workspace", id: workspaceTarget!.id }
+                      : { target: "project", id: v }),
+                  ...(search.filter ? { filter: search.filter } : {}),
+                },
+              })
+            }
+            includeWorkspace={workspaceTarget != null}
+          />
 
           {/* Checkpoint 3 I2: the History kind filter -- All activity /
               Suggestions / Knowledge / Skills / Tests / Restores, driven by
@@ -349,16 +377,16 @@ function Page() {
             </div>
           </details>
 
-          {timeline.isLoading ? (
+          {timelineIsLoading ? (
             <div className="rounded-md border p-6 text-sm text-muted-foreground">Loading…</div>
-          ) : timeline.isError ? (
+          ) : timelineIsError ? (
             <div
               role="alert"
               className="rounded-md border border-destructive/50 bg-destructive/5 p-6 text-sm text-destructive"
             >
-              {timeline.error instanceof Error ? timeline.error.message : "Failed to load."}
+              {timelineErrorValue instanceof Error ? timelineErrorValue.message : "Failed to load."}
             </div>
-          ) : (timeline.data?.nodes ?? []).length === 0 ? (
+          ) : rawNodes.length === 0 ? (
             <p className="text-sm text-muted-foreground">{EMPTY_LINE}</p>
           ) : filteredNodes.length === 0 ? (
             <p className="text-sm text-muted-foreground">{EMPTY_FILTERED_LINE}</p>

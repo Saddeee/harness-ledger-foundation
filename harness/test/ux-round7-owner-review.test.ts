@@ -40,6 +40,8 @@ const SKILLS_PAGE = "routes/_authenticated/skills.tsx";
 const CLAMPED_TEXT = "components/harness/clamped-text.tsx";
 const LIGHT_MARKDOWN_COMPONENT = "components/harness/light-markdown.tsx";
 const LIGHT_MARKDOWN_LIB = "lib/light-markdown.ts";
+// Round 9 Task 2:
+const PROJECT_FILTER = "components/harness/project-filter.tsx";
 
 // ---- 1. Inbox reuses the Instructions project filter ----
 
@@ -54,19 +56,24 @@ test("inbox.tsx: validateSearch accepts a project id or 'workspace', same shape 
 
 test("inbox.tsx: renders the same 'Show' segmented control and copy as instructions.tsx (All projects / Workspace)", () => {
   const code = codeOnly(readApp(INBOX));
-  assert.match(code, /INSTRUCTIONS_PROJECT_FILTER_LABEL/);
-  assert.match(code, /ALL_PROJECTS_LABEL/);
-  assert.match(code, /WORKSPACE_TARGET_LABEL/);
-  assert.match(code, /role="group"/);
-  assert.match(code, /aria-label=\{INSTRUCTIONS_PROJECT_FILTER_LABEL\}/);
+  // Round 9 Task 2: both pages now render the shared <ProjectFilter>
+  // component (src/components/harness/project-filter.tsx) instead of each
+  // hand-rolling the same chip row -- the labels/role/aria-label literals
+  // this test used to pin on inbox.tsx itself now live only in that one
+  // component file, checked below and in ux-round9-task2.test.ts.
+  assert.match(code, /<ProjectFilter\b/);
 
-  // Same three exported labels instructions.tsx itself uses -- one shared
-  // vocabulary, not a second, differently-worded filter.
+  // Same shared component, not a second, differently-worded filter.
   const instructionsCode = codeOnly(readApp(INSTRUCTIONS));
-  assert.match(instructionsCode, /INSTRUCTIONS_PROJECT_FILTER_LABEL/);
+  assert.match(instructionsCode, /<ProjectFilter\b/);
+  const projectFilterCode = codeOnly(readApp(PROJECT_FILTER));
+  assert.match(projectFilterCode, /role="group"/);
+  assert.match(projectFilterCode, /ALL_PROJECTS_LABEL/);
+  assert.match(projectFilterCode, /WORKSPACE_TARGET_LABEL/);
   assert.equal(ux.INSTRUCTIONS_PROJECT_FILTER_LABEL, "Show");
   assert.equal(ux.ALL_PROJECTS_LABEL, "All projects");
-  assert.equal(ux.WORKSPACE_TARGET_LABEL, "Workspace");
+  // Round 9 Task 2: "workspace" is banned as a chip label -- was "Workspace".
+  assert.equal(ux.WORKSPACE_TARGET_LABEL, "All my projects");
 });
 
 test("inbox.tsx: filters by project_id client-side, with a 'Workspace' bucket for items with no project of their own", () => {
@@ -85,7 +92,11 @@ test("inbox.tsx: filters by project_id client-side, with a 'Workspace' bucket fo
     code,
     /projectsWithItems\.length >= 2 \|\| \(projectsWithItems\.length >= 1 && hasWorkspaceItem\)/,
   );
-  assert.match(code, /projectsWithItems\.map\(\(p\) => \(/);
+  // Round 9 Task 2: projectsWithItems is now handed straight to the shared
+  // <ProjectFilter> as its `options` prop instead of being .map()'d into
+  // buttons here -- the component does that mapping (and the
+  // isTestCopyProject filtering) itself.
+  assert.match(code, /options=\{projectsWithItems\}/);
   assert.doesNotMatch(code, /allowedProjects\.map\(/);
 });
 

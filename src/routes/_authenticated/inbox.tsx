@@ -12,6 +12,7 @@ import {
   useRun,
   type Improvement,
 } from "@/components/harness/improvement";
+import { ProjectFilter } from "@/components/harness/project-filter";
 import {
   executorQueryOptions,
   fetchImprovements,
@@ -25,13 +26,10 @@ import {
 } from "@/lib/improvements-client";
 import { Button } from "@/components/ui/button";
 import {
-  ALL_PROJECTS_LABEL,
   ANALYSE_NOW_SCOPE_LINE,
   INBOX_INTRO,
   INBOX_TITLE,
-  INSTRUCTIONS_PROJECT_FILTER_LABEL,
   VIEW_PAST_DECISIONS,
-  WORKSPACE_TARGET_LABEL,
   inboxCountLine,
   // ---- Round 8 Task 1 item 8 ----
   analysisStatusLine,
@@ -499,53 +497,18 @@ function Page() {
         </section>
       ) : null}
 
-      {/* Owner review round 7 fix 1: same segmented "Show" control as
-          Instructions, same copy -- All projects, one button per allowed
-          project, and Workspace once an item with no project of its own
-          exists. Only narrows what's shown below; the count line and the
-          sidebar badge above both keep counting every item. */}
+      {/* Round 9 Task 2: the shared ProjectFilter, same "Show" control
+          Instructions uses -- All projects, one chip per allowed project
+          with an item, and the workspace chip once an item with no project
+          of its own exists. Only narrows what's shown below; the count
+          line and the sidebar badge above both keep counting every item. */}
       {showProjectFilter ? (
-        <div
-          className="flex flex-wrap items-center gap-2"
-          role="group"
-          aria-label={INSTRUCTIONS_PROJECT_FILTER_LABEL}
-        >
-          <span className="text-sm font-medium text-muted-foreground">
-            {INSTRUCTIONS_PROJECT_FILTER_LABEL}
-          </span>
-          <Button
-            type="button"
-            variant={!search.project ? "default" : "outline"}
-            size="sm"
-            aria-pressed={!search.project}
-            onClick={() => navigate({ to: "/inbox", search: {} })}
-          >
-            {ALL_PROJECTS_LABEL}
-          </Button>
-          {projectsWithItems.map((p) => (
-            <Button
-              key={p.id}
-              type="button"
-              variant={search.project === p.id ? "default" : "outline"}
-              size="sm"
-              aria-pressed={search.project === p.id}
-              onClick={() => navigate({ to: "/inbox", search: { project: p.id } })}
-            >
-              {p.name}
-            </Button>
-          ))}
-          {hasWorkspaceItem ? (
-            <Button
-              type="button"
-              variant={search.project === "workspace" ? "default" : "outline"}
-              size="sm"
-              aria-pressed={search.project === "workspace"}
-              onClick={() => navigate({ to: "/inbox", search: { project: "workspace" } })}
-            >
-              {WORKSPACE_TARGET_LABEL}
-            </Button>
-          ) : null}
-        </div>
+        <ProjectFilter
+          options={projectsWithItems}
+          value={search.project ?? "all"}
+          onChange={(v) => navigate({ to: "/inbox", search: v === "all" ? {} : { project: v } })}
+          includeWorkspace={hasWorkspaceItem}
+        />
       ) : null}
 
       {inboxUnavailable ? (

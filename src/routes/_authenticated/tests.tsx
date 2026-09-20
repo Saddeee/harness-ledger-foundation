@@ -32,6 +32,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ProjectFilter, type ProjectFilterOption } from "@/components/harness/project-filter";
 import {
   COPY_CREDITS_LINE,
   // ---- Round 8 Task 2 ----
@@ -77,6 +78,9 @@ export const Route = createFileRoute("/_authenticated/tests")({
 
 const INTRO_LINE = `${TEST_A_RULE_PAGE_TITLE}: each test shows your project's historical result at the moment before a real request, next to one new Lovable build made from that same point with a candidate rule added, and lets you say whether the original correction would still be needed.`;
 const EMPTY_LINE = 'No tests yet. Open a suggestion and press "Test this rule".';
+// Round 9 Task 2: distinct from EMPTY_LINE above -- there ARE tests, just
+// none for the chosen project.
+const EMPTY_FILTERED_LINE = "No tests for this project yet.";
 const UNAVAILABLE_LINE = "Tests are available when Harness Ledger runs on your machine.";
 const IN_PROGRESS_STATUSES = new Set(["copying", "building"]);
 const POLL_MS = 10_000;
@@ -268,6 +272,10 @@ function Page() {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+  // Round 9 Task 2: the shared ProjectFilter narrows the run list by
+  // run.project_id -- local state (not the URL) since nothing else on this
+  // page links in pre-scoped to one project the way Inbox/Instructions do.
+  const [projectFilter, setProjectFilter] = useState<string | "all">("all");
 
   const testsQuery = useQuery({
     queryKey: ["harness-tests"],
@@ -325,6 +333,20 @@ function Page() {
   const credits = executor.data?.credits;
   const undeletedCopies = executor.data?.undeleted_copies ?? [];
 
+  // Round 9 Task 2: the shared ProjectFilter narrows this list by
+  // run.project_id -- ExperimentRunSummary already carries the run's
+  // source project id/name (project_id/project_name), so no new fetch.
+  // Only offered once there's more than one project to choose between.
+  const projectOptions: ProjectFilterOption[] = Array.from(
+    new Map(
+      runs
+        .filter((r): r is ExperimentRunSummary & { project_id: string } => r.project_id != null)
+        .map((r) => [r.project_id, { id: r.project_id, name: r.project_name ?? r.project_id }]),
+    ).values(),
+  );
+  const visibleRuns =
+    projectFilter === "all" ? runs : runs.filter((r) => r.project_id === projectFilter);
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -336,13 +358,21 @@ function Page() {
         ) : null}
       </div>
 
+      {projectOptions.length >= 2 ? (
+        <ProjectFilter options={projectOptions} value={projectFilter} onChange={setProjectFilter} />
+      ) : null}
+
       {runs.length === 0 ? (
         <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
           {EMPTY_LINE}
         </div>
+      ) : visibleRuns.length === 0 ? (
+        <div className="rounded-md border border-dashed p-10 text-center text-sm text-muted-foreground">
+          {EMPTY_FILTERED_LINE}
+        </div>
       ) : (
         <div className="space-y-3">
-          {runs.map((run) => (
+          {visibleRuns.map((run) => (
             <TestCard
               key={run.id}
               run={run}

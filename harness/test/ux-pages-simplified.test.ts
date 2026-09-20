@@ -33,6 +33,8 @@ function codeOnly(source: string): string {
 const INSTRUCTIONS_PAGE = "routes/_authenticated/instructions.tsx";
 const SKILLS_PAGE = "routes/_authenticated/skills.tsx";
 const HISTORY_PAGE = "routes/_authenticated/history.tsx";
+// Round 9 Task 2:
+const PROJECT_FILTER = "components/harness/project-filter.tsx";
 const TIMELINE = "components/harness/timeline.tsx";
 
 // ---- 1. Instructions: section order -- Needs your attention, Knowledge,
@@ -139,12 +141,19 @@ test("instructions.tsx: validateSearch accepts a project id or 'workspace', drop
 test("instructions.tsx: a project filter control exists, using harness-ux's own labels rather than a bare 'Workspace' literal", () => {
   const raw = readApp(INSTRUCTIONS_PAGE);
   const code = codeOnly(raw);
-  assert.match(code, /aria-label=\{INSTRUCTIONS_PROJECT_FILTER_LABEL\}/);
-  assert.match(code, /\{ALL_PROJECTS_LABEL\}/);
-  assert.match(code, /\{WORKSPACE_TARGET_LABEL\}/);
+  // Round 9 Task 2: the filter control is now the shared <ProjectFilter>
+  // (src/components/harness/project-filter.tsx) -- the label/ALL_PROJECTS/
+  // WORKSPACE_TARGET literals this test used to pin directly on
+  // instructions.tsx now live only inside that one component file.
+  assert.match(code, /<ProjectFilter\b/);
+  const projectFilterCode = codeOnly(readApp(PROJECT_FILTER));
+  assert.match(projectFilterCode, /aria-label=\{label\}/);
+  assert.match(projectFilterCode, /ALL_PROJECTS_LABEL/);
+  assert.match(projectFilterCode, /WORKSPACE_TARGET_LABEL/);
   assert.equal(ux.INSTRUCTIONS_PROJECT_FILTER_LABEL, "Show");
   assert.equal(ux.ALL_PROJECTS_LABEL, "All projects");
-  assert.equal(ux.WORKSPACE_TARGET_LABEL, "Workspace");
+  // Round 9 Task 2: "workspace" is banned as a chip label -- was "Workspace".
+  assert.equal(ux.WORKSPACE_TARGET_LABEL, "All my projects");
   // Reconfirms the existing round6c-part-a.test.ts pin from this angle too:
   // the page never spells the word out itself.
   assert.ok(
