@@ -174,6 +174,25 @@ test("harness-ux.ts: CONCLUSION_LABELS.not_supported says 'instruction', not 'ru
   );
 });
 
+// Round 9 Task 6 fix round 1 (coordinator review): possibly_harmful ("The
+// rule may have made it worse") renders on Compare builds right next to
+// not_supported -- renamed the same way, and pinned here as a blanket scan
+// so no future CONCLUSION_LABELS value can reintroduce "rule".
+test("harness-ux.ts: CONCLUSION_LABELS.possibly_harmful says 'instruction', not 'rule'; no CONCLUSION_LABELS value contains 'rule'", () => {
+  assert.equal(ux.CONCLUSION_LABELS.possibly_harmful, "The instruction may have made it worse");
+  for (const [key, label] of Object.entries(ux.CONCLUSION_LABELS)) {
+    assert.doesNotMatch(label, /\brule\b/i, `CONCLUSION_LABELS.${key} says "rule": ${label}`);
+  }
+});
+
+// Round 9 Task 6 fix round 1 (coordinator review): TEST_THIS_RULE_BODY's
+// own "adds this rule to the copy's Knowledge" also said "rule" --
+// identifier unchanged, value renamed.
+test("harness-ux.ts: TEST_THIS_RULE_BODY says 'instruction', not 'rule'", () => {
+  assert.doesNotMatch(ux.TEST_THIS_RULE_BODY, /\brule\b/i);
+  assert.match(ux.TEST_THIS_RULE_BODY, /adds this instruction to the copy's Knowledge/);
+});
+
 test("improvement.tsx: TestButton's own fallback trigger is never a raw 'Test this rule' literal", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   assert.doesNotMatch(code, /"Test this rule"/);

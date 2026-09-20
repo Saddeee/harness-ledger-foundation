@@ -779,8 +779,11 @@ export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefi
 // dialog's title is now the short "Test this instruction" heading (the body
 // below still spells out what the copy step does).
 export const TEST_THIS_RULE_TITLE = "Test this instruction";
+// Round 9 Task 6 fix round 1 (coordinator review): "adds this rule to the
+// copy's Knowledge" also said "rule" -- renamed to "instruction" (identifier
+// unchanged).
 export const TEST_THIS_RULE_BODY =
-  "Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request. You get the historical result and the new build side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done.";
+  "Harness Ledger copies your project as it was just before your original request, adds this instruction to the copy's Knowledge, and sends the same request. You get the historical result and the new build side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done.";
 // Round 7 / Checkpoint 2026-09-18: the second copy that shows the historical
 // result -- creating it uses no Lovable builder credits (D1/D2, DECISIONS.md).
 export const SHOW_ORIGINAL_LABEL =
@@ -1018,13 +1021,14 @@ export type ReplayConclusionLike =
 // knowing what a "replay" or a "regression" is.
 // Round 9 Task 6 / spec §4: not_supported reworded from "...even with the
 // rule" -- a Task 3 reviewer leftover (spec §2 vocabulary bans "rule" in UI
-// copy). possibly_harmful's own "The rule may have made it worse" says
-// "rule" too but is out of this task's scope (not named by the brief or
-// spec §4's exact label list) -- left as a known follow-up.
+// copy).
+// Round 9 Task 6 fix round 1 (coordinator review): possibly_harmful's own
+// "The rule may have made it worse" said "rule" too and renders right next
+// to not_supported on Compare builds -- renamed for the same reason.
 export const CONCLUSION_LABELS: Record<ReplayConclusionLike, string> = {
   historical_support: "Correction not needed in the rebuilt copy",
   not_supported: "Correction still needed, even with the instruction",
-  possibly_harmful: "The rule may have made it worse",
+  possibly_harmful: "The instruction may have made it worse",
   inconclusive: "Can't tell from this test",
 };
 

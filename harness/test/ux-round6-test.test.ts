@@ -105,13 +105,14 @@ test("improvement.tsx: TestButton offers the exact confirm copy and posts the `t
 
   const uxCode = codeOnly(readApp(HARNESS_UX));
   // Round 9 Task 6 / spec §2 vocabulary: renamed from "Test this rule in a
-  // copy of your project?" -- the short "Test this instruction" heading;
-  // TEST_THIS_RULE_BODY (unchanged) still spells out what the copy step
-  // does.
+  // copy of your project?" -- the short "Test this instruction" heading.
   assert.match(uxCode, /export const TEST_THIS_RULE_TITLE = "Test this instruction";/);
+  // Round 9 Task 6 fix round 1 (coordinator review): "adds this rule to the
+  // copy's Knowledge" also said "rule" -- renamed to "instruction"
+  // (identifier unchanged).
   assert.match(
     uxCode,
-    /export const TEST_THIS_RULE_BODY =\s*"Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request\. You get the historical result and the new build side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done\.";/,
+    /export const TEST_THIS_RULE_BODY =\s*"Harness Ledger copies your project as it was just before your original request, adds this instruction to the copy's Knowledge, and sends the same request\. You get the historical result and the new build side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done\.";/,
   );
   // Checkpoint 2026-09-18 (DECISIONS.md D1/D2): the exact, mandated cost
   // sentence, shared verbatim via COPY_CREDITS_LINE.

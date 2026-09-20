@@ -129,14 +129,15 @@ test("harness-ux.ts: recommendedPrimaryAction returns skip for not_supported/pos
 
 // Round 9 Task 6 / spec §4: not_supported reworded from "...even with the
 // rule" to "...even with the instruction" (spec §2 vocabulary bans "rule"
-// in UI copy; a Task 3 reviewer leftover). possibly_harmful still says
-// "rule" -- out of this task's scope (not named by the brief or spec §4's
-// exact label list), left as a known follow-up.
+// in UI copy; a Task 3 reviewer leftover).
+// Round 9 Task 6 fix round 1 (coordinator review): possibly_harmful reworded
+// from "The rule may have made it worse" to "The instruction may have made
+// it worse" -- it renders right next to not_supported on Compare builds.
 test("harness-ux.ts: CONCLUSION_LABELS reads in plain words, no 'replay'/'regression' jargon", () => {
   assert.deepEqual(ux.CONCLUSION_LABELS, {
     historical_support: "Correction not needed in the rebuilt copy",
     not_supported: "Correction still needed, even with the instruction",
-    possibly_harmful: "The rule may have made it worse",
+    possibly_harmful: "The instruction may have made it worse",
     inconclusive: "Can't tell from this test",
   });
 });
