@@ -12,7 +12,7 @@ Harness Ledger learns from the corrections you give Lovable, turns reusable less
 
 **Got here from the Lovable link?** That page is the front door only; the product runs on your computer. Clone this repository and follow [Getting started](#3-getting-started).
 
-**Start here:** [Getting started](#3-getting-started) (about ten minutes if Node.js and an AI provider are already set up), then open the app, connect Lovable, choose projects, pick Ask me first, pick a provider, and press Analyse now.
+**Start here:** [Getting started](#3-getting-started) (a few minutes if Node.js and an AI provider are already set up), then open the app, connect Lovable, choose projects, pick Ask me first, pick a provider, and press Analyse now.
 
 ## Contents
 
@@ -80,7 +80,7 @@ Every write reads your Knowledge fresh, compares it with what Harness Ledger las
 
 ## 3. Getting started
 
-It takes about ten minutes. Everything runs on your computer, and the only outside services are Lovable and the AI provider you pick.
+It takes a few minutes, most of it downloading packages. Everything runs on your computer, and the only outside services are Lovable and the AI provider you pick.
 
 ### What you need
 
@@ -95,7 +95,7 @@ It takes about ten minutes. Everything runs on your computer, and the only outsi
 
 The repo has two parts, installed separately: the web app at the root, and the local runtime in `harness/` (its own Node package, with a native SQLite module, compiled before the app can load it). `npm run setup` does both for you.
 
-Harness Ledger currently has a developer-oriented local setup. If Node.js and an AI provider are already configured, setup usually takes around ten minutes.
+Harness Ledger currently has a developer-oriented local setup. If Node.js and an AI provider are already configured, setup usually takes a few minutes.
 
 ```sh
 git clone https://github.com/Saddeee/harness-ledger-foundation.git
@@ -108,7 +108,7 @@ npm run harness:start           # starts the app
 
 Open the address it prints, normally **http://127.0.0.1:8080** (Vite picks the next free port if 8080 is taken). Keep this terminal running.
 
-`npm run setup` prints a line for each step (Node version, installs, build, database, Lovable connection, AI provider) and tells you what to fix if one fails. `npm run harness:start` sets `HARNESS_RUNTIME=local` and a repo-local `HARNESS_DB_PATH` for you, and keeps the dev server bound to `127.0.0.1` unless you set `DEV_HOST_OPEN=1` yourself.
+`npm run setup` prints a line for each step (Node version, the two installs, build, database, Lovable connection, AI provider, and a final check of the built files) and tells you what to fix if one fails. `npm run harness:start` sets `HARNESS_RUNTIME=local` and a repo-local `HARNESS_DB_PATH` for you, and keeps the dev server bound to `127.0.0.1` unless you set `DEV_HOST_OPEN=1` yourself.
 
 #### Lower-level commands (troubleshooting)
 
@@ -158,7 +158,7 @@ That's the whole loop. From then on: chat with Lovable as usual, and press Analy
 
 ### Trying it without a Lovable account
 
-`npm run harness:demo -- --add` loads sample projects, suggestions and history so you can click around. Remove it with `npm run harness:demo -- --remove` **before** connecting a real account.
+`npm run harness:demo -- --add` loads sample projects, suggestions and history so you can click around. The app still opens on the Get started page until Lovable is connected, so press **Skip onboarding** at the bottom of that page to reach the Inbox. Remove the demo data with `npm run harness:demo -- --remove` **before** connecting a real account.
 
 ### Command line (optional)
 

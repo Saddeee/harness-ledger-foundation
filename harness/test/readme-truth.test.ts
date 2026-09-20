@@ -94,7 +94,7 @@ test("README: hosted limitation is authorization, Skills are not described as wr
 test("README: setup promise and the managed block example match the code", () => {
   assert.match(
     readme,
-    /Harness Ledger currently has a developer-oriented local setup\. If Node\.js and an AI provider are already configured, setup usually takes around ten minutes\./,
+    /Harness Ledger currently has a developer-oriented local setup\. If Node\.js and an AI provider are already configured, setup usually takes a few minutes\./, // 2026-09-20 clone check: measured 26 s with a warm cache
   );
   assert.match(readme, /npm run setup/);
   assert.match(readme, /npm run harness:start/);
@@ -152,4 +152,10 @@ test("README: Inbox is the single decision queue; no separate Suggestions page i
   ]) {
     assert.ok(pagesTable.includes(page), `pages table missing ${page}`);
   }
+});
+
+// 2026-09-20 clone check: a fresh install shows Get started until Lovable is
+// connected, so the demo section must tell the reader about Skip onboarding.
+test("README: the demo section says how to get past Get started", () => {
+  assert.match(readme, /harness:demo -- --add[\s\S]{0,400}\*\*Skip onboarding\*\*/);
 });

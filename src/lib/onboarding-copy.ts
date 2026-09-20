@@ -179,7 +179,8 @@ export function overviewNextAction(state: OverviewState): OverviewNextAction {
       actionLabel: "Connect Lovable",
       kind: "connect",
       to: "/onboarding",
-      consequence: "Opens onboarding. Nothing changes in Lovable until you connect there.",
+      consequence:
+        "Opens Get started, where Connect Lovable opens Lovable's login. Nothing changes in Lovable until then.",
     };
   }
   if (!state.hasAllowedProject) {

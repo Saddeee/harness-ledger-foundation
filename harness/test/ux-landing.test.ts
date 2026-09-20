@@ -57,7 +57,7 @@ test("landing: hero title, status line, product promise and actions, verbatim", 
 
 test("landing: Start here leads with three setup steps, in order", () => {
   assert.equal(copy.START_TITLE, "Start here");
-  assert.match(copy.START_TEXT, /takes about ten minutes/);
+  assert.match(copy.START_TEXT, /takes a few minutes/); // 2026-09-20 clone check: setup measured well under ten minutes
   assert.deepEqual(
     copy.START_STEPS.map((s) => s.title),
     ["Clone and start", "Open the app and connect Lovable", "Pick an AI provider and analyse"],

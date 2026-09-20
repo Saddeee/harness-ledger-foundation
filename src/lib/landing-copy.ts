@@ -38,7 +38,7 @@ export const SOURCE_URL = "https://github.com/Saddeee/harness-ledger-foundation"
 // first thing after the hero.
 export const START_TITLE = "Start here";
 export const START_TEXT =
-  "Harness Ledger runs on your computer. It takes about ten minutes if Node.js 22 and an AI provider are already set up.";
+  "Harness Ledger runs on your computer. It takes a few minutes if Node.js 22 and an AI provider are already set up.";
 export const START_STEPS = [
   {
     title: "Clone and start",
