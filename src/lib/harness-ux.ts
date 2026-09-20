@@ -2502,4 +2502,9 @@ export const RETIRE_ACTION_CONSEQUENCE_LINE =
 export const READD_TITLE = "Re-add this instruction?";
 export const READD_BODY = "Harness Ledger writes it back to Lovable Knowledge right away.";
 export const READD_CONSEQUENCES = ["You can retire it again later."];
+
+// Coordinator fix round 1: "Without this rule, …" (the fold's own predicted-
+// failure sentence) said "rule" in UI copy, banned by spec §2 vocabulary --
+// the prefix moves here so the sentence is never an inline literal.
+export const WITHOUT_INSTRUCTION_PREFIX = "Without this instruction, ";
 // ---- end Round 9 Task 3 ----

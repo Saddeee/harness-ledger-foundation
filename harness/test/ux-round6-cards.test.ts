@@ -56,13 +56,17 @@ test("improvement.tsx: ACTION_BAR_CLASS is the exact spec class, defined once, a
   // their own bar -- both now delegate to the one shared InstructionActions
   // component, whose own single `className={ACTION_BAR_CLASS}` occurrence
   // in source is reused at runtime by every caller. Two card-rendering
-  // functions' own bars collapse into that one shared occurrence, so the
-  // total source count drops from 9 to 8, not 7 -- InstructionActions still
-  // contributes its own one.
+  // functions' own bars collapse into that one shared occurrence, dropping
+  // the count from 9 to 8.
+  // Coordinator fix round 1: RuleAttentionCard gained a second branch (a
+  // reachable rule id renders Keep/Retire/Open directly; the old
+  // Open-Instructions-only rendering stays as a defensive fallback for a
+  // future item with none) -- two bars in source for that one function,
+  // only one ever rendered at once, back up to 9.
   assert.equal(
     count(code, "className={ACTION_BAR_CLASS}"),
-    8,
-    "exactly one action-bar container per card-rendering function (RetireCard/CompactDecisionCard share InstructionActions' own)",
+    9,
+    "exactly one action-bar container per card-rendering function (RetireCard/CompactDecisionCard share InstructionActions' own; RuleAttentionCard has two mutually exclusive branches)",
   );
 });
 

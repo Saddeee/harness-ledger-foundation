@@ -109,8 +109,14 @@ test("Inbox item types: six plain labels, every card path renders one primary ac
       `${fn} states its consequence`,
     );
     // One default-styled (primary) Button per card; the rest are outline / ghost / links.
+    // Coordinator fix round 1, item 3: RuleAttentionCard gained a second,
+    // mutually exclusive branch (a reachable rule id renders Keep directly;
+    // otherwise the old Open-Instructions-only fallback) -- each branch has
+    // its own one primary Button, never both at once, so its own source
+    // text carries two, not one.
+    const maxPrimaries = fn === "RuleAttentionCard" ? 2 : 1;
     const primaries = (body.match(/<Button(?![^>]*variant=)[^>]*>/g) ?? []).length;
-    assert.ok(primaries <= 1, `${fn} has ${primaries} primary buttons`);
+    assert.ok(primaries <= maxPrimaries, `${fn} has ${primaries} primary buttons`);
   }
 });
 

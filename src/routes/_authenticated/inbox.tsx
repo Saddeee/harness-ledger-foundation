@@ -581,7 +581,7 @@ function Page() {
                     onOpen={onOpen}
                   />
                 ) : it.type === "rule_attention" ? (
-                  <RuleAttentionCard item={it} />
+                  <RuleAttentionCard item={it} busy={cardBusy} run={cardRun} />
                 ) : it.type === "conflict" && disagreementById.has(it.id) ? (
                   <DisagreementCard item={disagreementById.get(it.id)!} />
                 ) : it.type === "conflict" ? (

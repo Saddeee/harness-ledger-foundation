@@ -133,9 +133,13 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
     code.indexOf("function RetireCard"),
     code.indexOf("export function VerdictControl"),
   );
-  assert.match(retireCard, />\s*Is this rule still useful\?\s*<\/Title>/);
+  // Round 9 Task 3 coordinator fix round 1: the literal "Is this rule still
+  // useful?" said "rule" in UI copy -- the Title now renders {VERDICT_QUESTION}
+  // ("Is this instruction still useful?"), the same question VerdictControl
+  // already asks elsewhere in this file.
+  assert.match(retireCard, />\s*\{VERDICT_QUESTION\}\s*<\/Title>/);
   assert.match(retireCard, /item\.title\.replace\(\/\^Retire:\\s\*\/, ""\)/);
-  const titleIdx = retireCard.indexOf("Is this rule still useful?");
+  const titleIdx = retireCard.indexOf("{VERDICT_QUESTION}");
   const reasonIdx = retireCard.indexOf("retireReasonSentence");
   const sinceIdx = retireCard.indexOf("retireSinceLine");
   assert.ok(titleIdx >= 0 && titleIdx < sinceIdx && sinceIdx < reasonIdx, "title comes first");

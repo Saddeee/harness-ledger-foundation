@@ -135,6 +135,7 @@ import {
   READD_TITLE,
   READD_BODY,
   READD_CONSEQUENCES,
+  WITHOUT_INSTRUCTION_PREFIX,
   // ---- end Round 9 Task 3 ----
 } from "@/lib/harness-ux";
 
@@ -824,12 +825,17 @@ function RetireCard({
         <p className="text-sm font-semibold">{projectName(item)}</p>
         {isNew ? <Badge variant="default">New</Badge> : null}
       </div>
-      {/* Round 6c part A / item 1: this fixed line comes first -- Suggestions never lists a live rule, so the card can't lean on a badge to say so. */}
+      {/* Round 6c part A / item 1: this fixed line comes first -- Suggestions never lists a live rule, so the card can't lean on a badge to say so.
+          Round 9 Task 3 coordinator fix round 1: the literal "Is this rule
+          still useful?" said "rule" in UI copy -- VERDICT_QUESTION is the
+          same question, worded per the vocabulary rules ("instruction" not
+          "rule"), already used verbatim by VerdictControl elsewhere in this
+          file. */}
       <Title
         id={titleId}
         className={titleAs === "h1" ? "text-2xl font-semibold" : "text-base font-medium"}
       >
-        Is this rule still useful?
+        {VERDICT_QUESTION}
       </Title>
       <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
         {item.title.replace(/^Retire:\s*/, "")}
@@ -1493,7 +1499,12 @@ function CompactDecisionCard({
               )}
             </p>
           ) : null}
-          {predictedFailureOf(item) ? <p>Without this rule, {predictedFailureOf(item)}.</p> : null}
+          {predictedFailureOf(item) ? (
+            <p>
+              {WITHOUT_INSTRUCTION_PREFIX}
+              {predictedFailureOf(item)}.
+            </p>
+          ) : null}
           {appliesWhenOf(item) ? (
             <p>
               {FIELD_LABELS["applies_when"]}: {appliesWhenOf(item)}
@@ -2692,9 +2703,29 @@ export function TestResultCard({ item }: { item: InboxItem }) {
  * compact, i.e. RetireCard, instead; see its own doc comment). Primary
  * "Open Instructions" -- the rule's own Keep/Retire/Test live on its
  * Instructions row (Task 5), this card only navigates there. */
-export function RuleAttentionCard({ item }: { item: InboxItem }) {
+// Coordinator ruling (fix round 1): a rule_attention item with no
+// improvement (a live rule health flagged, no open retire proposal) still
+// carries its own rule id, via the same `link.rule_id` inboxLinkHref reads
+// (buildRuleAttentionInboxItems sets it on both of its own branches) --
+// spec §5 says this card offers Keep/Retire with one why line, same as any
+// other live-attention instruction, not just a link elsewhere. Reuses
+// RetireConfirm as-is (its own body/consequences, never duplicated here);
+// Keep is the same plain verdict Button InstructionActions' own "keep" case
+// posts. No Test button -- spec §5's own line for this card names only
+// Keep/Retire. Falls back to the old Open-Instructions-only rendering only
+// if a future item of this type ever arrives with no rule id at all.
+export function RuleAttentionCard({
+  item,
+  busy,
+  run,
+}: {
+  item: InboxItem;
+  busy: boolean;
+  run: Run;
+}) {
   const titleId = `inbox-${item.id}`;
   const href = inboxLinkHref(item);
+  const ruleId = item.link.rule_id ?? null;
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
@@ -2702,14 +2733,43 @@ export function RuleAttentionCard({ item }: { item: InboxItem }) {
         {item.title}
       </h2>
       {item.summary ? <p className="text-sm text-muted-foreground">{item.summary}</p> : null}
-      <div className={ACTION_BAR_CLASS}>
-        <div className="space-y-1">
-          <Button asChild type="button" size="sm">
-            <a href={href}>{openLabel("Instructions")}</a>
+      {ruleId != null ? (
+        <div className={ACTION_BAR_CLASS}>
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              void run({ action: "verdict", rule_id: ruleId, verdict: "keep" }, "Kept")
+            }
+          >
+            {INSTRUCTION_ACTION_LABELS.keep}
           </Button>
-          <p className="text-xs text-muted-foreground">{inboxActionConsequence("review_rule")}</p>
+          <RetireConfirm
+            ruleId={ruleId}
+            busy={busy}
+            run={run}
+            size="sm"
+            variant="outline"
+            trigger={INSTRUCTION_ACTION_LABELS.retire}
+          />
+          <a
+            href={href}
+            className="text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {openLabel("Instructions")}
+          </a>
         </div>
-      </div>
+      ) : (
+        <div className={ACTION_BAR_CLASS}>
+          <div className="space-y-1">
+            <Button asChild type="button" size="sm">
+              <a href={href}>{openLabel("Instructions")}</a>
+            </Button>
+            <p className="text-xs text-muted-foreground">{inboxActionConsequence("review_rule")}</p>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
