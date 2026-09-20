@@ -48,9 +48,12 @@ test("harness-ux.ts: savesToDestinationLabel returns the four exact 'Saves to' s
   assert.equal(ux.savesToDestinationLabel(null, "project"), "This project's Knowledge");
 });
 
-test("harness-ux.ts: SUGGESTED_INSTRUCTION_LABEL and SAVES_TO_LABEL are the exact required strings", () => {
-  assert.equal(ux.SUGGESTED_INSTRUCTION_LABEL, "Suggested instruction");
+// Round 9 Task 4 / spec §5: SUGGESTED_INSTRUCTION_LABEL is gone --
+// instructionStateLine (Round 9 Task 1) replaced it on the decision card,
+// true for every state, not only a pending one (see ux-round9-task4.test.ts).
+test("harness-ux.ts: SAVES_TO_LABEL is the exact required string; SUGGESTED_INSTRUCTION_LABEL no longer exists", () => {
   assert.equal(ux.SAVES_TO_LABEL, "Saves to");
+  assert.equal("SUGGESTED_INSTRUCTION_LABEL" in ux, false);
 });
 
 // ---- 2. correctionDiffersFromRequest: drop "Your correction" on a verbatim

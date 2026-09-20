@@ -2065,7 +2065,9 @@ export function scheduleModeLine(owner: "app" | "cli" | null | undefined): strin
 // line and a collapsed "Why Harness Ledger recommends this" <details>. The
 // counter and Previous/Next now browse pending suggestions only.
 
-export const SUGGESTED_INSTRUCTION_LABEL = "Suggested instruction";
+// SUGGESTED_INSTRUCTION_LABEL ("Suggested instruction") lived here until
+// Round 9 Task 4 / spec §5: instructionStateLine (Round 9 Task 1) replaced
+// it on the decision card -- true for every state, not only a pending one.
 export const SAVES_TO_LABEL = "Saves to";
 
 /** The decision card's "Saves to: X" label -- four exact strings from the

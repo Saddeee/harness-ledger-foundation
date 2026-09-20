@@ -1682,15 +1682,23 @@ export function ImprovementDetail({
   // Round 9 Task 4 / spec §4-§5: the plain evidence sentences, computed once
   // here so the section below can decide whether it has anything to show at
   // all (never an empty "Evidence" heading over nothing). The test line
-  // reads item.test.run's own status through testStatusPhrase -- the same
-  // plain-word phrases the Tests page uses -- with no derived conclusion of
-  // its own to pass (Improvement.test.run, unlike the Tests page's own
-  // ExperimentRunSummary, carries no `conclusion` field), so a judged run
-  // reads as the honest fallback "Judged" here, same as testStatusPhrase's
-  // own doc comment describes for an old run with nothing derived on record.
+  // reads item.test.run's own status: a judged run gets its real result via
+  // testedResultLine (the same "Tested: N of M corrections no longer
+  // needed" line TestStatusLine already shows, since item.test.run carries
+  // score/corrections but no derived `conclusion` field the way the Tests
+  // page's own ExperimentRunSummary does); every other status (queued/
+  // copying/building/judging/failed/cancelled) reads testStatusPhrase's own
+  // plain-word phrase, the same one the Tests page uses.
+  // Coordinator fix round 1: a judged run used to read the bare word
+  // "Judged" here (testStatusPhrase's honest fallback for "nothing derived
+  // on record") -- but a real result IS on record, just under a different
+  // shape (score/corrections, not a derived conclusion); testedResultLine
+  // reads it directly instead of discarding it.
   const testRun = item.test?.run ?? null;
   const evidenceTestLine = testRun
-    ? testStatusPhrase({ status: testRun.status, conclusion: null })
+    ? testRun.status === "judged"
+      ? testedResultLine(testRun)
+      : testStatusPhrase({ status: testRun.status, conclusion: null })
     : null;
   const evidenceObserved = observedSentence(item.health);
   const evidenceAiCheck = aiCheckSentence(item.health);

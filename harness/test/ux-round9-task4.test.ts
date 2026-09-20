@@ -65,6 +65,11 @@ test("improvement.tsx: Evidence reads observedSentence/aiCheckSentence/evidenceD
   assert.match(detail, /LOVABLE_SAID_PREFIX/);
   assert.match(detail, /OPEN_COMPARE_BUILDS_LABEL/);
   assert.match(detail, /testStatusPhrase\(/);
+  // Coordinator fix round 1: a judged run's evidence test line reads its
+  // real result via testedResultLine (score/corrections), not the bare word
+  // "Judged" -- testStatusPhrase stays for every other status (running/
+  // failed/waiting).
+  assert.match(detail, /testedResultLine\(testRun\)/);
 });
 
 test("harness-ux.ts: mostRecentBrokeQuote picks the newest 'broke' quote, ignoring followed/not_applicable, and is null with nothing to show", () => {
