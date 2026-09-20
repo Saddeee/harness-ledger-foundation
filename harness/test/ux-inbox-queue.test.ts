@@ -61,7 +61,9 @@ test("Inbox hierarchy: count line, items, past-decisions link, then the secondar
   };
   const count = at("inboxCountLine(count)");
   const items = at("<NewSkillCard");
-  const past = at("{VIEW_PAST_DECISIONS}");
+  // Round 9 Task 3 / spec §2 vocabulary: "View past decisions" is banned
+  // navigation wording -- the link now reads openLabel("History").
+  const past = at('openLabel("History")');
   const analysis = at('aria-label="Analysis"');
   assert.ok(
     count < items && items < past && past < analysis,

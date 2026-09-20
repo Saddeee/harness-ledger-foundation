@@ -163,20 +163,29 @@ test("improvements-client.ts: fetchTestRuns still fetches only the six local har
   }
 });
 
-// ---- 5. the "See on Tests" link on the card's judged/failed status lines ----
+// ---- 5. the "Open Tests" link on the card's judged/failed status lines ----
 
-test("improvement.tsx: the judged/failed status lines carry a 'See on Tests' link to /tests, plus a /judge?run= link so a judged/failed run can be opened straight from the card", () => {
+test("improvement.tsx: the judged/failed status lines carry an 'Open Tests' link to /tests, plus a /judge?run= link so a judged/failed run can be opened straight from the card", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   assert.match(code, /SEE_ON_TESTS_LABEL/);
   assert.match(code, /to="\/tests"/);
 
   const uxCode = codeOnly(readApp(HARNESS_UX));
-  assert.match(uxCode, /export const SEE_ON_TESTS_LABEL = "See on Tests";/);
+  // Round 9 Task 3 / spec §2 vocabulary: "See on Tests" is banned
+  // navigation wording -- renamed to "Open Tests", same constant name.
+  assert.match(uxCode, /export const SEE_ON_TESTS_LABEL = "Open Tests";/);
 
   // judging, judged, and failed all link to /judge?run=<id> -- not just
   // judging (Round 6 fix wave item 1: judged/failed runs were unopenable).
+  // Round 9 Task 3: InstructionActions gained its own "judge" action, a
+  // fourth to="/judge" link (its own runId, not TestStatusLine's run.id) --
+  // the three TestStatusLine links (judging/judged/failed) are unchanged.
   const judgeLinks = code.match(/to="\/judge"/g) ?? [];
-  assert.equal(judgeLinks.length, 3, "judging, judged, and failed all link to /judge");
+  assert.equal(
+    judgeLinks.length,
+    4,
+    "judging, judged, and failed all link to /judge, plus InstructionActions' own",
+  );
 });
 
 // ---- 6. judge.tsx: the feedback box and both back links ----

@@ -29,7 +29,7 @@ import {
   ANALYSE_NOW_SCOPE_LINE,
   INBOX_INTRO,
   INBOX_TITLE,
-  VIEW_PAST_DECISIONS,
+  openLabel,
   inboxCountLine,
   // ---- Round 8 Task 1 item 8 ----
   analysisStatusLine,
@@ -600,7 +600,7 @@ function Page() {
           search={{ filter: "suggestions" }}
           className="text-primary underline underline-offset-2"
         >
-          {VIEW_PAST_DECISIONS}
+          {openLabel("History")}
         </Link>
       </p>
 

@@ -129,30 +129,27 @@ test("improvement.tsx: DecisionCard delegates to CompactDecisionCard when compac
 // defined at the end of the file, replaces them). Everything else this test
 // already checked (project name, the onOpen title button, no group Badge,
 // no DecidedStatus, no editable state, the New badge) still holds.
-test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title button, the lesson, the instruction, the plain destination label and reason, ONE recommended action with its consequence line, and Skip -- no group Badge, no DecidedStatus, no editable state", () => {
+// Round 9 Task 3: rewritten with intent -- the card's own three-branch
+// recommended-action logic (AddInstructionConfirm/review_skill/test_first
+// picked by recommendedPrimaryAction, a separate tertiary Skip/Edit/View
+// details row) is gone. One state (instructionState) drives one shared
+// InstructionActions component instead -- Add/Skip/Edit/Open (and, for a
+// live/attention item this card would also be asked to render, Keep/
+// Retire/Test) all come from that one call, never picked here.
+test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title button, the state line, the instruction once, and delegates its actions to InstructionActions -- no group Badge, no DecidedStatus, no editable state", () => {
   const compact = compactCardSource(codeOnly(readApp(DETAIL)));
   assert.match(compact, /projectName\(item\)/);
   assert.match(compact, /onOpen/);
   assert.match(compact, /lessonLine\(item\)/);
-  assert.match(compact, /item\.proposed_instruction/);
-  assert.match(compact, /destinationLabelPlain\(/);
-  // Round 8 Task 1 item 4: recommendedPrimaryAction now takes this card's
-  // own judged conclusion as a second argument (Skip becomes the
-  // recommendation when a staged test already came back not_supported/
-  // possibly_harmful) -- was `recommendedPrimaryAction(item)`.
-  assert.match(compact, /recommendedPrimaryAction\(item, conclusion\)/);
-  assert.match(
-    compact,
-    /<AddInstructionConfirm item=\{item\} busy=\{busy\} run=\{run\} size=\{size\} \/>/,
-  );
-  assert.match(compact, /actionConsequence\("add", scope\)/);
-  assert.match(compact, /PRIMARY_ACTION_LABELS\.review_skill/);
-  assert.match(compact, /PRIMARY_ACTION_LABELS\.test_first/);
-  assert.match(compact, /<SkipConfirm item=\{item\}/);
-  // No two separate Add buttons any more -- one merged confirm instead.
+  assert.match(compact, /item\.proposed_instruction \?\? item\.title/);
+  assert.match(compact, /instructionState\(\{/);
+  assert.match(compact, /instructionStateLine\(\{/);
+  assert.match(compact, /<InstructionActions/);
   assert.ok(
-    !/<AddConfirm\b/.test(compact),
-    "compact mode must not render the two-button AddConfirm any more",
+    !/recommendedPrimaryAction|<AddInstructionConfirm\b|<AddConfirm\b|<SkipConfirm\b|<TestButton\b/.test(
+      compact,
+    ),
+    "compact mode must not pick its own action -- InstructionActions does",
   );
   assert.ok(!/DecidedStatus/.test(compact), "compact mode must never render DecidedStatus");
   assert.ok(!/editable/.test(compact), "compact mode must never carry editable state");
@@ -162,13 +159,16 @@ test("improvement.tsx: CompactDecisionCard renders project name, an onOpen title
   );
   assert.match(compact, /isNew \? <Badge variant="default">New<\/Badge> : null/);
   // Checkpoint 3: prediction paragraphs and the alternative destination
-  // collapse under "Why Harness Ledger recommends this"; Edit / Skip /
-  // Change destination / View details are text-weight tertiary actions.
+  // collapse under "Why Harness Ledger recommends this"; Round 9 Task 3:
+  // Edit/Open are InstructionActions' own small links now, not a separate
+  // tertiary row of this card's own.
   assert.match(compact, /<details className="rounded-md border">/);
   assert.match(compact, /\{WHY_RECOMMENDS_TITLE\}/);
   assert.match(compact, /whyFor\(item\.classification\)/);
-  assert.match(compact, /\{EDIT_LABEL\}/);
-  assert.match(compact, /\{VIEW_DETAILS_LABEL\}/);
+  assert.ok(
+    !/\{EDIT_LABEL\}|\{VIEW_DETAILS_LABEL\}/.test(compact),
+    "the old standalone Edit/View details tertiary row is gone",
+  );
 });
 
 test('improvement.tsx: CompactDecisionCard renders item.unsure as a muted role="status" line when present', () => {
@@ -222,20 +222,22 @@ test("improvement.tsx: SkipConfirm's onConfirm sends the chosen reason to the sk
 });
 
 // Round 6 Task 4 / spec §4: rewritten with intent -- every button in a
-// card's action bar is the same size, so all three SkipConfirm call sites
-// now also carry `size={size}` (a local variable at each site: "sm" always
-// in CompactDecisionCard, since the Inbox is always a list; computed from
-// titleAs everywhere else). The original intent -- these three call sites
-// stay identical to each other, no prop drift between them -- still holds,
-// just with `size` added to what "identical" means.
-test("improvement.tsx: every SkipConfirm call site (DecidedStatus, the non-compact pending branch, and CompactDecisionCard) passes item, busy, run and the shared size variable", () => {
+// card's action bar is the same size, so every SkipConfirm call site that
+// still lives directly in a card (not behind InstructionActions) carries
+// `size={size}` (a local variable at each site, computed from titleAs).
+// Round 9 Task 3: CompactDecisionCard's own direct SkipConfirm call is gone
+// -- InstructionActions renders Skip now, with its own `size={btnSize}
+// variant={variant}` call (a different literal shape, pinned separately in
+// ux-round9-task3.test.ts) -- two sized call sites remain here, not three:
+// DecidedStatus and DecisionCard's own non-compact pending branch.
+test("improvement.tsx: SkipConfirm's two remaining direct call sites (DecidedStatus and the non-compact pending branch) pass item, busy, run and the shared size variable", () => {
   const detail = codeOnly(readApp(DETAIL));
   const matches = [
     ...detail.matchAll(
       /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/g,
     ),
   ];
-  assert.equal(matches.length, 3, "expected exactly three sized SkipConfirm call sites");
+  assert.equal(matches.length, 2, "expected exactly two sized SkipConfirm call sites");
 });
 
 test("improvements-client.ts: Improvement gains unsure, decided_by and rank", () => {

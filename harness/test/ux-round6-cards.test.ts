@@ -47,16 +47,22 @@ test("improvement.tsx: ACTION_BAR_CLASS is the exact spec class, defined once, a
     "spec §4's exact bar class",
   );
   assert.equal(count(code, "const ACTION_BAR_CLASS ="), 1, "defined exactly once");
-  // RetireCard, DecidedStatus, CompactDecisionCard, and DecisionCard's own
-  // pending branch -- one bar per rendered card, never a second one sharing
-  // space with anything else.
+  // DecidedStatus and DecisionCard's own pending branch -- one bar per
+  // rendered card, never a second one sharing space with anything else.
   // Checkpoint 3 adds the five Inbox item cards (NewSkillCard,
   // TestResultCard, RuleAttentionCard, ConflictCard, ActionFailedCard),
   // each with one bar.
+  // Round 9 Task 3: RetireCard and CompactDecisionCard no longer render
+  // their own bar -- both now delegate to the one shared InstructionActions
+  // component, whose own single `className={ACTION_BAR_CLASS}` occurrence
+  // in source is reused at runtime by every caller. Two card-rendering
+  // functions' own bars collapse into that one shared occurrence, so the
+  // total source count drops from 9 to 8, not 7 -- InstructionActions still
+  // contributes its own one.
   assert.equal(
     count(code, "className={ACTION_BAR_CLASS}"),
-    9,
-    "exactly one action-bar container per card-rendering function",
+    8,
+    "exactly one action-bar container per card-rendering function (RetireCard/CompactDecisionCard share InstructionActions' own)",
   );
 });
 
@@ -68,17 +74,24 @@ function slice(code: string, start: string, end: string): string {
   return code.slice(a, b);
 }
 
-test("improvement.tsx: RetireCard's bar has exactly one action-bar container, sized by titleAs", () => {
+// Round 9 Task 3 ruling (spec §3): RetireCard's own Keep/Retire buttons are
+// gone -- a retire proposal is a live instruction asked for attention, so
+// its actions now come from the one shared InstructionActions, state forced
+// to "live_attention", with a keepAction override so Keep still posts the
+// proposal's own negative id. RetireCard itself renders zero action-bar
+// containers of its own any more (was 1).
+test('improvement.tsx: RetireCard delegates its actions to the shared InstructionActions, state "live_attention", with a keepAction override for the proposal\'s own id', () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const fn = slice(code, "function RetireCard", "export function VerdictControl");
-  assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 1);
-  assert.match(fn, /const size: "default" \| "sm" = titleAs === "h1" \? "default" : "sm";/);
-  // Every button inside the bar references the same `size` variable --
-  // never a hardcoded literal that could drift from it (the reported bug:
-  // a small verdict row next to a full-size action row).
-  const bar = slice(fn, "className={ACTION_BAR_CLASS}", "</article>");
-  assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
-  assert.equal(count(bar, "size={size}"), 2, "RetireConfirm and Keep both sized");
+  assert.equal(
+    count(fn, "className={ACTION_BAR_CLASS}"),
+    0,
+    "RetireCard no longer renders its own action-bar container",
+  );
+  assert.match(fn, /<InstructionActions/);
+  assert.match(fn, /state="live_attention"/);
+  assert.match(fn, /keepAction=\{\{ action: "keep", id: -retire\.proposal_id \}\}/);
+  assert.ok(!/size="(sm|default)"/.test(fn), "no hardcoded size literal");
 });
 
 test("improvement.tsx: DecidedStatus's bar has exactly one action-bar container, sized via ctx (not write_status)", () => {
@@ -93,34 +106,23 @@ test("improvement.tsx: DecidedStatus's bar has exactly one action-bar container,
   assert.ok(count(bar, "size={size}") >= 6, "every button in the bar shares the size variable");
 });
 
-test("improvement.tsx: CompactDecisionCard's bar has exactly one action-bar container, always 'sm' (the Inbox is always a list)", () => {
+// Round 9 Task 3: CompactDecisionCard's own action bar (the bespoke
+// recommendedPrimaryAction branches -- Add/Skip/Review Skill/Test first,
+// each hand-sized) is gone, replaced by one <InstructionActions size="card">
+// call -- InstructionActions itself owns the one bar, sizing every button
+// from its own "card"/"full"/"row" prop, never a local "sm"/"default"
+// literal CompactDecisionCard has to keep in sync.
+test('improvement.tsx: CompactDecisionCard renders exactly one <InstructionActions size="card"> and no action-bar container of its own', () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const fn = slice(code, "function CompactDecisionCard", "export function DecisionCard");
-  assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 1);
-  assert.match(fn, /const size = "sm";/);
-  const bar = slice(fn, "className={ACTION_BAR_CLASS}", "</article>");
-  // Checkpoint 2 2-B rewrites this with intent: the two-button AddConfirm
-  // pair is gone, replaced by ONE recommended primary action (Review Skill,
-  // Test first, or AddInstructionConfirm -- three mutually exclusive
-  // branches in source, one per recommendedPrimaryAction outcome), plus the
-  // optional secondary Test first and Skip -- five `size={size}` in the
-  // action bar itself. This slice runs to the article's own closing tag
-  // (unchanged convention from Round 6 Task 6b), which also picks up the
-  // collapsed "More" area's own secondary AddInstructionConfirm -- six in
-  // total, still every one of them sized, never a hardcoded literal.
-  // Checkpoint 3: the alternative-scope Add moved to the detail page's
-  // Change destination control -- five sized controls remain.
-  // Round 8 Task 1 item 4: recommendedPrimaryAction gained a fourth outcome,
-  // "skip" (the card's own staged test already came back not_supported/
-  // possibly_harmful) -- its branch renders both SkipConfirm (primary,
-  // sized) and AddInstructionConfirm (secondary, sized), two more than the
-  // five above -- seven in total.
   assert.equal(
-    count(bar, "size={size}"),
-    7,
-    "the four primary-action branches (one of them two controls), the secondary Test first and Skip, all sized",
+    count(fn, "className={ACTION_BAR_CLASS}"),
+    0,
+    "CompactDecisionCard no longer renders its own action-bar container",
   );
-  assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
+  assert.equal(count(fn, "<InstructionActions"), 1);
+  assert.match(fn, /<InstructionActions[\s\S]{0,200}size="card"/);
+  assert.ok(!/size="(sm|default)"/.test(fn), "no hardcoded size literal");
 });
 
 test("improvement.tsx: DecisionCard's own pending branch has exactly one action-bar container, sized by titleAs", () => {
@@ -136,13 +138,15 @@ test("improvement.tsx: DecisionCard's own pending branch has exactly one action-
 
 test('improvement.tsx: lists use size="sm", the detail page uses the default -- never mixed in the same card', () => {
   const code = codeOnly(readApp(IMPROVEMENT));
-  // The only two literal ternaries deciding size, both keyed off titleAs;
-  // every button reads the resulting `size` variable rather than choosing
-  // its own literal, so a bar can never mix "sm" with the default.
+  // Round 9 Task 3: RetireCard no longer computes its own "default"/"sm"
+  // size at all -- InstructionActions derives it from its own "card"/"full"
+  // prop instead (passed titleAs === "h1" ? "full" : "card"). Only
+  // DecisionCard's own (unchanged, non-compact) pending/decided body still
+  // uses this literal ternary -- one occurrence, not two.
   assert.equal(
     count(code, 'const size: "default" | "sm" = titleAs === "h1" ? "default" : "sm";'),
-    2,
-    "RetireCard and DecisionCard each compute size once from titleAs",
+    1,
+    "DecisionCard alone still computes size once from titleAs",
   );
 });
 
@@ -178,19 +182,24 @@ test("improvement.tsx: DecisionCard's header row (project + badges) and its body
   assert.ok(editingAt > bodyAt, "the editor branch must be part of the body block, after it opens");
 });
 
-test("improvement.tsx: CompactDecisionCard's header row and body are siblings too (project+badge row, then title, then blockquote)", () => {
+// Round 9 Task 3: the header row's own marker comment and the body's own
+// (the instruction heading, not a second "body" comment block any more --
+// the <h2> follows the header <div> directly) changed wording; the
+// structural guarantee -- the header row's own <div>s are fully closed
+// before the heading -- still holds and is still worth pinning.
+test("improvement.tsx: CompactDecisionCard's header row and heading are siblings too (project+badge row, then the instruction heading)", () => {
   const raw = readApp(IMPROVEMENT);
   const fnAt = raw.indexOf("function CompactDecisionCard");
   const endAt = raw.indexOf("export function DecisionCard", fnAt);
   const fn = raw.slice(fnAt, endAt);
   const headerAt = fn.indexOf(
-    "{/* header row: project name + type label left, New badge right */}",
+    "{/* header row: project name (+ New badge) left, the state line right",
   );
-  const bodyAt = fn.indexOf("{/* body: full width, a sibling of the header row above */}");
+  const bodyAt = fn.indexOf("{/* body: the instruction text, once -- full width, a sibling of the");
   assert.ok(headerAt >= 0 && bodyAt > headerAt);
   const between = fn.slice(headerAt, bodyAt);
-  // The header row's own two <div>s (the outer row and, for a decided item,
-  // the badge wrapper) both close before the body marker.
+  // The header row's own two <div>s (the outer row and the badge wrapper)
+  // both close before the body marker.
   assert.equal(count(between, "<div"), count(between, "</div>"), "header row is fully closed");
 });
 

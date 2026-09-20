@@ -133,7 +133,14 @@ test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts 
 test("improvement.tsx: TestStatusLine links to /judge?run=<id> for judging, judged, and failed -- a judged/failed run is never a dead end", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const judgeLinks = code.match(/to="\/judge"/g) ?? [];
-  assert.equal(judgeLinks.length, 3, "judging, judged, and failed all link to /judge");
+  // Round 9 Task 3: InstructionActions gained its own "judge" action, a
+  // fourth to="/judge" link (its own runId, not TestStatusLine's run.id) --
+  // the three TestStatusLine links (judging/judged/failed) are unchanged.
+  assert.equal(
+    judgeLinks.length,
+    4,
+    "judging, judged, and failed all link to /judge, plus InstructionActions' own",
+  );
   const runSearch = code.match(/search=\{\{\s*run:\s*run\.id\s*\}\}/g) ?? [];
   assert.equal(runSearch.length, 3);
 });

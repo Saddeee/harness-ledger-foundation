@@ -1210,11 +1210,14 @@ export const CORRECTIONS_FROM_FOLLOW_UPS_LINE = "Corrections taken from your fol
 // ---- Round 6c part B: the Tests page (owner's own ask, 2026-09-13: "a page
 // dedicated for this so you can see status, and actual results, and
 // somewhere we can collect feedback from the user about this"). Copy
-// shared between the Tests page and the card's own "See on Tests" link
+// shared between the Tests page and the card's own "Open Tests" link
 // (improvement.tsx) lives here; the page's own table/empty-state copy that
 // nothing else reads stays local to tests.tsx, same convention
-// history.tsx's own EMPTY_LINE uses. ----
-export const SEE_ON_TESTS_LABEL = "See on Tests";
+// history.tsx's own EMPTY_LINE uses.
+// Round 9 Task 3 / spec §2 vocabulary: "See on Tests" is banned navigation
+// wording ("Open ⟨place⟩" is the one verb) -- renamed to "Open Tests",
+// value only, name kept so every existing caller still reads correctly. ----
+export const SEE_ON_TESTS_LABEL = "Open Tests";
 
 // "This month: N credits used of your budget of B · measured" -- the Tests
 // page's own credits line, distinct from testThisRuleBudgetLine's confirm-
@@ -1742,11 +1745,19 @@ export const CHANGE_DESTINATION_LABEL = "Change destination";
 export const VIEW_DETAILS_LABEL = "View details";
 export const VIEW_EVIDENCE_LABEL = "View evidence";
 export const JUDGE_REPLAY_LABEL = "Judge replay";
-export const REVIEW_RULE_LABEL = "Review rule";
+// Round 9 Task 3 / spec §2 vocabulary: "Review rule" is banned ("Open
+// ⟨place⟩" is the one verb, "instruction" not "rule") -- value only, name
+// kept so every existing caller (INBOX_RECOMMENDED_ACTION_LABELS.review_rule
+// below) still reads correctly.
+export const REVIEW_RULE_LABEL = "Open Instructions";
 export const REVIEW_LABEL = "Review";
 export const RETRY_LABEL = "Retry";
 export const VIEW_LABEL = "View";
-export const YOUR_VERDICT_NEEDED_LINE = "Your verdict is needed";
+// Round 9 Task 3 / spec §2 vocabulary: "Your verdict is needed" is banned
+// ("Waiting for your answer" is the one phrase for a test needing the
+// user -- the same words instructionStateLine's own "waiting_judge" state
+// line uses) -- value only, name kept so its one caller reads unchanged.
+export const YOUR_VERDICT_NEEDED_LINE = "Waiting for your answer";
 
 /** "Test result: Correction not needed in the rebuilt copy" -- the pending-
  * suggestion card's own line once a staged test has been judged but the
@@ -1785,8 +1796,12 @@ export type InboxActionKind = "judge_replay" | "review_rule" | "retry";
 
 export function inboxActionConsequence(action: InboxActionKind, retryDoes?: string): string {
   switch (action) {
+    // Round 9 Task 3 / spec §3: "Judge" replaces "Judge replay" as the
+    // button label, so its own consequence line drops the same word --
+    // "verdict" (a technical term) becomes "answer", the plain word a
+    // Lovable user would use for what they're recording.
     case "judge_replay":
-      return "Records your verdict. Nothing changes in Lovable. No credits, no AI tokens.";
+      return "Records your answer. Nothing changes in Lovable. No credits, no AI tokens.";
     case "review_rule":
       return "Opens the rule. Nothing changes until you decide.";
     case "retry":
@@ -2455,3 +2470,36 @@ export function isTestCopyProject(name: string | null | undefined): boolean {
   return /^Harness Ledger test \d/.test(name) || /^Harness test \d/.test(name);
 }
 // ---- end Round 9 Task 2 ----
+
+// ---- Round 9 Task 3 ----
+// InstructionActions (src/components/harness/improvement.tsx): the one
+// component that renders spec §3's fixed action set for one instruction, at
+// every size (Inbox "card", the detail page "full", an Instructions row
+// "row") -- new copy this task introduces that the shared component itself
+// (or an Inbox card built from it) reads, kept here per the global
+// constraint that a rendered sentence is never an inline literal.
+
+// Spec §2 vocabulary: "See the comparison"/"See why" (TestStatusLine's own
+// links to the judged/failed run) are banned navigation wording -- replaced
+// by the one verb "Open ⟨place⟩", Compare builds being the two-build page's
+// own name (spec §5).
+export const OPEN_COMPARE_BUILDS_LABEL = "Open Compare builds";
+
+// The always-shown line under Retire, whichever slot it sits in (primary or
+// secondary -- spec §3's "In Lovable"/"asked for attention" rows both offer
+// it as the secondary button, but the destructive one explains itself either
+// way, unlike Keep/Test/Re-add which already have their own confirm dialog
+// or need no further explanation).
+export const RETIRE_ACTION_CONSEQUENCE_LINE =
+  "Removes it from Lovable Knowledge. The record stays and can be re-added.";
+
+// Re-add (a Retired/Skipped instruction's own primary action) gains a
+// confirm dialog for the first time this round -- spec §1 principle 2 (a
+// fixed action set per state) and principle 6 (the Inbox/detail/Instructions
+// row all decide the same way) both imply every action with a real
+// consequence gets one, and Re-add writes straight back to Lovable exactly
+// like Add does.
+export const READD_TITLE = "Re-add this instruction?";
+export const READD_BODY = "Harness Ledger writes it back to Lovable Knowledge right away.";
+export const READD_CONSEQUENCES = ["You can retire it again later."];
+// ---- end Round 9 Task 3 ----

@@ -157,20 +157,27 @@ test("harness-ux.ts: recommendedPrimaryAction picks Review Skill for a skill-onl
 
 // ---- 6. Inbox card: the exact Level 1 fields, one primary action, no banned enum names ----
 
-test("improvement.tsx: CompactDecisionCard shows the project name, lesson, instruction, plain destination label + reason, and calls the shared consequence/label helpers rather than inlining copy", () => {
+// Round 9 Task 3: rewritten with intent -- the card no longer picks its own
+// primary action (recommendedPrimaryAction/destinationLabelPlain/
+// actionConsequence/PRIMARY_ACTION_LABELS/item.skill_proposal.name all lived
+// in that bespoke branch, now gone entirely); instructionState/
+// InstructionActions are the one state + one action-set path every card
+// (Inbox, detail, Instructions row) now shares. contentDestinationReason
+// moved into the "Why Harness Ledger recommends this" fold rather than the
+// card's own visible line.
+test("improvement.tsx: CompactDecisionCard shows the project name, the state line, the instruction once, and renders InstructionActions instead of picking its own action", () => {
   const compact = compactCardSource();
   assert.match(compact, /projectName\(item\)/);
   assert.match(compact, /lessonLine\(item\)/);
-  assert.match(compact, /item\.proposed_instruction/);
-  assert.match(compact, /item\.skill_proposal\?\.name/);
-  assert.match(compact, /destinationLabelPlain\(/);
+  assert.match(compact, /item\.proposed_instruction \?\? item\.title/);
+  assert.match(compact, /instructionState\(\{/);
+  assert.match(compact, /instructionStateLine\(\{/);
   assert.match(compact, /contentDestinationReason\(/);
-  assert.match(compact, /actionConsequence\(/);
-  assert.match(compact, /PRIMARY_ACTION_LABELS\./);
-  // Round 8 Task 1 item 4: recommendedPrimaryAction now takes this card's
-  // own judged conclusion as a second argument -- was
-  // `recommendedPrimaryAction(item)`.
-  assert.match(compact, /recommendedPrimaryAction\(item, conclusion\)/);
+  assert.match(compact, /<InstructionActions/);
+  assert.ok(
+    !/recommendedPrimaryAction|destinationLabelPlain|PRIMARY_ACTION_LABELS\./.test(compact),
+    "the card's own bespoke primary-action logic must be gone",
+  );
 });
 
 test("improvement.tsx: the Inbox card never spells out an internal enum name -- only plain-language helpers appear in its JSX", () => {

@@ -30,7 +30,6 @@ import {
   DESTINATION_ALTERNATIVE,
   DESTINATION_LABELS,
   DESTINATION_WHY,
-  destinationLabelPlain,
   evidenceSourceLines,
   healthLine,
   attentionBlock,
@@ -43,7 +42,6 @@ import {
   lovableReplyText,
   PRIMARY_ACTION_LABELS,
   proveCostLine,
-  recommendedPrimaryAction,
   REMOVE_FROM_KNOWLEDGE_BODY,
   REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL,
   REMOVE_FROM_KNOWLEDGE_TITLE,
@@ -98,23 +96,15 @@ import {
   WHY_RECOMMENDS_TITLE,
   TEST_IN_PROGRESS_LINE,
   USE_KNOWLEDGE_INSTEAD,
-  EDIT_LABEL,
   CHANGE_DESTINATION_LABEL,
-  VIEW_DETAILS_LABEL,
   VIEW_EVIDENCE_LABEL,
-  JUDGE_REPLAY_LABEL,
-  REVIEW_RULE_LABEL,
   REVIEW_LABEL,
   RETRY_LABEL,
-  VIEW_LABEL,
   YOUR_VERDICT_NEEDED_LINE,
   replayJudgedLine,
   inboxActionConsequence,
   FIELD_LABELS,
   type ReplayConclusionLike,
-  // ---- Round 8 Task 1 ----
-  SKIP_RECOMMENDED_CONSEQUENCE_LINE,
-  // ---- end Round 8 Task 1 ----
   // ---- Round 8 Task 2 ----
   DISMISS_LABEL,
   DISMISS_CONSEQUENCE_LINE,
@@ -128,6 +118,24 @@ import {
   savesToDestinationLabel,
   correctionDiffersFromRequest,
   // ---- end Round 8 Task 4 ----
+  // ---- Round 9 Task 1 ----
+  instructionState,
+  instructionStateLine,
+  actionsForState,
+  INSTRUCTION_ACTION_LABELS,
+  openLabel,
+  NOT_HELPED_NOTE,
+  VERDICT_CHOICES_SHOWN,
+  type InstructionState,
+  type InstructionActionKind,
+  // ---- end Round 9 Task 1 ----
+  // ---- Round 9 Task 3 ----
+  OPEN_COMPARE_BUILDS_LABEL,
+  RETIRE_ACTION_CONSEQUENCE_LINE,
+  READD_TITLE,
+  READD_BODY,
+  READD_CONSEQUENCES,
+  // ---- end Round 9 Task 3 ----
 } from "@/lib/harness-ux";
 
 import {
@@ -172,11 +180,16 @@ const SAVED_LINE = "Added.";
 const NO_INSTRUCTION = "Harness Ledger hasn't drafted an instruction yet.";
 const ADD_NOW_HELP =
   "Harness Ledger writes this exact text now, when you press Add. Uses no credits.";
-const RETIRE_TITLE = "Retire this rule?";
-const RETIRE_BODY = "Harness Ledger rewrites your Knowledge without it right away.";
-const RETIRE_CONSEQUENCES = ["You can re-add it later from Suggestions."];
+// Round 9 Task 3 / spec §2-§3: "instruction" not "rule" in UI copy, and the
+// two consequences spelled out verbatim (RetireConfirm's only remaining
+// caller is InstructionActions' own "retire" case below).
+const RETIRE_TITLE = "Retire this instruction?";
+const RETIRE_BODY = "Harness Ledger rewrites your Lovable Knowledge without it right away.";
+const RETIRE_CONSEQUENCES = [
+  "Removes this instruction from Lovable Knowledge now.",
+  "Its record stays on Instructions and can be re-added.",
+];
 const RETIRED_TOAST = "Retired.";
-const KEPT_TOAST = "Kept — Harness Ledger will ask again in 30 days";
 const READDED_TOAST = "Re-added.";
 // Round 6 Task 3 / spec §3: "Remove from Knowledge" replaces "Restore
 // previous version" on a written rule's card -- it retires the rule and
@@ -434,7 +447,11 @@ function SkipConfirm({
   // Round 8 Task 1 item 4: every other caller keeps the old tertiary "ghost"
   // look; CompactDecisionCard's own action bar passes "default" for the one
   // case Skip is itself the card's primary (dark) recommendation.
-  variant?: "default" | "ghost";
+  // Round 9 Task 3: InstructionActions needs the third, "outline" look too
+  // -- Skip is spec §3's secondary (non-emphasised) button in the ordinary
+  // "Suggested" state, styled the same as every other non-emphasised button
+  // in the row, never the old ghost/link treatment.
+  variant?: "default" | "outline" | "ghost";
 }) {
   const [reason, setReason] = useState<SkipReasonValue | null>(null);
   // Same roving-tabindex radiogroup pattern as AddConfirm's own above:
@@ -746,7 +763,7 @@ function TestStatusLine({ item }: { item: Improvement }) {
               search={{ run: run.id }}
               className="text-primary underline underline-offset-2"
             >
-              See the comparison
+              {OPEN_COMPARE_BUILDS_LABEL}
             </Link>{" "}
             <Link to="/tests" className="text-primary underline underline-offset-2">
               {SEE_ON_TESTS_LABEL}
@@ -762,7 +779,7 @@ function TestStatusLine({ item }: { item: Improvement }) {
               search={{ run: run.id }}
               className="text-primary underline underline-offset-2"
             >
-              See why
+              {OPEN_COMPARE_BUILDS_LABEL}
             </Link>{" "}
             <Link to="/tests" className="text-primary underline underline-offset-2">
               {SEE_ON_TESTS_LABEL}
@@ -797,9 +814,9 @@ function RetireCard({
   const titleId = `improvement-${item.id}`;
   const retire = item.retire;
   if (!retire) return null;
-  // Round 6 Task 4 / spec §4: lists use "sm" for every button in the bar;
-  // the detail page (titleAs="h1") uses the default size.
-  const size: "default" | "sm" = titleAs === "h1" ? "default" : "sm";
+  // Round 9 Task 3: InstructionActions derives its own button size from its
+  // own `size` prop ("full" on the detail page, "card" in the Inbox) --
+  // titleAs maps onto that below, no separate "default"/"sm" local needed.
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       {/* header row: project name left, status badges right */}
@@ -828,18 +845,23 @@ function RetireCard({
           </blockquote>
         ) : null}
       </div>
-      <div className={ACTION_BAR_CLASS}>
-        <RetireConfirm proposalId={retire.proposal_id} busy={busy} run={run} size={size} />
-        <Button
-          type="button"
-          variant="ghost"
-          size={size}
-          disabled={busy}
-          onClick={() => void run({ action: "keep", id: -retire.proposal_id }, KEPT_TOAST)}
-        >
-          Keep
-        </Button>
-      </div>
+      {/* Round 9 Task 3 ruling (spec §3): a retire proposal is a live
+          instruction asked for attention -- Keep/Retire/Test through the
+          one shared InstructionActions, state forced to "live_attention"
+          (this item's own decision/health shape carries none of the fields
+          instructionState would otherwise read; being a proposal at all
+          already means "asked for attention"). Keep must post the
+          proposal's own negative id (the backend's "keep" action), not the
+          ordinary rule-id verdict InstructionActions defaults to. */}
+      <InstructionActions
+        item={item}
+        state="live_attention"
+        size={titleAs === "h1" ? "full" : "card"}
+        busy={busy}
+        run={run}
+        keepAction={{ action: "keep", id: -retire.proposal_id }}
+        {...(titleAs === "h1" ? {} : { openHref: "/instructions" })}
+      />
     </article>
   );
 }
@@ -857,9 +879,14 @@ function RetireCard({
 // other choice's response carries `effect` (harness/src/improvements.ts's
 // recordVerdict) -- what that one click changed in this rule's health,
 // shown right underneath via verdictEffectLine.
-const VERDICT_CHOICES: { value: RuleVerdictValue; label: string }[] = (
-  ["keep", "review", "retire", "not_sure"] as const
-).map((value) => ({ value, label: VERDICT_CHOICE_LABELS[value] }));
+// Round 9 Task 1 / spec §3: only Keep and Retire are offered as live
+// choices now -- built from VERDICT_CHOICES_SHOWN (harness-ux.ts), not the
+// full RuleVerdictValue union; an existing "review"/"not_sure" row on
+// record still renders correctly above via VERDICT_TEXT/verdictLine, it
+// just never comes back as a button.
+const VERDICT_CHOICES: { value: RuleVerdictValue; label: string }[] = VERDICT_CHOICES_SHOWN.map(
+  (value) => ({ value, label: VERDICT_CHOICE_LABELS[value] }),
+);
 
 export function VerdictControl({
   ruleId,
@@ -932,6 +959,206 @@ export function VerdictControl({
     </div>
   );
 }
+
+// ---- Round 9 Task 3 / spec §1-§3: the one component every instruction's
+// buttons render through, at every size (Inbox "card", the detail page
+// "full", an Instructions row "row" -- Task 4/5 reuse this exact export).
+// The button set itself is never decided here -- actionsForState
+// (harness-ux.ts) is the one place spec §3's table lives; this component
+// only turns that fixed {primary, secondary, small} shape into the actual
+// confirm dialogs/links each action kind already has, in one flex row, with
+// at most one consequence line (retire's own warning, whichever slot it's
+// in; judge's, when judge is primary; or the not-helped note when the
+// state supplies one -- never more than one of the three, since no state
+// offers more than one of these three kinds at once).
+export function InstructionActions({
+  item,
+  state,
+  size,
+  busy,
+  run,
+  onEdit,
+  openHref,
+  keepAction,
+}: {
+  item: Improvement;
+  state: InstructionState;
+  size: "card" | "full" | "row";
+  busy: boolean;
+  run: Run;
+  onEdit?: () => void;
+  openHref?: string;
+  // Round 9 Task 3 ruling: a retire PROPOSAL's own Keep posts the
+  // proposal's negative id (backend "keep" action); every ordinary live
+  // rule's Keep instead posts the default "verdict" action below. Omitted
+  // by every caller except RetireCard.
+  keepAction?: { action: "keep"; id: number };
+}) {
+  const btnSize: "default" | "sm" = size === "full" ? "default" : "sm";
+  const linkClass =
+    "text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const { primary, secondary, small, emphasis, note } = actionsForState(state);
+  const ruleId = item.rule_id;
+
+  // The one consequence line a slot may carry -- tied to the action kind
+  // itself, not to which slot is emphasised (spec §3: Retire always
+  // explains itself, whether it's the state's primary or secondary button;
+  // Judge is always primary when it appears at all).
+  function consequenceFor(kind: InstructionActionKind | null): string | null {
+    if (kind === "retire") return RETIRE_ACTION_CONSEQUENCE_LINE;
+    if (kind === "judge") return inboxActionConsequence("judge_replay");
+    if (kind === "skip" && note) return note;
+    // The ordinary "Suggested" state's own Add (no note, nothing else
+    // claiming the line) -- the exact "writes to Lovable Knowledge, no
+    // credits, no tokens" sentence AddInstructionConfirm's own dialog
+    // repeats once opened, shown here too so the consequence is visible
+    // before the click, same as every other state's own line.
+    if (kind === "add" && !note) {
+      return actionConsequence("add", item.destination === "workspace" ? "workspace" : "project");
+    }
+    return null;
+  }
+
+  function renderMain(kind: InstructionActionKind | null, slot: "primary" | "secondary") {
+    if (!kind) return null;
+    const variant: "default" | "outline" = emphasis === slot ? "default" : "outline";
+    switch (kind) {
+      case "add":
+        return (
+          <AddInstructionConfirm
+            item={item}
+            busy={busy}
+            run={run}
+            size={btnSize}
+            variant={variant}
+            trigger={INSTRUCTION_ACTION_LABELS.add}
+          />
+        );
+      case "skip":
+        return <SkipConfirm item={item} busy={busy} run={run} size={btnSize} variant={variant} />;
+      case "judge": {
+        const runId = item.test?.run?.id;
+        if (runId == null) return null;
+        return (
+          <Button asChild type="button" size={btnSize} variant={variant} disabled={busy}>
+            <Link to="/judge" search={{ run: runId }}>
+              {INSTRUCTION_ACTION_LABELS.judge}
+            </Link>
+          </Button>
+        );
+      }
+      case "keep": {
+        const body =
+          keepAction ??
+          (ruleId != null
+            ? { action: "verdict" as const, rule_id: ruleId, verdict: "keep" as const }
+            : null);
+        if (!body) return null;
+        return (
+          <Button
+            type="button"
+            size={btnSize}
+            variant={variant}
+            disabled={busy}
+            onClick={() => void run(body, "Kept")}
+          >
+            {INSTRUCTION_ACTION_LABELS.keep}
+          </Button>
+        );
+      }
+      case "retire":
+        if (ruleId == null) return null;
+        return (
+          <RetireConfirm
+            ruleId={ruleId}
+            busy={busy}
+            run={run}
+            size={btnSize}
+            variant={variant}
+            trigger={INSTRUCTION_ACTION_LABELS.retire}
+          />
+        );
+      case "readd":
+        return (
+          <ConfirmAction
+            trigger={INSTRUCTION_ACTION_LABELS.readd}
+            variant={variant}
+            size={btnSize}
+            title={READD_TITLE}
+            body={READD_BODY}
+            consequences={READD_CONSEQUENCES}
+            confirmLabel={INSTRUCTION_ACTION_LABELS.readd}
+            disabled={busy}
+            onConfirm={() => void run({ action: "readd", id: item.id }, "Re-added.")}
+          />
+        );
+      default:
+        return null;
+    }
+  }
+
+  function renderSmall(kind: InstructionActionKind) {
+    switch (kind) {
+      case "test":
+        return (
+          <TestButton
+            key="test"
+            item={item}
+            busy={busy}
+            run={run}
+            size={btnSize}
+            trigger={INSTRUCTION_ACTION_LABELS.test}
+          />
+        );
+      case "edit":
+        return onEdit ? (
+          <button key="edit" type="button" className={linkClass} onClick={onEdit}>
+            {INSTRUCTION_ACTION_LABELS.edit}
+          </button>
+        ) : null;
+      case "open":
+        return openHref ? (
+          <a key="open" href={openHref} className={linkClass}>
+            {INSTRUCTION_ACTION_LABELS.open}
+          </a>
+        ) : null;
+      default:
+        return null;
+    }
+  }
+
+  const primaryEl = renderMain(primary, "primary");
+  const secondaryEl = renderMain(secondary, "secondary");
+  const primaryLine = consequenceFor(primary);
+  const secondaryLine = consequenceFor(secondary);
+
+  return (
+    <div className={ACTION_BAR_CLASS}>
+      {primaryEl ? (
+        primaryLine ? (
+          <div className="space-y-1">
+            {primaryEl}
+            <p className="text-xs text-muted-foreground">{primaryLine}</p>
+          </div>
+        ) : (
+          primaryEl
+        )
+      ) : null}
+      {secondaryEl ? (
+        secondaryLine ? (
+          <div className="space-y-1">
+            {secondaryEl}
+            <p className="text-xs text-muted-foreground">{secondaryLine}</p>
+          </div>
+        ) : (
+          secondaryEl
+        )
+      ) : null}
+      {small.map((kind) => renderSmall(kind))}
+    </div>
+  );
+}
+// ---- end Round 9 Task 3: InstructionActions ----
 
 function DecidedStatus({
   item,
@@ -1168,52 +1395,45 @@ function CompactDecisionCard({
   conclusion?: ReplayConclusionLike | null | undefined;
 }) {
   const titleId = `improvement-${item.id}`;
-  // Round 6 Task 4 / spec §4: the Inbox is always a list -- every button in
-  // its bar is "sm", same as everywhere else lists render this card.
-  const size = "sm";
-  const skillOnly = item.content_destination?.value === "skill";
-  const scope: "project" | "workspace" = item.destination === "workspace" ? "workspace" : "project";
-  const destLabel = destinationLabelPlain(
-    item.content_destination?.value ?? null,
-    item.destination,
-  );
-  const reason = item.content_destination
-    ? contentDestinationReason(item.content_destination.value, item.content_destination.reason)
-    : whyFor(item.classification);
-  // Round 8 Task 1 item 4: pass this Inbox item's own judged conclusion
-  // (null/undefined for every other card) -- not_supported/possibly_harmful
-  // makes Skip the recommendation instead of Add/Test first.
-  const recommended = recommendedPrimaryAction(item, conclusion);
-  const canTest = item.test?.available === true;
-  // Checkpoint 3 I2: by the Inbox item contract, this card only ever renders
-  // a new_instruction item (content_destination knowledge or both -- a
-  // skill-only suggestion is its own new_skill Inbox item, see NewSkillCard
-  // below); `skillOnly` is kept only as a defensive fallback, never expected
-  // to be true here.
-  const runStatus = item.test?.run?.status;
-  const testRunning = runStatus === "queued" || runStatus === "copying" || runStatus === "building";
-  // Round 8 Task 1 item 1: the heading is now the proposed instruction
-  // itself (item.title -- the rule's own first sentence), not the
-  // classifier's prediction; lessonLine still computed here, but only for
-  // the "Why Harness Ledger recommends this" details below. Never show the
-  // same text twice -- when the full instruction reads identically to the
-  // (already truncated-to-a-sentence) heading, the blockquote is dropped
-  // and the heading stands alone.
+  // Round 9 Task 1 / spec §1-§3: one state, read from the same fields every
+  // page reads it from -- this Inbox item's own judged conclusion (when its
+  // staged test came back before the suggestion itself was decided) feeds
+  // in exactly like every other caller of instructionState.
+  const state = instructionState({
+    decision: item.decision,
+    lovable: item.lovable ?? null,
+    test: item.test,
+    conclusion: conclusion ? { kind: conclusion } : null,
+    health: item.health,
+  });
+  const stateLine = instructionStateLine({
+    state,
+    decided_at: item.decision.decided_at,
+    written_at: lovableOf(item).written_at,
+    decided_by: item.decided_by,
+    write_status: lovableOf(item).write_status,
+  });
+  // Round 9 Task 3 / spec §5 Inbox: the instruction text, once, as the
+  // heading -- item.proposed_instruction when there is one, else item.title
+  // (a retire item has neither reaching this card; a skill-only suggestion
+  // is its own new_skill Inbox item, see NewSkillCard below).
+  const heading = item.proposed_instruction ?? item.title;
   const lesson = lessonLine(item);
-  const heading = item.title;
-  const instructionText = item.proposed_instruction?.trim() || null;
-  const showInstruction = instructionText != null && instructionText !== heading.trim();
+  const attention = state === "live_attention" ? attentionBlock(item.health) : null;
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
-      {/* header row: project name + type label left, New badge right */}
+      {/* header row: project name (+ New badge) left, the state line right --
+          the same one state line every size shows (Round 9 Task 1). */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-semibold">{projectName(item)}</p>
-          <span className="text-xs text-muted-foreground">{INBOX_TYPE_LABELS.new_instruction}</span>
+          {isNew ? <Badge variant="default">New</Badge> : null}
         </div>
-        {isNew ? <Badge variant="default">New</Badge> : null}
+        <p className="text-xs text-muted-foreground">{stateLine}</p>
       </div>
-      <h2 id={titleId} className="text-base font-medium">
+      {/* body: the instruction text, once -- full width, a sibling of the
+          header row above, never a second box repeating it. */}
+      <h2 id={titleId} className="text-base font-normal">
         <button
           type="button"
           className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -1222,139 +1442,38 @@ function CompactDecisionCard({
           {heading}
         </button>
       </h2>
-      {/* body: full width, a sibling of the header row above */}
-      {/* Round 8 Task 1 item 1: the proposed instruction is the heading
-          above; the full instruction text (or, for a skill-only
-          destination, the Skill name) follows in a blockquote, only when it
-          says something the heading didn't already say. */}
-      {skillOnly ? (
-        <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-          {item.skill_proposal?.name ?? NO_INSTRUCTION}
-        </blockquote>
-      ) : showInstruction ? (
-        <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-          {instructionText}
-        </blockquote>
-      ) : !instructionText ? (
-        <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
-      ) : null}
-      {item.content_destination?.value === "both" && item.skill_proposal ? (
-        <p className="text-xs text-muted-foreground">
-          Also creates the Skill "{item.skill_proposal.name}".
-        </p>
-      ) : null}
-      <p className="text-xs text-muted-foreground">
-        <span className="font-medium">{destLabel}</span>
-        {" — "}
-        {reason}
+      <p className="text-sm text-muted-foreground">
+        {SAVES_TO_LABEL}:{" "}
+        <span className="font-medium">
+          {savesToDestinationLabel(item.content_destination?.value ?? null, item.destination)}
+        </span>{" "}
+        &middot; <ChangeDestinationControl item={item} busy={busy} run={run} />
       </p>
       {item.unsure ? (
         <p role="status" className="text-xs text-muted-foreground">
           {item.unsure}
         </p>
       ) : null}
+      {/* An attention card says why in one line, above the actions -- never
+          a different action set from live's own. */}
+      {attention ? <p className="text-xs text-muted-foreground">{attention.line}</p> : null}
       {/* Checkpoint 3 I2: a staged test judged while the suggestion itself
           is still pending -- shown alongside TestStatusLine's own judged-run
-          line (that one is a link to the comparison; this one names the
+          line (that one is a link to Compare builds; this one names the
           conclusion directly). */}
       {replayJudgedLine(conclusion) ? (
         <p className="text-xs font-medium">{replayJudgedLine(conclusion)}</p>
       ) : null}
       <TestStatusLine item={item} />
-      <div className={ACTION_BAR_CLASS}>
-        {/* Round 8 Task 1 item 4: the card's own staged test already came
-            back not_supported/possibly_harmful -- Skip is the primary (dark)
-            button, with its own exact consequence line, and Add instruction
-            becomes the secondary. */}
-        {recommended === "skip" ? (
-          <>
-            <div className="space-y-1">
-              <SkipConfirm item={item} busy={busy} run={run} size={size} variant="default" />
-              <p className="text-xs text-muted-foreground">{SKIP_RECOMMENDED_CONSEQUENCE_LINE}</p>
-            </div>
-            <div className="space-y-1">
-              <AddInstructionConfirm
-                item={item}
-                busy={busy}
-                run={run}
-                size={size}
-                variant="outline"
-              />
-              <p className="text-xs text-muted-foreground">{actionConsequence("add", scope)}</p>
-            </div>
-          </>
-        ) : recommended === "review_skill" ? (
-          <div className="space-y-1">
-            <Button type="button" size={size} onClick={() => onOpen?.(item.id)}>
-              {PRIMARY_ACTION_LABELS.review_skill}
-            </Button>
-            <p className="text-xs text-muted-foreground">{actionConsequence("review_skill")}</p>
-          </div>
-        ) : recommended === "test_first" ? (
-          <div className="space-y-1">
-            {testRunning ? (
-              <p className="text-sm text-muted-foreground">{TEST_IN_PROGRESS_LINE}</p>
-            ) : (
-              <TestButton
-                item={item}
-                busy={busy}
-                run={run}
-                size={size}
-                trigger={PRIMARY_ACTION_LABELS.test_first}
-                variant="default"
-              />
-            )}
-            <p className="text-xs text-muted-foreground">{actionConsequence("test_first")}</p>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            <AddInstructionConfirm item={item} busy={busy} run={run} size={size} />
-            <p className="text-xs text-muted-foreground">{actionConsequence("add", scope)}</p>
-          </div>
-        )}
-        {/* Test first stays offered even when it isn't the recommendation,
-            whenever it's actually available -- never the other way round;
-            an already-running test shows the status line instead of a
-            second, confusing "Test first" button. */}
-        {recommended !== "test_first" ? (
-          testRunning ? (
-            <p className="text-xs text-muted-foreground">{TEST_IN_PROGRESS_LINE}</p>
-          ) : canTest ? (
-            <TestButton
-              item={item}
-              busy={busy}
-              run={run}
-              size={size}
-              trigger={PRIMARY_ACTION_LABELS.test_first}
-            />
-          ) : null
-        ) : null}
-      </div>
-      {/* Checkpoint 3 I2: tertiary text actions -- Edit, Skip, Change
-          destination, View details -- ghost/link style, never sharing the
-          primary action bar's visual weight. Round 8 Task 1 item 4: Skip is
-          already the primary button above when recommended === "skip", so
-          this tertiary copy of it is dropped rather than offering it twice. */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          className="text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => onOpen?.(item.id)}
-        >
-          {EDIT_LABEL}
-        </button>
-        {recommended !== "skip" ? (
-          <SkipConfirm item={item} busy={busy} run={run} size={size} />
-        ) : null}
-        <ChangeDestinationControl item={item} busy={busy} run={run} />
-        <button
-          type="button"
-          className="text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => onOpen?.(item.id)}
-        >
-          {VIEW_DETAILS_LABEL}
-        </button>
-      </div>
+      <InstructionActions
+        item={item}
+        state={state}
+        size="card"
+        busy={busy}
+        run={run}
+        onEdit={() => onOpen?.(item.id)}
+        openHref={`/ledger?improvement=${item.id}`}
+      />
       {/* Checkpoint 3 I2: prediction paragraphs collapse here; everything
           technical stays on the detail page. Round 8 Task 1 item 1: the
           plain-language prediction (lessonLine, used to be this card's
@@ -1366,6 +1485,14 @@ function CompactDecisionCard({
         <div className="space-y-2 border-t p-2 text-xs text-muted-foreground">
           <p>{lesson}</p>
           <p>{whyFor(item.classification)}</p>
+          {item.content_destination ? (
+            <p>
+              {contentDestinationReason(
+                item.content_destination.value,
+                item.content_destination.reason,
+              )}
+            </p>
+          ) : null}
           {predictedFailureOf(item) ? <p>Without this rule, {predictedFailureOf(item)}.</p> : null}
           {appliesWhenOf(item) ? (
             <p>
@@ -2262,12 +2389,17 @@ function AddInstructionConfirm({
   run,
   size,
   variant,
+  trigger,
 }: {
   item: Improvement;
   busy: boolean;
   run: Run;
   size?: "default" | "sm" | undefined;
   variant?: "default" | "outline";
+  // Round 9 Task 3: InstructionActions' own spec §3 label is the shorter
+  // "Add" (INSTRUCTION_ACTION_LABELS.add); every other caller keeps the
+  // fuller "Add instruction" (PRIMARY_ACTION_LABELS.add) by omitting this.
+  trigger?: string;
 }) {
   const [destination, setDestination] = useState<Destination>(
     item.destination === "workspace" ? "workspace" : "project",
@@ -2278,7 +2410,7 @@ function AddInstructionConfirm({
   const overRules = preview?.over_rules === true;
   return (
     <ConfirmAction
-      trigger={PRIMARY_ACTION_LABELS.add}
+      trigger={trigger ?? PRIMARY_ACTION_LABELS.add}
       {...(variant ? { variant } : {})}
       title={`Add to ${targetLabel}?`}
       body={preview ? PREVIEW_BODY : NO_SNAPSHOT_BODY}
@@ -2524,27 +2656,28 @@ function InboxCardHeader({ item }: { item: InboxItem }) {
   );
 }
 
-/** The test_result card: a replay awaiting a verdict. Primary "Judge
- * replay" -- recording a verdict changes nothing in Lovable and uses no
- * tokens or Lovable spend, stated directly underneath. */
+/** The test_result card: a test awaiting a verdict. Primary "Judge" --
+ * spec §3's own wording for "opens Compare builds" -- recording the answer
+ * changes nothing in Lovable and uses no tokens or Lovable spend, stated
+ * directly underneath (Round 9 Task 3: same inboxActionConsequence call as
+ * before, its own "judge_replay" text now reads "answer" not "verdict"). */
 export function TestResultCard({ item }: { item: InboxItem }) {
   const titleId = `inbox-${item.id}`;
   const href = inboxLinkHref(item);
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
-      <h2 id={titleId} className="text-base font-medium">
+      <h2 id={titleId} className="text-base font-normal">
         {item.title}
       </h2>
       <p className="text-sm text-muted-foreground">{item.summary ?? YOUR_VERDICT_NEEDED_LINE}</p>
-      <p className="text-xs text-muted-foreground">{YOUR_VERDICT_NEEDED_LINE}</p>
       {replayJudgedLine(item.conclusion) ? (
         <p className="text-xs text-muted-foreground">{replayJudgedLine(item.conclusion)}</p>
       ) : null}
       <div className={ACTION_BAR_CLASS}>
         <div className="space-y-1">
           <Button asChild type="button" size="sm">
-            <a href={href}>{JUDGE_REPLAY_LABEL}</a>
+            <a href={href}>{INSTRUCTION_ACTION_LABELS.judge}</a>
           </Button>
           <p className="text-xs text-muted-foreground">{inboxActionConsequence("judge_replay")}</p>
         </div>
@@ -2553,24 +2686,26 @@ export function TestResultCard({ item }: { item: InboxItem }) {
   );
 }
 
-/** The rule_attention card: an open retire proposal, or a live rule whose
- * health asks for review. Primary "Review rule" opens wherever the
- * contract's own `link` points (the retire proposal's or the rule's own
- * detail) -- reviewing decides nothing by itself. */
+/** The rule_attention card: a live rule whose health asks for review, with
+ * no improvement of its own to act on directly (an open retire proposal
+ * DOES carry one -- inbox.tsx renders that case through DecisionCard
+ * compact, i.e. RetireCard, instead; see its own doc comment). Primary
+ * "Open Instructions" -- the rule's own Keep/Retire/Test live on its
+ * Instructions row (Task 5), this card only navigates there. */
 export function RuleAttentionCard({ item }: { item: InboxItem }) {
   const titleId = `inbox-${item.id}`;
   const href = inboxLinkHref(item);
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
-      <h2 id={titleId} className="text-base font-medium">
+      <h2 id={titleId} className="text-base font-normal">
         {item.title}
       </h2>
       {item.summary ? <p className="text-sm text-muted-foreground">{item.summary}</p> : null}
       <div className={ACTION_BAR_CLASS}>
         <div className="space-y-1">
           <Button asChild type="button" size="sm">
-            <a href={href}>{REVIEW_RULE_LABEL}</a>
+            <a href={href}>{openLabel("Instructions")}</a>
           </Button>
           <p className="text-xs text-muted-foreground">{inboxActionConsequence("review_rule")}</p>
         </div>
@@ -2605,15 +2740,37 @@ export function ConflictCard({ item }: { item: InboxItem }) {
   );
 }
 
+// Round 9 Task 3 / spec §2, §3: "Open ⟨place⟩" replaces the old plain
+// "View" -- every real action_failed link.page value maps onto one of
+// openLabel's own place names (instructions/tests/skills are the only three
+// the contract's builders ever emit for this item type); "Tests" is the
+// safe fallback for any other value, matching the spec's own "Open ⟨Tests⟩"
+// table example.
+function actionFailedOpenLabel(page: InboxItem["link"]["page"]): string {
+  switch (page) {
+    case "instructions":
+      return openLabel("Instructions");
+    // "Skills" isn't one of openLabel's own place names (Task 1's contract,
+    // binding) -- a failed Skill publish always sets recommended_action
+    // "retry" today, so this branch is never actually shown, but a plain
+    // "Open Skills" keeps it correct if that ever changes.
+    case "skills":
+      return "Open Skills";
+    default:
+      return openLabel("Tests");
+  }
+}
+
 /** The action_failed card: a failed Knowledge write, test run, or copy
  * cleanup. "Retry" only when there's a specific failed Knowledge write on
  * this same suggestion to retry (the existing retry_write action, never a
- * new mutation path); every other case is honestly a "View" link to wherever
- * the contract's own `link` points, since there is nothing this card can
- * retry on its own. Round 8 Task 2 (review item 2): every action_failed card
- * also gets a secondary "Dismiss" button (adapter.dismissInboxItem, purely
- * local -- see harness-ux.ts's own Round 8 Task 2 block), and the card's own
- * summary line is never Lovable's raw error text (failedSummaryParts). */
+ * new mutation path); every other case is honestly an "Open ⟨place⟩" link
+ * to wherever the contract's own `link` points, since there is nothing this
+ * card can retry on its own. Round 8 Task 2 (review item 2): every
+ * action_failed card also gets a secondary "Dismiss" button
+ * (adapter.dismissInboxItem, purely local -- see harness-ux.ts's own Round 8
+ * Task 2 block), and the card's own summary line is never Lovable's raw
+ * error text (failedSummaryParts). */
 export function ActionFailedCard({
   item,
   busy,
@@ -2635,11 +2792,17 @@ export function ActionFailedCard({
   // button does.
   const skillProposalId = item.id.startsWith("skill:") ? Number(item.id.slice(6)) : null;
   const canRetryPublish = skillProposalId != null && Number.isFinite(skillProposalId);
+  // Round 9 Task 3 / spec §3: the contract's own recommended_action is the
+  // source of truth for whether Retry is offered at all (every action_failed
+  // item on record today sets it to "retry", but a future item type need
+  // not); canRetryPublish/canRetryWrite still decide WHICH retry body to
+  // post, once recommended_action says a retry makes sense.
+  const showRetry = item.recommended_action === "retry" && (canRetryPublish || canRetryWrite);
   const { plain, technical } = failedSummaryParts(item.summary);
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
       <InboxCardHeader item={item} />
-      <h2 id={titleId} className="text-base font-medium">
+      <h2 id={titleId} className="text-base font-normal">
         {item.title}
       </h2>
       <p className="text-sm text-muted-foreground">{plain}</p>
@@ -2652,7 +2815,7 @@ export function ActionFailedCard({
         </details>
       ) : null}
       <div className={ACTION_BAR_CLASS}>
-        {canRetryPublish || canRetryWrite ? (
+        {showRetry ? (
           <div className="space-y-1">
             <Button
               type="button"
@@ -2682,7 +2845,7 @@ export function ActionFailedCard({
         ) : (
           <div className="space-y-1">
             <Button asChild type="button" size="sm" variant="outline">
-              <a href={href}>{VIEW_LABEL}</a>
+              <a href={href}>{actionFailedOpenLabel(item.link.page)}</a>
             </Button>
             <p className="text-xs text-muted-foreground">
               {inboxPrimaryLinkConsequence(inboxLinkPageLabel(item.link.page))}

@@ -140,17 +140,26 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
   const sinceIdx = retireCard.indexOf("retireSinceLine");
   assert.ok(titleIdx >= 0 && titleIdx < sinceIdx && sinceIdx < reasonIdx, "title comes first");
 
-  // Retire confirm: same copy shape as the spec.
-  assert.ok(raw.includes("Retire this rule?"));
-  assert.ok(raw.includes("Harness Ledger rewrites your Knowledge without it right away."));
-  assert.ok(raw.includes("You can re-add it later from Suggestions."));
+  // Retire confirm: same copy shape as the spec, now "instruction" not
+  // "rule" (Round 9 Task 3 / spec §2 vocabulary) and the two consequences
+  // spelled out verbatim (spec §3).
+  assert.ok(raw.includes("Retire this instruction?"));
+  assert.ok(raw.includes("Harness Ledger rewrites your Lovable Knowledge without it right away."));
+  assert.ok(raw.includes("Removes this instruction from Lovable Knowledge now."));
+  assert.ok(raw.includes("Its record stays on Instructions and can be re-added."));
 
-  // Keep is a ghost button with its own toast, not a confirm dialog.
-  assert.match(code, /variant="ghost"[\s\S]{0,200}action: "keep"/);
-  assert.ok(raw.includes("Kept — Harness Ledger will ask again in 30 days"));
+  // Round 9 Task 3 ruling: Keep is no longer RetireCard's own ghost button
+  // with a bespoke toast -- it's InstructionActions' own "keep" case (a
+  // plain Button, "Kept" toast, same wording every Keep in the app uses),
+  // reached via a keepAction override so it still posts the proposal's own
+  // negative id.
+  assert.match(code, /onClick=\{\(\) => void run\(body, "Kept"\)\}/);
 
-  // The retire/keep action bodies use the proposal's negative id.
-  assert.match(code, /action: "retire", id: -proposalId/);
+  // Retire posts InstructionActions' own default body ({ action: "retire",
+  // rule_id }, via RetireConfirm's ruleId prop) -- a retire proposal's own
+  // rule_id is real (buildRetireItem sets it), so no proposal-id override is
+  // needed for Retire, only for Keep.
+  assert.match(code, /<RetireConfirm\s+ruleId=\{ruleId\}/);
   assert.match(code, /action: "keep", id: -retire\.proposal_id/);
 
   // A decided "Retired" improvement shows Re-add (readd uses the original,

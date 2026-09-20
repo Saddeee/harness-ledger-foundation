@@ -230,12 +230,21 @@ test("inbox.tsx no longer contains REANALYSE_TRIGGER_BUTTON; local-settings.tsx 
   );
 });
 
-// ---- 8. CompactDecisionCard: item.title is the heading, not lessonLine (item 1) ----
+// ---- 8. CompactDecisionCard: the heading, and where lessonLine's own
+// prediction lives (item 1) ----
 
-test("improvement.tsx: CompactDecisionCard's heading is item.title; lessonLine's own prediction moved inside the 'Why Harness Ledger recommends this' details", () => {
+// Round 9 Task 3: rewritten with intent -- the heading is now
+// `item.proposed_instruction ?? item.title` (spec §5 Inbox: the instruction
+// text itself, not the classifier's own title-cased first sentence when a
+// fuller proposed_instruction exists), and which action set the card offers
+// is no longer picked here at all -- recommendedPrimaryAction and the
+// hand-built Skip/Add-instruction "skip recommended" branch are both gone;
+// instructionState + the shared InstructionActions component (pinned in
+// ux-round9-task3.test.ts) own that now.
+test("improvement.tsx: CompactDecisionCard's heading is item.proposed_instruction ?? item.title; lessonLine's own prediction still lives inside the 'Why Harness Ledger recommends this' details", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const compact = slice(code, "function CompactDecisionCard", "export function DecisionCard");
-  // The onOpen title button renders item.title, not lessonLine's output.
+  // The onOpen title button renders the heading, not lessonLine's output.
   const headingButton = slice(
     compact,
     'className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"',
@@ -246,34 +255,39 @@ test("improvement.tsx: CompactDecisionCard's heading is item.title; lessonLine's
   // lessonLine(item) is still called (for the details below), and the
   // details block renders it as its own paragraph.
   assert.match(compact, /const lesson = lessonLine\(item\);/);
-  assert.match(compact, /const heading = item\.title;/);
+  assert.match(compact, /const heading = item\.proposed_instruction \?\? item\.title;/);
   const details = slice(compact, '<details className="rounded-md border">', "</details>");
   assert.match(details, /\{WHY_RECOMMENDS_TITLE\}/);
   assert.match(details, /<p>\{lesson\}<\/p>/);
 });
 
-test("improvement.tsx: recommendedPrimaryAction is now called with this card's own conclusion", () => {
+// Round 9 Task 3: recommendedPrimaryAction's own three/four-way branch is
+// gone from this card -- instructionState (fed this same `conclusion`) is
+// the one place a suggested-but-not-helped test result changes the action
+// set now (suggested_not_helped, see harness-ux.ts), read by the shared
+// InstructionActions component this card renders.
+test("improvement.tsx: CompactDecisionCard feeds this card's own judged conclusion into instructionState, not recommendedPrimaryAction", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const compact = slice(code, "function CompactDecisionCard", "export function DecisionCard");
-  assert.match(compact, /recommendedPrimaryAction\(item, conclusion\)/);
+  assert.match(compact, /conclusion: conclusion \? \{ kind: conclusion \} : null,/);
+  assert.ok(
+    !/recommendedPrimaryAction/.test(compact),
+    "recommendedPrimaryAction must be gone from this card",
+  );
 });
 
-test("improvement.tsx: when recommended is 'skip', the card renders Skip as primary with the exact consequence line and Add instruction as secondary, never a duplicate tertiary Skip", () => {
+// Round 9 Task 3 / spec §3 row 2: the suggested-but-not-helped swap (Skip
+// becomes primary/dark, with its own note) is now InstructionActions' own
+// job, driven by actionsForState("suggested_not_helped") -- pinned directly
+// on InstructionActions in ux-round9-task3.test.ts, not duplicated here.
+test("improvement.tsx: the card no longer hand-picks a Skip/Add-instruction branch -- that logic lives in InstructionActions now", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const compact = slice(code, "function CompactDecisionCard", "export function DecisionCard");
-  const skipBranch = slice(compact, 'recommended === "skip" ?', 'recommended === "review_skill"');
-  // \s+ tolerates however Prettier wraps these attributes (same convention
-  // as ux.test.ts's own AddConfirm/RemoveFromKnowledgeConfirm pins).
-  assert.match(
-    skipBranch,
-    /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s+variant="default"\s*\/>/,
+  assert.ok(
+    !/recommended === "skip"/.test(compact),
+    "the old recommended-branch dispatch must be gone",
   );
-  assert.match(skipBranch, /\{SKIP_RECOMMENDED_CONSEQUENCE_LINE\}/);
-  assert.match(
-    skipBranch,
-    /<AddInstructionConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s+variant="outline"\s*\/>/,
-  );
-  assert.match(compact, /recommended !== "skip" \? \(\s*<SkipConfirm/);
+  assert.match(compact, /<InstructionActions/);
 });
 
 // ---- 9. "the assistant" -> "Lovable" in analysis prompts (item 2) ----
