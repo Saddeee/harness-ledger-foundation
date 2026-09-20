@@ -37,26 +37,30 @@ test("tests.tsx: exists, titled 'Tests', with the exact intro line and empty sta
   const code = codeOnly(raw);
   assert.match(code, /createFileRoute\("\/_authenticated\/tests"\)/);
   assert.match(code, />Tests</, "the page's own <h1> reads exactly 'Tests'");
-  // Checkpoint 2026-09-18 (WP1b): "judge both builds" is gone -- the second
-  // column is a historical result, not a second build. Checkpoint 2 2-D:
-  // the intro now opens with DECISIONS.md D1's own product name
-  // (TEST_A_RULE_PAGE_TITLE, harness-ux.ts) -- updated with that intent.
-  assert.match(code, /TEST_A_RULE_PAGE_TITLE/);
-  assert.match(
-    code,
-    /each test shows your project's historical result at the moment before a real request, next to one new Lovable build made from that same point with a candidate rule added, and lets you say whether the original correction would still be needed\./,
-  );
-  assert.match(
-    code,
-    /No tests yet\. Open a suggestion and press "Test this rule"\./,
-    "the empty state's exact copy",
-  );
-
+  // Round 9 Task 6 / spec §5: the intro no longer opens with
+  // TEST_A_RULE_PAGE_TITLE (now judge.tsx's own "Compare builds" page
+  // title) -- it has its own exact sentence, TESTS_INTRO_LINE
+  // (harness-ux.ts), referenced by name rather than reused as a literal.
+  assert.match(code, /TESTS_INTRO_LINE/);
   const uxCode = codeOnly(readApp(HARNESS_UX));
   assert.match(
     uxCode,
-    /export const TEST_A_RULE_PAGE_TITLE = "Test a rule against a previous correction";/,
+    /Each test rebuilds one of your past requests with the instruction added, next to what Lovable built at the time\. Open a test to compare the two builds and say whether your correction would still be needed\./,
   );
+  // Round 9 Task 6 / spec §2 vocabulary: the empty state pointed at the
+  // card's own "Test this rule" trigger; that trigger is now the shared
+  // "Test" label (INSTRUCTION_ACTION_LABELS.test) and "rule" is banned.
+  assert.match(
+    code,
+    /No tests yet\. Open an instruction and press "Test"\./,
+    "the empty state's exact copy",
+  );
+
+  // Round 9 Task 6: TEST_A_RULE_PAGE_TITLE renamed from "Test a rule
+  // against a previous correction" to "Compare builds" -- it is now
+  // judge.tsx's own page title alone (see ux-round9-task6.test.ts), not
+  // reused by this page's intro.
+  assert.match(uxCode, /export const TEST_A_RULE_PAGE_TITLE = "Compare builds";/);
 });
 
 test("tests.tsx: shows the unavailable/hosted copy the same way History's own page does", () => {
@@ -104,12 +108,16 @@ test("tests.tsx: the Cost column reads 'N credits · measured' or '—', never a
   assert.doesNotMatch(readApp(TESTS_PAGE), /\d+\s*credits?\b/);
 });
 
-test("tests.tsx: the Feedback column offers 'Add feedback'/'Edit' and 'Save', with the saved note shown as 'Your note, <day>'", () => {
-  const code = codeOnly(readApp(TESTS_PAGE));
-  assert.match(code, /"Add feedback"/);
-  assert.match(code, /"Edit"/);
-  assert.match(code, /"Save"/);
-  assert.match(code, /`Your note, \$\{formatDay\(run\.feedback_at\)\}`/);
+// Round 9 Task 6 / spec §5: the Feedback column is gone from the list --
+// feedback lives only on Compare builds now (judge.tsx already has "Your
+// feedback about this test", pinned by ux-round6-tests-page.test.ts item 6
+// below). Re-pinned with intent: this test now asserts the control's
+// absence instead of its presence.
+test("tests.tsx: no feedback control on the list -- 'Add feedback' and the saved-note paragraph are gone (feedback lives on Compare builds only)", () => {
+  const raw = readApp(TESTS_PAGE);
+  assert.doesNotMatch(raw, /"Add feedback"/);
+  assert.doesNotMatch(raw, /run\.feedback/);
+  assert.doesNotMatch(raw, /Your note, /);
 });
 
 // ---- 2. the "Test copies to delete by hand" details block lives here now, not on Projects ----
@@ -226,14 +234,17 @@ test("tests.tsx: the card list no longer renders a separate Evidence/Kind column
 
 // ---- 9. Checkpoint 2 2-D: judge.tsx's page title is the product name ----
 
-test("judge.tsx: the page title (browser tab and every static <h1>) is DECISIONS.md D1's own product name", () => {
+test("judge.tsx: the page title (browser tab and every static <h1>) is 'Compare builds' (TEST_A_RULE_PAGE_TITLE)", () => {
   const code = codeOnly(readApp(JUDGE));
   assert.match(code, /title: `\$\{TEST_A_RULE_PAGE_TITLE\} — Harness Ledger`/);
   const h1s =
     code.match(/<h1 className="text-2xl font-semibold">\{TEST_A_RULE_PAGE_TITLE\}<\/h1>/g) ?? [];
+  // Round 9 Task 6 / spec §5: the successful-run view now also shows
+  // "Compare builds" above the instruction (previously only the no-run/
+  // loading/error states did) -- one more occurrence than before.
   assert.equal(
     h1s.length,
-    3,
-    "no test specified / loading / error states all use the product name",
+    4,
+    "no test specified / loading / error / judged states all show the page title",
   );
 });

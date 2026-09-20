@@ -127,10 +127,15 @@ test("harness-ux.ts: recommendedPrimaryAction returns skip for not_supported/pos
 
 // ---- 4. The four conclusion labels, in plain words (item 6) ----
 
+// Round 9 Task 6 / spec §4: not_supported reworded from "...even with the
+// rule" to "...even with the instruction" (spec §2 vocabulary bans "rule"
+// in UI copy; a Task 3 reviewer leftover). possibly_harmful still says
+// "rule" -- out of this task's scope (not named by the brief or spec §4's
+// exact label list), left as a known follow-up.
 test("harness-ux.ts: CONCLUSION_LABELS reads in plain words, no 'replay'/'regression' jargon", () => {
   assert.deepEqual(ux.CONCLUSION_LABELS, {
     historical_support: "Correction not needed in the rebuilt copy",
-    not_supported: "Correction still needed, even with the rule",
+    not_supported: "Correction still needed, even with the instruction",
     possibly_harmful: "The rule may have made it worse",
     inconclusive: "Can't tell from this test",
   });
@@ -139,7 +144,7 @@ test("harness-ux.ts: CONCLUSION_LABELS reads in plain words, no 'replay'/'regres
 test("harness-ux.ts: replayJudgedLine prefixes 'Test result:', not 'Replay judged:'", () => {
   assert.equal(
     ux.replayJudgedLine("not_supported"),
-    "Test result: Correction still needed, even with the rule",
+    "Test result: Correction still needed, even with the instruction",
   );
   assert.equal(ux.replayJudgedLine(null), null);
   assert.equal(ux.replayJudgedLine(undefined), null);

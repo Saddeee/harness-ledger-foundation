@@ -138,8 +138,12 @@ test("tests.tsx: the card's own rule title links to /judge, Started/cost line, n
 // Fix round 2, 2026-09-19: the whole card is the click target -- an
 // onClick on the <article> that navigates to /judge, with cursor-pointer,
 // and e.stopPropagation() guarding each interactive child so the card
-// click doesn't fire underneath a build link, the Technical details fold,
-// or the feedback control (same pattern as instructions.tsx's RuleRow).
+// click doesn't fire underneath one (same pattern as instructions.tsx's
+// RuleRow).
+//
+// Round 9 Task 6 / spec §5: build links and the feedback control are gone
+// from the row -- the only interactive child left is the failed row's own
+// collapsed "Technical details" fold, so the guard count drops from 3 to 1.
 test("tests.tsx: the whole card is the click target, with stopPropagation on its interactive children", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
   assert.match(
@@ -149,8 +153,8 @@ test("tests.tsx: the whole card is the click target, with stopPropagation on its
   assert.match(code, /className="cursor-pointer[^"]*"/);
   const stopPropagationCount = (code.match(/e\.stopPropagation\(\)/g) ?? []).length;
   assert.ok(
-    stopPropagationCount >= 3,
-    "build links, the Technical details fold, and the feedback control each guard against the card's own click",
+    stopPropagationCount >= 1,
+    "the Technical details fold guards against the card's own click",
   );
 });
 
@@ -161,19 +165,16 @@ test("tests.tsx: the feedback note is full width -- no max-w-xs anywhere in the 
   assert.doesNotMatch(raw, /max-w-xs/, "max-w-xs is gone from tests.tsx");
 });
 
-// Round 8 Task 5 fix 3: buildLinks' two link labels reuse the shared
-// HISTORICAL_RESULT_TITLE/REPLAY_WITH_RULE_TITLE constants instead of their
-// own separately-worded strings ("Historical result"/"Rebuilt copy").
-test("tests.tsx: buildLinks reuses HISTORICAL_RESULT_TITLE/REPLAY_WITH_RULE_TITLE for its own link labels", () => {
+// Round 9 Task 6 / spec §5: buildLinks (and its own HISTORICAL_RESULT_TITLE/
+// REPLAY_WITH_RULE_TITLE link labels) is removed entirely -- a Tests row no
+// longer carries any links, per-build or otherwise; both builds are opened
+// from Compare builds instead. Re-pinned with intent: this test now asserts
+// the function's absence instead of its own labelling.
+test("tests.tsx: buildLinks is gone -- a row carries no per-build links", () => {
   const code = codeOnly(readApp(TESTS_PAGE));
-  const buildLinksFn = code.slice(
-    code.indexOf("function buildLinks"),
-    code.indexOf("function costCell"),
-  );
-  assert.match(buildLinksFn, /label:\s*HISTORICAL_RESULT_TITLE/);
-  assert.match(buildLinksFn, /label:\s*REPLAY_WITH_RULE_TITLE/);
-  assert.doesNotMatch(buildLinksFn, /"Historical result"/);
-  assert.doesNotMatch(buildLinksFn, /"Rebuilt copy"/);
+  assert.doesNotMatch(code, /function buildLinks/);
+  assert.doesNotMatch(code, /HISTORICAL_RESULT_TITLE/);
+  assert.doesNotMatch(code, /REPLAY_WITH_RULE_TITLE/);
 });
 
 // ---- 3. Renamed labels (harness-ux.ts constants), pinned exactly ----

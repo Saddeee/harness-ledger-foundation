@@ -775,7 +775,10 @@ export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefi
 // verbatim, so every caller (the card, the Add dialog's "Add and test it
 // first" choice, the judging screen) reads the same words. ----
 
-export const TEST_THIS_RULE_TITLE = "Test this rule in a copy of your project?";
+// Round 9 Task 6 / spec §2 vocabulary: "rule" is banned in UI copy -- the
+// dialog's title is now the short "Test this instruction" heading (the body
+// below still spells out what the copy step does).
+export const TEST_THIS_RULE_TITLE = "Test this instruction";
 export const TEST_THIS_RULE_BODY =
   "Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request. You get the historical result and the new build side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done.";
 // Round 7 / Checkpoint 2026-09-18: the second copy that shows the historical
@@ -994,10 +997,12 @@ export function evidenceStrengthTitle(quality: EnvironmentQualityLike | null | u
 }
 
 // ---- Checkpoint 2 2-D: derived conclusion ----
-// DECISIONS.md D1's own product name for this feature -- the judging
-// screen's page title and the Tests page's own intro line both use it, so
-// a reader sees the same name for "this whole thing" wherever they meet it.
-export const TEST_A_RULE_PAGE_TITLE = "Test a rule against a previous correction";
+// Round 9 Task 6 / spec §5: renamed from "Test a rule against a previous
+// correction" -- Compare builds (spec §2 vocabulary) is the two-build
+// page's own name now; the Tests page no longer opens its intro with this
+// constant (it has its own exact sentence, TESTS_INTRO_LINE below), so this
+// is judge.tsx's page title alone -- browser tab and every static <h1>.
+export const TEST_A_RULE_PAGE_TITLE = "Compare builds";
 
 // Mirrors harness/src/executor/replay-environment.ts's own ReplayConclusion
 // exactly, as a local structural type (this file stays dependency-free).
@@ -1011,9 +1016,14 @@ export type ReplayConclusionLike =
 // "Historical support"/"Not supported by this replay"/"Possible regression"/
 // "Inconclusive" set -- a non-technical Lovable user reads these without
 // knowing what a "replay" or a "regression" is.
+// Round 9 Task 6 / spec §4: not_supported reworded from "...even with the
+// rule" -- a Task 3 reviewer leftover (spec §2 vocabulary bans "rule" in UI
+// copy). possibly_harmful's own "The rule may have made it worse" says
+// "rule" too but is out of this task's scope (not named by the brief or
+// spec §4's exact label list) -- left as a known follow-up.
 export const CONCLUSION_LABELS: Record<ReplayConclusionLike, string> = {
   historical_support: "Correction not needed in the rebuilt copy",
-  not_supported: "Correction still needed, even with the rule",
+  not_supported: "Correction still needed, even with the instruction",
   possibly_harmful: "The rule may have made it worse",
   inconclusive: "Can't tell from this test",
 };
@@ -2566,3 +2576,15 @@ export function instructionFallbackText(ruleId: number): string {
   return `Instruction #${ruleId}`;
 }
 // ---- end Round 9 Task 5 ----
+
+// ---- Round 9 Task 6 ----
+// Tests (spec §5): a row is project / instruction / bold result label /
+// "Started ⟨date⟩ · ⟨credits⟩ credits" -- no links, no feedback control, no
+// notes in the list (all three moved to Compare builds, the two-build page,
+// which already owned the feedback box). This replaces the old INTRO_LINE
+// that opened with TEST_A_RULE_PAGE_TITLE (now judge.tsx's own page title,
+// "Compare builds", not a sentence a Tests-page reader should see reused
+// mid-paragraph).
+export const TESTS_INTRO_LINE =
+  "Each test rebuilds one of your past requests with the instruction added, next to what Lovable built at the time. Open a test to compare the two builds and say whether your correction would still be needed.";
+// ---- end Round 9 Task 6 ----

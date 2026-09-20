@@ -344,10 +344,16 @@ function Page() {
       </div>
 
       <div className="space-y-1">
+        {/* Round 9 Task 6 / spec §5: the page title "Compare builds" sits
+            above the instruction -- the same TEST_A_RULE_PAGE_TITLE the
+            no-run/loading/error states already show, so every state of this
+            page reads the same title. The instruction itself (previously
+            the page's only <h1>) is now a subheading underneath. */}
+        <h1 className="text-2xl font-semibold">{TEST_A_RULE_PAGE_TITLE}</h1>
         {view.project_name ? (
           <p className="text-sm font-semibold text-muted-foreground">{view.project_name}</p>
         ) : null}
-        <h1 className="text-2xl font-semibold">{view.rule_text}</h1>
+        <p className="text-lg font-medium">{view.rule_text}</p>
       </div>
 
       {IN_PROGRESS_STATUSES.has(view.status) ? (

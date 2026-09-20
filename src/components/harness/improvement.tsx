@@ -671,8 +671,8 @@ function TestButton({
   size?: "default" | "sm" | undefined;
   // Checkpoint 2 2-B: the Inbox card's own primary-action label ("Test
   // first", PRIMARY_ACTION_LABELS.test_first) reuses this exact button
-  // rather than a second copy -- every other call site omits this and keeps
-  // the original "Test this rule" trigger.
+  // rather than a second copy -- every other call site omits this and gets
+  // the default trigger below.
   trigger?: string;
   variant?: "default" | "outline";
 }) {
@@ -680,7 +680,11 @@ function TestButton({
   if (!item.test?.available) return null;
   return (
     <ConfirmAction
-      trigger={trigger ?? "Test this rule"}
+      // Round 9 Task 6 / spec §2 vocabulary: "rule" is banned in UI copy --
+      // the one real call site already passes INSTRUCTION_ACTION_LABELS.test
+      // ("Test") explicitly, so this fallback is the same shared label
+      // rather than its own separate "rule" string.
+      trigger={trigger ?? INSTRUCTION_ACTION_LABELS.test}
       variant={variant ?? "outline"}
       size={size}
       title={TEST_THIS_RULE_TITLE}

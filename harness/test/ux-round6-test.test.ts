@@ -84,15 +84,17 @@ test("judge.tsx: exists, is not in NAV, and carries the exact confounder lines, 
   assert.match(code, /<RemoveFromKnowledgeConfirm\b/);
 });
 
-// ---- 2. the card has "Test this rule" and the exact confirm copy ----
+// ---- 2. TestButton's exact confirm copy (Round 9 Task 6: renamed from
+// "the card has 'Test this rule'") ----
 
-test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts the `test` action", () => {
+test("improvement.tsx: TestButton offers the exact confirm copy and posts the `test` action", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
-  // Checkpoint 2 2-B: TestButton's trigger is now overridable (the Inbox
-  // card's own "Test first" primary action reuses this exact button with a
-  // different label) -- every OTHER call site still gets the original
-  // "Test this rule" text via this same default, rewritten with intent.
-  assert.match(code, /trigger=\{trigger \?\? "Test this rule"\}/);
+  // Round 9 Task 6 / spec §2 vocabulary: "rule" is banned in UI copy -- the
+  // only real call site (InstructionActions) already passes
+  // INSTRUCTION_ACTION_LABELS.test ("Test") explicitly, so the fallback
+  // default is the same shared label instead of its own "Test this rule"
+  // string.
+  assert.match(code, /trigger=\{trigger \?\? INSTRUCTION_ACTION_LABELS\.test\}/);
   assert.match(code, /TEST_THIS_RULE_TITLE/);
   assert.match(code, /TEST_THIS_RULE_BODY/);
   assert.match(code, /TEST_THIS_RULE_CREDITS_LINE/);
@@ -102,10 +104,11 @@ test("improvement.tsx: 'Test this rule' offers the exact confirm copy and posts 
   assert.match(code, /action: "test", id: item\.id, show_original: showOriginal/);
 
   const uxCode = codeOnly(readApp(HARNESS_UX));
-  assert.match(
-    uxCode,
-    /export const TEST_THIS_RULE_TITLE = "Test this rule in a copy of your project\?";/,
-  );
+  // Round 9 Task 6 / spec §2 vocabulary: renamed from "Test this rule in a
+  // copy of your project?" -- the short "Test this instruction" heading;
+  // TEST_THIS_RULE_BODY (unchanged) still spells out what the copy step
+  // does.
+  assert.match(uxCode, /export const TEST_THIS_RULE_TITLE = "Test this instruction";/);
   assert.match(
     uxCode,
     /export const TEST_THIS_RULE_BODY =\s*"Harness Ledger copies your project as it was just before your original request, adds this rule to the copy's Knowledge, and sends the same request\. You get the historical result and the new build side by side as real Lovable projects you can open, compare and keep building on; delete them from the test when you're done\.";/,
