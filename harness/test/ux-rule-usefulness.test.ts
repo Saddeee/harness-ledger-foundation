@@ -73,9 +73,13 @@ test("Needs attention and Review for relevance blocks", () => {
     observed_clear: 0,
     review_reason: "repeated_issue",
   })!;
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction"; "Review
+  // rule" is banned outright -- this field is not currently rendered by any
+  // page (only `.line` is), so it gets attentionBlock's own "inactive"
+  // branch's replacement value, "Open Instructions".
   assert.equal(needs.title, "Needs attention");
-  assert.equal(needs.recommendation, "Rewrite this rule or turn it into a Skill.");
-  assert.equal(needs.action, "Review rule");
+  assert.equal(needs.recommendation, "Rewrite this instruction or turn it into a Skill.");
+  assert.equal(needs.action, "Open Instructions");
   const inactive = ux.attentionBlock({
     applicable_tasks: 0,
     hurt: 0,
@@ -116,7 +120,10 @@ test("History: a restore reads 'Restored Knowledge from version N' and a version
     assert.ok(server.includes(field), `TimelineNode missing ${field}`);
   }
   const timeline = codeOnly(readApp("components/harness/timeline.tsx"));
-  for (const label of ["Restored from", "Reason", "Rules added", "Rules removed"]) {
+  // Round 9 Task 7 / spec §2 vocabulary: "Rules" -> "Instructions" (the
+  // server's own TimelineNode fields, rules_added/rules_removed, are
+  // identifiers, unchanged).
+  for (const label of ["Restored from", "Reason", "Instructions added", "Instructions removed"]) {
     assert.ok(timeline.includes(label), `timeline.tsx missing "${label}"`);
   }
   assert.ok(!/went back to before/.test(timeline));

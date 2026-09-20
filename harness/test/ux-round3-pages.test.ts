@@ -236,7 +236,8 @@ test("local-settings.tsx: AI analysis and Defaults for projects, in the right or
   assert.match(raw, /type="password"/);
 
   // five role rows (Round 5 adds Judge)
-  for (const roleLabel of ["Classifier", "Rule writer", "Judge", "Reviewer", "Proposer"]) {
+  // Round 9 Task 7 / spec §2 vocabulary: "Rule writer" -> "Instruction writer".
+  for (const roleLabel of ["Classifier", "Instruction writer", "Judge", "Reviewer", "Proposer"]) {
     assert.ok(raw.includes(roleLabel), `local-settings.tsx missing role label "${roleLabel}"`);
   }
 
@@ -332,7 +333,8 @@ test("local-projects.tsx: expand control, max active rules, auto-write switch, p
   const code = codeOnly(raw);
 
   assert.ok(raw.includes("Write approved changes automatically"));
-  assert.match(code, /Max active rules/);
+  // Round 9 Task 7 / spec §2 vocabulary: "rules" -> "instructions".
+  assert.match(code, /Max active instructions/);
   assert.match(code, /use default \(\$\{defaultMaxActiveRules\}\)/);
   assert.match(code, /action: "project_settings"/);
   assert.match(code, /lovable_project_id: projectId/);
@@ -379,9 +381,10 @@ test("improvement.tsx AddConfirm: over_rules disables confirm and shows the reti
   assert.match(confirm, /overRulesLine\(preview\.active_rules_count\)/);
 
   const raw = readApp(DETAIL);
+  // Round 9 Task 7 / spec §2 vocabulary: "rules" -> "instructions".
   assert.match(
     raw,
-    /return `This project already has \$\{activeRulesCount\} active rules\. Retire one on the Instructions page first\.`;/,
+    /return `This project already has \$\{activeRulesCount\} active instructions\. Retire one on the Instructions page first\.`;/,
   );
 
   // cost wording stays within bounds even with the new alert
@@ -527,18 +530,21 @@ test("local-settings.tsx: one AI-analysis save action (settings + key when typed
   assert.match(code, /"Save AI analysis"/);
 
   // role hints, one per role, directly under each role's own label
+  // Round 9 Task 7 / spec §2 vocabulary: "Rule writer" -> "Instruction
+  // writer"; "proposed rules"/"followed a rule" -> "proposed instructions"/
+  // "followed an instruction".
   for (const [role, hint] of [
     ["Classifier", "Sorts each chat message: new request, correction, question or approval."],
-    ["Rule writer", "Turns your corrections into proposed rules."],
-    ["Judge", "Checks whether Lovable followed a rule in a real build."],
+    ["Instruction writer", "Turns your corrections into proposed instructions."],
+    ["Judge", "Checks whether Lovable followed an instruction in a real build."],
     ["Reviewer", "Judges a build or a test result."],
     ["Proposer", "Suggests an instruction when a build fails and none covers it."],
   ] as const) {
     assert.ok(raw.includes(hint), `local-settings.tsx missing the ${role} hint`);
   }
   assert.match(code, /hint: "Sorts each chat message/);
-  assert.match(code, /hint: "Turns your corrections into proposed rules\."/);
-  assert.match(code, /hint: "Checks whether Lovable followed a rule in a real build\."/);
+  assert.match(code, /hint: "Turns your corrections into proposed instructions\."/);
+  assert.match(code, /hint: "Checks whether Lovable followed an instruction in a real build\."/);
   assert.match(code, /hint: "Judges a build or a test result\."/);
   assert.match(code, /hint: "Suggests an instruction when a build fails and none covers it\."/);
 });

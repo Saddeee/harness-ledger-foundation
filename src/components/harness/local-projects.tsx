@@ -89,9 +89,9 @@ function ProjectSettingsPanel({
   return (
     <div className="space-y-4 rounded-md border bg-muted/30 p-4">
       <div className="space-y-2">
-        <Label htmlFor={`max-active-rules-${projectId}`}>Max active rules</Label>
+        <Label htmlFor={`max-active-instructions-${projectId}`}>Max active instructions</Label>
         <Input
-          id={`max-active-rules-${projectId}`}
+          id={`max-active-instructions-${projectId}`}
           type="number"
           min={1}
           max={50}

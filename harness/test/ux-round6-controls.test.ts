@@ -34,7 +34,10 @@ const CLIENT = "lib/improvements-client.ts";
 test("harness-ux.ts: the exact Round 6 Task 3 copy, verbatim", () => {
   assert.equal(ux.UNDO_TOAST, "Undone — back in your Inbox");
   assert.equal(ux.CANCEL_WRITE_TOAST, "Cancelled — back in your Inbox");
-  assert.equal(ux.REMOVE_FROM_KNOWLEDGE_TITLE, "Remove this rule from Knowledge?");
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction" (this
+  // constant is unused by any page now -- Retire, Round 9 Task 4, replaced
+  // this flow -- but stays exported and pinned here).
+  assert.equal(ux.REMOVE_FROM_KNOWLEDGE_TITLE, "Remove this instruction from Knowledge?");
   assert.equal(
     ux.REMOVE_FROM_KNOWLEDGE_BODY,
     "Harness Ledger rewrites your Knowledge without it now. You can re-add it later.",

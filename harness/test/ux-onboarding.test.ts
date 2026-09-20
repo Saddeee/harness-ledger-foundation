@@ -219,7 +219,8 @@ test("overviewNextAction: pending suggestions, singular and plural", () => {
 
 test("overviewNextAction: a rule needs attention", () => {
   const action = copy.overviewNextAction({ ...BASE_STATE, rulesNeedingAttention: 1 });
-  assert.equal(action.headline, "One rule may need attention.");
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
+  assert.equal(action.headline, "One instruction may need attention.");
   assert.equal(action.to, "/inbox");
 });
 
@@ -237,7 +238,8 @@ test("overviewNextAction: a replay is ready to judge, and links straight to it",
     replaysAwaitingVerdict: 1,
     firstJudgingRunId: 42,
   });
-  assert.equal(action.headline, "One replay is ready to judge.");
+  // Round 9 Task 7 / spec §2 vocabulary: "replay" -> "test".
+  assert.equal(action.headline, "One test is ready to judge.");
   assert.equal(action.to, "/judge?run=42");
 });
 

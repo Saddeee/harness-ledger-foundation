@@ -105,9 +105,11 @@ test("history.tsx: fetches the timeline, has a target selector and the empty-sta
   assert.match(code, /<Timeline\b/);
   assert.match(code, /aria-pressed/);
 
+  // Round 9 Task 7 / spec §2 vocabulary: "Rules"/"rules" -> "Instructions"/
+  // "instructions".
   assert.ok(
     raw.includes(
-      "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions about those rules will show up here.",
+      "Nothing has happened here yet. Instructions you add, changes Harness Ledger writes, and your decisions about those instructions will show up here.",
     ),
   );
 

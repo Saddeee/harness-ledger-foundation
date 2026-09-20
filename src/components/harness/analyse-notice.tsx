@@ -25,8 +25,8 @@ const STEPS: { stage: AnalysisStage; label: string; from: number; to: number }[]
   { stage: "classify", label: "Reading your new messages", from: 0, to: 40 },
   { stage: "group", label: "Grouping them into tasks", from: 40, to: 45 },
   { stage: "rules", label: "Writing suggestions from your corrections", from: 45, to: 80 },
-  { stage: "judge", label: "Checking your rules against recent builds", from: 80, to: 95 },
-  { stage: "health", label: "Updating rule health", from: 95, to: 100 },
+  { stage: "judge", label: "Checking your instructions against recent builds", from: 80, to: 95 },
+  { stage: "health", label: "Updating instruction health", from: 95, to: 100 },
 ];
 
 function percentFor(stage: AnalysisStage, done: number, total: number | null): number {

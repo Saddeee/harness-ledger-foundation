@@ -69,13 +69,17 @@ test("instructions.tsx: no attention-collection code left -- collectAttentionIte
 
 // ---- 2. Instructions: the exact per-rule status lines ----
 
+// Round 9 Task 7 / spec §2 vocabulary: "replay" is banned -- both functions
+// are unused by any page now (Round 9 Task 5 moved instructions.tsx onto
+// observedSentence/aiCheckSentence directly, see the test below) but stay
+// exported and pinned here.
 test("harness-ux.ts: ruleActiveLine and replayEvidenceLine read exactly as specified", () => {
   assert.equal(ux.ruleActiveLine(true), "Active in Lovable");
-  assert.equal(ux.ruleActiveLine(false), "Active, not replay-tested");
+  assert.equal(ux.ruleActiveLine(false), "Active, not tested yet");
   assert.equal(ux.replayEvidenceLine(null), null);
   assert.equal(ux.replayEvidenceLine(undefined), null);
-  assert.equal(ux.replayEvidenceLine({ conclusion: null }), "Replay judged");
-  assert.equal(ux.replayEvidenceLine({ conclusion: "not_a_real_value" }), "Replay judged");
+  assert.equal(ux.replayEvidenceLine({ conclusion: null }), "Test judged");
+  assert.equal(ux.replayEvidenceLine({ conclusion: "not_a_real_value" }), "Test judged");
   assert.equal(
     ux.replayEvidenceLine({ conclusion: "historical_support" }),
     ux.CONCLUSION_LABELS.historical_support,
@@ -233,12 +237,13 @@ test("timeline.tsx: full text/diff is collapsed inside its own closed <details>,
   const dlAt = code.indexOf("<dl");
   const detailsAt = code.indexOf("<details>");
   assert.ok(dlAt >= 0 && detailsAt >= 0 && dlAt < detailsAt);
+  // Round 9 Task 7 / spec §2 vocabulary: "Rules" -> "Instructions".
   for (const label of [
     "Version",
     "Restored from",
     "Reason",
-    "Rules added",
-    "Rules removed",
+    "Instructions added",
+    "Instructions removed",
     "By",
     "When",
   ]) {

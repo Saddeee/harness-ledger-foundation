@@ -405,7 +405,8 @@ test("harness-ux.ts: replayEnvironmentRows returns the exact nine rows, in order
       "Skills",
       "Chat history",
       "Project memory",
-      "Candidate rule",
+      // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
+      "Candidate instruction",
       "Builder version",
       "Uncontrolled context",
     ],
@@ -495,21 +496,24 @@ test("harness-ux.ts: replayEnvironmentRows names exact_historical/current_fallba
 // Checkpoint 2 2-D: "Other active rules" moved out of replayEnvironmentRows
 // into its own line (Full technical details) -- otherActiveRulesLine keeps
 // exactly the same wording/disclosure the old row carried.
+// Round 9 Task 7 / spec §2 vocabulary: "rule(s)"/"replay" -> "instruction(s)"/
+// "test" in the wording this line owns (the "rule A" fixture name is just an
+// example instruction's text, echoed back verbatim -- not this file's copy).
 test("harness-ux.ts: otherActiveRulesLine names the kept rules, the older-test disclosure, 'none', and null for no environment", () => {
   assert.equal(
     ux.otherActiveRulesLine({
       other_active_rules: ["rule A"],
       historical_rules_dropped_by_run: true,
     }),
-    "Other active rules kept in this replay: rule A -- these rules were live at the time but were not in this replay's Knowledge (an older test); newer tests keep them",
+    "Other active instructions kept in this test: rule A -- these instructions were live at the time but were not in this test's Knowledge (an older test); newer tests keep them",
   );
   assert.equal(
     ux.otherActiveRulesLine({ other_active_rules: ["rule A"] }),
-    "Other active rules kept in this replay: rule A",
+    "Other active instructions kept in this test: rule A",
   );
   assert.equal(
     ux.otherActiveRulesLine({ other_active_rules: [] }),
-    "Other active rules kept in this replay: none.",
+    "Other active instructions kept in this test: none.",
   );
   assert.equal(ux.otherActiveRulesLine(null), null);
   assert.equal(ux.otherActiveRulesLine(undefined), null);
@@ -521,9 +525,10 @@ test("harness-ux.ts: otherActiveRulesLine names the kept rules, the older-test d
 // approximation: " instead of the old "Historical approximation: ".
 test("harness-ux.ts: evidenceStrengthLine, one sentence per quality, null when there is no quality", () => {
   assert.match(ux.evidenceStrengthLine("historical_approximation")!, /^An approximation:/);
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
   assert.match(
     ux.evidenceStrengthLine("historical_approximation")!,
-    /not that the rule alone caused/,
+    /not that the instruction alone caused/,
   );
   assert.equal(
     ux.evidenceStrengthLine("not_comparable"),
@@ -544,7 +549,8 @@ test("harness-ux.ts: evidenceStrengthLine, one sentence per quality, null when t
 test("harness-ux.ts: environmentQualityLabel/EXPERIMENT_KIND_LABEL/evidenceColumnLabel cover every enum value", () => {
   assert.equal(ux.environmentQualityLabel("historical_approximation"), "An approximation");
   assert.equal(ux.environmentQualityLabel(null), "—");
-  assert.equal(ux.EXPERIMENT_KIND_LABEL.historical_replay, "Historical replay");
+  // Round 9 Task 7 / spec §2 vocabulary: "Historical replay" -> "Historical test".
+  assert.equal(ux.EXPERIMENT_KIND_LABEL.historical_replay, "Historical test");
   // Round 8 Task 1 item 6: CONCLUSION_LABELS.historical_support was
   // "Historical support" -- now the plain-words "Correction not needed in
   // the rebuilt copy".
@@ -668,8 +674,9 @@ test("no banned words in harness-ux.ts's own rendered test-section copy (constan
   // "proof" is banned everywhere except TEST_ONE_BUILD_LINE's own approved
   // "not proof that..." disclaimer (checked separately, verbatim, below).
   assert.ok(!/\bproof\b/i.test(rendered), 'harness-ux.ts test-section copy still contains "proof"');
+  // Round 9 Task 7 / spec §2 vocabulary: "replay"/"rule" -> "test"/"instruction".
   assert.equal(
     ux.TEST_ONE_BUILD_LINE,
-    "One replay build; evidence about this correction, not proof that the rule caused the difference.",
+    "One test build; evidence about this correction, not proof that the instruction caused the difference.",
   );
 });

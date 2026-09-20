@@ -153,10 +153,11 @@ test("harness-ux.ts: replayJudgedLine prefixes 'Test result:', not 'Replay judge
 
 // ---- 5. Item 4's exact skip-recommended consequence line ----
 
+// Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
 test("harness-ux.ts: SKIP_RECOMMENDED_CONSEQUENCE_LINE reads exactly as specified", () => {
   assert.equal(
     ux.SKIP_RECOMMENDED_CONSEQUENCE_LINE,
-    "The test suggests this rule would not have helped. Skipping changes nothing in Lovable.",
+    "The test suggests this instruction would not have helped. Skipping changes nothing in Lovable.",
   );
 });
 

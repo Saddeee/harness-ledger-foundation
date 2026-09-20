@@ -75,7 +75,7 @@ export const Route = createFileRoute("/_authenticated/judge")({
       { title: `${TEST_A_RULE_PAGE_TITLE} — Harness Ledger` },
       {
         name: "description",
-        content: "Your historical result next to a new Lovable build with the rule.",
+        content: "Your historical result next to a new Lovable build with the instruction.",
       },
       { property: "og:type", content: "website" },
     ],
@@ -495,7 +495,7 @@ function Page() {
               }
             />
             <BuildColumn
-              id="replay-with-rule"
+              id="rebuilt-with-instruction"
               title={REPLAY_WITH_RULE_TITLE}
               subtitle={REPLAY_WITH_RULE_SUBTITLE}
               copy={view.copy}
@@ -506,7 +506,7 @@ function Page() {
               onDelete={() =>
                 void runAction(
                   { action: "delete_copy", run_id: view.id, which: "with_rule" },
-                  "Deleted the replay build.",
+                  "Deleted the test build.",
                 )
               }
             />

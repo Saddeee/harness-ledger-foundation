@@ -88,9 +88,11 @@ test("AddConfirm help text: exact copy for each choice", () => {
   // Checkpoint 2026-09-18 (WP1b): "compare both builds" is gone -- the
   // second column is a historical result, not a second build.
   const ux = codeOnly(readApp("lib/harness-ux.ts"));
+  // Round 9 Task 7 / spec §2 vocabulary: "replays"/"rule" -> "rebuilds"/
+  // "instruction".
   assert.match(
     ux,
-    /export const TEST_FIRST_HELP =\s*"Nothing is added yet\. Harness Ledger replays your original request in a new copy with this rule, next to the historical result, and you add it afterwards if it worked\.";/,
+    /export const TEST_FIRST_HELP =\s*"Nothing is added yet\. Harness Ledger rebuilds your original request in a new copy with this instruction, next to the historical result, and you add it afterwards if it worked\.";/,
   );
   assert.match(detail, /TEST_FIRST_HELP/);
   assert.match(detail, /proveCostLine\(\)/);

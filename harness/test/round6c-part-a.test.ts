@@ -231,8 +231,9 @@ test("analyse-notice.tsx: shows step-by-step progress while analysis is queued o
     "Reading your new messages",
     "Grouping them into tasks",
     "Writing suggestions from your corrections",
-    "Checking your rules against recent builds",
-    "Updating rule health",
+    // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
+    "Checking your instructions against recent builds",
+    "Updating instruction health",
   ]) {
     assert.ok(code.includes(label), `missing step: ${label}`);
   }

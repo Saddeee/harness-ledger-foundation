@@ -130,7 +130,7 @@ function currentKnowledgeHint(
 ): string {
   const parts = [targetName, `${content.length.toLocaleString()} characters`];
   const rules = countManagedRules(content, managedBlockPresent);
-  if (rules != null) parts.push(rules === 1 ? "1 rule" : `${rules} rules`);
+  if (rules != null) parts.push(rules === 1 ? "1 instruction" : `${rules} instructions`);
   return parts.join(" · ");
 }
 // ---- end Checkpoint 3 UX fix 3 ----
@@ -139,7 +139,7 @@ function currentKnowledgeHint(
 // filterable under Suggestions -- so this no longer points at a separate
 // Suggestions page.
 const EMPTY_LINE =
-  "Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your decisions about those rules will show up here.";
+  "Nothing has happened here yet. Instructions you add, changes Harness Ledger writes, and your decisions about those instructions will show up here.";
 const EMPTY_FILTERED_LINE = "Nothing matches this filter yet.";
 
 function Page() {

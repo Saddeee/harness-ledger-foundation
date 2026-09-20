@@ -171,7 +171,7 @@ const PREVIEW_CONSEQUENCES = [
 const OVER_CAP_LINE =
   "This would exceed the Knowledge limit — shorten the instruction or your existing Knowledge first.";
 function overRulesLine(activeRulesCount: number): string {
-  return `This project already has ${activeRulesCount} active rules. Retire one on the Instructions page first.`;
+  return `This project already has ${activeRulesCount} active instructions. Retire one on the Instructions page first.`;
 }
 // Round 6 Task 2: the real toast text comes from the write outcome
 // (writeToastText, below) -- these four are only the defensive fallback for
@@ -1924,7 +1924,7 @@ export function ImprovementDetail({
           <p>Harness Ledger analysis uses Harness Ledger's own AI, not your Lovable account.</p>
         </DetailSection>
 
-        <DetailSection title="How Harness Ledger judges whether a rule helps">
+        <DetailSection title="How Harness Ledger judges whether an instruction helps">
           {evidenceSourceLines(item.health?.sources ?? null).map((line, i) => (
             <p key={i}>{line}</p>
           ))}
@@ -1936,7 +1936,8 @@ export function ImprovementDetail({
               <ul className="space-y-2 border-t px-3 py-3">
                 {item.health.adherence.quotes.map((q, i) => (
                   <li key={i}>
-                    “{q.quote}” — {q.verdict === "broke" ? "broke the rule" : "followed the rule"},{" "}
+                    “{q.quote}” —{" "}
+                    {q.verdict === "broke" ? "broke the instruction" : "followed the instruction"},{" "}
                     {formatDay(q.created_at)}
                   </li>
                 ))}
@@ -1984,7 +1985,7 @@ export function ImprovementDetail({
               [
                 ["Correction", item.developer.correction],
                 ["Learning", item.developer.learning],
-                ["Rule", item.developer.rule],
+                ["Instruction", item.developer.rule],
                 ["Classification history", item.developer.classification_history],
                 ["Other stored items (not shown to users)", item.developer.hidden_evidence],
                 ["Verification plan", item.developer.verification_plan],
@@ -2388,7 +2389,9 @@ export function NewSkillCard({
   run: Run;
 }) {
   const titleId = `improvement-${item.id}`;
-  const scopeLabel = item.destination === "workspace" ? "Workspace" : "Project";
+  // Round 9 Task 7 / spec §2 vocabulary: "Where it is saved" is "This
+  // project" / "All my projects", never "workspace"/"Project" alone.
+  const scopeLabel = item.destination === "workspace" ? "All my projects" : "This project";
   const purpose = skillProposalPurpose(
     item.skill_proposal?.content ?? null,
     item.proposed_instruction,
@@ -2492,7 +2495,18 @@ function inboxLinkHref(item: InboxItem): string {
 function InboxCardHeader({ item }: { item: InboxItem }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="text-sm font-semibold">{item.project_name ?? "Workspace"}</p>
+      {/* Round 9 Task 7 / spec §2 vocabulary: the contract's own
+          project_name for a workspace-scoped item is the literal string
+          "Workspace" (see inboxLinkHref's own comment below for the source)
+          -- the display maps that (and the null project-target edge case)
+          to "All my projects", never showing "Workspace" itself. The
+          routing check below still compares against the raw contract
+          value. */}
+      <p className="text-sm font-semibold">
+        {item.project_name === "Workspace"
+          ? "All my projects"
+          : (item.project_name ?? "All my projects")}
+      </p>
       <span className="text-xs text-muted-foreground">{INBOX_TYPE_LABELS[item.type]}</span>
     </div>
   );

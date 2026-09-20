@@ -281,12 +281,12 @@ const APPROVAL_LINE = "Nothing is written to Lovable until you approve it here."
 const ASK_LABEL = "Ask me first";
 const AUTOMATIC_LABEL = "Automatic";
 const AUTOMATIC_HELP =
-  "Automatic accepts a suggestion only when the analysis gave it a confidence of at least the value below, found no similar or conflicting rule, and the project is under its rule and Knowledge limits and allows automatic writes (Projects page). Retirements and Skill changes are never automatic. Everything done automatically is listed in History, and you can retire or restore any of it. Planned, not available yet: per-Skill permissions, frequency limits and risk restrictions.";
+  "Automatic accepts a suggestion only when the analysis gave it a confidence of at least the value below, found no similar or conflicting instruction, and the project is under its instruction and Knowledge limits and allows automatic writes (Projects page). Retirements and Skill changes are never automatic. Everything done automatically is listed in History, and you can retire or restore any of it. Planned, not available yet: per-Skill permissions, frequency limits and risk restrictions.";
 const DEFAULT_DECISION_MODE: "ask" | "automatic" = "ask";
 const DEFAULT_AUTO_CONFIDENCE = 0.8;
 
 function feedbackLine(feedback: { accepted: number; skipped: number; verdicts: number }): string {
-  return `From your decisions so far: ${feedback.accepted} accepted, ${feedback.skipped} skipped, ${feedback.verdicts} verdicts. Harness Ledger shows the Rule writer what you accepted and skipped, and won't re-propose what you skipped.`;
+  return `From your decisions so far: ${feedback.accepted} accepted, ${feedback.skipped} skipped, ${feedback.verdicts} verdicts. Harness Ledger shows the Instruction writer what you accepted and skipped, and won't re-propose what you skipped.`;
 }
 
 // ---- Evidence (Round 5 Task 7 / spec §5 "which count"). Which of the four
@@ -297,7 +297,7 @@ function feedbackLine(feedback: { accepted: number; skipped: number; verdicts: n
 // judged (Round 6 Task 6b: the replay is wired now, this is not a "not
 // built yet" gate). ----
 const EVIDENCE_INTRO =
-  "Signals that count towards a rule's health and retirement. Every signal is always shown; this only changes what can trigger a retirement suggestion.";
+  "Signals that count towards an instruction's health and retirement. Every signal is always shown; this only changes what can trigger a retirement suggestion.";
 const DEFAULT_EVIDENCE_SOURCES: EvidenceSources = {
   observed: true,
   adherence: true,
@@ -368,13 +368,13 @@ const LLM_ROLES: { key: LlmRole; label: string; hint: string }[] = [
   },
   {
     key: "rule_writer",
-    label: "Rule writer",
-    hint: "Turns your corrections into proposed rules.",
+    label: "Instruction writer",
+    hint: "Turns your corrections into proposed instructions.",
   },
   {
     key: "judge",
     label: "Judge",
-    hint: "Checks whether Lovable followed a rule in a real build.",
+    hint: "Checks whether Lovable followed an instruction in a real build.",
   },
   {
     key: "reviewer",
@@ -401,7 +401,7 @@ const DEFAULT_TOKEN_BUDGET = 2_000_000;
 const AI_ANALYSIS_LINE =
   "Analysis runs only when you press Analyse now. Chat text is sent to the provider you chose.";
 const MODEL_FOR_ANALYSIS_LINE =
-  "Used for every analysis role (classifier, rule writer, judge, reviewer, proposer) unless you set one per role below.";
+  "Used for every analysis role (classifier, instruction writer, judge, reviewer, proposer) unless you set one per role below.";
 // Fix round 1 item 2: shown under the primary fields (not inside Advanced)
 // only when nothing has been edited per-role yet this visit -- see
 // perRoleEdited below. Once a per-role row has actually been touched, a
@@ -1210,7 +1210,7 @@ export function LocalSettings() {
                     pairedTestsAvailable ? "font-normal" : "font-normal text-muted-foreground"
                   }
                 >
-                  Historical replay{pairedTestsAvailable ? "" : " (judge at least one test first)"}
+                  Test results{pairedTestsAvailable ? "" : " (judge at least one test first)"}
                 </Label>
               </div>
             </div>
@@ -1320,9 +1320,11 @@ export function LocalSettings() {
             <h2 className="text-lg font-medium">Defaults for projects</h2>
 
             <div className="space-y-2">
-              <Label htmlFor="default-max-active-rules">Max active rules per project (1–50)</Label>
+              <Label htmlFor="default-max-active-instructions">
+                Max active instructions per project (1–50)
+              </Label>
               <Input
-                id="default-max-active-rules"
+                id="default-max-active-instructions"
                 type="number"
                 min={1}
                 max={50}

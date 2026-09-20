@@ -181,7 +181,8 @@ test("tests.tsx: buildLinks is gone -- a row carries no per-build links", () => 
 
 test("harness-ux.ts: HISTORICAL_RESULT_TITLE/REPLAY_WITH_RULE_TITLE renamed", () => {
   assert.equal(ux.HISTORICAL_RESULT_TITLE, "What Lovable built before");
-  assert.equal(ux.REPLAY_WITH_RULE_TITLE, "Rebuilt with the rule");
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
+  assert.equal(ux.REPLAY_WITH_RULE_TITLE, "Rebuilt with the instruction");
 });
 
 test("harness-ux.ts: evidenceStrengthTitle reads 'How much this shows: ...', with 'An approximation' for historical_approximation", () => {
@@ -225,9 +226,10 @@ test("harness-ux.ts: evidenceSourceLines' fourth sentence reworded from 'Histori
     verdicts: true,
     paired: true,
   });
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
   assert.match(
     lines[3]!,
-    /^Test: the original request built again with the rule, next to what Lovable built before\./,
+    /^Test: the original request built again with the instruction, next to what Lovable built before\./,
   );
   assert.doesNotMatch(lines[3]!, /Historical replay/);
 });

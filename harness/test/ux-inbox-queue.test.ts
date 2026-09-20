@@ -86,13 +86,16 @@ test("Inbox hierarchy: count line, items, past-decisions link, then the secondar
   );
 });
 
+// Round 9 Task 7 / spec §2 vocabulary (controller ruling): new_instruction
+// "Suggested", test_result "Test", rule_attention "Needs a decision",
+// action_failed "Something failed", conflict "Edited in Lovable".
 test("Inbox item types: six plain labels, every card path renders one primary action with a consequence line", () => {
-  assert.match(UX, /new_instruction: "New instruction"/);
+  assert.match(UX, /new_instruction: "Suggested"/);
   assert.match(UX, /new_skill: "New Skill"/);
-  assert.match(UX, /test_result: "Test result"/);
-  assert.match(UX, /rule_attention: "Rule needs attention"/);
-  assert.match(UX, /conflict: "Conflict"/);
-  assert.match(UX, /action_failed: "Action failed"/);
+  assert.match(UX, /test_result: "Test"/);
+  assert.match(UX, /rule_attention: "Needs a decision"/);
+  assert.match(UX, /conflict: "Edited in Lovable"/);
+  assert.match(UX, /action_failed: "Something failed"/);
   for (const fn of [
     "TestResultCard",
     "RuleAttentionCard",

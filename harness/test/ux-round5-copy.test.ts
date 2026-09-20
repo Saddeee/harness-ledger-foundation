@@ -92,12 +92,15 @@ test("nav: Inbox, Instructions, Skills, Tests, History, Projects, Settings in th
   ]);
 });
 
-test("local-settings.tsx: LLM_ROLES labels contain 'Rule writer' and 'Judge', not 'Miner'", () => {
+// Round 9 Task 7 / spec §2 vocabulary: "Rule writer" -> "Instruction writer"
+// (still never "Miner", the even older name this test was written to guard
+// against).
+test("local-settings.tsx: LLM_ROLES labels contain 'Instruction writer' and 'Judge', not 'Miner'", () => {
   const code = codeOnly(readApp(SETTINGS));
-  const hasRuleWriter = /label:\s*"Rule writer"/i.test(code);
+  const hasRuleWriter = /label:\s*"Instruction writer"/i.test(code);
   const hasJudge = /label:\s*"Judge"/i.test(code);
   const hasMiner = /label:\s*"Miner"/i.test(code);
-  assert.ok(hasRuleWriter, "LLM_ROLES must contain 'Rule writer' label");
+  assert.ok(hasRuleWriter, "LLM_ROLES must contain 'Instruction writer' label");
   assert.ok(hasJudge, "LLM_ROLES must contain 'Judge' label");
   assert.ok(!hasMiner, "LLM_ROLES must not contain 'Miner' label");
 });

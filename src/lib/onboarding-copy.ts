@@ -222,8 +222,8 @@ export function overviewNextAction(state: OverviewState): OverviewNextAction {
   }
   if (state.rulesNeedingAttention > 0) {
     return {
-      headline: "One rule may need attention.",
-      actionLabel: "Review rule",
+      headline: "One instruction may need attention.",
+      actionLabel: "Open Inbox",
       kind: "review_rules",
       to: "/inbox",
       consequence: "Opens Inbox. Nothing changes until you decide there.",
@@ -231,11 +231,11 @@ export function overviewNextAction(state: OverviewState): OverviewNextAction {
   }
   if (state.replaysAwaitingVerdict > 0) {
     return {
-      headline: "One replay is ready to judge.",
-      actionLabel: "Judge replay",
+      headline: "One test is ready to judge.",
+      actionLabel: "Judge",
       kind: "judge_replay",
       to: state.firstJudgingRunId != null ? `/judge?run=${state.firstJudgingRunId}` : "/tests",
-      consequence: "Opens the replay. Nothing changes until you record a verdict.",
+      consequence: "Opens the test. Nothing changes until you record a verdict.",
     };
   }
   if (state.newActivity) {

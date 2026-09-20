@@ -89,9 +89,10 @@ test("local-settings.tsx: the feedback line reads the accepted/skipped/verdicts 
   const code = codeOnly(readApp(SETTINGS));
   assert.match(code, /From your decisions so far:/);
   assert.match(code, /accepted, \$\{.*\} skipped, \$\{.*\} verdicts/);
+  // Round 9 Task 7 / spec §2 vocabulary: "Rule writer" -> "Instruction writer".
   assert.match(
     code,
-    /Harness Ledger shows the Rule writer what you accepted and skipped, and won't re-propose what you skipped\./,
+    /Harness Ledger shows the Instruction writer what you accepted and skipped, and won't re-propose what you skipped\./,
   );
   assert.match(code, /action:\s*"settings"[\s\S]{0,120}decision_mode:\s*decisionMode/);
   assert.match(code, /decision_auto_confidence:\s*autoConfidence/);

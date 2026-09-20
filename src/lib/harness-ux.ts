@@ -47,10 +47,12 @@ export const VERIFIER_STATUS_LABELS: Record<string, string> = {
   unclear: "Unclear",
 };
 
+// Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction" (values only;
+// this map is currently unused by any page, kept for the enum-coverage test).
 export const EXPERIMENT_TYPE_LABELS: Record<string, string> = {
-  paired_control_treatment: "Compare with and without the rule",
-  treatment_only: "Test with the rule only",
-  ablation: "Test what changes when the rule is removed",
+  paired_control_treatment: "Compare with and without the instruction",
+  treatment_only: "Test with the instruction only",
+  ablation: "Test what changes when the instruction is removed",
 };
 
 export const RULE_STATE_LABELS: Record<string, string> = {
@@ -104,7 +106,7 @@ export const WHY_TEMPLATES: Record<string, string> = {
   scope_extension:
     "The request grew beyond its original scope. Harness Ledger thinks a standing instruction would set clearer expectations.",
   retire:
-    "Harness Ledger found a signal worth your decision about whether this rule is still useful. You can retire it, or keep it and be asked again later.",
+    "Harness Ledger found a signal worth your decision about whether this instruction is still useful. You can retire it, or keep it and be asked again later.",
 };
 
 const WHY_GENERIC =
@@ -467,7 +469,10 @@ export function wordingChangeLine(entry: {
 // the Instructions page) reads the same words.
 export const UNDO_TOAST = "Undone — back in your Inbox";
 export const CANCEL_WRITE_TOAST = "Cancelled — back in your Inbox";
-export const REMOVE_FROM_KNOWLEDGE_TITLE = "Remove this rule from Knowledge?";
+// Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction" (unused by
+// any page today -- Retire, Round 9 Task 4, replaced this flow -- but kept
+// exported and pinned by ux-round6-controls.test.ts).
+export const REMOVE_FROM_KNOWLEDGE_TITLE = "Remove this instruction from Knowledge?";
 export const REMOVE_FROM_KNOWLEDGE_BODY =
   "Harness Ledger rewrites your Knowledge without it now. You can re-add it later.";
 export const REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL = "Remove";
@@ -635,8 +640,12 @@ export function attentionBlock(health: HealthLike | null | undefined): {
     return {
       title: "Review for relevance",
       line: "No relevant task in the last 60 days.",
-      recommendation: "Decide whether this rule still belongs in Knowledge.",
-      action: "Review rule",
+      recommendation: "Decide whether this instruction still belongs in Knowledge.",
+      // Round 9 Task 7 / spec §2 vocabulary: "Review rule" is banned; this
+      // field is not currently rendered by any page (only `.line` is), so
+      // it gets the same "Open Instructions" value Task 3 already gave
+      // REVIEW_RULE_LABEL for the same retired phrase.
+      action: "Open Instructions",
       // "Archive" (spec §10.1) is not a distinct state in this version: a
       // retired rule keeps its record and can be re-added, which is what
       // archiving would do. Recorded in DECISIONS.md.
@@ -655,13 +664,13 @@ export function attentionBlock(health: HealthLike | null | undefined): {
   // aiCheckSentence otherwise, never a bespoke rewording of either.
   const line =
     n > 0
-      ? (observedLine(health) ?? "You asked for a review of this rule.")
-      : (aiCheckSentence(health) ?? "You asked for a review of this rule.");
+      ? (observedLine(health) ?? "You asked for a review of this instruction.")
+      : (aiCheckSentence(health) ?? "You asked for a review of this instruction.");
   return {
     title: "Needs attention",
     line,
-    recommendation: "Rewrite this rule or turn it into a Skill.",
-    action: "Review rule",
+    recommendation: "Rewrite this instruction or turn it into a Skill.",
+    action: "Open Instructions",
   };
 }
 
@@ -714,7 +723,7 @@ export function verdictLine(verdict: VerdictLike | null | undefined): string | n
 export type VerdictEffect = "counted_hurt" | "snoozed" | "none";
 
 export const VERDICT_EFFECT_TEXT: Record<VerdictEffect, string> = {
-  counted_hurt: "Counted as one repeat correction in this rule's health",
+  counted_hurt: "Counted as one repeat correction in this instruction's health",
   snoozed: "Retirement snoozed for 30 days",
   none: "Recorded; no effect on health",
 };
@@ -751,21 +760,23 @@ export type EvidenceSourcesLike = {
 };
 
 function ranSuffix(hasRun: boolean): string {
-  return hasRun ? "This has run for this rule." : "This hasn't run for this rule yet.";
+  return hasRun
+    ? "This has run for this instruction."
+    : "This hasn't run for this instruction yet.";
 }
 
 export function evidenceSourceLines(sources: EvidenceSourcesLike | null | undefined): string[] {
   const s = sources ?? { observed: false, adherence: false, verdicts: false, paired: false };
   return [
-    `Observed from your real builds: Harness Ledger counts builds in this rule's area and any repeat correction, automatically, using no Lovable credits. ${ranSuffix(s.observed)}`,
-    `Your verdict: you can say directly whether a rule helped, didn't help, or you're not sure, any time. ${ranSuffix(s.verdicts)}`,
-    `AI adherence check: Harness Ledger's AI reads the request and Lovable's reply and says whether the rule was followed, broken, or didn't apply, with a quote. ${ranSuffix(s.adherence)}`,
+    `Observed from your real builds: Harness Ledger counts builds in this instruction's area and any repeat correction, automatically, using no Lovable credits. ${ranSuffix(s.observed)}`,
+    `Your verdict: you can say directly whether an instruction helped, didn't help, or you're not sure, any time. ${ranSuffix(s.verdicts)}`,
+    `AI adherence check: Harness Ledger's AI reads the request and Lovable's reply and says whether the instruction was followed, broken, or didn't apply, with a quote. ${ranSuffix(s.adherence)}`,
     // Checkpoint 2026-09-18: renamed away from "paired" -- every run so far
     // is a historical replay (one new build next to the historical result),
     // not a fresh two-arm comparison. See docs/audit/replay.md. Round 8 Task
     // 5 (review item 9): reworded from "Historical replay: ..." -- plain
     // words, no "replay" jargon, for a non-technical Lovable user.
-    `Test: the original request built again with the rule, next to what Lovable built before. ${ranSuffix(s.paired)}`,
+    `Test: the original request built again with the instruction, next to what Lovable built before. ${ranSuffix(s.paired)}`,
   ];
 }
 
@@ -789,11 +800,11 @@ export const TEST_THIS_RULE_BODY =
 export const SHOW_ORIGINAL_LABEL =
   "Also copy the historical result so I can open it (no builder credits)";
 export const SHOW_ORIGINAL_HELP =
-  "Leave this on when the rule is about something you can see. Turn it off for rules about things you can't, like how data is saved.";
+  "Leave this on when the instruction is about something you can see. Turn it off for instructions about things you can't, like how data is saved.";
 // Round 7: "Test it first" in the Add dialog adds nothing until you decide.
 export const TEST_FIRST_LABEL = "Test it first";
 export const TEST_FIRST_HELP =
-  "Nothing is added yet. Harness Ledger replays your original request in a new copy with this rule, next to the historical result, and you add it afterwards if it worked.";
+  "Nothing is added yet. Harness Ledger rebuilds your original request in a new copy with this instruction, next to the historical result, and you add it afterwards if it worked.";
 /** A warning when a rule going to every project talks about one app. */
 export function workspaceWordingWarning(
   instruction: string | null | undefined,
@@ -805,7 +816,7 @@ export function workspaceWordingWarning(
   );
   if (!match) return null;
   const project = projectName ? ` if it's only for ${projectName}` : "";
-  return `This rule says "${match[0].trim()}", but every project in your workspace will read it. Edit the wording first${project}, or add it to this project instead.`;
+  return `This instruction says "${match[0].trim()}", but every project in your workspace will read it. Edit the wording first${project}, or add it to this project instead.`;
 }
 // Checkpoint 2026-09-18 (DECISIONS.md D1/D2, PLAN.md "Global constraints"):
 // the exact, mandated cost sentence -- creating a copy is never "free"
@@ -837,7 +848,11 @@ export function testInProgressLine(status: string): string | null {
   if (status === "building") return "Testing… building in the copy";
   return null;
 }
-export const TEST_VERDICT_NEEDED_LABEL = "Your verdict is needed";
+// Round 9 Task 7 / spec §2 vocabulary: "Your verdict is needed" is banned --
+// a Round 9 Task 3 leftover (that task renamed the Inbox card's own
+// YOUR_VERDICT_NEEDED_LINE below to "Waiting for your answer" but missed
+// this older constant, still used by the card's TestStatusLine link).
+export const TEST_VERDICT_NEEDED_LABEL = "Waiting for your answer";
 
 export type TestRunResultLike = { score: number | null; corrections: number };
 
@@ -865,7 +880,7 @@ export function testCopyConfounderLine(editsSinceEpisode: number | null): string
   return `This copy started from the project as it was before that request; ${n} edit${n === 1 ? " has" : "s have"} landed since.`;
 }
 export const TEST_ONE_BUILD_LINE =
-  "One replay build; evidence about this correction, not proof that the rule caused the difference.";
+  "One test build; evidence about this correction, not proof that the instruction caused the difference.";
 // Round 7, found in a live test: the copy with the rule came out in euros and
 // lowercase -- preferences given to Lovable hours after the replayed request.
 // Lovable's own project memory is copied as it is now, not as it was then.
@@ -901,9 +916,9 @@ export const HISTORICAL_RESULT_TITLE = "What Lovable built before";
 export const HISTORICAL_RESULT_SUBTITLE =
   "What actually happened, shown through a copy of that commit";
 // Round 8 Task 5: renamed from "Replay with rule".
-export const REPLAY_WITH_RULE_TITLE = "Rebuilt with the rule";
+export const REPLAY_WITH_RULE_TITLE = "Rebuilt with the instruction";
 export const REPLAY_WITH_RULE_SUBTITLE =
-  "One new Lovable build from the same starting point, with this rule added";
+  "One new Lovable build from the same starting point, with this instruction added";
 
 // Checkpoint 2 2-D: renamed from "Key difference" -- the section shows only
 // Lovable's own account of each build (summaries + diff toggles); it never
@@ -914,13 +929,13 @@ export const RELEVANT_DIFFERENCE_INTRO =
   "Lovable's own account of each build, side by side. Harness Ledger does not compute an automatic verdict on the difference -- that is what the question below is for.";
 
 export const REPLAY_VERDICT_QUESTION =
-  "Would the original correction still be needed in the replay?";
+  "Would the original correction still be needed in the rebuilt copy?";
 // Checkpoint 2 2-D: the judge screen's optional checkbox, next to the
 // per-correction verdicts -- sets environment.regression_flag (stored by
 // judgeRun, harness/src/improvements.ts) and forces the derived conclusion
 // to possibly_harmful regardless of the verdicts, whatever they say.
 export const REGRESSION_CHECKBOX_LABEL =
-  "The replay introduced a new problem I would have to correct";
+  "The test introduced a new problem I would have to correct";
 
 export const NO_ENVIRONMENT_RECORD_LINE = "No environment record for this test.";
 // Checkpoint 2 2-D: renamed from "Replay environment" -- the nine-row
@@ -939,7 +954,7 @@ export type ExperimentKindLike = "historical_replay" | "paired_comparison";
 // is deferred (D3) and has no run to label yet, but the map is exhaustive so a
 // future run kind can never fall back to a raw enum value on screen.
 export const EXPERIMENT_KIND_LABEL: Record<ExperimentKindLike, string> = {
-  historical_replay: "Historical replay",
+  historical_replay: "Historical test",
   paired_comparison: "Fresh two-build comparison",
 };
 
@@ -978,7 +993,7 @@ export function evidenceStrengthLine(
     // own "How much this shows: An approximation" title, so it now opens
     // with the same plain-words label instead of the old technical one.
     case "historical_approximation":
-      return "An approximation: the historical result ran in a different Lovable environment; this replay shows whether the correction would appear again, not that the rule alone caused any difference.";
+      return "An approximation: the historical result ran in a different Lovable environment; this test shows whether the correction would appear again, not that the instruction alone caused any difference.";
     case "not_comparable":
       return "Not comparable: the historical code state could not be established.";
     case "partially_controlled":
@@ -1073,8 +1088,8 @@ export function conclusionDerivationLines(input: {
     // evidenceStrengthTitle's own renamed "How much this shows: ..." prefix.
     `How much this shows: ${environmentQualityLabel(input.quality)}.`,
     input.regression_flag
-      ? "You flagged that the replay introduced a new problem you would have to correct."
-      : "No regression was flagged for this replay.",
+      ? "You flagged that the test introduced a new problem you would have to correct."
+      : "No regression was flagged for this test.",
   ];
 }
 // ---- end Checkpoint 2 2-D: derived conclusion ----
@@ -1166,11 +1181,12 @@ export function otherActiveRulesLine(
     | undefined,
 ): string | null {
   if (!env) return null;
-  if (env.other_active_rules.length === 0) return "Other active rules kept in this replay: none.";
+  if (env.other_active_rules.length === 0)
+    return "Other active instructions kept in this test: none.";
   const dropped = env.historical_rules_dropped_by_run
-    ? " -- these rules were live at the time but were not in this replay's Knowledge (an older test); newer tests keep them"
+    ? " -- these instructions were live at the time but were not in this test's Knowledge (an older test); newer tests keep them"
     : "";
-  return `Other active rules kept in this replay: ${env.other_active_rules.join("; ")}${dropped}`;
+  return `Other active instructions kept in this test: ${env.other_active_rules.join("; ")}${dropped}`;
 }
 
 // The "Why this is an approximation" section's exact nine rows (docs/audit/
@@ -1200,7 +1216,7 @@ export function replayEnvironmentRows(
       text: "Lovable's own project memory is copied as it is today",
     },
     {
-      label: "Candidate rule",
+      label: "Candidate instruction",
       text: env.candidate_rule.already_present
         ? `${env.candidate_rule.instruction} (already present in the historical Knowledge)`
         : env.candidate_rule.instruction,
@@ -1399,7 +1415,7 @@ export const REANALYSE_TO_LABEL = "To";
 export const REANALYSE_INCLUDE_REVIEWED_LABEL = "Include records I already decided on";
 export const REANALYSE_REASON_LABEL = "Why are you re-checking this?";
 export const REANALYSE_REASON_PLACEHOLDER =
-  "e.g. checking whether an updated rule changes past corrections";
+  "e.g. checking whether an updated instruction changes past corrections";
 export const REANALYSE_CONFIRM_BUTTON = "Reanalyse";
 export const REANALYSE_CANCEL_BUTTON = "Cancel";
 export const REANALYSE_TRIGGER_BUTTON = "Reanalyse history";
@@ -1605,8 +1621,12 @@ export function recommendedPrimaryAction(
  * attention block takes that line's place instead; see attentionBlock
  * above). Deliberately not a claim that the rule helped -- only that it is
  * live, and whether it has ever been replay-tested. */
+// Round 9 Task 7 / spec §2 vocabulary: this function is currently unused by
+// any page (Round 9 Task 5 moved instructions.tsx onto observedSentence/
+// aiCheckSentence directly) but stays exported and pinned by
+// ux-pages-simplified.test.ts, so its fallback value loses "replay" too.
 export function ruleActiveLine(hasJudgedReplay: boolean): string {
-  return hasJudgedReplay ? "Active in Lovable" : "Active, not replay-tested";
+  return hasJudgedReplay ? "Active in Lovable" : "Active, not tested yet";
 }
 
 /** The Instructions page's "Replay evidence" line: the same conclusion
@@ -1620,7 +1640,7 @@ export function replayEvidenceLine(
   if (!judgedRun) return null;
   const conclusion = judgedRun.conclusion as ReplayConclusionLike | null | undefined;
   const label = conclusion ? CONCLUSION_LABELS[conclusion] : undefined;
-  return label ?? "Replay judged";
+  return label ?? "Test judged";
 }
 
 /** The "Needs your attention" section's empty state, when no rule's health
@@ -1701,13 +1721,17 @@ export type InboxItemTypeLike =
 
 // Mirrors the contract's own INBOX_TYPE_LABELS exactly -- the one place the
 // Inbox card and the History filter both read a type's plain-language name.
+// Round 9 Task 7 / spec §2 vocabulary (controller ruling): new_instruction
+// becomes "Suggested", test_result "Test", rule_attention "Needs a
+// decision", action_failed "Something failed", conflict "Edited in
+// Lovable" -- new_skill is unchanged.
 export const INBOX_TYPE_LABELS: Record<InboxItemTypeLike, string> = {
-  new_instruction: "New instruction",
+  new_instruction: "Suggested",
   new_skill: "New Skill",
-  test_result: "Test result",
-  rule_attention: "Rule needs attention",
-  conflict: "Conflict",
-  action_failed: "Action failed",
+  test_result: "Test",
+  rule_attention: "Needs a decision",
+  conflict: "Edited in Lovable",
+  action_failed: "Something failed",
 };
 
 export const INBOX_TITLE = "Inbox";
@@ -1754,11 +1778,17 @@ export function tokenEstimateLine(t: number | null | undefined): string {
 export const WHY_RECOMMENDS_TITLE = "Why Harness Ledger recommends this";
 export const TEST_IN_PROGRESS_LINE = "Test in progress";
 export const USE_KNOWLEDGE_INSTEAD = "Use Knowledge instead";
-export const EDIT_LABEL = "Edit";
+// Round 9 Task 7: EDIT_LABEL and VIEW_DETAILS_LABEL (dead exports left by
+// earlier tasks -- InstructionActions, Round 9 Task 3, renders its own
+// "Edit"/"Open" small links instead) deleted; nothing imported either.
 export const CHANGE_DESTINATION_LABEL = "Change destination";
-export const VIEW_DETAILS_LABEL = "View details";
 export const VIEW_EVIDENCE_LABEL = "View evidence";
-export const JUDGE_REPLAY_LABEL = "Judge replay";
+// Round 9 Task 7 / spec §2 vocabulary: "Judge replay" is banned (the button
+// is "Judge") -- value only, name kept so INBOX_RECOMMENDED_ACTION_LABELS.
+// judge_replay below still reads correctly. Currently unreachable
+// (recommendedActionLabel/INBOX_RECOMMENDED_ACTION_LABELS have no caller),
+// but the leak detector matches every string literal in this file.
+export const JUDGE_REPLAY_LABEL = "Judge";
 // Round 9 Task 3 / spec §2 vocabulary: "Review rule" is banned ("Open
 // ⟨place⟩" is the one verb, "instruction" not "rule") -- value only, name
 // kept so every existing caller (INBOX_RECOMMENDED_ACTION_LABELS.review_rule
@@ -1817,7 +1847,7 @@ export function inboxActionConsequence(action: InboxActionKind, retryDoes?: stri
     case "judge_replay":
       return "Records your answer. Nothing changes in Lovable. No credits, no AI tokens.";
     case "review_rule":
-      return "Opens the rule. Nothing changes until you decide.";
+      return "Opens the instruction. Nothing changes until you decide.";
     case "retry":
       return retryDoes ?? "Retries the action that failed. May write to Lovable.";
   }
@@ -1968,8 +1998,11 @@ export function analysisStatusLine(lastAnalysisAt: string | null, unanalysedCoun
  * staged test already came back not_supported/possibly_harmful. Never the
  * generic actionConsequence("skip") line in this one case -- that stays the
  * tertiary/tell-all-actions wording used everywhere else. */
+// Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction" (unused by
+// any page today -- superseded by NOT_HELPED_NOTE below -- but kept exported
+// and pinned by ux-round8-task1.test.ts).
 export const SKIP_RECOMMENDED_CONSEQUENCE_LINE =
-  "The test suggests this rule would not have helped. Skipping changes nothing in Lovable.";
+  "The test suggests this instruction would not have helped. Skipping changes nothing in Lovable.";
 // ---- end Round 8 Task 1 ----
 
 // ---- Round 8 Task 2 ----

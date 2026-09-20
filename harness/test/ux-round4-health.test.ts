@@ -101,11 +101,14 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
       observed_clear: 0,
       review_reason: "repeated_issue",
     }),
+    // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction"; "Review
+    // rule" is banned outright -- see harness-ux.ts's own attentionBlock
+    // comment for why "Open Instructions" is this unrendered field's value.
     {
       title: "Needs attention",
       line: "You corrected this again in 3 of 3 later builds.",
-      recommendation: "Rewrite this rule or turn it into a Skill.",
-      action: "Review rule",
+      recommendation: "Rewrite this instruction or turn it into a Skill.",
+      action: "Open Instructions",
     },
   );
   assert.equal(

@@ -252,8 +252,9 @@ test("improvement.tsx: pressing the same verdict twice is a no-op -- reads chang
 
 test("harness-ux.ts: the verdict effect copy, verbatim -- ALREADY_RECORDED_TOAST and the three VERDICT_EFFECT_TEXT lines", () => {
   assert.equal(ux.ALREADY_RECORDED_TOAST, "Already recorded");
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
   assert.deepEqual(ux.VERDICT_EFFECT_TEXT, {
-    counted_hurt: "Counted as one repeat correction in this rule's health",
+    counted_hurt: "Counted as one repeat correction in this instruction's health",
     snoozed: "Retirement snoozed for 30 days",
     none: "Recorded; no effect on health",
   });

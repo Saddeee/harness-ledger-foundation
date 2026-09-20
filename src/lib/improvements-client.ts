@@ -1113,19 +1113,9 @@ export function groupOf(item: Improvement): ImprovementGroup | null {
 // Declared as intersections here, appended, rather than edited into the
 // original type aliases above (the shared-file rule for this file).
 
-/** A rule's latest JUDGED historical-replay run -- null until one exists.
- * `conclusion` is the same derived value Checkpoint 2 2-D's
- * ExperimentRunView/ExperimentRunSummary already carry (historical_support /
- * not_supported / possibly_harmful / inconclusive), or null for a judged run
- * from before that derivation existed. */
-export type RuleJudgedRun = {
-  judged_at: string | null;
-  conclusion: string | null;
-};
-
-export type KnowledgeActiveRuleWithJudgedRun = KnowledgeActiveRule & {
-  judged_run?: RuleJudgedRun | null;
-};
+// Round 9 Task 7: KnowledgeActiveRuleWithJudgedRun and its RuleJudgedRun
+// field type (dead exports left by an earlier task -- nothing imports
+// either, and no test pins them) deleted.
 
 /** The extra fields knowledge.ts's active_rules now carry alongside the
  * ones KnowledgeActiveRule already declared -- `getRuleHealth`'s full row,
@@ -1168,13 +1158,17 @@ export type SkillProposalCard = SkillProposalListItem & SkillProposalCardFields;
 export type InboxItemType =
   "new_instruction" | "new_skill" | "test_result" | "rule_attention" | "conflict" | "action_failed";
 
+// Round 9 Task 7 / spec §2 vocabulary (controller ruling): kept in sync with
+// harness-ux.ts's own INBOX_TYPE_LABELS, the one this TEMPORARY block's own
+// comment says to switch every caller to once it exists (it does now -- see
+// harness-ux.ts -- but this block stays until every caller is repointed).
 export const INBOX_TYPE_LABELS: Record<InboxItemType, string> = {
-  new_instruction: "New instruction",
+  new_instruction: "Suggested",
   new_skill: "New Skill",
-  test_result: "Test result",
-  rule_attention: "Rule needs attention",
-  conflict: "Conflict",
-  action_failed: "Action failed",
+  test_result: "Test",
+  rule_attention: "Needs a decision",
+  conflict: "Edited in Lovable",
+  action_failed: "Something failed",
 };
 
 export type InboxItemLink = {

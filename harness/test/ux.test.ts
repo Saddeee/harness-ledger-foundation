@@ -63,9 +63,10 @@ test("enum-to-label mappings: every spec'd example maps to the required plain-la
   assert.equal(ux.label(ux.VERIFIER_TYPE_LABELS, "structural"), "Automatic check");
   assert.equal(ux.label(ux.VERIFIER_TYPE_LABELS, "ai_rubric"), "AI review");
   assert.equal(ux.label(ux.VERIFIER_STATUS_LABELS, "not_run"), "Not tested");
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
   assert.equal(
     ux.label(ux.EXPERIMENT_TYPE_LABELS, "paired_control_treatment"),
-    "Compare with and without the rule",
+    "Compare with and without the instruction",
   );
   assert.equal(ux.label(ux.FIELD_LABELS, "predicted_failure"), "Problem this should prevent");
   assert.deepEqual(Object.values(ux.STAGE_LABELS), ["Found", "Your review", "Proof", "In Lovable"]);

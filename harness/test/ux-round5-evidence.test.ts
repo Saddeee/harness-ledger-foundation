@@ -141,7 +141,9 @@ test("adherenceLine: 'Lovable's replies show the instruction was not followed in
 // now, and the fourth sentence is gated on sources.paired exactly like the
 // other three are gated on their own source, instead of permanently reading
 // "not available yet".
-test("evidenceSourceLines: four sentences, each ending 'has run for this rule' or 'hasn't run for this rule yet' -- paired gated the same way as the other three", () => {
+// Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction" in the
+// ranSuffix wording this test pins.
+test("evidenceSourceLines: four sentences, each ending 'has run for this instruction' or 'hasn't run for this instruction yet' -- paired gated the same way as the other three", () => {
   const none = ux.evidenceSourceLines({
     observed: false,
     adherence: false,
@@ -149,10 +151,10 @@ test("evidenceSourceLines: four sentences, each ending 'has run for this rule' o
     paired: false,
   });
   assert.equal(none.length, 4);
-  assert.ok(none[0]!.endsWith("This hasn't run for this rule yet."));
-  assert.ok(none[1]!.endsWith("This hasn't run for this rule yet."));
-  assert.ok(none[2]!.endsWith("This hasn't run for this rule yet."));
-  assert.ok(none[3]!.endsWith("This hasn't run for this rule yet."));
+  assert.ok(none[0]!.endsWith("This hasn't run for this instruction yet."));
+  assert.ok(none[1]!.endsWith("This hasn't run for this instruction yet."));
+  assert.ok(none[2]!.endsWith("This hasn't run for this instruction yet."));
+  assert.ok(none[3]!.endsWith("This hasn't run for this instruction yet."));
 
   const all = ux.evidenceSourceLines({
     observed: true,
@@ -160,10 +162,10 @@ test("evidenceSourceLines: four sentences, each ending 'has run for this rule' o
     verdicts: true,
     paired: true,
   });
-  assert.ok(all[0]!.endsWith("This has run for this rule."));
-  assert.ok(all[1]!.endsWith("This has run for this rule."));
-  assert.ok(all[2]!.endsWith("This has run for this rule."));
-  assert.ok(all[3]!.endsWith("This has run for this rule."));
+  assert.ok(all[0]!.endsWith("This has run for this instruction."));
+  assert.ok(all[1]!.endsWith("This has run for this instruction."));
+  assert.ok(all[2]!.endsWith("This has run for this instruction."));
+  assert.ok(all[3]!.endsWith("This has run for this instruction."));
 });
 
 // ---- verdict control: Instructions row and the Suggestions detail ----
@@ -240,10 +242,12 @@ test("improvement.tsx: no verdictEligible/adherenceLine left in DecidedStatus --
   assert.match(code, /mostRecentBrokeQuote\(/);
 });
 
-test("improvement.tsx: the Details paragraph 'How Harness Ledger judges whether a rule helps' lists evidenceSourceLines and a collapsed Quotes list", () => {
+// Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction" in the
+// section title this test pins.
+test("improvement.tsx: the Details paragraph 'How Harness Ledger judges whether an instruction helps' lists evidenceSourceLines and a collapsed Quotes list", () => {
   const raw = readApp(IMPROVEMENT);
   const code = codeOnly(raw);
-  assert.ok(raw.includes("How Harness Ledger judges whether a rule helps"));
+  assert.ok(raw.includes("How Harness Ledger judges whether an instruction helps"));
   assert.match(code, /evidenceSourceLines\(/);
   assert.ok(raw.includes(">Quotes<") || raw.includes(">\n                Quotes"));
   // Every <details> in the file stays collapsed.
@@ -272,9 +276,10 @@ test("local-settings.tsx: the Evidence section's intro and four checkbox labels 
   const raw = readApp(SETTINGS);
   const code = codeOnly(raw);
 
+  // Round 9 Task 7 / spec §2 vocabulary: "rule" -> "instruction".
   assert.ok(
     raw.includes(
-      "Signals that count towards a rule's health and retirement. Every signal is always shown; this only changes what can trigger a retirement suggestion.",
+      "Signals that count towards an instruction's health and retirement. Every signal is always shown; this only changes what can trigger a retirement suggestion.",
     ),
     "Evidence intro copy must match the spec verbatim",
   );
@@ -283,7 +288,8 @@ test("local-settings.tsx: the Evidence section's intro and four checkbox labels 
     "Repeat corrections observed in your real builds",
     "AI adherence check (with quotes)",
     "Your verdicts",
-    "Historical replay",
+    // Round 9 Task 7 / spec §2 vocabulary: "Historical replay" -> "Test results".
+    "Test results",
   ]) {
     assert.ok(raw.includes(label), `local-settings.tsx missing Evidence label "${label}"`);
   }

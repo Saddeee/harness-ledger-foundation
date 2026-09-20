@@ -141,7 +141,7 @@ export function Timeline({
   if (nodes.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nothing has happened here yet. Rules you add, changes Harness Ledger writes, and your
+        Nothing has happened here yet. Instructions you add, changes Harness Ledger writes, and your
         decisions will show up here.
       </p>
     );
@@ -198,9 +198,9 @@ export function Timeline({
                         <dd>{node.reason}</dd>
                       </>
                     ) : null}
-                    <dt className="text-muted-foreground">Rules added</dt>
+                    <dt className="text-muted-foreground">Instructions added</dt>
                     <dd>{node.rules_added?.length ? node.rules_added.join("; ") : "none"}</dd>
-                    <dt className="text-muted-foreground">Rules removed</dt>
+                    <dt className="text-muted-foreground">Instructions removed</dt>
                     <dd>{node.rules_removed?.length ? node.rules_removed.join("; ") : "none"}</dd>
                     <dt className="text-muted-foreground">By</dt>
                     <dd>{ACTOR_LABEL[node.actor]}</dd>
