@@ -87,21 +87,23 @@ test("Needs attention and Review for relevance blocks", () => {
   assert.equal(ux.attentionBlock({ applicable_tasks: 1, hurt: 0, last_applicable_at: null }), null);
 });
 
-test("improvement.tsx: the attention block comes before the DecisionCard on the detail page, and the retire card asks the usefulness question", () => {
+// Round 9 Task 4 / spec §1 principle 4, §5: the detail leads with the
+// instruction now, not a separate status/recommendation block --
+// AttentionBlock (the old "Current status" + Recommendation card, its own
+// separate Keep/Move-to-Skill/Retest/Retire row) is gone outright.
+// live_attention offers the SAME action set as any other live instruction
+// (Keep/Retire/Test/Open, via InstructionActions); why it's asking is one
+// line in the card's own evidence, never a different section or a
+// different action set.
+test("improvement.tsx: the detail page leads with the instruction (DecisionCard); AttentionBlock is gone, and the retire card asks the usefulness question", () => {
   const code = codeOnly(readApp("components/harness/improvement.tsx"));
   const detail = code.slice(code.indexOf("export function ImprovementDetail"));
-  const attention = detail.indexOf("<AttentionBlock");
+  assert.ok(!/AttentionBlock/.test(detail), "no AttentionBlock left on the detail page");
   const card = detail.indexOf("<DecisionCard");
-  assert.ok(attention > -1 && card > -1 && attention < card, "AttentionBlock before DecisionCard");
-  assert.match(code, /function AttentionBlock/);
-  for (const opt of [
-    'verdict: "keep"',
-    'destination: "skill"',
-    'action: "test"',
-    'verdict: "retire"',
-  ]) {
-    assert.ok(code.includes(opt), `attention block option missing: ${opt}`);
-  }
+  assert.ok(card > -1, "the detail page leads with DecisionCard");
+  const backAt = detail.indexOf("{backLabel}");
+  assert.ok(backAt > -1 && backAt < card, "the back link comes before the decision card");
+  assert.ok(!/function AttentionBlock/.test(code));
   assert.ok(!/Did this rule help/.test(code));
   assert.ok(!/Harness Ledger suggests retiring this rule\s*<\/Title>/.test(code));
 });

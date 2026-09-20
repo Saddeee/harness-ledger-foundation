@@ -36,40 +36,34 @@ test("Decided status: no collapsed 'Change decision' wrapper anywhere in improve
   assert.ok(!/Change decision/.test(detail), "the collapsed decision wrapper is gone");
 });
 
-test("Decided status: buttons render directly in a row, using outline/ghost variants", () => {
+// Round 9 Task 4 / spec §1-§3: DecidedStatus is no longer a second action
+// bar at all -- the ONE fixed action set per state (InstructionActions,
+// rendered by DecisionCard directly) replaced its whole hand-built button
+// row (Add-instead, Try again, Remove-from-Knowledge, Re-add, the old
+// no-dialog Undo baked into two branches). What remains is decisionSentence
+// plus, only while lovable.can_undo, a small Undo text link -- no <details>,
+// no <summary>, no button bar of its own.
+test("Decided status: no button bar of its own left -- decisionSentence plus, only while lovable.can_undo, a small Undo link", () => {
   const detail = codeOnly(readApp(DETAIL));
   // Round 5 Task 5 inserted CompactDecisionCard between DecidedStatus and
   // DecisionCard (the Inbox's own lean rendering, with its own outline
   // AddConfirm) -- stop the slice there, not at DecisionCard itself, so this
-  // stays scoped to DecidedStatus's own buttons only.
+  // stays scoped to DecidedStatus's own body only.
   const decided = detail.slice(
     detail.indexOf("function DecidedStatus"),
     detail.indexOf("function CompactDecisionCard"),
   );
   assert.ok(!/<details/.test(decided), "no <details> wrapper left in DecidedStatus");
   assert.ok(!/<summary/.test(decided), "no <summary> wrapper left in DecidedStatus");
-  // Add(s), Try again, and Re-add (Task C2) pass variant="outline" directly
-  // at their DecidedStatus call site; Skip and Remove from Knowledge (Round
-  // 6 Task 3) bake their own outline styling into SkipConfirm/
-  // RemoveFromKnowledgeConfirm themselves, same reason Skip always has;
-  // Undo (Round 6 Task 3) is ghost, also baked in at its own call site.
-  assert.equal(count(decided, 'variant="outline"'), 4);
-  assert.match(decided, /trigger="Add it now instead"/);
-  assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
-  assert.match(decided, /action: "retry_write", id: item\.id, version_id: retryableVersion\.id/);
-  // Round 6 Task 4 / spec §4: every button in this bar carries the same
-  // `size` variable (computed once from titleAs) -- "sm" on lists, default
-  // on the detail page.
-  assert.match(
-    decided,
-    /<RemoveFromKnowledgeConfirm\s+ruleId=\{ruleId\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
-  );
+  assert.ok(!/variant="outline"/.test(decided), "no outline buttons left in DecidedStatus");
+  assert.ok(!/trigger="Add it now instead"/.test(decided));
+  assert.ok(!/trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/.test(decided));
+  assert.ok(!/action: "retry_write"/.test(decided), "Retry is gone");
+  assert.ok(!/<RemoveFromKnowledgeConfirm/.test(decided), "Remove/Retire is gone from here");
+  assert.ok(!/<SkipConfirm/.test(decided), "Skip is gone from here");
   assert.match(decided, /action: "undo", id: item\.id/);
   assert.ok(!/Restore previous version/.test(decided), "Restore moved to the History page only");
-  assert.match(
-    decided,
-    /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
-  );
+  assert.match(decided, /canUndo/);
 });
 
 test("Detail: no separate 'Edit instruction' link below the card", () => {
@@ -77,19 +71,22 @@ test("Detail: no separate 'Edit instruction' link below the card", () => {
   assert.ok(!/Edit instruction/.test(detail));
 });
 
-test("DecisionCard: the instruction blockquote carries a small Edit button in its top-right corner", () => {
+// Round 9 Task 4 / spec §5: the absolutely positioned Edit overlaying the
+// instruction box is gone -- Edit is now one of InstructionActions' own
+// small text actions (offered only for a Suggested state, spec §3), reached
+// via the `onEdit` prop (editable?.onStart). Clicking it still swaps the
+// same blockquote for the same editor in place.
+test("DecisionCard: no absolutely positioned Edit -- Edit reaches editable.onStart through InstructionActions' onEdit prop", () => {
   const detail = codeOnly(readApp(DETAIL));
   const card = detail.slice(
     detail.indexOf("export function DecisionCard"),
     detail.indexOf("export function ImprovementDetail"),
   );
   assert.match(card, /editable\?\s*:\s*EditableState/);
-  assert.match(card, /className="relative">/, "the blockquote sits in a relative container");
-  assert.match(card, /className="absolute right-1 top-1"/, "the Edit button is pinned top-right");
-  assert.match(card, /variant="ghost"/);
-  assert.match(card, />\s*Edit\s*<\/Button>/);
-  assert.match(card, /onClick=\{editable\.onStart\}/);
-  // clicking Edit swaps the blockquote for the editor in place
+  assert.ok(!/className="relative">/.test(card), "no relative wrapper left around the blockquote");
+  assert.ok(!/className="absolute right-1 top-1"/.test(card), "no absolutely positioned Edit left");
+  assert.match(card, /onEdit:\s*editable\.onStart/);
+  // clicking Edit still swaps the blockquote for the editor in place
   assert.match(card, /editable\.editing/);
   assert.match(card, /editable\.draft/);
   assert.match(card, /editable\.onChangeDraft/);
@@ -107,35 +104,35 @@ test("DecisionCard: lists (onOpen present) never receive editable, so no Edit bu
   }
 });
 
-test("Detail header: back link plus 'N of M' and Previous/Next, disabled at the ends", () => {
-  const detail = codeOnly(readApp(DETAIL));
-  assert.match(
-    detail,
-    /position\?\s*:\s*\{\s*index:\s*number;\s*total:\s*number\s*\}\s*\|\s*undefined/,
+// Round 9 Task 4 / spec §5 Detail, principle 1: "No Previous/Next" -- one
+// instruction, one shape, read top to bottom, never a browsing widget of
+// its own. ImprovementDetail now takes only item/onBack/onChanged/backLabel.
+test("Detail header: no 'N of M' counter and no Previous/Next -- just the back link", () => {
+  const code = codeOnly(readApp(DETAIL));
+  const detail = code.slice(
+    code.indexOf("export function ImprovementDetail"),
+    code.indexOf("function SkillProposalPanel"),
   );
-  assert.match(detail, /onPrev\?\s*:\s*\(\(\) => void\)\s*\|\s*undefined/);
-  assert.match(detail, /onNext\?\s*:\s*\(\(\) => void\)\s*\|\s*undefined/);
-  assert.match(detail, /\{position\.index\} of \{position\.total\}/);
-  assert.match(detail, /←\s*Previous/);
-  assert.match(detail, /Next\s*→/);
-  assert.match(detail, /disabled=\{position\.index <= 1\}/);
-  assert.match(detail, /disabled=\{position\.index >= position\.total\}/);
+  assert.ok(!/position/.test(detail));
+  assert.ok(!/onPrev/.test(detail));
+  assert.ok(!/onNext/.test(detail));
+  assert.ok(!/\bPrevious\b/.test(detail));
+  assert.ok(!/\bNext\b/.test(detail));
+  assert.match(detail, /\{backLabel\}/);
 });
 
-test("Detail: ArrowLeft/ArrowRight navigate, ignored in text fields, contenteditable or an open dialog", () => {
-  const detail = codeOnly(readApp(DETAIL));
-  assert.match(detail, /useEffect\(/);
-  assert.match(detail, /e\.key === "ArrowLeft"/);
-  assert.match(detail, /onPrev\?\.\(\)/);
-  assert.match(detail, /e\.key === "ArrowRight"/);
-  assert.match(detail, /onNext\?\.\(\)/);
-  assert.match(
-    detail,
-    /tag === "INPUT" \|\| tag === "TEXTAREA" \|\| tag === "SELECT" \|\| target\?\.isContentEditable/,
+// Round 9 Task 4: the ArrowLeft/ArrowRight browser went with Previous/Next --
+// there is nothing left to page between on the detail page.
+test("Detail: no ArrowLeft/ArrowRight keydown browser left in ImprovementDetail", () => {
+  const code = codeOnly(readApp(DETAIL));
+  const detail = code.slice(
+    code.indexOf("export function ImprovementDetail"),
+    code.indexOf("function SkillProposalPanel"),
   );
-  assert.match(detail, /document\.querySelector\('\[role="alertdialog"\]'\)/);
-  assert.match(detail, /window\.addEventListener\("keydown", onKeyDown\)/);
-  assert.match(detail, /window\.removeEventListener\("keydown", onKeyDown\)/);
+  assert.ok(!/useEffect\(/.test(detail));
+  assert.ok(!/ArrowLeft/.test(detail));
+  assert.ok(!/ArrowRight/.test(detail));
+  assert.ok(!/addEventListener\("keydown"/.test(detail));
 });
 
 // Round 5 Task 5 / spec §2: the Inbox lost its own detail view (and with it,
@@ -157,26 +154,21 @@ test("Inbox: no Previous/Next browser of its own -- that only ever lived in the 
 // section). Previous/Next now browse the four fixed sections in their
 // on-page order: Open, Waiting to be written, Waiting to be tested, Decided
 // earlier.
-// Round 8 Task 4 (review item 6): rewritten with intent -- Previous/Next
-// (and the "N of M" counter) now browse pending suggestions only, via the
-// pure pendingQueueIds/pendingQueuePosition helpers (harness-ux.ts), not
-// every improvement the API returns.
-test("Improvements: Previous/Next browse the pending queue only, via pendingQueueIds/pendingQueuePosition", () => {
-  const ledger = codeOnly(readApp(LEDGER));
-  assert.match(ledger, /const pendingIds = pendingQueueIds\(all\);/);
-  assert.match(ledger, /const pos = pendingQueuePosition\(pendingIds, selected\.id\);/);
-  assert.match(
-    ledger,
-    /position=\{pos \? \{ index: pos\.index, total: pos\.total \} : undefined\}/,
-  );
-  assert.match(
-    ledger,
-    /onPrev=\{pos\?\.prevId != null \? \(\) => open\(pos\.prevId!\) : undefined\}/,
-  );
-  assert.match(
-    ledger,
-    /onNext=\{pos\?\.nextId != null \? \(\) => open\(pos\.nextId!\) : undefined\}/,
-  );
+// Round 9 Task 4 / spec §5 Detail, principle 1: Previous/Next (and the
+// "N of M" counter) are gone outright, and with them ledger.tsx's own
+// pendingQueueIds/pendingQueuePosition wiring -- the back link now reads
+// "← Instructions" and returns there when opened with ?from=instructions
+// (Round 9 Task 5 links with it), else "← Inbox".
+test("ledger.tsx: no Previous/Next wiring left; the back link honours ?from=instructions", () => {
+  const raw = readApp(LEDGER);
+  const ledger = codeOnly(raw);
+  assert.ok(!/pendingQueueIds/.test(raw));
+  assert.ok(!/pendingQueuePosition/.test(raw));
+  assert.ok(!/position=/.test(ledger));
+  assert.ok(!/onPrev=/.test(ledger));
+  assert.ok(!/onNext=/.test(ledger));
+  assert.match(ledger, /from\?:\s*"inbox"\s*\|\s*"instructions"/);
+  assert.match(ledger, /backLabel=\{fromInstructions \? "← Instructions" : "← Inbox"\}/);
 });
 
 // Checkpoint 2 2-B adds a second radiogroup with two options ("This

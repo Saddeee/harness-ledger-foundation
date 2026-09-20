@@ -2,7 +2,6 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImprovementDetail } from "@/components/harness/improvement";
 import { fetchImprovements } from "@/lib/improvements-client";
-import { pendingQueueIds, pendingQueuePosition } from "@/lib/harness-ux";
 
 // Checkpoint 3 I2: the Inbox is the single decision queue now -- this route
 // keeps existing bookmarks and the old /improvements, /suggestions redirects
@@ -11,15 +10,24 @@ import { pendingQueueIds, pendingQueuePosition } from "@/lib/harness-ux";
 // post-render <Navigate>, so nothing here ever renders -- and never fetches
 // -- before bouncing). Opened with ?improvement=<id>, it renders the exact
 // same ImprovementDetail the Inbox links to; a decided item is still a valid
-// deep link here, but Round 8 Task 4 (review item 6) narrows Previous/Next
-// (and the "N of M" counter) to browse pending suggestions only -- the same
-// queue the Inbox itself lists -- and hides both entirely once the open
-// item isn't pending (see pendingQueueIds/pendingQueuePosition, harness-ux.ts).
+// deep link here.
+// Round 9 Task 4 / spec §5 Detail: Previous/Next (and the "N of M" counter)
+// are gone outright -- one instruction, one shape, read top to bottom, never
+// a browsing widget of its own (spec principle 1). `from` (optional,
+// "instructions") is new: the Instructions page (Round 9 Task 5) links here
+// with it so the back link reads "← Instructions" and returns there, instead
+// of always assuming the Inbox.
 export const Route = createFileRoute("/_authenticated/ledger")({
-  validateSearch: (search: Record<string, unknown>): { improvement?: number } => {
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { improvement?: number; from?: "inbox" | "instructions" } => {
     const raw = search["improvement"];
     const id = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : undefined;
-    return id != null && Number.isFinite(id) ? { improvement: id } : {};
+    const from = search["from"];
+    return {
+      ...(id != null && Number.isFinite(id) ? { improvement: id } : {}),
+      ...(from === "instructions" ? { from } : {}),
+    };
   },
   beforeLoad: ({ search }) => {
     if (search.improvement == null) throw redirect({ to: "/inbox" });
@@ -44,8 +52,8 @@ function Page() {
 
   const query = useQuery({ queryKey: ["harness-improvements"], queryFn: fetchImprovements });
   const refresh = () => qc.invalidateQueries({ queryKey: ["harness-improvements"] });
-  const open = (id: number) => navigate({ to: "/ledger", search: { improvement: id } });
-  const back = () => navigate({ to: "/inbox" });
+  const fromInstructions = search.from === "instructions";
+  const back = () => navigate({ to: fromInstructions ? "/instructions" : "/inbox" });
 
   if (query.isLoading) {
     return (
@@ -80,30 +88,20 @@ function Page() {
   }
 
   // Checkpoint 3 I2: this route no longer renders a list of its own (see
-  // beforeLoad above). Round 8 Task 4: Previous/Next and the "N of M"
-  // counter browse pending suggestions only, in the order the API returns
-  // them (pendingQueueIds keeps that order, just filtered) -- not the old
-  // Open/Waiting-to-be-written/Waiting-to-be-tested/Decided-earlier grouping
-  // (that grouped page is gone; the Inbox is the only queue now).
+  // beforeLoad above); the Inbox (or Instructions, when `from` says so) is
+  // the only queue now. Round 9 Task 4 / spec §5: no Previous/Next, no
+  // "N of M" counter -- one instruction, one shape, read top to bottom.
   const all = query.data?.improvements ?? [];
-  const pendingIds = pendingQueueIds(all);
 
   const selected =
     search.improvement != null ? all.find((i) => i.id === search.improvement) : undefined;
   if (selected) {
-    // null when the open item isn't pending (a decided item opened by a
-    // direct link) -- position/onPrev/onNext all fall through to undefined,
-    // which ImprovementDetail reads as "hide the counter and both buttons".
-    const pos = pendingQueuePosition(pendingIds, selected.id);
     return (
       <ImprovementDetail
         item={selected}
         onBack={back}
         onChanged={refresh}
-        backLabel="← Inbox"
-        position={pos ? { index: pos.index, total: pos.total } : undefined}
-        onPrev={pos?.prevId != null ? () => open(pos.prevId!) : undefined}
-        onNext={pos?.nextId != null ? () => open(pos.nextId!) : undefined}
+        backLabel={fromInstructions ? "← Instructions" : "← Inbox"}
       />
     );
   }

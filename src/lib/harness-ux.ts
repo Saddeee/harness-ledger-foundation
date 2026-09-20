@@ -2508,3 +2508,29 @@ export const READD_CONSEQUENCES = ["You can retire it again later."];
 // the prefix moves here so the sentence is never an inline literal.
 export const WITHOUT_INSTRUCTION_PREFIX = "Without this instruction, ";
 // ---- end Round 9 Task 3 ----
+
+// ---- Round 9 Task 4 ----
+// One detail page layout for every instruction state (ImprovementDetail,
+// src/components/harness/improvement.tsx): the Evidence section's own
+// "Lovable said: ..." blockquote (spec §4) shows the single most recent
+// quote where the AI check found the instruction broken, never the whole
+// list (the full history of quotes stays in Technical details, unchanged).
+
+/** The most recent `broke`-verdict quote, by created_at descending; null
+ * when there is no adherence data at all, or every quote on record was
+ * "followed"/"not_applicable" (nothing for the AI-not-followed line to
+ * point at). */
+export function mostRecentBrokeQuote(
+  quotes:
+    | { verdict: "followed" | "broke" | "not_applicable"; quote: string; created_at: string }[]
+    | null
+    | undefined,
+): { quote: string; created_at: string } | null {
+  if (!quotes || quotes.length === 0) return null;
+  const broke = quotes.filter((q) => q.verdict === "broke");
+  if (broke.length === 0) return null;
+  return broke.reduce((latest, q) =>
+    new Date(q.created_at).getTime() > new Date(latest.created_at).getTime() ? q : latest,
+  );
+}
+// ---- end Round 9 Task 4 ----

@@ -172,11 +172,27 @@ test("improvement.tsx: toasts read the write outcome (writeToastText), not a sta
   assert.match(code, /const READDED_TOAST = "Re-added\.";/);
 });
 
-test("improvement.tsx: 'Try again' on a stale or failed outcome re-runs executeVersionNow via retry_write", () => {
+// Round 9 Task 4 / spec §1-§3: DecidedStatus's own inline "Try again" (a
+// stale/failed write's retryableVersion lookup, right there in the decision
+// card's action bar) is gone -- spec §3's action table has no "Retry" for a
+// live instruction (only Keep/Retire/Test/Open); DecidedStatus keeps only
+// decisionSentence and a conditional Undo now. retry_write itself is still
+// a real backend action, still reachable from the Inbox's own
+// ActionFailedCard (a failed-write notice, untouched by this task, spec's
+// separate "Failed action (notice)" row) -- this test now pins its absence
+// from DecidedStatus specifically, not from the whole file.
+test("improvement.tsx: DecidedStatus has no 'Try again'/retryableVersion of its own -- Retry is not part of any live instruction's fixed action set", () => {
   const code = codeOnly(readApp(DETAIL));
-  assert.match(code, /lovable\.write_status === "stale" \|\| lovable\.write_status === "failed"/);
-  assert.match(code, /action: "retry_write", id: item\.id, version_id: retryableVersion\.id/);
-  assert.match(code, />\s*Try again\s*</);
+  const decided = code.slice(
+    code.indexOf("function DecidedStatus"),
+    code.indexOf("function CompactDecisionCard"),
+  );
+  assert.ok(!/retryableVersion/.test(decided));
+  assert.ok(!/action: "retry_write"/.test(decided));
+  assert.ok(!/Try again/.test(decided));
+  // The Inbox's own failed-write notice (ActionFailedCard) still offers a
+  // real Retry, unaffected by this task.
+  assert.match(code, /action: "retry_write"/, "retry_write still exists, in ActionFailedCard");
 });
 
 // ---- instructions.tsx / history.tsx also read the write outcome ----

@@ -167,9 +167,15 @@ test("improvement.tsx: kind 'retire' items render the reason, the since line, an
   assert.match(code, /action: "keep", id: -retire\.proposal_id/);
 
   // A decided "Retired" improvement shows Re-add (readd uses the original,
-  // positive improvement id).
+  // positive improvement id). Round 9 Task 3 moved this into
+  // InstructionActions' own "retired"/"skipped" case (spec §3's fixed action
+  // set), which renders the label through INSTRUCTION_ACTION_LABELS.readd
+  // (= "Re-add") rather than a literal "Re-add" string of its own; Round 9
+  // Task 4 removed DecidedStatus's own separate (literal-text) Re-add
+  // button, which used to be this test's only literal match.
   assert.match(code, /action: "readd", id: item\.id/);
-  assert.match(code, />\s*Re-add\s*</);
+  assert.match(code, /trigger=\{INSTRUCTION_ACTION_LABELS\.readd\}/);
+  assert.equal(ux.INSTRUCTION_ACTION_LABELS.readd, "Re-add");
 });
 
 test("lib/improvements-client.ts: Improvement carries kind, decision.retired, and retire; groupOf passes retired through", () => {

@@ -221,23 +221,33 @@ test("improvement.tsx: SkipConfirm's onConfirm sends the chosen reason to the sk
   assert.match(confirm, /reason/);
 });
 
-// Round 6 Task 4 / spec §4: rewritten with intent -- every button in a
-// card's action bar is the same size, so every SkipConfirm call site that
-// still lives directly in a card (not behind InstructionActions) carries
-// `size={size}` (a local variable at each site, computed from titleAs).
-// Round 9 Task 3: CompactDecisionCard's own direct SkipConfirm call is gone
-// -- InstructionActions renders Skip now, with its own `size={btnSize}
-// variant={variant}` call (a different literal shape, pinned separately in
-// ux-round9-task3.test.ts) -- two sized call sites remain here, not three:
-// DecidedStatus and DecisionCard's own non-compact pending branch.
-test("improvement.tsx: SkipConfirm's two remaining direct call sites (DecidedStatus and the non-compact pending branch) pass item, busy, run and the shared size variable", () => {
+// Round 6 Task 4 / spec §4: every button in a card's action bar is the same
+// size, so every SkipConfirm call site that still lives directly in a card
+// (not behind InstructionActions) carries `size={size}` (a local variable at
+// each site, computed from titleAs).
+// Round 9 Task 3: CompactDecisionCard's own direct SkipConfirm call went
+// first -- InstructionActions renders Skip now, with its own
+// `size={btnSize} variant={variant}` call (a different literal shape,
+// pinned separately in ux-round9-task3.test.ts).
+// Round 9 Task 4: the other two direct call sites (DecidedStatus's own
+// hand-built pending-branch bar, and DecisionCard's own non-compact pending
+// branch) are gone too -- both were replaced outright by the ONE fixed
+// action set per state (InstructionActions, rendered once by DecisionCard
+// for every state). No direct `<SkipConfirm item={item} busy={busy}
+// run={run} size={size} />` call site is left anywhere in the file.
+test("improvement.tsx: no more direct sized SkipConfirm call sites -- Skip only renders through InstructionActions now", () => {
   const detail = codeOnly(readApp(DETAIL));
   const matches = [
     ...detail.matchAll(
       /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/g,
     ),
   ];
-  assert.equal(matches.length, 2, "expected exactly two sized SkipConfirm call sites");
+  assert.equal(matches.length, 0, "expected zero direct sized SkipConfirm call sites left");
+  assert.match(
+    detail,
+    /<SkipConfirm item=\{item\} busy=\{busy\} run=\{run\} size=\{btnSize\} variant=\{variant\} \/>/,
+    "Skip still renders once, through InstructionActions",
+  );
 });
 
 test("improvements-client.ts: Improvement gains unsure, decided_by and rank", () => {

@@ -189,11 +189,23 @@ test("improvement.tsx: posts action: verdict from the shared VerdictControl, ask
   });
 });
 
-test("instructions.tsx and improvement.tsx: both render the shared VerdictControl -- one visible control, not two copies of the same state", () => {
-  for (const rel of [INSTRUCTIONS_PAGE, IMPROVEMENT]) {
-    const code = codeOnly(readApp(rel));
-    assert.match(code, /<VerdictControl\b/, `${rel} missing <VerdictControl`);
-  }
+// Round 9 Task 4 / spec §3: the detail page no longer calls VerdictControl
+// at all -- the old Keep/Review/Retire/Not-sure row is gone from
+// DecidedStatus, replaced by InstructionActions' own fixed Keep/Retire for
+// a live instruction (spec §3's action table has no "Review"/"Not sure"
+// button any more; an existing row on record still renders correctly via
+// VERDICT_TEXT/verdictLine, it just never comes back as a choice). The
+// component itself stays exported -- instructions.tsx (unchanged by this
+// task) is still its one real caller.
+test("instructions.tsx still renders the shared VerdictControl; improvement.tsx exports it but no longer calls it (spec §3: Keep/Retire only, via InstructionActions)", () => {
+  const instructionsCode = codeOnly(readApp(INSTRUCTIONS_PAGE));
+  assert.match(instructionsCode, /<VerdictControl\b/, "instructions.tsx missing <VerdictControl");
+  const improvementCode = codeOnly(readApp(IMPROVEMENT));
+  assert.match(improvementCode, /export function VerdictControl/);
+  assert.ok(
+    !/<VerdictControl\b/.test(improvementCode),
+    "improvement.tsx must not call it any more",
+  );
 });
 
 test("instructions.tsx: imports VerdictControl from improvement.tsx rather than re-declaring it", () => {
@@ -217,10 +229,18 @@ test("instructions.tsx: passes this row's rule id and current verdict to the sha
   );
 });
 
-test("improvement.tsx: DecidedStatus shows verdict buttons only for a live (accepted + written) rule, and the adherence line via adherenceLine", () => {
+// Round 9 Task 4 / spec §3-§4: DecidedStatus no longer shows verdict buttons
+// at all (see the VerdictControl test above), and no longer renders
+// adherenceLine's merged count either -- the detail page's own adherence
+// reporting moved to ImprovementDetail's Evidence section, via
+// aiCheckSentence (the plain, never-merged sentence, Round 9 Task 1) plus
+// the most recent broke quote (mostRecentBrokeQuote, Round 9 Task 4).
+test("improvement.tsx: no verdictEligible/adherenceLine left in DecidedStatus -- adherence reporting moved to the Evidence section's aiCheckSentence", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
-  assert.match(code, /verdictEligible\s*=\s*accepted\s*&&\s*written\s*&&\s*ruleId\s*!=\s*null/);
-  assert.match(code, /adherenceLine\(item\.health\.adherence\)/);
+  assert.ok(!/verdictEligible/.test(code));
+  assert.ok(!/adherenceLine/.test(code));
+  assert.match(code, /aiCheckSentence\(item\.health\)/);
+  assert.match(code, /mostRecentBrokeQuote\(/);
 });
 
 test("improvement.tsx: the Details paragraph 'How Harness Ledger judges whether a rule helps' lists evidenceSourceLines and a collapsed Quotes list", () => {

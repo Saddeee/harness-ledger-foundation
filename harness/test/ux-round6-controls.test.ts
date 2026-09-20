@@ -61,26 +61,39 @@ test("improvement.tsx: no 'Restore previous version' anywhere; history.tsx and t
   assert.ok(/Undo this change/.test(timeline));
 });
 
-test("improvement.tsx: Remove from Knowledge replaces Restore on a written rule's card, through the retire action", () => {
+// Round 9 Task 4 / spec §2-§3 vocabulary: "Remove from Knowledge" is a
+// banned synonym now -- RemoveFromKnowledgeConfirm stays exported (judge.tsx
+// and instructions.tsx still import it) but is renamed to Retire's own exact
+// copy (RETIRE_TITLE/RETIRE_BODY/RETIRE_CONSEQUENCES, the same as
+// RetireConfirm's), and no longer has a call site of its own inside
+// improvement.tsx -- DecidedStatus's whole hand-built bar (the
+// "accepted && written && ruleId != null" branch this test used to pin) is
+// gone, replaced by InstructionActions' own fixed Retire button.
+test("improvement.tsx: RemoveFromKnowledgeConfirm is renamed to Retire's own copy, through the same retire action, with no call site of its own left", () => {
   const raw = readApp(DETAIL);
   const code = codeOnly(raw);
 
   assert.match(code, /function RemoveFromKnowledgeConfirm/);
-  assert.match(code, /REMOVE_FROM_KNOWLEDGE_TITLE/);
-  assert.match(code, /REMOVE_FROM_KNOWLEDGE_BODY/);
-  assert.match(code, /REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL/);
-  assert.ok(raw.includes('trigger="Remove from Knowledge"'));
+  assert.match(code, /trigger=\{INSTRUCTION_ACTION_LABELS\.retire\}/);
+  assert.ok(!raw.includes("Remove from Knowledge"));
   // Remove goes through the same "retire" action as everywhere else
   // (improvementActionAndWrite already writes for "retire" -- see
   // executor/beats.ts), addressed by rule_id, never a correction id.
   assert.match(code, /action: "retire", rule_id: ruleId/);
-  assert.match(
-    code,
-    /accepted && written && ruleId != null[\s\S]{0,80}<RemoveFromKnowledgeConfirm/,
+  assert.ok(
+    !/<RemoveFromKnowledgeConfirm/.test(code),
+    "no call site of its own left inside improvement.tsx",
   );
 });
 
-test("improvement.tsx: Undo is a plain ghost button (no confirm dialog), wired to the 'undo' action, on both the ordinary and the retired-not-yet-removed branch", () => {
+// Round 9 Task 4 / spec §1-§3: DecidedStatus no longer has separate
+// "retired"/"ordinary" branches at all -- both collapsed into the same
+// `canUndo` check (a decided item's Undo means exactly the same thing
+// either way: the write never reached Lovable). Undo is now a small text
+// link (SMALL_ACTION_LINK_CLASS), not a shadcn ghost Button, matching the
+// weight of InstructionActions' own small Edit/Open actions -- there is
+// only ONE occurrence of the "undo" action left in DecidedStatus, not two.
+test("improvement.tsx: Undo is a single small text link (no confirm dialog), wired to the 'undo' action, gated on lovable.can_undo", () => {
   const raw = readApp(DETAIL);
   const code = codeOnly(raw);
   const decided = code.slice(
@@ -88,14 +101,14 @@ test("improvement.tsx: Undo is a plain ghost button (no confirm dialog), wired t
     code.indexOf("function CompactDecisionCard"),
   );
 
-  // Undo never opens a ConfirmAction -- it's a plain Button.
+  // Undo never opens a ConfirmAction -- it's a plain <button>.
   const undoCalls = [...decided.matchAll(/action: "undo", id: item\.id/g)];
-  assert.equal(undoCalls.length, 2, "Undo appears on both the retired and the ordinary branch");
-  assert.match(decided, />\s*Undo\s*</, "Undo renders as its own button label");
+  assert.equal(undoCalls.length, 1, "Undo appears exactly once now (one canUndo check, not two)");
+  assert.match(decided, />\s*Undo\s*</, "Undo renders as its own label");
   assert.match(decided, /UNDO_TOAST/);
   assert.match(
     decided,
-    /variant="ghost"[\s\S]{0,120}onClick=\{\(\) => void run\(\{ action: "undo"/,
+    /className=\{SMALL_ACTION_LINK_CLASS\}[\s\S]{0,120}onClick=\{\(\) => void run\(\{ action: "undo"/,
   );
 
   // Round 6 Task 4 / spec §4: rewritten with intent -- the visibility rule

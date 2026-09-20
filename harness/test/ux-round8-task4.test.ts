@@ -116,27 +116,34 @@ test("harness-ux.ts: pendingQueuePosition is null for an id outside the pending 
   assert.equal(ux.pendingQueuePosition([], 10), null);
 });
 
-// ---- 4. ledger.tsx: Previous/Next and the counter are built from the
-// pending queue only ----
+// ---- 4. ledger.tsx: Previous/Next and the counter are gone (Round 9 Task 4) ----
 
-test("ledger.tsx: imports and uses pendingQueueIds/pendingQueuePosition from harness-ux.ts", () => {
-  const code = codeOnly(readApp(LEDGER));
-  assert.match(
-    code,
-    /import \{ pendingQueueIds, pendingQueuePosition \} from "@\/lib\/harness-ux";/,
-  );
-  assert.match(code, /const pendingIds = pendingQueueIds\(all\);/);
-  assert.match(code, /const pos = pendingQueuePosition\(pendingIds, selected\.id\);/);
+// Round 9 Task 4 / spec §5 Detail, principle 1: "No Previous/Next" -- one
+// instruction, one shape, read top to bottom, never a browsing widget of
+// its own. ledger.tsx no longer imports or uses pendingQueueIds/
+// pendingQueuePosition at all (those pure helpers stay exported from
+// harness-ux.ts, still pinned directly above, for parity/history); the back
+// link now honours an optional ?from=instructions instead.
+test("ledger.tsx: no pendingQueueIds/pendingQueuePosition wiring left; the back link honours ?from=instructions", () => {
+  const raw = readApp(LEDGER);
+  const code = codeOnly(raw);
+  assert.ok(!/pendingQueueIds/.test(raw));
+  assert.ok(!/pendingQueuePosition/.test(raw));
+  assert.match(code, /from\?:\s*"inbox"\s*\|\s*"instructions"/);
+  assert.match(code, /backLabel=\{fromInstructions \? "← Instructions" : "← Inbox"\}/);
 });
 
 // ---- 5. improvement.tsx: decision card leads, story second, the collapsed
 // why-recommends details third, Technical details last ----
 
-test("improvement.tsx: ImprovementDetail renders in order: DecisionCard, 'What happened', the collapsed why-recommends details, Technical details", () => {
+// Round 9 Task 4 / spec §5 Detail: Evidence is new, between the decision
+// card and "What happened" -- the rest of the order is unchanged.
+test("improvement.tsx: ImprovementDetail renders in order: DecisionCard, Evidence, 'What happened', the collapsed why-recommends details, Technical details", () => {
   const code = codeOnly(readApp(DETAIL));
   const body = code.slice(code.indexOf("export function ImprovementDetail"));
   const order = [
     "<DecisionCard",
+    'aria-label="Evidence"',
     "What happened",
     "{WHY_RECOMMENDS_TITLE}",
     'title="Technical details"',
@@ -154,13 +161,17 @@ test("improvement.tsx: 'What the action will do' is gone -- each button already 
   assert.ok(!raw.includes("What the action will do"));
 });
 
-test("improvement.tsx: the decision card shows 'Suggested instruction' and a 'Saves to' line with savesToDestinationLabel and the existing Change destination control inline", () => {
+// Round 9 Task 4 / spec §5: "Suggested instruction" (only ever true for a
+// pending item) is gone -- instructionStateLine's state line labels the box
+// for every state now (Round 9 Task 1). The "Saves to" line is unchanged.
+test("improvement.tsx: the decision card shows instructionStateLine (not 'Suggested instruction') and a 'Saves to' line with savesToDestinationLabel and the existing Change destination control inline", () => {
   const code = codeOnly(readApp(DETAIL));
   const card = code.slice(
     code.indexOf("export function DecisionCard"),
     code.indexOf("export function ImprovementDetail"),
   );
-  assert.match(card, /\{SUGGESTED_INSTRUCTION_LABEL\}/);
+  assert.ok(!/SUGGESTED_INSTRUCTION_LABEL/.test(card));
+  assert.match(card, /instructionStateLine\(\{/);
   assert.match(card, /\{SAVES_TO_LABEL\}/);
   assert.match(
     card,

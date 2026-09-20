@@ -63,10 +63,15 @@ test("improvement.tsx: ACTION_BAR_CLASS is the exact spec class, defined once, a
   // Open-Instructions-only rendering stays as a defensive fallback for a
   // future item with none) -- two bars in source for that one function,
   // only one ever rendered at once, back up to 9.
+  // Round 9 Task 4 / spec §1-§3: DecisionCard's own two hand-built bars
+  // (DecidedStatus's own Undo/Re-add/Retry/Remove-from-Knowledge row, and
+  // the non-compact pending branch's own Add x2 + Skip + Test row) are gone
+  // -- both replaced by the ONE shared InstructionActions occurrence, the
+  // same one CompactDecisionCard and RetireCard already reuse. 9 drops to 7.
   assert.equal(
     count(code, "className={ACTION_BAR_CLASS}"),
-    9,
-    "exactly one action-bar container per card-rendering function (RetireCard/CompactDecisionCard share InstructionActions' own; RuleAttentionCard has two mutually exclusive branches)",
+    7,
+    "exactly one action-bar container per card-rendering function that still builds its own (DecidedStatus and DecisionCard's pending branch now share InstructionActions' own, same as RetireCard/CompactDecisionCard)",
   );
 });
 
@@ -98,16 +103,18 @@ test('improvement.tsx: RetireCard delegates its actions to the shared Instructio
   assert.ok(!/size="(sm|default)"/.test(fn), "no hardcoded size literal");
 });
 
-test("improvement.tsx: DecidedStatus's bar has exactly one action-bar container, sized via ctx (not write_status)", () => {
+// Round 9 Task 4 / spec §1-§3: DecidedStatus is no longer a second action
+// bar at all -- Undo/Re-add/Retry/Remove-from-Knowledge, the whole
+// write_status-branching bar this test used to pin, are gone outright. What
+// remains is decisionSentence plus, only while lovable.can_undo, a small
+// Undo text link styled like InstructionActions' own small actions
+// (SMALL_ACTION_LINK_CLASS) -- no ACTION_BAR_CLASS container of its own.
+test("improvement.tsx: DecidedStatus has no action-bar container of its own -- only decisionSentence and a conditional small Undo link", () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const fn = slice(code, "function DecidedStatus", "function CompactDecisionCard");
-  assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 1);
-  assert.match(fn, /const size = ctx\?\.size \?\? "sm";/);
-  const bar = fn.slice(fn.indexOf("className={ACTION_BAR_CLASS}"));
-  assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
-  // Undo/Re-add, Add-instead x2, Skip, Try again, Remove from Knowledge,
-  // Undo again -- every branch's button reads the same `size` variable.
-  assert.ok(count(bar, "size={size}") >= 6, "every button in the bar shares the size variable");
+  assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 0);
+  assert.match(fn, /className=\{SMALL_ACTION_LINK_CLASS\}/);
+  assert.match(fn, /canUndo \? \(/);
 });
 
 // Round 9 Task 3: CompactDecisionCard's own action bar (the bespoke
@@ -129,15 +136,19 @@ test('improvement.tsx: CompactDecisionCard renders exactly one <InstructionActio
   assert.ok(!/size="(sm|default)"/.test(fn), "no hardcoded size literal");
 });
 
-test("improvement.tsx: DecisionCard's own pending branch has exactly one action-bar container, sized by titleAs", () => {
+// Round 9 Task 4 / spec §1-§3: DecisionCard's own hand-built pending branch
+// (two AddConfirms, SkipConfirm, TestButton, its own ACTION_BAR_CLASS
+// container) is gone -- every state, pending included, now renders through
+// the one shared <InstructionActions size="full">, which owns the one bar
+// itself (reused at runtime; see the ACTION_BAR_CLASS-count test above for
+// why DecisionCard's own source count of that class is now zero).
+test('improvement.tsx: DecisionCard (non-compact, non-retire) renders every state through <InstructionActions size="full">, no action-bar container of its own', () => {
   const code = codeOnly(readApp(IMPROVEMENT));
   const fn = slice(code, "export function DecisionCard", "function MessageBlock");
-  assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 1);
-  assert.match(fn, /const size: "default" \| "sm" = titleAs === "h1" \? "default" : "sm";/);
-  const bar = slice(fn, "className={ACTION_BAR_CLASS}", "</article>");
-  // Round 6 Task 6b / spec §6: both AddConfirms, SkipConfirm, and TestButton.
-  assert.equal(count(bar, "size={size}"), 4, "both AddConfirms, SkipConfirm, and TestButton sized");
-  assert.ok(!/size="(sm|default)"/.test(bar), "no hardcoded size literal inside the bar");
+  assert.equal(count(fn, "className={ACTION_BAR_CLASS}"), 0);
+  assert.equal(count(fn, "<InstructionActions"), 1);
+  assert.match(fn, /<InstructionActions[\s\S]{0,120}size="full"/);
+  assert.ok(!/<AddConfirm\b/.test(fn), "no direct AddConfirm left in DecisionCard's own body");
 });
 
 test('improvement.tsx: lists use size="sm", the detail page uses the default -- never mixed in the same card', () => {
@@ -157,32 +168,23 @@ test('improvement.tsx: lists use size="sm", the detail page uses the default -- 
 // ---- 2. Header row -> title -> body (full width) -> status lines -> bar --
 // the editor block moved OUT of a two-column header into its own sibling.
 
-// Round 8 Task 4: rewritten with intent -- the body no longer carries a
-// duplicated title (removed, see review item 6), so its own onOpen-ternary
-// wrapper (dead code on this branch -- onOpen is never passed to the
-// non-compact DecisionCard) is gone too; the body is now a plain sibling
-// <div className="space-y-3"> labelled "Suggested instruction".
-test("improvement.tsx: DecisionCard's header row (project + badges) and its body (instruction/editor) are siblings, not columns of one shared row", () => {
+// Round 9 Task 4 / spec §5: DecisionCard's header row is no longer a row at
+// all -- no badges left beside the project name (they folded into the state
+// line, Round 9 Task 1), so the "header" is now a single <p>, immediately
+// followed by the body <div> as a sibling, not a nested column.
+test("improvement.tsx: DecisionCard's project-name line and its body (instruction/editor) are siblings, not columns of one shared row", () => {
   const raw = readApp(IMPROVEMENT);
-  const headerAt = raw.indexOf(
-    "{/* header row: project name left, status badges right -- the body",
-  );
-  assert.ok(headerAt >= 0, "expected the header-row marker in DecisionCard");
-  const bodyAt = raw.indexOf("{/* body: instruction, full width -- a sibling of the header row");
-  assert.ok(bodyAt > headerAt, "expected the body marker after the header row");
-  // Structural check (regex on the JSX): the header row's own </div> is
-  // immediately followed by the body marker and the body's own opening
-  // <div className="space-y-3"> -- i.e. the body sits beside the header
-  // row, not nested inside its left column.
-  const between = raw.slice(headerAt, bodyAt + 500);
-  assert.match(
-    between,
-    /<\/div>\s*\n\s*\{\/\* body: instruction, full width[\s\S]{0,600}\*\/\}\s*\n\s*<div className="space-y-3">/,
-    "the body's own <div> must open right after the header row's </div> closes -- a sibling, not a nested column",
-  );
+  const cardAt = raw.indexOf("export function DecisionCard");
+  const detailAt = raw.indexOf("export function ImprovementDetail", cardAt);
+  const card = raw.slice(cardAt, detailAt);
+  assert.ok(!/<Badge/.test(card), "no Badge left beside the project name");
+  const projectAt = card.indexOf('<p className="text-sm font-semibold">{projectName(item)}</p>');
+  assert.ok(projectAt >= 0, "expected the plain project-name line");
+  const bodyAt = card.indexOf('<div className="space-y-3">', projectAt);
+  assert.ok(bodyAt > projectAt, "expected the body <div> after the project-name line");
   // The editor (editable.editing) and the plain blockquote both live inside
-  // that same body block, never back inside the header row.
-  const editingAt = raw.indexOf("editable && editable.editing");
+  // that same body block.
+  const editingAt = card.indexOf("editable && editable.editing");
   assert.ok(editingAt > bodyAt, "the editor branch must be part of the body block, after it opens");
 });
 
@@ -223,14 +225,18 @@ test("improvement.tsx: VerdictControl is role=\"group\", labelled 'Is this rule 
   assert.match(fn, /size="sm"/);
 });
 
-test("improvement.tsx and instructions.tsx: both render the shared VerdictControl -- one visible verdict control per rule, in both places", () => {
-  for (const rel of [IMPROVEMENT, INSTRUCTIONS_PAGE]) {
-    const code = codeOnly(readApp(rel));
-    assert.match(code, /<VerdictControl\b/, `${rel} missing <VerdictControl`);
-  }
+// Round 9 Task 4 / spec §3: improvement.tsx no longer calls VerdictControl
+// at all (the old Keep/Review/Retire/Not-sure row is gone from
+// DecidedStatus, replaced by InstructionActions' fixed Keep/Retire) -- it
+// only still exports the component, for instructions.tsx's own row.
+test("instructions.tsx still renders the shared VerdictControl, one per row; improvement.tsx exports it but calls it nowhere", () => {
   const instructions = codeOnly(readApp(INSTRUCTIONS_PAGE));
+  assert.match(instructions, /<VerdictControl\b/, "instructions.tsx missing <VerdictControl");
   // Exactly one per row -- the Observed cell's own control, nothing else.
   assert.equal(count(instructions, "<VerdictControl"), 1);
+  const improvement = codeOnly(readApp(IMPROVEMENT));
+  assert.match(improvement, /export function VerdictControl/);
+  assert.equal(count(improvement, "<VerdictControl"), 0);
 });
 
 test("improvement.tsx: pressing the same verdict twice is a no-op -- reads changed:false as ALREADY_RECORDED_TOAST, otherwise shows the You-said line plus the effect line", () => {

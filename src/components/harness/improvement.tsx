@@ -3,7 +3,7 @@
 // buttons are the decision. Simple by default, complete on demand. Only
 // fetches the local Harness routes; never talks to Lovable itself -- adding
 // to Lovable is recorded here and executed by Harness afterwards.
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
@@ -13,16 +13,12 @@ import { toast } from "sonner";
 import {
   AdvancedDetails,
   ConfirmAction,
-  CurrentStatus,
   DetailSection,
-  PrimaryAction,
-  RecommendationCallout,
 } from "@/components/harness/decision-layout";
 import { ClampedText } from "@/components/harness/clamped-text";
 import {
   ALREADY_RECORDED_TOAST,
   actionConsequence,
-  adherenceLine,
   CLASSIFICATION_LABELS,
   CONTENT_DESTINATION_LABELS,
   contentDestinationAlternative,
@@ -31,7 +27,6 @@ import {
   DESTINATION_LABELS,
   DESTINATION_WHY,
   evidenceSourceLines,
-  healthLine,
   attentionBlock,
   KNOWLEDGE_CHAR_LIMIT,
   decisionSentence,
@@ -42,9 +37,6 @@ import {
   lovableReplyText,
   PRIMARY_ACTION_LABELS,
   proveCostLine,
-  REMOVE_FROM_KNOWLEDGE_BODY,
-  REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL,
-  REMOVE_FROM_KNOWLEDGE_TITLE,
   retireReasonSentence,
   retireSinceLine,
   SEE_ON_TESTS_LABEL,
@@ -113,7 +105,6 @@ import {
   failedSummaryParts,
   // ---- end Round 8 Task 2 ----
   // ---- Round 8 Task 4 ----
-  SUGGESTED_INSTRUCTION_LABEL,
   SAVES_TO_LABEL,
   savesToDestinationLabel,
   correctionDiffersFromRequest,
@@ -137,11 +128,18 @@ import {
   READD_CONSEQUENCES,
   WITHOUT_INSTRUCTION_PREFIX,
   // ---- end Round 9 Task 3 ----
+  // ---- Round 9 Task 4 ----
+  observedSentence,
+  aiCheckSentence,
+  evidenceDisagreementLine,
+  LOVABLE_SAID_PREFIX,
+  testStatusPhrase,
+  mostRecentBrokeQuote,
+  // ---- end Round 9 Task 4 ----
 } from "@/lib/harness-ux";
 
 import {
   executorQueryOptions,
-  groupOf,
   lovableOf,
   postImprovementAction as post,
   projectName,
@@ -164,8 +162,9 @@ const NO_SNAPSHOT_BODY =
   "Harness Ledger hasn't read your current Knowledge yet. Your choice is saved; press Sync now on the Projects page, then Harness Ledger reads it and writes this exact text. You can see the result on the Instructions page.";
 const PREVIEW_BODY = "This is the exact text Harness Ledger will write to your Lovable Knowledge.";
 // Addendum to Round 6 Task 4: "restore" alone overstated what's actually on
-// offer from this card -- Remove from Knowledge lives here (Round 6 Task 3),
-// while restoring an earlier version is a History-page-only action.
+// offer from this card -- Retire lives here (Round 6 Task 3, renamed by
+// Round 9 Task 4 / spec §2-§3), while restoring an earlier version is a
+// History-page-only action.
 const PREVIEW_CONSEQUENCES = [
   "You can remove it from Knowledge or restore an earlier version from History at any time.",
 ];
@@ -182,8 +181,10 @@ const NO_INSTRUCTION = "Harness Ledger hasn't drafted an instruction yet.";
 const ADD_NOW_HELP =
   "Harness Ledger writes this exact text now, when you press Add. Uses no credits.";
 // Round 9 Task 3 / spec §2-§3: "instruction" not "rule" in UI copy, and the
-// two consequences spelled out verbatim (RetireConfirm's only remaining
-// caller is InstructionActions' own "retire" case below).
+// two consequences spelled out verbatim -- shared by RetireConfirm
+// (InstructionActions' own "retire" case) and, since Round 9 Task 4,
+// RemoveFromKnowledgeConfirm below (renamed to "Retire" throughout -- its
+// old banned wording is gone from this file's copy entirely).
 const RETIRE_TITLE = "Retire this instruction?";
 const RETIRE_BODY = "Harness Ledger rewrites your Lovable Knowledge without it right away.";
 const RETIRE_CONSEQUENCES = [
@@ -192,18 +193,19 @@ const RETIRE_CONSEQUENCES = [
 ];
 const RETIRED_TOAST = "Retired.";
 const READDED_TOAST = "Re-added.";
-// Round 6 Task 3 / spec §3: "Remove from Knowledge" replaces "Restore
-// previous version" on a written rule's card -- it retires the rule and
-// rewrites Knowledge without it immediately (the same "retire" action,
-// through improvementActionAndWrite, so the response carries `write`).
-// Restore itself moved to the History page only.
-const REMOVED_TOAST = "Removed from Knowledge.";
 
 // Round 6 Task 4 / spec §4: one action bar per card, all buttons the same
 // size and gap, wrapping as a row -- the exact class every card's bar uses
 // (kept as one constant so the tests can count it: exactly one per rendered
 // card, never a second bar sharing space with anything else).
 const ACTION_BAR_CLASS = "flex flex-wrap items-center gap-2";
+
+// Round 9 Task 4: the small text-link style InstructionActions' own Edit/
+// Open actions use, hoisted here so DecidedStatus's lone remaining small
+// action (Undo, shown only while lovable.can_undo) matches exactly rather
+// than keeping a second copy of the same five classes.
+const SMALL_ACTION_LINK_CLASS =
+  "text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 type Destination = "project" | "workspace";
 
@@ -613,8 +615,14 @@ function RetireConfirm({
 // button on a written rule's card (Restore itself now lives on the History
 // page only). Same underlying action as RetireConfirm above (this
 // item's own rule is definitely live, so it's always addressed by
-// rule_id -- never a retire-proposal id), but its own copy: the confirm
-// explains what happens to Knowledge, not that the rule is "retired".
+// rule_id -- never a retire-proposal id).
+// Round 9 Task 4 / spec §2-§3 vocabulary: renamed to "Retire" throughout --
+// its own trigger/title/consequences used to spell out the old banned
+// synonym for taking an instruction out of Lovable (never "Remove"); kept
+// exported (judge.tsx and instructions.tsx still import it, switched by
+// later tasks this round) but with RetireConfirm's own exact title/body/
+// consequences, no longer REMOVE_FROM_KNOWLEDGE_* (those constants stay in
+// harness-ux.ts for instructions.tsx's own still-unrenamed "..." menu entry).
 export function RemoveFromKnowledgeConfirm({
   ruleId,
   busy,
@@ -628,15 +636,15 @@ export function RemoveFromKnowledgeConfirm({
 }) {
   return (
     <ConfirmAction
-      trigger="Remove from Knowledge"
+      trigger={INSTRUCTION_ACTION_LABELS.retire}
       variant="outline"
       size={size}
-      title={REMOVE_FROM_KNOWLEDGE_TITLE}
-      body={REMOVE_FROM_KNOWLEDGE_BODY}
-      consequences={[]}
-      confirmLabel={REMOVE_FROM_KNOWLEDGE_CONFIRM_LABEL}
+      title={RETIRE_TITLE}
+      body={RETIRE_BODY}
+      consequences={RETIRE_CONSEQUENCES}
+      confirmLabel={INSTRUCTION_ACTION_LABELS.retire}
       disabled={busy}
-      onConfirm={() => void run({ action: "retire", rule_id: ruleId }, REMOVED_TOAST)}
+      onConfirm={() => void run({ action: "retire", rule_id: ruleId }, RETIRED_TOAST)}
     />
   );
 }
@@ -1001,8 +1009,7 @@ export function InstructionActions({
   keepAction?: { action: "keep"; id: number };
 }) {
   const btnSize: "default" | "sm" = size === "full" ? "default" : "sm";
-  const linkClass =
-    "text-xs text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const linkClass = SMALL_ACTION_LINK_CLASS;
   const { primary, secondary, small, emphasis, note } = actionsForState(state);
   const ruleId = item.rule_id;
 
@@ -1166,6 +1173,17 @@ export function InstructionActions({
 }
 // ---- end Round 9 Task 3: InstructionActions ----
 
+// Round 9 Task 4 / spec §5 Detail: one layout for every state means
+// DecisionCard's own InstructionActions already carries the ONE fixed
+// action set for this instruction's state (Add/Skip, Keep/Retire, Re-add,
+// Judge -- see actionsForState, harness-ux.ts). DecidedStatus is no longer
+// a second action bar duplicating (or, worse, contradicting) that one --
+// Undo/Re-add/Retry/Remove-from-Knowledge all came out of here this task;
+// what remains is the one decisionSentence (the plain "You chose..."/
+// "Added to Lovable..." line, which still carries stale/failed detail
+// InstructionActions' own state line doesn't) and, only while the write
+// itself never reached Lovable, a small Undo link -- not a button, the same
+// visual weight as InstructionActions' own small Edit/Open.
 function DecidedStatus({
   item,
   busy,
@@ -1178,20 +1196,6 @@ function DecidedStatus({
   ctx?: StatusCtx | undefined;
 }) {
   const lovable = lovableOf(item);
-  const accepted = item.decision.status === "accepted";
-  const retired = item.decision.retired;
-  const written = lovable.write_status === "written";
-  // Round 6 Task 4 / spec §4: lists use "sm" for every button in the bar;
-  // the detail page (titleAs="h1") uses the default size -- threaded
-  // through ctx so this component's own call site (DecisionCard, below)
-  // never has to change shape.
-  const size = ctx?.size ?? "sm";
-  // Round 6 Task 2: "Try again" (Needs attention) re-runs executeVersionNow
-  // on this exact version -- the one whose status is why the card reads
-  // stale/failed in the first place.
-  const retryableVersion = lovable.versions.find(
-    (v) => v.status === "stale" || v.status === "failed",
-  );
   // Round 6 Task 3 fix 1 / spec §3: server-computed (harness/src/
   // improvements.ts's controlFlags -- the exact same rule the "undo" action
   // itself enforces), never re-derived from write_status alone: a live
@@ -1199,9 +1203,6 @@ function DecidedStatus({
   // the rule itself is still exactly what's live in Lovable, which the old
   // client-side check let Undo wrongly demote.
   const canUndo = lovable.can_undo;
-
-  const ruleId = item.rule_id;
-  const verdictEligible = accepted && written && ruleId != null;
 
   return (
     <div className="space-y-2">
@@ -1213,134 +1214,16 @@ function DecidedStatus({
           ctx,
         })}
       </p>
-      {item.health ? (
-        <p className="text-xs text-muted-foreground">{healthLine(item.health)}</p>
+      {canUndo ? (
+        <button
+          type="button"
+          className={SMALL_ACTION_LINK_CLASS}
+          disabled={busy}
+          onClick={() => void run({ action: "undo", id: item.id }, UNDO_TOAST)}
+        >
+          Undo
+        </button>
       ) : null}
-      {verdictEligible ? (
-        <VerdictControl ruleId={ruleId} verdict={item.health?.verdict ?? null} disabled={busy} />
-      ) : null}
-      {item.health && adherenceLine(item.health.adherence) ? (
-        <p className="text-xs text-muted-foreground">{adherenceLine(item.health.adherence)}</p>
-      ) : null}
-      <TestStatusLine item={item} />
-      {accepted && lovable.write_status === "none" ? (
-        <p className="text-xs text-muted-foreground">
-          Waiting for Harness Ledger to read your current Knowledge. You'll see the exact text
-          before anything is written.
-        </p>
-      ) : null}
-      {accepted && lovable.write_status === "stale" && lovable.stale_reason ? (
-        <p className="text-xs text-muted-foreground">{lovable.stale_reason}</p>
-      ) : null}
-      {accepted && lovable.write_status === "failed" ? (
-        <p className="text-xs text-muted-foreground">
-          Harness Ledger could not write this to Lovable. You can try again, choose the other
-          destination, or skip it.
-        </p>
-      ) : null}
-      <div className={ACTION_BAR_CLASS}>
-        {retired ? (
-          canUndo ? (
-            // Round 6 Task 3 / spec §3: the removal never actually reached
-            // Lovable (write failed, or Harness was disconnected at retire
-            // time) -- Undo brings the rule straight back to "active", no
-            // Lovable write involved. Once the removal IS written, Re-add
-            // takes over (below).
-            <Button
-              type="button"
-              variant="ghost"
-              size={size}
-              disabled={busy}
-              onClick={() => void run({ action: "undo", id: item.id }, UNDO_TOAST)}
-            >
-              Undo
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size={size}
-              disabled={busy}
-              onClick={() => void run({ action: "readd", id: item.id }, READDED_TOAST)}
-            >
-              Re-add
-            </Button>
-          )
-        ) : (
-          <>
-            {accepted &&
-            item.decision.test_first &&
-            lovable.write_status === "none" &&
-            (item.destination === "project" || item.destination === "workspace") ? (
-              <AddConfirm
-                item={item}
-                destination={item.destination}
-                busy={busy}
-                run={run}
-                variant="outline"
-                size={size}
-                trigger="Add it now instead"
-              />
-            ) : null}
-            {accepted && !written ? (
-              <>
-                {(["project", "workspace"] as Destination[])
-                  .filter((d) => d !== item.destination)
-                  .map((d) => (
-                    <AddConfirm
-                      key={d}
-                      item={item}
-                      destination={d}
-                      busy={busy}
-                      run={run}
-                      variant="outline"
-                      size={size}
-                      trigger={`${ADD_LABELS[d]} instead`}
-                    />
-                  ))}
-                <SkipConfirm item={item} busy={busy} run={run} size={size} />
-              </>
-            ) : null}
-            {accepted &&
-            (lovable.write_status === "stale" || lovable.write_status === "failed") &&
-            retryableVersion ? (
-              <Button
-                type="button"
-                variant="outline"
-                size={size}
-                disabled={busy}
-                onClick={() =>
-                  void run(
-                    { action: "retry_write", id: item.id, version_id: retryableVersion.id },
-                    "Trying again…",
-                  )
-                }
-              >
-                Try again
-              </Button>
-            ) : null}
-            {accepted && written && ruleId != null ? (
-              <RemoveFromKnowledgeConfirm ruleId={ruleId} busy={busy} run={run} size={size} />
-            ) : null}
-            {/* Round 6 Task 3 / spec §3: a plain, no-dialog Undo -- shown for
-                every decided-but-unwritten item, accepted or skipped alike
-                (the skipped case's own "Reopen" button folded into this same
-                one, since it's exactly the same reopen semantics). */}
-            {canUndo ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size={size}
-                disabled={busy}
-                onClick={() => void run({ action: "undo", id: item.id }, UNDO_TOAST)}
-              >
-                Undo
-              </Button>
-            ) : null}
-            <TestButton item={item} busy={busy} run={run} size={size} />
-          </>
-        )}
-      </div>
     </div>
   );
 }
@@ -1609,37 +1492,36 @@ export function DecisionCard({
     );
   }
 
+  // Round 9 Task 1 / spec §1-§3: the same state model, and the same
+  // instructionStateLine wording, every size of the shared instruction
+  // component reads (CompactDecisionCard above already does; this is the
+  // detail page's own "full" size). No standalone `conclusion` signal
+  // reaches the detail page the way the Inbox's own InboxItem.conclusion
+  // does, so "suggested_not_helped" is never detected here yet -- a known,
+  // narrower gap than CompactDecisionCard's, out of this task's scope.
+  const state = instructionState({
+    decision: item.decision,
+    lovable: item.lovable ?? null,
+    test: item.test,
+    health: item.health,
+  });
+  const stateLine = instructionStateLine({
+    state,
+    decided_at: item.decision.decided_at,
+    written_at: lovableOf(item).written_at,
+    decided_by: item.decided_by,
+    write_status: lovableOf(item).write_status,
+  });
+
   return (
     <article aria-labelledby={titleId} className="space-y-3 rounded-md border bg-card p-4">
-      {/* header row: project name left, status badges right -- the body
-          below used to share this row's left column with the badges,
-          cutting the editor short; it's a full-width sibling block now. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold">{projectName(item)}</p>
-        {pending ? (
-          isNew ? (
-            <Badge variant="default">New</Badge>
-          ) : null
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{groupOf(item)}</Badge>
-            {/* Round 5 Task 6: automatic mode's own visibility requirement -- marked wherever a decided item shows. */}
-            {item.decided_by === "automatic" ? (
-              <Badge variant="outline">Accepted automatically</Badge>
-            ) : null}
-          </div>
-        )}
-      </div>
+      {/* Round 9 Task 4 / spec §5: no badges row -- the old badges are said once, by the state line below, for every state (instructionStateLine, Round 9 Task 1). */}
+      <p className="text-sm font-semibold">{projectName(item)}</p>
 
-      {/* body: instruction, full width -- a sibling of the header row above,
-          never sharing its left column. Round 8 Task 4 (review item 6): the
-          duplicated title (the instruction's first sentence as an h1/h2
-          above the box) is gone -- "Suggested instruction" labels the same
-          box instead, shown exactly once. `titleId` moves to this label so
-          the article's own aria-labelledby still resolves to something. */}
+      {/* body: instruction, full width -- a sibling of the project-name line above, never sharing its column. The state line replaces the old label above the box (true for every state, not only a pending one). `titleId` stays on this label so the article's own aria-labelledby still resolves to something. */}
       <div className="space-y-3">
         <p id={titleId} className="text-xs font-medium text-muted-foreground">
-          {SUGGESTED_INSTRUCTION_LABEL}
+          {stateLine}
         </p>
         {item.proposed_instruction ? (
           editable && editable.editing ? (
@@ -1676,22 +1558,14 @@ export function DecisionCard({
               </div>
             </div>
           ) : (
-            <div className="relative">
-              <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
-                {item.proposed_instruction}
-              </blockquote>
-              {editable ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-1 top-1"
-                  onClick={editable.onStart}
-                >
-                  Edit
-                </Button>
-              ) : null}
-            </div>
+            // Round 9 Task 4 / spec §5: no absolutely positioned Edit
+            // overlaying the text any more -- Edit is one of
+            // InstructionActions' own small text actions below, on its own
+            // line, offered only for a state that spec §3 gives one to
+            // (Suggested/Suggested-not-helped; never a decided instruction).
+            <blockquote className="rounded-md border bg-muted/30 p-3 text-sm">
+              {item.proposed_instruction}
+            </blockquote>
           )
         ) : (
           <p className="text-sm text-muted-foreground">{NO_INSTRUCTION}</p>
@@ -1712,26 +1586,16 @@ export function DecisionCard({
       </p>
       <SkillProposalPanel item={item} busy={busy} run={run} />
 
-      {pending ? (
-        <>
-          <TestStatusLine item={item} />
-          <div className={ACTION_BAR_CLASS}>
-            <AddConfirm item={item} destination="project" busy={busy} run={run} size={size} />
-            <AddConfirm
-              item={item}
-              destination="workspace"
-              busy={busy}
-              run={run}
-              variant="outline"
-              size={size}
-            />
-            <SkipConfirm item={item} busy={busy} run={run} size={size} />
-            <TestButton item={item} busy={busy} run={run} size={size} />
-          </div>
-        </>
-      ) : (
-        <DecidedStatus item={item} busy={busy} run={run} ctx={ctx} />
-      )}
+      {/* Round 9 Task 4 / spec §1-§3: the ONE fixed action set for this state, the same component and rules Inbox cards use -- replaces the old hand-built pending/decided branches. No openHref: the detail page IS where Open would go. */}
+      <InstructionActions
+        item={item}
+        state={state}
+        size="full"
+        busy={busy}
+        run={run}
+        {...(editable ? { onEdit: editable.onStart } : {})}
+      />
+      {!pending ? <DecidedStatus item={item} busy={busy} run={run} ctx={ctx} /> : null}
     </article>
   );
 }
@@ -1784,17 +1648,11 @@ export function ImprovementDetail({
   onBack,
   onChanged,
   backLabel = "← Back",
-  position,
-  onPrev,
-  onNext,
 }: {
   item: Improvement;
   onBack: () => void;
   onChanged: (msg: string) => void;
   backLabel?: string;
-  position?: { index: number; total: number } | undefined;
-  onPrev?: (() => void) | undefined;
-  onNext?: (() => void) | undefined;
 }) {
   const { busy, run } = useRun(onChanged);
   const [editing, setEditing] = useState(false);
@@ -1804,23 +1662,6 @@ export function ImprovementDetail({
   const lovable = lovableOf(item);
   const accepted = item.decision.status === "accepted";
   const skipped = item.decision.status === "skipped";
-
-  // Arrows move between improvements unless focus is in a text field or a
-  // confirmation dialog is open.
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) {
-        return;
-      }
-      if (document.querySelector('[role="alertdialog"]')) return;
-      if (e.key === "ArrowLeft") onPrev?.();
-      else if (e.key === "ArrowRight") onNext?.();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onPrev, onNext]);
 
   const editable = {
     editing,
@@ -1838,57 +1679,43 @@ export function ImprovementDetail({
     onCancel: () => setEditing(false),
   };
 
+  // Round 9 Task 4 / spec §4-§5: the plain evidence sentences, computed once
+  // here so the section below can decide whether it has anything to show at
+  // all (never an empty "Evidence" heading over nothing). The test line
+  // reads item.test.run's own status through testStatusPhrase -- the same
+  // plain-word phrases the Tests page uses -- with no derived conclusion of
+  // its own to pass (Improvement.test.run, unlike the Tests page's own
+  // ExperimentRunSummary, carries no `conclusion` field), so a judged run
+  // reads as the honest fallback "Judged" here, same as testStatusPhrase's
+  // own doc comment describes for an old run with nothing derived on record.
+  const testRun = item.test?.run ?? null;
+  const evidenceTestLine = testRun
+    ? testStatusPhrase({ status: testRun.status, conclusion: null })
+    : null;
+  const evidenceObserved = observedSentence(item.health);
+  const evidenceAiCheck = aiCheckSentence(item.health);
+  const evidenceDisagreement = evidenceDisagreementLine(item.health);
+  const brokeQuote =
+    (item.health?.ai_not_followed ?? 0) > 0
+      ? mostRecentBrokeQuote(item.health?.adherence?.quotes)
+      : null;
+  const hasEvidence = Boolean(
+    evidenceTestLine || evidenceObserved || evidenceAiCheck || evidenceDisagreement,
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={onBack}
-        >
-          {backLabel}
-        </button>
-        {position ? (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              {position.index} of {position.total}
-            </span>
-            <Button variant="outline" size="sm" onClick={onPrev} disabled={position.index <= 1}>
-              ← Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onNext}
-              disabled={position.index >= position.total}
-            >
-              Next →
-            </Button>
-          </div>
-        ) : null}
-      </div>
+      <button
+        type="button"
+        className="text-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={onBack}
+      >
+        {backLabel}
+      </button>
 
-      {/* ---- Round 8 Task 4 (review item 6): decision first, one copy of
-          the instruction. Replaces the old six-always-open section order
-          (see this file's earlier history for the four now-retired section
-          headings): the decision card now leads, the old action-glossary
-          section is gone outright (each button already carries its own
-          consequence line), and the old lesson/reasoning sections' surviving
-          text folds into one collapsed WHY_RECOMMENDS_TITLE details, reusing
-          Task 1's own constant so the same words label the same fold on
-          both the Inbox card and here. ---- */}
+      {/* Round 9 Task 4 / spec §5 Detail: one layout for every state, top to bottom -- the instruction card, then Evidence, then the story, then the collapsed folds. No Previous/Next, no separate attention block: a live instruction asked for attention says why in its own evidence lines, never a different section or a different action set (spec principle 1). */}
 
-      {/* A live rule's own "Needs attention"/"Review for relevance" block
-          (unchanged content and actions) comes first, same as before this
-          round -- the detail page still leads with status and recommendation
-          ahead of the primary decision, never buried under a removed
-          section heading. */}
-      <AttentionBlock item={item} busy={busy} run={run} onReview={() => setEditing(true)} />
-
-      {/* 1. The primary decision. Project name, the instruction (labelled
-          "Suggested instruction", shown exactly once), "Saves to" with the
-          Change destination control, and the action buttons with their
-          consequence lines -- all inside DecisionCard now. */}
+      {/* 1. The instruction, every state, one shape. */}
       <DecisionCard
         item={item}
         onChanged={onChanged}
@@ -1904,8 +1731,42 @@ export function ImprovementDetail({
         </p>
       ) : null}
 
-      {/* 2. What happened -- unchanged content, except "Your correction" is
-          dropped when it just repeats "Requested" verbatim (trimmed). */}
+      {/* 2. Evidence -- plain sentences (spec §4), rendered only when there is any: the test result, what Harness Ledger observed, what the AI check found (with the most recent broke quote), and, only when the two disagree, the line that says so. */}
+      {hasEvidence ? (
+        <section aria-label="Evidence" className="space-y-2">
+          <h2 className="text-lg font-semibold">Evidence</h2>
+          <div className="space-y-2 text-sm">
+            {evidenceTestLine ? (
+              <p>
+                {evidenceTestLine}{" "}
+                {testRun ? (
+                  <Link
+                    to="/judge"
+                    search={{ run: testRun.id }}
+                    className="text-primary underline underline-offset-2"
+                  >
+                    {OPEN_COMPARE_BUILDS_LABEL}
+                  </Link>
+                ) : null}
+              </p>
+            ) : null}
+            {evidenceObserved ? <p className="text-muted-foreground">{evidenceObserved}</p> : null}
+            {evidenceAiCheck ? (
+              <div className="space-y-1">
+                <p className="text-muted-foreground">{evidenceAiCheck}</p>
+                {brokeQuote ? (
+                  <blockquote className="border-l-2 pl-3 text-muted-foreground">
+                    {LOVABLE_SAID_PREFIX} "{brokeQuote.quote}"
+                  </blockquote>
+                ) : null}
+              </div>
+            ) : null}
+            {evidenceDisagreement ? <p>{evidenceDisagreement}</p> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {/* 3. What happened -- Requested, then Built, then Your correction (only when it differs from Requested, trimmed), then Changed afterward (only when it differs from Built, trimmed) -- spec principle 5, nothing twice. */}
       <section aria-labelledby={`story-${item.id}`} className="space-y-2">
         <h2 id={`story-${item.id}`} className="text-lg font-semibold">
           What happened
@@ -1940,16 +1801,19 @@ export function ImprovementDetail({
                 </dd>
               </div>
             ) : null}
-            <div>
-              <dt className="font-medium">Changed afterward</dt>
-              <dd className="text-muted-foreground">
-                {item.story.changed_afterward ? (
-                  <ClampedText text={item.story.changed_afterward} markdown />
-                ) : (
-                  "Not recorded"
-                )}
-              </dd>
-            </div>
+            {item.story.changed_afterward == null ||
+            item.story.changed_afterward.trim() !== (item.story.built ?? "").trim() ? (
+              <div>
+                <dt className="font-medium">Changed afterward</dt>
+                <dd className="text-muted-foreground">
+                  {item.story.changed_afterward ? (
+                    <ClampedText text={item.story.changed_afterward} markdown />
+                  ) : (
+                    "Not recorded"
+                  )}
+                </dd>
+              </div>
+            ) : null}
           </dl>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -2294,90 +2158,17 @@ function SkillProposalPanel({ item, busy, run }: { item: Improvement; busy: bool
 // ---- end Round 8 Task 4 (formerly Checkpoint 2026-09-18 WP4) ----
 
 // ---- Checkpoint 2026-09-18 WP3: "Needs attention" / "Review for relevance" ----
-// Shown above the decision card on the detail page (Round 8 Task 4) for a
-// live rule whose health asks for a person's decision (health.review_reason).
-// The copy comes from harness-ux.ts#attentionBlock; the options post the
-// same actions the verdict control, the Test button and SkillProposalPanel
-// post.
-function AttentionBlock({
-  item,
-  busy,
-  run,
-  onReview,
-}: {
-  item: Improvement;
-  busy: boolean;
-  run: ReturnType<typeof useRun>["run"];
-  onReview: () => void;
-}) {
-  const block = attentionBlock(item.health ?? null);
-  if (!block || item.rule_id == null) return null;
-  const ruleId = item.rule_id;
-  const inactive = item.health?.review_reason === "inactive";
-  return (
-    <section aria-label={block.title} className="space-y-3">
-      <CurrentStatus status={block.title} hint={block.line} />
-      <RecommendationCallout
-        title="Recommendation"
-        recommendation={block.recommendation}
-        why={
-          inactive
-            ? "A rule nothing has needed for two months may be stale, or simply rare."
-            : block.line
-        }
-      />
-      {inactive ? (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() =>
-              void run({ action: "verdict", rule_id: ruleId, verdict: "keep" }, "Kept")
-            }
-          >
-            Keep
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              void run(
-                { action: "set_content_destination", id: item.id, destination: "skill" },
-                "Moved to a Skill proposal",
-              )
-            }
-          >
-            Move to Skill
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void run({ action: "test", id: item.id }, TEST_STARTED_TOAST)}
-          >
-            Retest
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              void run(
-                { action: "verdict", rule_id: ruleId, verdict: "retire" },
-                "Marked for retirement",
-              )
-            }
-          >
-            Retire
-          </Button>
-        </div>
-      ) : (
-        <PrimaryAction label={block.action} onClick={onReview} disabled={busy} />
-      )}
-    </section>
-  );
-}
+// Round 9 Task 4 / spec §1 principle 4, §5: AttentionBlock (the old
+// "Current status" + Recommendation card shown above the decision card, with
+// its own separate Keep/Move to Skill/Retest/Retire button row) is gone --
+// a live instruction asked for attention is still exactly "live" in every
+// other respect (instructionState's own "live_attention", Round 9 Task 1)
+// and offers the SAME action set as any other live instruction (Keep/
+// Retire/Test/Open, via InstructionActions), never a second, different set
+// of buttons on its own card. Why it's asking is said in one line by the
+// card's own evidence (attentionBlock's `.line`, still read by
+// CompactDecisionCard's Inbox card and RuleAttentionCard below), not by a
+// whole separate section on the detail page.
 
 // ---- Checkpoint 2 2-B: the Inbox card's single "Add instruction" action ----
 // Stands in for the two separate "Add to this project"/"Add to all my

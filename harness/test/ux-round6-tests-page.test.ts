@@ -180,11 +180,13 @@ test("improvement.tsx: the judged/failed status lines carry an 'Open Tests' link
   // Round 9 Task 3: InstructionActions gained its own "judge" action, a
   // fourth to="/judge" link (its own runId, not TestStatusLine's run.id) --
   // the three TestStatusLine links (judging/judged/failed) are unchanged.
+  // Round 9 Task 4: the detail page's new Evidence section adds a fifth link
+  // of its own ("Open Compare builds", testRun.id).
   const judgeLinks = code.match(/to="\/judge"/g) ?? [];
   assert.equal(
     judgeLinks.length,
-    4,
-    "judging, judged, and failed all link to /judge, plus InstructionActions' own",
+    5,
+    "judging, judged, and failed link to /judge, plus InstructionActions' own and Evidence's own",
   );
 });
 

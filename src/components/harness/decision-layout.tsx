@@ -43,16 +43,6 @@ export function RecommendationCallout({
   );
 }
 
-export function CurrentStatus({ status, hint }: { status: string; hint?: string | undefined }) {
-  return (
-    <div className="text-sm">
-      <span className="font-medium">Current status: </span>
-      <span>{status}</span>
-      {hint ? <span className="text-muted-foreground"> — {hint}</span> : null}
-    </div>
-  );
-}
-
 export function WhatHappensNext({
   heading = "What happens next",
   lines,
@@ -68,34 +58,6 @@ export function WhatHappensNext({
           <li key={l}>{l}</li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-export function PrimaryAction({
-  label,
-  onClick,
-  disabled,
-  disabledReason,
-}: {
-  label: string;
-  onClick?: () => void;
-  disabled?: boolean;
-  disabledReason?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <Button
-        onClick={onClick}
-        disabled={disabled}
-        aria-disabled={disabled}
-        className="w-full sm:w-auto"
-      >
-        {label}
-      </Button>
-      {disabled && disabledReason ? (
-        <p className="text-xs text-muted-foreground">{disabledReason}</p>
-      ) : null}
     </div>
   );
 }

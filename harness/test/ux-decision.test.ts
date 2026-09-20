@@ -111,22 +111,22 @@ test("SAVED_LINE and the new toasts", () => {
   );
 });
 
-test("Change decision: a test_first item with no pending write offers 'Add it now instead' via the same two-choice AddConfirm", () => {
+// Round 9 Task 4 / spec §1-§3: DecidedStatus no longer offers "Add it now
+// instead"/alternate-destination Add/Skip at all -- those belonged to the
+// old hand-built action bar this task replaced with the ONE fixed action set
+// per state (InstructionActions). A decided (accepted) item is always
+// "live" now (Round 9 Task 1), whose only actions are Keep/Retire/Test/
+// Open; there is no state left in which a decided item still offers Add.
+test("Change decision: DecidedStatus offers no Add/Skip of its own any more -- the one action set per state (InstructionActions) replaces it", () => {
   const detail = codeOnly(readApp(DETAIL));
   const decided = detail.slice(
     detail.indexOf("function DecidedStatus"),
     detail.indexOf("export function DecisionCard"),
   );
-  assert.match(decided, /trigger="Add it now instead"/);
-  assert.match(decided, /item\.decision\.test_first/);
-  // alternate-destination + Skip are still offered
-  assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
-  // Round 6 Task 4 / spec §4: this call now also carries the shared `size`
-  // variable, same as its two sibling call sites.
-  assert.match(
-    decided,
-    /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
-  );
+  assert.ok(!/trigger="Add it now instead"/.test(decided));
+  assert.ok(!/<SkipConfirm/.test(decided));
+  assert.ok(!/<AddConfirm/.test(decided));
+  assert.match(decided, /\{decisionSentence\(/);
 });
 
 test("Status ctx: DecisionCard reads executorQueryOptions and forwards connected / test_first to decisionSentence", () => {

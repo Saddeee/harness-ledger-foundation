@@ -244,29 +244,36 @@ test("improvements.ts route: counts carries auto_accepted_since_seen, 0 when inb
 
 // ---- "Accepted automatically" marker (spec §4 visibility) ----
 
-test("ledger.tsx and improvement.tsx: a decided item shows an 'Accepted automatically' badge next to the group badge when decided_by === 'automatic'", () => {
+// Round 9 Task 4 / spec §5: the "Accepted automatically" Badge is gone from
+// DecisionCard -- instructionStateLine (Round 9 Task 1) now folds it into
+// the one state line every state shows ("In Lovable since 13 Sep · accepted
+// automatically"), lower-case, no separate badge, no group chip beside it.
+test("ledger.tsx and improvement.tsx: a decided item's 'accepted automatically' comes from instructionStateLine's state line, not a Badge", () => {
+  // The literal suffix itself lives in instructionStateLine (harness-ux.ts,
+  // Round 9 Task 1) -- improvement.tsx only forwards item.decided_by into it.
+  const uxCode = codeOnly(readApp("lib/harness-ux.ts"));
+  assert.match(uxCode, /accepted automatically/);
+  assert.match(uxCode, /item\.decided_by === "automatic"/);
   const combined = codeOnly(readApp(LEDGER) + readApp(IMPROVEMENT));
-  assert.match(combined, /Accepted automatically/);
-  assert.match(combined, /item\.decided_by === "automatic"/);
+  assert.match(combined, /decided_by:\s*item\.decided_by/);
 
   // Checkpoint 3: ledger.tsx is the detail route only (ImprovementDetail);
-  // it never builds its own badge.
+  // it never builds its own status line directly.
   const ledgerCode = codeOnly(readApp(LEDGER));
   assert.match(ledgerCode, /<ImprovementDetail/);
   assert.ok(
-    !/Accepted automatically/.test(ledgerCode),
-    "ledger.tsx itself renders no badge directly",
+    !/accepted automatically/i.test(ledgerCode),
+    "ledger.tsx itself renders no status line directly",
   );
 
-  // The badge sits beside the existing group Badge, only for a decided
-  // (non-pending) item -- inside the same `pending ? ... : (...)` branch.
+  // No badge left at all in DecisionCard's non-compact body.
   const detailCode = codeOnly(readApp(IMPROVEMENT));
-  const badgeBranch = detailCode.slice(
-    detailCode.indexOf("{pending ? ("),
-    detailCode.indexOf("{pending ? (", detailCode.indexOf("{pending ? (") + 1),
+  const card = detailCode.slice(
+    detailCode.indexOf("export function DecisionCard"),
+    detailCode.indexOf("export function ImprovementDetail"),
   );
-  assert.match(badgeBranch, /Badge variant="secondary">\{groupOf\(item\)\}/);
-  assert.match(badgeBranch, /Accepted automatically/);
+  assert.ok(!/<Badge/.test(card), "no Badge left in DecisionCard's non-compact body");
+  assert.match(card, /instructionStateLine\(\{/);
 });
 
 // Round 8 Task 3 (review item 5): the automatic-mode-specific "Harness

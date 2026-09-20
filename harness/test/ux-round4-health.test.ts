@@ -128,11 +128,20 @@ test("harness-ux.ts: healthLine -- no row, zero builds, no last_applicable_at, a
   }
 });
 
-test("improvement.tsx: DecidedStatus renders the health line for a live item's health, via healthLine", () => {
+// Round 9 Task 4 / spec §4-§5: healthLine's merged copy is gone from the
+// detail page -- DecidedStatus no longer renders any health line at all
+// (it keeps only decisionSentence and a conditional Undo, Round 9 Task 4);
+// the detail page's own health reporting moved to ImprovementDetail's new
+// Evidence section, in the plain, never-merged sentences observedSentence/
+// aiCheckSentence/evidenceDisagreementLine introduced by Round 9 Task 1,
+// same convention instructions.tsx already uses (see the test right below).
+test("improvement.tsx: the detail page's Evidence section reads item.health through observedSentence/aiCheckSentence/evidenceDisagreementLine, never healthLine", () => {
   const raw = readApp(DETAIL);
   const code = codeOnly(raw);
-  assert.match(code, /healthLine/);
-  assert.match(code, /item\.health/);
+  assert.ok(!/healthLine/.test(code), "healthLine is gone from improvement.tsx");
+  assert.match(code, /observedSentence\(item\.health\)/);
+  assert.match(code, /aiCheckSentence\(item\.health\)/);
+  assert.match(code, /evidenceDisagreementLine\(item\.health\)/);
 });
 
 // Checkpoint 2 2-C: rewritten with intent -- the Instructions page's rules

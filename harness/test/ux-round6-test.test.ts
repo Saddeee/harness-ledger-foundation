@@ -136,13 +136,16 @@ test("improvement.tsx: TestStatusLine links to /judge?run=<id> for judging, judg
   // Round 9 Task 3: InstructionActions gained its own "judge" action, a
   // fourth to="/judge" link (its own runId, not TestStatusLine's run.id) --
   // the three TestStatusLine links (judging/judged/failed) are unchanged.
+  // Round 9 Task 4: the detail page's new Evidence section adds a fifth, its
+  // own "Open Compare builds" link (testRun.id, not TestStatusLine's run.id).
   assert.equal(
     judgeLinks.length,
-    4,
-    "judging, judged, and failed all link to /judge, plus InstructionActions' own",
+    5,
+    "judging, judged, and failed link to /judge, plus InstructionActions' own and Evidence's own",
   );
   const runSearch = code.match(/search=\{\{\s*run:\s*run\.id\s*\}\}/g) ?? [];
   assert.equal(runSearch.length, 3);
+  assert.match(code, /search=\{\{ run: testRun\.id \}\}/);
 });
 
 // ---- 3. Settings has "Lovable credits" ----

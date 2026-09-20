@@ -108,23 +108,20 @@ test("harness-ux.ts still exports STAGE_LABELS and the Stage type (the API still
   assert.deepEqual(Object.values(ux.STAGE_LABELS), ["Found", "Your review", "Proof", "In Lovable"]);
 });
 
-test("Detail view for a just-decided item still renders the decided card (chip + sentence + inline decision buttons)", () => {
+// Round 9 Task 4 / spec §5: no badges row on the decision card any more (no
+// group chip, no "New" badge, no "Accepted automatically" badge) -- the
+// state line (instructionStateLine) says where a just-decided item stands
+// instead, and DecidedStatus still renders decisionSentence beneath the
+// one fixed action set (InstructionActions).
+test("Detail view for a just-decided item still renders its status: instructionStateLine + decisionSentence, no group chip", () => {
   const detail = codeOnly(readApp(DETAIL));
   const card = detail.slice(
     detail.indexOf("export function DecisionCard"),
     detail.indexOf("export function ImprovementDetail"),
   );
-  // Round 4 Task C3: the pending branch now also renders a "New" badge
-  // (isNew), but a decided item's group chip (the assertion's own subject)
-  // is unchanged -- still the final "else" of the same ternary. Round 5
-  // Task 6 wraps the chip in a row div alongside the new "Accepted
-  // automatically" marker (see the badge-placement test in
-  // ux-round5-settings.test.ts) -- the chip itself is still that row's
-  // first child, immediately after the "else".
-  assert.match(
-    card,
-    /\) : \(\s*<div className="flex flex-wrap items-center gap-2">\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>/,
-  );
+  assert.ok(!/<Badge/.test(card), "no Badge left in DecisionCard's non-compact body");
+  assert.match(card, /instructionStateLine\(\{/);
+  assert.match(card, /<InstructionActions/);
   assert.match(card, /<DecidedStatus item=\{item\} busy=\{busy\} run=\{run\} ctx=\{ctx\} \/>/);
   const decided = detail.slice(
     detail.indexOf("function DecidedStatus"),

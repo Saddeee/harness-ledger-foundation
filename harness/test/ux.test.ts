@@ -127,20 +127,25 @@ test("default technical sections are collapsed and the detail page wraps them in
 });
 
 // Round 8 Task 4 (review item 6): rewritten with intent -- the decision
-// card now leads (back label, then AttentionBlock when a live rule needs
-// one, then DecisionCard itself), followed by "What happened" and the
-// collapsed "Why Harness Ledger recommends this" details (replacing "What
-// Harness Ledger learned"/"What Harness Ledger recommends"/"Why Knowledge
-// or Skill"/"What the action will do", all gone), with the raw message list
-// and classification reasoning still demoted into the Technical details,
-// collapsed, last.
-test("detail page order: back, the primary decision, What happened, the collapsed why-recommends details, Technical details, developer view last", () => {
+// card now leads (back label, then DecisionCard itself), followed by "What
+// happened" and the collapsed "Why Harness Ledger recommends this" details
+// (replacing "What Harness Ledger learned"/"What Harness Ledger
+// recommends"/"Why Knowledge or Skill"/"What the action will do", all gone),
+// with the raw message list and classification reasoning still demoted into
+// the Technical details, collapsed, last.
+// Round 9 Task 4 / spec §1 principle 4, §5: AttentionBlock is gone outright
+// -- a live instruction asked for attention is still exactly "live", with
+// the same action set as any other live instruction (spec §3); the decision
+// card leads directly, with Evidence (new this task) between it and "What
+// happened".
+test("detail page order: back, the primary decision, Evidence, What happened, the collapsed why-recommends details, Technical details, developer view last", () => {
   const detail = codeOnly(readApp(DETAIL));
   const body = detail.slice(detail.indexOf("export function ImprovementDetail"));
+  assert.ok(!/AttentionBlock/.test(body), "no AttentionBlock left on the detail page");
   const order = [
     "{backLabel}",
-    "<AttentionBlock",
     "<DecisionCard",
+    'aria-label="Evidence"',
     "What happened",
     "{WHY_RECOMMENDS_TITLE}",
     'title="Technical details"',
@@ -170,7 +175,13 @@ test("detail page order: back, the primary decision, What happened, the collapse
   );
 });
 
-test("decision card: three buttons for pending items, decision buttons shown inline for decided ones, no Decide later", () => {
+// Round 9 Task 4 / spec §1-§3: DecisionCard's own hand-built pending branch
+// (two AddConfirms + SkipConfirm + TestButton) and DecidedStatus's own
+// hand-built decided branch (Add-instead, Try again, Remove-from-Knowledge,
+// Undo x2) are BOTH gone -- one instruction, one shape, one fixed action set
+// per state, rendered once through <InstructionActions size="full">
+// regardless of whether the item is pending or decided (spec principle 2).
+test("decision card: every state (pending or decided) renders through the one shared InstructionActions, no Decide later", () => {
   const detail = codeOnly(readApp(DETAIL));
   const card = detail.slice(
     detail.indexOf("export function DecisionCard"),
@@ -180,22 +191,9 @@ test("decision card: three buttons for pending items, decision buttons shown inl
     detail,
     /const ADD_LABELS: Record<Destination, string> = \{\s*project: "Add to this project",\s*workspace: "Add to all my projects",\s*\};/,
   );
-  // Round 6 Task 4 / spec §4: every button in one card's bar is the same
-  // size ("sm" on lists, default on the detail page) -- these three now
-  // also carry the `size={size}` computed once at the top of DecisionCard,
-  // \s+ tolerating however Prettier wraps the extra attribute.
-  assert.match(
-    card,
-    /<AddConfirm\s+item=\{item\}\s+destination="project"\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
-  );
-  assert.match(
-    card,
-    /<AddConfirm\s+item=\{item\}\s+destination="workspace"\s+busy=\{busy\}\s+run=\{run\}\s+variant="outline"\s+size=\{size\}\s*\/>/,
-  );
-  assert.match(
-    card,
-    /<SkipConfirm\s+item=\{item\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
-  );
+  assert.ok(!/<AddConfirm\b/.test(card), "no direct AddConfirm left in DecisionCard's own body");
+  assert.ok(!/<SkipConfirm\b/.test(card), "no direct SkipConfirm left in DecisionCard's own body");
+  assert.match(card, /<InstructionActions[\s\S]{0,120}size="full"/);
   // Round 8 Task 4: the onOpen-driven title button is gone along with the
   // duplicated title itself (review item 6) -- onOpen was never passed to
   // the non-compact DecisionCard the detail page renders anyway.
@@ -213,18 +211,15 @@ test("decision card: three buttons for pending items, decision buttons shown inl
     !/Change decision/.test(decided),
     "the collapsed wrapper is gone; buttons show directly",
   );
-  assert.match(decided, /trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/);
-  assert.match(decided, /action: "retry_write", id: item\.id, version_id: retryableVersion\.id/);
+  // Round 9 Task 4: Add-instead, Try again and Remove-from-Knowledge all
+  // came out of DecidedStatus -- InstructionActions' own fixed Keep/Retire
+  // (or Re-add, for a retired/skipped item) replaced them outright.
+  assert.ok(!/trigger=\{`\$\{ADD_LABELS\[d\]\} instead`\}/.test(decided));
+  assert.ok(!/action: "retry_write"/.test(decided));
+  assert.ok(!/<RemoveFromKnowledgeConfirm/.test(decided));
   // Round 6 Task 3 / spec §3: "Restore previous version" is gone from
-  // DecidedStatus -- Remove from Knowledge (still the "retire" action) took
-  // its place, and Restore itself moved to the History page only.
+  // DecidedStatus -- Restore itself moved to the History page only.
   assert.ok(!/Restore previous version/.test(decided), "Restore moved to the History page only");
-  // Round 6 Task 4 / spec §4: same size threading as the other action-bar
-  // buttons above.
-  assert.match(
-    decided,
-    /<RemoveFromKnowledgeConfirm\s+ruleId=\{ruleId\}\s+busy=\{busy\}\s+run=\{run\}\s+size=\{size\}\s*\/>/,
-  );
   assert.match(decided, /\{ action: "undo", id: item\.id \}/);
   assert.match(decided, /\{decisionSentence\(/);
   // "role=\"radio\"" used to be forbidden here (an earlier deferred-decision
@@ -362,7 +357,11 @@ test("Add confirmation: exact preview lines, no-snapshot variant, over-cap guard
   assert.match(layout, /<AlertDialogAction onClick=\{onConfirm\} disabled=\{confirmDisabled\}>/);
 });
 
-test("no per-stage progress bar in the layout (decisionSentence + the group chip are the only two places that say where an item stands); decided cards show the group chip", () => {
+// Round 9 Task 4 / spec §5: the group chip is gone too -- no badges row on
+// the decision card any more. decisionSentence (DecidedStatus) and
+// instructionStateLine (the state line every size shows, Round 9 Task 1)
+// are now the only two places that say where an item stands.
+test("no per-stage progress bar in the layout, and no group chip either -- decisionSentence + instructionStateLine are the only two places that say where an item stands", () => {
   const layout = readApp(LAYOUT);
   assert.ok(!/ProcessProgress/.test(layout), "the stage bar is gone -- see ux-inbox-logic.test.ts");
   assert.ok(!/you are here/.test(codeOnly(layout)));
@@ -371,15 +370,12 @@ test("no per-stage progress bar in the layout (decisionSentence + the group chip
     "whole-card buttons are gone; the buttons are the decision",
   );
   const detail = codeOnly(readApp(DETAIL));
-  // Round 4 Task C3: the pending branch also renders a "New" badge (isNew)
-  // now, but a decided item's group chip -- this assertion's own subject --
-  // is unchanged: still the final "else" of the same ternary. Round 5 Task
-  // 6 wraps the chip in a row div alongside the new "Accepted
-  // automatically" marker -- the chip is still that row's first child.
-  assert.match(
-    detail,
-    /\) : \(\s*<div className="flex flex-wrap items-center gap-2">\s*<Badge variant="secondary">\{groupOf\(item\)\}<\/Badge>/,
+  const card = detail.slice(
+    detail.indexOf("export function DecisionCard"),
+    detail.indexOf("export function ImprovementDetail"),
   );
+  assert.ok(!/<Badge/.test(card), "no Badge left in DecisionCard's non-compact body");
+  assert.match(card, /instructionStateLine\(\{/);
 });
 
 test("lovableStatusLine / decisionSentence / improvementGroup follow the write lifecycle without implying Lovable changed", () => {
