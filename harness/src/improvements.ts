@@ -2239,10 +2239,12 @@ function parseRuleIds(json: string): number[] {
   }
 }
 
-// Round 6 Task 6b / spec §6: "Tested with the rule: X of Y corrections no
-// longer needed" -- X/Y read straight from the run's own saved verdicts
-// (not run.score * corrections, which would round-trip through floating
-// point for no reason when the exact counts are sitting right there).
+// Round 6 Task 6b / spec §6: "Tested with the instruction: X of Y
+// corrections no longer needed" -- X/Y read straight from the run's own
+// saved verdicts (not run.score * corrections, which would round-trip
+// through floating point for no reason when the exact counts are sitting
+// right there). Round 9 final wave item 9 (copy only): "instruction", not
+// "rule" -- spec §2 vocabulary.
 function testedLabel(run: store.ExperimentRunRow): string {
   let verdicts: unknown[] = [];
   try {
@@ -2253,14 +2255,15 @@ function testedLabel(run: store.ExperimentRunRow): string {
   }
   const total = verdicts.length;
   const no = verdicts.filter((v) => v === "no").length;
-  return `Tested with the rule: ${no} of ${total} corrections no longer needed`;
+  return `Tested with the instruction: ${no} of ${total} corrections no longer needed`;
 }
 
+// Round 9 final wave item 9 (copy only): "instruction", not "rule".
 const VERDICT_LABEL: Record<store.RuleVerdict, string> = {
-  keep: "You said to keep this rule",
-  review: "You said this rule needs a review",
-  retire: "You said to retire this rule",
-  not_sure: "You said you're not sure this rule is still useful",
+  keep: "You said to keep this instruction",
+  review: "You said this instruction needs a review",
+  retire: "You said to retire this instruction",
+  not_sure: "You said you're not sure this instruction is still useful",
 };
 
 type CorrectionDecisionRow = {
@@ -2311,7 +2314,8 @@ export function buildTimeline(target: "project" | "workspace", targetId: string)
       // The very first version this target ever had: there is no earlier
       // version node to diff against, so describe it by what it added
       // instead of a line count.
-      summary = `${versionRuleIds.length} rule${versionRuleIds.length === 1 ? "" : "s"} added`;
+      // Round 9 final wave item 9 (copy only): "instruction", not "rule".
+      summary = `${versionRuleIds.length} instruction${versionRuleIds.length === 1 ? "" : "s"} added`;
     }
 
     const beforeBullets = managedBullets(prevVersionContent);
@@ -3657,7 +3661,10 @@ function buildRunInboxItems(): InboxItem[] {
         project_id: run.project_id,
         project_name: run.project_name,
         title,
-        summary: "Awaiting your verdict on this replay.",
+        // Round 9 final wave item 9 (copy only): spec §2 vocabulary --
+        // "Waiting for your answer" is the one phrase for a test needing
+        // the user, never "verdict"/"replay".
+        summary: "Waiting for your answer.",
         created_at: run.started_at,
         link: { page: "judge", run_id: run.id },
         improvement: null,
@@ -3734,33 +3741,36 @@ function buildSkillPublishFailedInboxItems(): InboxItem[] {
 // as the rest of this file's Inbox cards -- never "helped"/"harm" (banned
 // UI words this checkpoint), so it's written by hand here rather than
 // reused from anywhere else.
+// Round 9 final wave item 9 (copy only): "instruction", not "rule" -- both
+// feed the Inbox's own `summary` field (buildRuleAttentionInboxItems /
+// buildRetireInboxItems below), spec §2 vocabulary.
 function inboxRetireSummary(retire: NonNullable<Improvement["retire"]>): string {
   switch (retire.reason) {
     case "hurt":
-      return "This rule has recently led to more corrections, not fewer.";
+      return "This instruction has recently led to more corrections, not fewer.";
     case "contradiction":
       return retire.contradicts_instruction
         ? `Contradicts another instruction: "${retire.contradicts_instruction}"`
         : "Contradicts another instruction.";
     case "unused":
-      return "This rule hasn't applied to any recent work.";
+      return "This instruction hasn't applied to any recent work.";
     case "changed_mind":
-      return "You asked to retire this rule.";
+      return "You asked to retire this instruction.";
   }
 }
 
 function inboxReviewReasonSummary(reason: store.RuleHealthReviewReason | null): string {
   switch (reason) {
     case "inactive":
-      return "This rule hasn't applied to any recent work.";
+      return "This instruction hasn't applied to any recent work.";
     case "repeated_issue":
-      return "This rule keeps needing the same kind of correction.";
+      return "This instruction keeps needing the same kind of correction.";
     case "user_verdict":
-      return "You marked this rule for review.";
+      return "You marked this instruction for review.";
     case "unclear_contradiction":
-      return "This rule may contradict another instruction.";
+      return "This instruction may contradict another instruction.";
     default:
-      return "This rule needs a look.";
+      return "This instruction needs a look.";
   }
 }
 
